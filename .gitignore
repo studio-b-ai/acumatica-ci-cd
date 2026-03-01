@@ -1,0 +1,29 @@
+# Build artifacts
+dist/
+backups/
+*.zip
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# .NET build
+**/bin/
+**/obj/
+*.user
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Secrets (never commit)
+.env
+*.env.local

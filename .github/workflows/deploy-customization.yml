@@ -1,0 +1,256 @@
+# Acumatica Customization CI/CD Pipeline
+# Deploys customization projects via the Customization API
+#
+# Triggers:
+#   - Push to main     → Deploy to PRODUCTION
+#   - Push to staging   → Deploy to STAGING
+#   - Pull request      → Validate against STAGING (no publish)
+#   - Manual dispatch   → Choose target environment
+#
+# Required GitHub Secrets:
+#   ACUMATICA_PROD_URL        - Production instance URL (e.g. https://heritagefabrics.acumatica.com)
+#   ACUMATICA_PROD_USERNAME   - Production API user
+#   ACUMATICA_PROD_PASSWORD   - Production API password
+#   ACUMATICA_PROD_TENANT     - Production tenant name
+#   ACUMATICA_STG_URL         - Staging instance URL
+#   ACUMATICA_STG_USERNAME    - Staging API user
+#   ACUMATICA_STG_PASSWORD    - Staging API password
+#   ACUMATICA_STG_TENANT      - Staging tenant name
+#
+# Required GitHub Variables:
+#   CUSTOMIZATION_PROJECT_NAME  - Name of the customization project in Acumatica
+#   ALSO_PUBLISH_PROJECTS       - Comma-separated list of other active projects to co-publish
+#                                 (VAR packages, Shopify connector, etc.) for conflict detection
+
+name: Deploy Acumatica Customization
+
+on:
+  push:
+    branches: [main, staging]
+    paths:
+      - 'Customization/**'
+      - 'scripts/**'
+      - '.github/workflows/deploy-customization.yml'
+  pull_request:
+    branches: [main, staging]
+    paths:
+      - 'Customization/**'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Target environment'
+        required: true
+        type: choice
+        options:
+          - staging
+          - production
+      dry_run:
+        description: 'Validate only (no publish)'
+        required: false
+        type: boolean
+        default: false
+
+env:
+  PROJECT_NAME: ${{ vars.CUSTOMIZATION_PROJECT_NAME || 'HeritageFabricsCustom' }}
+  ALSO_PUBLISH: ${{ vars.ALSO_PUBLISH_PROJECTS || '' }}
+
+jobs:
+  # ──────────────────────────────────────────────
+  # Job 1: Build — Package customization into .zip
+  # ──────────────────────────────────────────────
+  build:
+    name: Build Customization Package
+    runs-on: ubuntu-latest
+    outputs:
+      package_path: ${{ steps.package.outputs.path }}
+      package_name: ${{ steps.package.outputs.name }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Check for C# extension library
+        id: check_csproj
+        run: |
+          if ls Customization/*.csproj 1>/dev/null 2>&1; then
+            echo "has_csproj=true" >> "$GITHUB_OUTPUT"
+            echo "Found C# project — will build extension library"
+          else
+            echo "has_csproj=false" >> "$GITHUB_OUTPUT"
+            echo "No C# project — packaging XML/ASPX only"
+          fi
+
+      - name: Setup .NET (if C# extension exists)
+        if: steps.check_csproj.outputs.has_csproj == 'true'
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '6.0.x'
+
+      - name: Build C# extension library
+        if: steps.check_csproj.outputs.has_csproj == 'true'
+        run: |
+          cd Customization
+          dotnet restore
+          dotnet build --configuration Release --no-restore
+          echo "Extension library built successfully"
+
+      - name: Package customization project
+        id: package
+        run: |
+          TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+          PACKAGE_NAME="${PROJECT_NAME}_${TIMESTAMP}.zip"
+          PACKAGE_PATH="dist/${PACKAGE_NAME}"
+
+          mkdir -p dist
+
+          cd Customization/_project
+          zip -r "../../${PACKAGE_PATH}" . \
+            -x "*.DS_Store" \
+            -x "__MACOSX/*" \
+            -x "*.user" \
+            -x "bin/*" \
+            -x "obj/*"
+          cd ../..
+
+          # Include compiled DLLs if they exist
+          if [ -d "Customization/bin/Release" ]; then
+            cd Customization/bin/Release
+            zip -ur "../../../${PACKAGE_PATH}" *.dll 2>/dev/null || true
+            cd ../../..
+          fi
+
+          FILESIZE=$(du -h "${PACKAGE_PATH}" | cut -f1)
+          echo "Packaged: ${PACKAGE_NAME} (${FILESIZE})"
+
+          echo "path=${PACKAGE_PATH}" >> "$GITHUB_OUTPUT"
+          echo "name=${PACKAGE_NAME}" >> "$GITHUB_OUTPUT"
+
+      - name: Upload package artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: customization-package
+          path: ${{ steps.package.outputs.path }}
+          retention-days: 30
+
+  # ──────────────────────────────────────────────
+  # Job 2: Deploy — Push to Acumatica instance
+  # ──────────────────────────────────────────────
+  deploy:
+    name: Deploy to ${{ github.event.inputs.environment || (github.ref == 'refs/heads/main' && 'production' || 'staging') }}
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request'
+    environment:
+      name: ${{ github.event.inputs.environment || (github.ref == 'refs/heads/main' && 'production' || 'staging') }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download package artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: customization-package
+          path: dist/
+
+      - name: Resolve environment
+        id: env
+        run: |
+          if [[ "${{ github.event.inputs.environment }}" == "production" ]] || [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
+            echo "target=production" >> "$GITHUB_OUTPUT"
+            echo "url=${{ secrets.ACUMATICA_PROD_URL }}" >> "$GITHUB_OUTPUT"
+            echo "username=${{ secrets.ACUMATICA_PROD_USERNAME }}" >> "$GITHUB_OUTPUT"
+            echo "password=${{ secrets.ACUMATICA_PROD_PASSWORD }}" >> "$GITHUB_OUTPUT"
+            echo "tenant=${{ secrets.ACUMATICA_PROD_TENANT }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "target=staging" >> "$GITHUB_OUTPUT"
+            echo "url=${{ secrets.ACUMATICA_STG_URL }}" >> "$GITHUB_OUTPUT"
+            echo "username=${{ secrets.ACUMATICA_STG_USERNAME }}" >> "$GITHUB_OUTPUT"
+            echo "password=${{ secrets.ACUMATICA_STG_PASSWORD }}" >> "$GITHUB_OUTPUT"
+            echo "tenant=${{ secrets.ACUMATICA_STG_TENANT }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Deploy customization
+        env:
+          ACUMATICA_URL: ${{ steps.env.outputs.url }}
+          ACUMATICA_USERNAME: ${{ steps.env.outputs.username }}
+          ACUMATICA_PASSWORD: ${{ steps.env.outputs.password }}
+          ACUMATICA_TENANT: ${{ steps.env.outputs.tenant }}
+          DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
+        run: |
+          PACKAGE_FILE=$(ls dist/*.zip | head -1)
+
+          chmod +x scripts/deploy.sh
+          scripts/deploy.sh \
+            --url "${ACUMATICA_URL}" \
+            --username "${ACUMATICA_USERNAME}" \
+            --password "${ACUMATICA_PASSWORD}" \
+            --tenant "${ACUMATICA_TENANT}" \
+            --project "${PROJECT_NAME}" \
+            --package "${PACKAGE_FILE}" \
+            --also-publish "${ALSO_PUBLISH}" \
+            $( [[ "${DRY_RUN}" == "true" ]] && echo "--validate-only" )
+
+      - name: Post deployment summary
+        if: always()
+        run: |
+          TARGET="${{ steps.env.outputs.target }}"
+          echo "## Deployment Summary" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Field | Value |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|-------|-------|" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Environment | \`${TARGET}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Project | \`${PROJECT_NAME}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Package | \`${{ needs.build.outputs.package_name }}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Commit | \`${GITHUB_SHA::8}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Actor | @${GITHUB_ACTOR} |" >> "$GITHUB_STEP_SUMMARY"
+
+  # ──────────────────────────────────────────────
+  # Job 3: Validate — PR check (no publish)
+  # ──────────────────────────────────────────────
+  validate:
+    name: Validate Against Staging
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download package artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: customization-package
+          path: dist/
+
+      - name: Validate customization package
+        env:
+          ACUMATICA_URL: ${{ secrets.ACUMATICA_STG_URL }}
+          ACUMATICA_USERNAME: ${{ secrets.ACUMATICA_STG_USERNAME }}
+          ACUMATICA_PASSWORD: ${{ secrets.ACUMATICA_STG_PASSWORD }}
+          ACUMATICA_TENANT: ${{ secrets.ACUMATICA_STG_TENANT }}
+        run: |
+          PACKAGE_FILE=$(ls dist/*.zip | head -1)
+
+          chmod +x scripts/deploy.sh
+          scripts/deploy.sh \
+            --url "${ACUMATICA_URL}" \
+            --username "${ACUMATICA_USERNAME}" \
+            --password "${ACUMATICA_PASSWORD}" \
+            --tenant "${ACUMATICA_TENANT}" \
+            --project "${PROJECT_NAME}" \
+            --package "${PACKAGE_FILE}" \
+            --also-publish "${ALSO_PUBLISH}" \
+            --validate-only
+
+      - name: Post validation result
+        if: always()
+        run: |
+          echo "## Validation Result" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          if [ $? -eq 0 ]; then
+            echo "Customization package validated against staging." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Validation failed — check logs above." >> "$GITHUB_STEP_SUMMARY"
+          fi
