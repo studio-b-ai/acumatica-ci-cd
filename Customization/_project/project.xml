@@ -1,0 +1,108 @@
+<?xml version="1.0" encoding="utf-8"?>
+<project>
+  <name>HeritageFabricsPO</name>
+  <level>0</level>
+  <description>PO Expected and Actual Arrival Date fields (header + line level with cascade defaulting)</description>
+  <files />
+  <code>
+    <file name="POOrderExt.cs"><![CDATA[using System;
+using PX.Data;
+using PX.Data.BQL;
+using PX.Objects.PO;
+
+namespace HeritageFabrics.PO
+{
+    public sealed class POOrderExt : PXCacheExtension<POOrder>
+    {
+        public static bool IsActive() => true;
+        #region UsrExpArrivalDate
+        public abstract class usrExpArrivalDate : BqlDateTime.Field<usrExpArrivalDate> { }
+        [PXDBDate]
+        [PXUIField(DisplayName = "Exp. Arrival Date", Visibility = PXUIVisibility.SelectorVisible)]
+        public DateTime? UsrExpArrivalDate { get; set; }
+        #endregion
+        #region UsrActArrivalDate
+        public abstract class usrActArrivalDate : BqlDateTime.Field<usrActArrivalDate> { }
+        [PXDBDate]
+        [PXUIField(DisplayName = "Act. Arrival Date", Visibility = PXUIVisibility.SelectorVisible)]
+        public DateTime? UsrActArrivalDate { get; set; }
+        #endregion
+    }
+}
+]]></file>
+    <file name="POLineExt.cs"><![CDATA[using System;
+using PX.Data;
+using PX.Data.BQL;
+using PX.Objects.PO;
+
+namespace HeritageFabrics.PO
+{
+    public sealed class POLineExt : PXCacheExtension<POLine>
+    {
+        public static bool IsActive() => true;
+        #region UsrExpArrivalDate
+        public abstract class usrExpArrivalDate : BqlDateTime.Field<usrExpArrivalDate> { }
+        [PXDBDate]
+        [PXUIField(DisplayName = "Exp. Arrival Date")]
+        public DateTime? UsrExpArrivalDate { get; set; }
+        #endregion
+        #region UsrActArrivalDate
+        public abstract class usrActArrivalDate : BqlDateTime.Field<usrActArrivalDate> { }
+        [PXDBDate]
+        [PXUIField(DisplayName = "Act. Arrival Date")]
+        public DateTime? UsrActArrivalDate { get; set; }
+        #endregion
+    }
+}
+]]></file>
+    <file name="POOrderEntry_Extension.cs"><![CDATA[using System;
+using PX.Data;
+using PX.Objects.PO;
+
+namespace HeritageFabrics.PO
+{
+    public class POOrderEntry_Extension : PXGraphExtension<POOrderEntry>
+    {
+        public static bool IsActive() => true;
+
+        protected void _(Events.FieldDefaulting<POLine, POLineExt.usrExpArrivalDate> e)
+        {
+            if (e.Row == null) return;
+            POOrder header = Base.Document.Current;
+            if (header == null) return;
+            POOrderExt headerExt = header.GetExtension<POOrderExt>();
+            if (headerExt?.UsrExpArrivalDate != null)
+            {
+                e.NewValue = headerExt.UsrExpArrivalDate;
+                e.Cancel = true;
+            }
+        }
+
+        protected void _(Events.FieldUpdated<POOrder, POOrderExt.usrExpArrivalDate> e)
+        {
+            if (e.Row == null) return;
+            DateTime? oldValue = (DateTime?)e.OldValue;
+            DateTime? newValue = e.Row.GetExtension<POOrderExt>()?.UsrExpArrivalDate;
+            if (newValue == null) return;
+            if (oldValue == newValue) return;
+            foreach (POLine line in Base.Transactions.Select())
+            {
+                POLineExt lineExt = line.GetExtension<POLineExt>();
+                if (lineExt == null) continue;
+                bool isInherited = lineExt.UsrExpArrivalDate == null || lineExt.UsrExpArrivalDate == oldValue;
+                if (isInherited)
+                {
+                    lineExt.UsrExpArrivalDate = newValue;
+                    Base.Transactions.Update(line);
+                }
+            }
+        }
+    }
+}
+]]></file>
+  </code>
+  <pages />
+  <dacExtensions />
+  <genericInquiries />
+  <customActions />
+</project>
