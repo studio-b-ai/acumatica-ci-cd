@@ -90,6 +90,7 @@ mcp_init() {
   response=$(curl -s --max-time 30 \
     -X POST \
     -H "Content-Type: application/json" \
+    -H "Accept: application/json, text/event-stream" \
     -D "${tmp_headers}" \
     "${MCP_URL}/mcp?token=${MCP_TOKEN}" \
     -d "{
@@ -122,6 +123,7 @@ mcp_init() {
   curl -s --max-time 10 \
     -X POST \
     -H "Content-Type: application/json" \
+    -H "Accept: application/json, text/event-stream" \
     ${MCP_SESSION_ID:+-H "Mcp-Session-Id: ${MCP_SESSION_ID}"} \
     "${MCP_URL}/mcp?token=${MCP_TOKEN}" \
     -d '{"jsonrpc": "2.0", "method": "notifications/initialized"}' \
@@ -161,6 +163,7 @@ json.dump(body, sys.stdout)
   http_code=$(curl -s -o "${response_file}" -w "%{http_code}" --max-time 120 \
     -X POST \
     -H "Content-Type: application/json" \
+    -H "Accept: application/json, text/event-stream" \
     ${MCP_SESSION_ID:+-H "Mcp-Session-Id: ${MCP_SESSION_ID}"} \
     "${MCP_URL}/mcp?token=${MCP_TOKEN}" \
     -d "@${request_file}" 2>&1)
