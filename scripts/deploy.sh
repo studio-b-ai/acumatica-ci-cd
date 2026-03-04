@@ -139,7 +139,7 @@ log "Package: ${PACKAGE} ($(du -h "${PACKAGE}" | cut -f1))"
 [[ -n "${ALSO_PUBLISH}" ]] && log "Co-publish with: ${ALSO_PUBLISH}"
 [[ "${VALIDATE_ONLY}" == true ]] && warn "VALIDATE ONLY — will not publish"
 
-# ─── Step 1: Login ───────────────────────────────────────────────────────────
+# ─── Step 1: Login (with retry for API Login Limit) ─────────────────────────
 log "Step 1/5: Authenticating..."
 
 COOKIE_JAR=$(mktemp)
@@ -154,17 +154,43 @@ LOGIN_BODY=$(cat <<EOF
 EOF
 )
 
-HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
-  -X POST \
-  -H "Content-Type: application/json" \
-  -c "${COOKIE_JAR}" \
-  -d "${LOGIN_BODY}" \
-  "${URL}/entity/auth/login")
+LOGIN_MAX_RETRIES=5
+LOGIN_RETRY_DELAY=15
+LOGIN_ATTEMPT=0
+LOGIN_SUCCESS=false
 
-if [[ "${HTTP_CODE}" != "204" ]]; then
-  die "Login failed (HTTP ${HTTP_CODE}). Check credentials and URL."
+while [[ ${LOGIN_ATTEMPT} -lt ${LOGIN_MAX_RETRIES} ]]; do
+  LOGIN_ATTEMPT=$((LOGIN_ATTEMPT + 1))
+
+  HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+    -X POST \
+    -H "Content-Type: application/json" \
+    -c "${COOKIE_JAR}" \
+    -d "${LOGIN_BODY}" \
+    "${URL}/entity/auth/login")
+
+  if [[ "${HTTP_CODE}" == "204" ]]; then
+    LOGIN_SUCCESS=true
+    break
+  fi
+
+  if [[ "${HTTP_CODE}" == "500" && ${LOGIN_ATTEMPT} -lt ${LOGIN_MAX_RETRIES} ]]; then
+    # HTTP 500 is often the API Login Limit — all session slots consumed
+    # by MCP server, sync workers, etc. Wait and retry.
+    WAIT=$((LOGIN_RETRY_DELAY * LOGIN_ATTEMPT))
+    warn "Login returned HTTP 500 (likely API Login Limit). Retry ${LOGIN_ATTEMPT}/${LOGIN_MAX_RETRIES} in ${WAIT}s..."
+    sleep "${WAIT}"
+  elif [[ ${LOGIN_ATTEMPT} -lt ${LOGIN_MAX_RETRIES} ]]; then
+    WAIT=$((LOGIN_RETRY_DELAY * LOGIN_ATTEMPT))
+    warn "Login returned HTTP ${HTTP_CODE}. Retry ${LOGIN_ATTEMPT}/${LOGIN_MAX_RETRIES} in ${WAIT}s..."
+    sleep "${WAIT}"
+  fi
+done
+
+if [[ "${LOGIN_SUCCESS}" != true ]]; then
+  die "Login failed after ${LOGIN_MAX_RETRIES} attempts (last HTTP ${HTTP_CODE}). Check credentials, URL, or API Login Limit."
 fi
-ok "Authenticated to ${URL}"
+ok "Authenticated to ${URL} (attempt ${LOGIN_ATTEMPT}/${LOGIN_MAX_RETRIES})"
 
 # ─── Step 2: Import Package ─────────────────────────────────────────────────
 log "Step 2/5: Importing customization package..."
