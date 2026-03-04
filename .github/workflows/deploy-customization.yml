@@ -8,14 +8,13 @@
 #   - Manual dispatch   → Choose target environment
 #
 # Required GitHub Secrets:
-#   ACUMATICA_PROD_URL        - Production instance URL (e.g. https://heritagefabrics.acumatica.com)
+#   ACUMATICA_MCP_TOKEN       - Auth token for Acumatica MCP server
+#
+# Optional GitHub Secrets (legacy direct API — fallback only):
+#   ACUMATICA_PROD_URL        - Production instance URL
 #   ACUMATICA_PROD_USERNAME   - Production API user
 #   ACUMATICA_PROD_PASSWORD   - Production API password
 #   ACUMATICA_PROD_TENANT     - Production tenant name
-#   ACUMATICA_STG_URL         - Staging instance URL
-#   ACUMATICA_STG_USERNAME    - Staging API user
-#   ACUMATICA_STG_PASSWORD    - Staging API password
-#   ACUMATICA_STG_TENANT      - Staging tenant name
 #
 # Required GitHub Variables:
 #   CUSTOMIZATION_PROJECT_NAME  - Name of the customization project in Acumatica
@@ -158,34 +157,20 @@ jobs:
         run: |
           if [[ "${{ github.event.inputs.environment }}" == "production" ]] || [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
             echo "target=production" >> "$GITHUB_OUTPUT"
-            echo "url=${{ secrets.ACUMATICA_PROD_URL }}" >> "$GITHUB_OUTPUT"
-            echo "username=${{ secrets.ACUMATICA_PROD_USERNAME }}" >> "$GITHUB_OUTPUT"
-            echo "password=${{ secrets.ACUMATICA_PROD_PASSWORD }}" >> "$GITHUB_OUTPUT"
-            echo "tenant=${{ secrets.ACUMATICA_PROD_TENANT }}" >> "$GITHUB_OUTPUT"
           else
             echo "target=staging" >> "$GITHUB_OUTPUT"
-            echo "url=${{ secrets.ACUMATICA_STG_URL }}" >> "$GITHUB_OUTPUT"
-            echo "username=${{ secrets.ACUMATICA_STG_USERNAME }}" >> "$GITHUB_OUTPUT"
-            echo "password=${{ secrets.ACUMATICA_STG_PASSWORD }}" >> "$GITHUB_OUTPUT"
-            echo "tenant=${{ secrets.ACUMATICA_STG_TENANT }}" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Deploy customization
+      - name: Deploy customization via MCP
         env:
-          ACUMATICA_URL: ${{ steps.env.outputs.url }}
-          ACUMATICA_USERNAME: ${{ steps.env.outputs.username }}
-          ACUMATICA_PASSWORD: ${{ steps.env.outputs.password }}
-          ACUMATICA_TENANT: ${{ steps.env.outputs.tenant }}
+          ACUMATICA_MCP_URL: https://acumatica-mcp-production.up.railway.app
+          ACUMATICA_MCP_TOKEN: ${{ secrets.ACUMATICA_MCP_TOKEN }}
           DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
         run: |
           PACKAGE_FILE=$(ls dist/*.zip | head -1)
 
-          chmod +x scripts/deploy.sh
-          scripts/deploy.sh \
-            --url "${ACUMATICA_URL}" \
-            --username "${ACUMATICA_USERNAME}" \
-            --password "${ACUMATICA_PASSWORD}" \
-            --tenant "${ACUMATICA_TENANT}" \
+          chmod +x scripts/deploy-via-mcp.sh
+          scripts/deploy-via-mcp.sh \
             --project "${PROJECT_NAME}" \
             --package "${PACKAGE_FILE}" \
             --also-publish "${ALSO_PUBLISH}" \
@@ -224,21 +209,15 @@ jobs:
           name: customization-package
           path: dist/
 
-      - name: Validate customization package
+      - name: Validate customization package via MCP
         env:
-          ACUMATICA_URL: ${{ secrets.ACUMATICA_STG_URL }}
-          ACUMATICA_USERNAME: ${{ secrets.ACUMATICA_STG_USERNAME }}
-          ACUMATICA_PASSWORD: ${{ secrets.ACUMATICA_STG_PASSWORD }}
-          ACUMATICA_TENANT: ${{ secrets.ACUMATICA_STG_TENANT }}
+          ACUMATICA_MCP_URL: https://acumatica-mcp-production.up.railway.app
+          ACUMATICA_MCP_TOKEN: ${{ secrets.ACUMATICA_MCP_TOKEN }}
         run: |
           PACKAGE_FILE=$(ls dist/*.zip | head -1)
 
-          chmod +x scripts/deploy.sh
-          scripts/deploy.sh \
-            --url "${ACUMATICA_URL}" \
-            --username "${ACUMATICA_USERNAME}" \
-            --password "${ACUMATICA_PASSWORD}" \
-            --tenant "${ACUMATICA_TENANT}" \
+          chmod +x scripts/deploy-via-mcp.sh
+          scripts/deploy-via-mcp.sh \
             --project "${PROJECT_NAME}" \
             --package "${PACKAGE_FILE}" \
             --also-publish "${ALSO_PUBLISH}" \
