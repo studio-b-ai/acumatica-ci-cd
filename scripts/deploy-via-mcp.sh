@@ -133,25 +133,47 @@ mcp_call() {
   local tool_name="$1"
   local arguments="$2"
 
+  # Write request body to temp file (handles large payloads like base64 .zip)
+  local request_file
+  request_file=$(mktemp)
+  CLEANUP_FILES+=("${request_file}")
+
+  python3 -c "
+import json, sys
+body = {
+    'jsonrpc': '2.0',
+    'id': int(sys.argv[1]),
+    'method': 'tools/call',
+    'params': {
+        'name': sys.argv[2],
+        'arguments': json.loads(sys.argv[3])
+    }
+}
+json.dump(body, sys.stdout)
+" "$(date +%s)" "${tool_name}" "${arguments}" > "${request_file}"
+
   local response
-  response=$(curl -s --max-time 120 \
+  local http_code
+  local response_file
+  response_file=$(mktemp)
+  CLEANUP_FILES+=("${response_file}")
+
+  http_code=$(curl -s -o "${response_file}" -w "%{http_code}" --max-time 120 \
     -X POST \
     -H "Content-Type: application/json" \
     ${MCP_SESSION_ID:+-H "Mcp-Session-Id: ${MCP_SESSION_ID}"} \
     "${MCP_URL}/mcp?token=${MCP_TOKEN}" \
-    -d "{
-      \"jsonrpc\": \"2.0\",
-      \"id\": $(date +%s),
-      \"method\": \"tools/call\",
-      \"params\": {
-        \"name\": \"${tool_name}\",
-        \"arguments\": ${arguments}
-      }
-    }" 2>&1)
+    -d "@${request_file}" 2>&1)
 
   local exit_code=$?
+  response=$(cat "${response_file}")
+
   if [[ ${exit_code} -ne 0 ]]; then
-    die "MCP call to ${tool_name} failed (curl exit ${exit_code}): ${response}"
+    die "MCP call to ${tool_name} failed (curl exit ${exit_code}, HTTP ${http_code}): ${response}"
+  fi
+
+  if [[ "${http_code}" != "200" ]]; then
+    die "MCP call to ${tool_name} returned HTTP ${http_code}: ${response}"
   fi
 
   echo "${response}"
@@ -225,20 +247,26 @@ log "Step 2/4: Importing customization package via MCP..."
 # Base64 encode the package
 PACKAGE_B64=$(base64 -w0 "${PACKAGE}" 2>/dev/null || base64 "${PACKAGE}" | tr -d '\n')
 
-# Build import args via python (handles large base64 safely)
+# Build import args via python (reads base64 from file to avoid ARG_MAX)
+PACKAGE_B64_FILE=$(mktemp)
+CLEANUP_FILES+=("${PACKAGE_B64_FILE}")
+echo -n "${PACKAGE_B64}" > "${PACKAGE_B64_FILE}"
+
 IMPORT_ARGS_FILE=$(mktemp)
 CLEANUP_FILES+=("${IMPORT_ARGS_FILE}")
 
 python3 -c "
 import json, sys
+with open(sys.argv[2]) as f:
+    b64 = f.read()
 args = {
     'project_name': sys.argv[1],
-    'project_content_base64': sys.argv[2],
+    'project_content_base64': b64,
     'project_description': 'CI/CD deploy $(date -u +%Y-%m-%dT%H:%M:%SZ)',
     'replace_if_exists': True
 }
 print(json.dumps(args))
-" "${PROJECT}" "${PACKAGE_B64}" > "${IMPORT_ARGS_FILE}"
+" "${PROJECT}" "${PACKAGE_B64_FILE}" > "${IMPORT_ARGS_FILE}"
 
 IMPORT_ARGS=$(cat "${IMPORT_ARGS_FILE}")
 IMPORT_RESPONSE=$(mcp_call "acumatica_customization_import" "${IMPORT_ARGS}")
