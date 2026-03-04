@@ -44,6 +44,14 @@ BLUE='\033[0;34m'
 NC='\033[0m'
 
 # ─── Helpers ─────────────────────────────────────────────────────────────────
+CLEANUP_FILES=()
+cleanup() {
+  for f in "${CLEANUP_FILES[@]}"; do
+    rm -f "$f" 2>/dev/null || true
+  done
+}
+trap cleanup EXIT
+
 log()   { echo -e "${BLUE}[DEPLOY]${NC} $*"; }
 ok()    { echo -e "${GREEN}[  OK  ]${NC} $*"; }
 warn()  { echo -e "${YELLOW}[ WARN ]${NC} $*"; }
@@ -70,15 +78,66 @@ EOF
   exit 0
 }
 
+# MCP session ID (set after initialize)
+MCP_SESSION_ID=""
+
+# Initialize MCP session
+mcp_init() {
+  local tmp_headers
+  tmp_headers=$(mktemp)
+
+  local response
+  response=$(curl -s --max-time 30 \
+    -X POST \
+    -H "Content-Type: application/json" \
+    -D "${tmp_headers}" \
+    "${MCP_URL}/mcp?token=${MCP_TOKEN}" \
+    -d "{
+      \"jsonrpc\": \"2.0\",
+      \"id\": 1,
+      \"method\": \"initialize\",
+      \"params\": {
+        \"protocolVersion\": \"2024-11-05\",
+        \"capabilities\": {},
+        \"clientInfo\": { \"name\": \"ci-cd-deploy\", \"version\": \"1.0.0\" }
+      }
+    }" 2>&1)
+
+  local exit_code=$?
+  if [[ ${exit_code} -ne 0 ]]; then
+    rm -f "${tmp_headers}"
+    die "MCP initialize failed (curl exit ${exit_code}): ${response}"
+  fi
+
+  # Extract session ID from Mcp-Session-Id header
+  MCP_SESSION_ID=$(grep -i "mcp-session-id" "${tmp_headers}" | sed 's/.*: //' | tr -d '\r\n' || true)
+  rm -f "${tmp_headers}"
+
+  if [[ -z "${MCP_SESSION_ID}" ]]; then
+    # Some MCP servers don't use sessions — proceed without
+    warn "No MCP session ID returned (server may not require sessions)"
+  fi
+
+  # Send initialized notification
+  curl -s --max-time 10 \
+    -X POST \
+    -H "Content-Type: application/json" \
+    ${MCP_SESSION_ID:+-H "Mcp-Session-Id: ${MCP_SESSION_ID}"} \
+    "${MCP_URL}/mcp?token=${MCP_TOKEN}" \
+    -d '{"jsonrpc": "2.0", "method": "notifications/initialized"}' \
+    -o /dev/null 2>/dev/null || true
+}
+
 # Call an MCP tool via JSON-RPC
 mcp_call() {
   local tool_name="$1"
   local arguments="$2"
 
   local response
-  response=$(curl -sf --max-time 120 \
+  response=$(curl -s --max-time 120 \
     -X POST \
     -H "Content-Type: application/json" \
+    ${MCP_SESSION_ID:+-H "Mcp-Session-Id: ${MCP_SESSION_ID}"} \
     "${MCP_URL}/mcp?token=${MCP_TOKEN}" \
     -d "{
       \"jsonrpc\": \"2.0\",
@@ -92,7 +151,7 @@ mcp_call() {
 
   local exit_code=$?
   if [[ ${exit_code} -ne 0 ]]; then
-    die "MCP call to ${tool_name} failed (curl exit ${exit_code})"
+    die "MCP call to ${tool_name} failed (curl exit ${exit_code}): ${response}"
   fi
 
   echo "${response}"
@@ -156,23 +215,32 @@ log "Step 1/4: Checking MCP server health..."
 HEALTH_RESPONSE=$(curl -sf --max-time 10 "${MCP_URL}/health" 2>&1) || die "MCP server unreachable at ${MCP_URL}"
 ok "MCP server healthy"
 
+log "Initializing MCP session..."
+mcp_init
+ok "MCP session established${MCP_SESSION_ID:+ (session: ${MCP_SESSION_ID:0:8}...)}"
+
 # ─── Step 2: Import package via MCP ──────────────────────────────────────────
 log "Step 2/4: Importing customization package via MCP..."
 
 # Base64 encode the package
 PACKAGE_B64=$(base64 -w0 "${PACKAGE}" 2>/dev/null || base64 "${PACKAGE}" | tr -d '\n')
 
-IMPORT_ARGS=$(python3 -c "
-import json
+# Build import args via python (handles large base64 safely)
+IMPORT_ARGS_FILE=$(mktemp)
+CLEANUP_FILES+=("${IMPORT_ARGS_FILE}")
+
+python3 -c "
+import json, sys
 args = {
-    'project_name': '${PROJECT}',
-    'project_content_base64': '${PACKAGE_B64}',
+    'project_name': sys.argv[1],
+    'project_content_base64': sys.argv[2],
     'project_description': 'CI/CD deploy $(date -u +%Y-%m-%dT%H:%M:%SZ)',
     'replace_if_exists': True
 }
 print(json.dumps(args))
-")
+" "${PROJECT}" "${PACKAGE_B64}" > "${IMPORT_ARGS_FILE}"
 
+IMPORT_ARGS=$(cat "${IMPORT_ARGS_FILE}")
 IMPORT_RESPONSE=$(mcp_call "acumatica_customization_import" "${IMPORT_ARGS}")
 IMPORT_CONTENT=$(extract_content "${IMPORT_RESPONSE}")
 
