@@ -254,10 +254,12 @@ PACKAGE_B64=$(base64 -w0 "${PACKAGE}" 2>/dev/null || base64 "${PACKAGE}" | tr -d
 PACKAGE_B64_FILE=$(mktemp)
 CLEANUP_FILES+=("${PACKAGE_B64_FILE}")
 echo -n "${PACKAGE_B64}" > "${PACKAGE_B64_FILE}"
+log "  Base64 file: $(wc -c < "${PACKAGE_B64_FILE}") bytes"
 
 IMPORT_ARGS_FILE=$(mktemp)
 CLEANUP_FILES+=("${IMPORT_ARGS_FILE}")
 
+DEPLOY_TS="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 python3 -c "
 import json, sys
 with open(sys.argv[2]) as f:
@@ -265,13 +267,15 @@ with open(sys.argv[2]) as f:
 args = {
     'project_name': sys.argv[1],
     'project_content_base64': b64,
-    'project_description': 'CI/CD deploy $(date -u +%Y-%m-%dT%H:%M:%SZ)',
+    'project_description': 'CI/CD deploy ' + sys.argv[3],
     'replace_if_exists': True
 }
-print(json.dumps(args))
-" "${PROJECT}" "${PACKAGE_B64_FILE}" > "${IMPORT_ARGS_FILE}"
+json.dump(args, open(sys.argv[4], 'w'))
+print('Import args written: ' + str(len(json.dumps(args))) + ' bytes')
+" "${PROJECT}" "${PACKAGE_B64_FILE}" "${DEPLOY_TS}" "${IMPORT_ARGS_FILE}" || die "Failed to build import args"
 
 IMPORT_ARGS=$(cat "${IMPORT_ARGS_FILE}")
+log "  Calling acumatica_customization_import..."
 IMPORT_RESPONSE=$(mcp_call "acumatica_customization_import" "${IMPORT_ARGS}")
 IMPORT_CONTENT=$(extract_content "${IMPORT_RESPONSE}")
 
