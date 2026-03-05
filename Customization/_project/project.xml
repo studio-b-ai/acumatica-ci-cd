@@ -1,36 +1,6 @@
-<?xml version="1.0" encoding="utf-8"?>
-<project>
-  <name>HeritageFabricsPO</name>
-  <level>0</level>
-  <description>PO Expected and Actual Arrival Date fields (header + line level with cascade defaulting)</description>
-  <files />
-  <code>
-    <file name="POOrderExt.cs"><![CDATA[using System;
-using PX.Data;
-using PX.Data.BQL;
-using PX.Objects.PO;
-
-namespace HeritageFabrics.PO
-{
-    public sealed class POOrderExt : PXCacheExtension<POOrder>
-    {
-        public static bool IsActive() => true;
-        #region UsrExpArrivalDate
-        public abstract class usrExpArrivalDate : BqlDateTime.Field<usrExpArrivalDate> { }
-        [PXDBDate]
-        [PXUIField(DisplayName = "Exp. Arrival Date", Visibility = PXUIVisibility.SelectorVisible)]
-        public DateTime? UsrExpArrivalDate { get; set; }
-        #endregion
-        #region UsrActArrivalDate
-        public abstract class usrActArrivalDate : BqlDateTime.Field<usrActArrivalDate> { }
-        [PXDBDate]
-        [PXUIField(DisplayName = "Act. Arrival Date", Visibility = PXUIVisibility.SelectorVisible)]
-        public DateTime? UsrActArrivalDate { get; set; }
-        #endregion
-    }
-}
-]]></file>
-    <file name="POLineExt.cs"><![CDATA[using System;
+<Customization level="" description="PO custom date fields" product-version="24.208">
+    <Graph ClassName="POLineExt" Source="#CDATA" IsNew="True" FileType="NewFile">
+        <CDATA name="Source"><![CDATA[using System;
 using PX.Data;
 using PX.Data.BQL;
 using PX.Objects.PO;
@@ -53,9 +23,10 @@ namespace HeritageFabrics.PO
         public DateTime? UsrActArrivalDate { get; set; }
         #endregion
     }
-}
-]]></file>
-    <file name="POOrderEntry_Extension.cs"><![CDATA[using System;
+}]]></CDATA>
+    </Graph>
+    <Graph ClassName="POOrderEntry_Extension" Source="#CDATA" IsNew="True" FileType="NewFile">
+        <CDATA name="Source"><![CDATA[using System;
 using PX.Data;
 using PX.Objects.PO;
 
@@ -98,11 +69,40 @@ namespace HeritageFabrics.PO
             }
         }
     }
-}
-]]></file>
-  </code>
-  <pages />
-  <dacExtensions />
-  <genericInquiries />
-  <customActions />
-</project>
+}]]></CDATA>
+    </Graph>
+    <Graph ClassName="POOrderExt" Source="#CDATA" IsNew="True" FileType="NewFile">
+        <CDATA name="Source"><![CDATA[using System;
+using PX.Data;
+using PX.Data.BQL;
+using PX.Objects.PO;
+
+namespace HeritageFabrics.PO
+{
+    public sealed class POOrderExt : PXCacheExtension<POOrder>
+    {
+        public static bool IsActive() => true;
+        #region UsrExpArrivalDate
+        public abstract class usrExpArrivalDate : BqlDateTime.Field<usrExpArrivalDate> { }
+        [PXDBDate]
+        [PXUIField(DisplayName = "Exp. Arrival Date", Visibility = PXUIVisibility.SelectorVisible)]
+        public DateTime? UsrExpArrivalDate { get; set; }
+        #endregion
+        #region UsrActArrivalDate
+        public abstract class usrActArrivalDate : BqlDateTime.Field<usrActArrivalDate> { }
+        [PXDBDate]
+        [PXUIField(DisplayName = "Act. Arrival Date", Visibility = PXUIVisibility.SelectorVisible)]
+        public DateTime? UsrActArrivalDate { get; set; }
+        #endregion
+    }
+}]]></CDATA>
+    </Graph>
+    <Table TableName="POLine">
+        <Column TableName="POLine" ColumnName="UsrExpArrivalDate" AllowNull="True" IsNewColumn="True" />
+        <Column TableName="POLine" ColumnName="UsrActArrivalDate" AllowNull="True" IsNewColumn="True" />
+    </Table>
+    <Table TableName="POOrder">
+        <Column TableName="POOrder" ColumnName="UsrExpArrivalDate" AllowNull="True" IsNewColumn="True" />
+        <Column TableName="POOrder" ColumnName="UsrActArrivalDate" AllowNull="True" IsNewColumn="True" />
+    </Table>
+</Customization>
