@@ -219,7 +219,18 @@ HTTP_CODE=$(curl -s -o "${RESPONSE_FILE}" -w "%{http_code}" \
   -d "${IMPORT_BODY}" \
   "${URL}/CustomizationApi/import")
 
-if [[ "${HTTP_CODE}" != "200" && "${HTTP_CODE}" != "204" ]]; then
+if [[ "${HTTP_CODE}" == "404" || "${HTTP_CODE}" == "405" ]]; then
+  err "Customization API not available (HTTP ${HTTP_CODE})"
+  err "The /CustomizationApi/ endpoint is not enabled on this Acumatica instance."
+  err "Cloud-hosted instances may not expose the Customization API."
+  err ""
+  err "Workaround: Import the package manually via Acumatica UI:"
+  err "  1. Download the build artifact from GitHub Actions"
+  err "  2. Go to Customization Projects (SM204505)"
+  err "  3. Click Import → select the .zip file"
+  err "  4. Click Publish"
+  die "Customization API unavailable — manual import required"
+elif [[ "${HTTP_CODE}" != "200" && "${HTTP_CODE}" != "204" ]]; then
   err "Import failed (HTTP ${HTTP_CODE})"
   cat "${RESPONSE_FILE}" >&2
   die "Package import failed"
