@@ -136,23 +136,32 @@ mcp_call() {
   local arguments="$2"
 
   # Write request body to temp file (handles large payloads like base64 .zip)
-  local request_file
+  local request_file args_file
   request_file=$(mktemp)
-  CLEANUP_FILES+=("${request_file}")
+  args_file=$(mktemp)
+  CLEANUP_FILES+=("${request_file}" "${args_file}")
+
+  # Write arguments to file first (avoids ARG_MAX for large base64 payloads)
+  echo "${arguments}" > "${args_file}"
 
   python3 -c "
 import json, sys
+with open(sys.argv[3]) as f:
+    args = json.load(f)
 body = {
     'jsonrpc': '2.0',
     'id': int(sys.argv[1]),
     'method': 'tools/call',
     'params': {
         'name': sys.argv[2],
-        'arguments': json.loads(sys.argv[3])
+        'arguments': args
     }
 }
-json.dump(body, sys.stdout)
-" "$(date +%s)" "${tool_name}" "${arguments}" > "${request_file}"
+json.dump(body, open(sys.argv[4], 'w'))
+" "$(date +%s)" "${tool_name}" "${args_file}" "${request_file}" || {
+    err "Failed to build JSON-RPC request for ${tool_name}"
+    return 1
+  }
 
   local response
   local http_code
