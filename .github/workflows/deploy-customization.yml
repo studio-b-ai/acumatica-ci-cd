@@ -159,28 +159,13 @@ jobs:
             echo "target=staging" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Set Acumatica credentials
-        id: creds
-        run: |
-          TARGET="${{ steps.env.outputs.target }}"
-          if [[ "${TARGET}" == "production" ]]; then
-            echo "url=${{ secrets.ACUMATICA_PROD_URL }}" >> "$GITHUB_OUTPUT"
-            echo "username=${{ secrets.ACUMATICA_PROD_USERNAME }}" >> "$GITHUB_OUTPUT"
-            echo "password=${{ secrets.ACUMATICA_PROD_PASSWORD }}" >> "$GITHUB_OUTPUT"
-            echo "tenant=${{ secrets.ACUMATICA_PROD_TENANT }}" >> "$GITHUB_OUTPUT"
-          else
-            echo "url=${{ secrets.ACUMATICA_STG_URL || secrets.ACUMATICA_PROD_URL }}" >> "$GITHUB_OUTPUT"
-            echo "username=${{ secrets.ACUMATICA_STG_USERNAME || secrets.ACUMATICA_PROD_USERNAME }}" >> "$GITHUB_OUTPUT"
-            echo "password=${{ secrets.ACUMATICA_STG_PASSWORD || secrets.ACUMATICA_PROD_PASSWORD }}" >> "$GITHUB_OUTPUT"
-            echo "tenant=${{ secrets.ACUMATICA_STG_TENANT || secrets.ACUMATICA_PROD_TENANT }}" >> "$GITHUB_OUTPUT"
-          fi
-
+      # Pass secrets directly as env vars — never write them to GITHUB_OUTPUT
       - name: Deploy customization via REST API
         env:
-          ACUMATICA_URL: ${{ steps.creds.outputs.url }}
-          ACUMATICA_USERNAME: ${{ steps.creds.outputs.username }}
-          ACUMATICA_PASSWORD: ${{ steps.creds.outputs.password }}
-          ACUMATICA_TENANT: ${{ steps.creds.outputs.tenant }}
+          ACUMATICA_URL: ${{ (steps.env.outputs.target == 'production') && secrets.ACUMATICA_PROD_URL || (secrets.ACUMATICA_STG_URL || secrets.ACUMATICA_PROD_URL) }}
+          ACUMATICA_USERNAME: ${{ (steps.env.outputs.target == 'production') && secrets.ACUMATICA_PROD_USERNAME || (secrets.ACUMATICA_STG_USERNAME || secrets.ACUMATICA_PROD_USERNAME) }}
+          ACUMATICA_PASSWORD: ${{ (steps.env.outputs.target == 'production') && secrets.ACUMATICA_PROD_PASSWORD || (secrets.ACUMATICA_STG_PASSWORD || secrets.ACUMATICA_PROD_PASSWORD) }}
+          ACUMATICA_TENANT: ${{ (steps.env.outputs.target == 'production') && secrets.ACUMATICA_PROD_TENANT || (secrets.ACUMATICA_STG_TENANT || secrets.ACUMATICA_PROD_TENANT) }}
         run: |
           PACKAGE_FILE=$(ls dist/*.zip | head -1)
           DRY_RUN="${{ github.event.inputs.dry_run || 'false' }}"
