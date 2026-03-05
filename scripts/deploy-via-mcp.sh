@@ -330,7 +330,46 @@ if [[ "${IMPORT_HTTP_CODE}" != "200" ]]; then
 fi
 
 IMPORT_RESPONSE=$(cat "${MCP_RESPONSE_FILE}")
-IMPORT_CONTENT=$(extract_content "${IMPORT_RESPONSE}")
+log "  Response (first 500 chars): ${IMPORT_RESPONSE:0:500}"
+
+# Parse MCP response — may be JSON or SSE (text/event-stream)
+IMPORT_CONTENT=$(python3 -c "
+import sys, json
+raw = sys.stdin.read().strip()
+
+# Handle SSE format: 'data: {...}\n\n'
+if raw.startswith('data:') or raw.startswith('event:'):
+    lines = raw.split('\n')
+    for line in lines:
+        if line.startswith('data: '):
+            data = json.loads(line[6:])
+            if 'result' in data and 'content' in data['result']:
+                for item in data['result']['content']:
+                    if item.get('type') == 'text':
+                        print(item['text'])
+                        sys.exit(0)
+            print(json.dumps(data))
+            sys.exit(0)
+    print('No data in SSE response')
+    sys.exit(0)
+
+# Handle plain JSON
+try:
+    data = json.loads(raw)
+    if 'result' in data and 'content' in data['result']:
+        for item in data['result']['content']:
+            if item.get('type') == 'text':
+                print(item['text'])
+                sys.exit(0)
+    elif 'error' in data:
+        print('ERROR: ' + json.dumps(data['error']), file=sys.stderr)
+        sys.exit(1)
+    print(json.dumps(data))
+except Exception as e:
+    print(f'Parse error: {e}', file=sys.stderr)
+    print(raw[:200], file=sys.stderr)
+    sys.exit(1)
+" <<< "${IMPORT_RESPONSE}") || die "Failed to parse import response"
 
 if echo "${IMPORT_CONTENT}" | grep -qi "error\|failed\|exception"; then
   err "Import response: ${IMPORT_CONTENT}"
