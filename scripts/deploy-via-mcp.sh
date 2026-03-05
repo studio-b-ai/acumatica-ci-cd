@@ -285,7 +285,51 @@ print('Import args written: ' + str(len(json.dumps(args))) + ' bytes')
 
 IMPORT_ARGS=$(cat "${IMPORT_ARGS_FILE}")
 log "  Calling acumatica_customization_import..."
-IMPORT_RESPONSE=$(mcp_call "acumatica_customization_import" "${IMPORT_ARGS}")
+
+# Call MCP import — capture response to file to avoid subshell stderr issues
+MCP_RESPONSE_FILE=$(mktemp)
+CLEANUP_FILES+=("${MCP_RESPONSE_FILE}")
+
+# Build request body
+MCP_REQ_FILE=$(mktemp)
+MCP_ARGS_FILE=$(mktemp)
+CLEANUP_FILES+=("${MCP_REQ_FILE}" "${MCP_ARGS_FILE}")
+echo "${IMPORT_ARGS}" > "${MCP_ARGS_FILE}"
+
+python3 -c "
+import json, sys
+with open(sys.argv[3]) as f:
+    args = json.load(f)
+body = {
+    'jsonrpc': '2.0',
+    'id': int(sys.argv[1]),
+    'method': 'tools/call',
+    'params': {
+        'name': sys.argv[2],
+        'arguments': args
+    }
+}
+json.dump(body, open(sys.argv[4], 'w'))
+" "$(date +%s)" "acumatica_customization_import" "${MCP_ARGS_FILE}" "${MCP_REQ_FILE}" || die "Failed to build import request JSON"
+
+log "  Request body: $(wc -c < "${MCP_REQ_FILE}") bytes"
+
+IMPORT_HTTP_CODE=$(curl -s -o "${MCP_RESPONSE_FILE}" -w "%{http_code}" --max-time 120 \
+  -X POST \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json, text/event-stream" \
+  ${MCP_SESSION_ID:+-H "Mcp-Session-Id: ${MCP_SESSION_ID}"} \
+  "${MCP_URL}/mcp?token=${MCP_TOKEN}" \
+  -d "@${MCP_REQ_FILE}" 2>&1)
+
+log "  Import HTTP response: ${IMPORT_HTTP_CODE}"
+
+if [[ "${IMPORT_HTTP_CODE}" != "200" ]]; then
+  err "Import HTTP ${IMPORT_HTTP_CODE}: $(cat "${MCP_RESPONSE_FILE}")"
+  die "acumatica_customization_import failed"
+fi
+
+IMPORT_RESPONSE=$(cat "${MCP_RESPONSE_FILE}")
 IMPORT_CONTENT=$(extract_content "${IMPORT_RESPONSE}")
 
 if echo "${IMPORT_CONTENT}" | grep -qi "error\|failed\|exception"; then
