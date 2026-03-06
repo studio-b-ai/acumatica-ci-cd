@@ -1,4 +1,4 @@
-<Customization level="" description="PO custom date fields" product-version="24.208">
+<Customization level="" description="PO custom date fields + Customer payment link exclusion" product-version="24.208">
     <Graph ClassName="POLineExt" Source="#CDATA" IsNew="True" FileType="NewFile">
         <CDATA name="Source"><![CDATA[using System;
 using PX.Data;
@@ -97,6 +97,123 @@ namespace HeritageFabrics.PO
     }
 }]]></CDATA>
     </Graph>
+    <Graph ClassName="CustomerExt" Source="#CDATA" IsNew="True" FileType="NewFile">
+        <CDATA name="Source"><![CDATA[using PX.Data;
+using PX.Data.BQL;
+using PX.Objects.AR;
+
+namespace HeritageFabrics.AR
+{
+    /// <summary>
+    /// Adds a customer-level "Exclude from Payment Link Processing" flag.
+    /// The base product only has this on ARCustomerClass (DisablePayLink).
+    /// This extension allows per-customer override so factor customers
+    /// can be excluded without affecting the entire customer class.
+    /// </summary>
+    public sealed class CustomerExt : PXCacheExtension<Customer>
+    {
+        public static bool IsActive() => true;
+
+        #region UsrDisablePayLink
+        public abstract class usrDisablePayLink : BqlBool.Field<usrDisablePayLink> { }
+
+        [PXDBBool]
+        [PXDefault(false, PersistingCheck = PXPersistingCheck.Nothing)]
+        [PXUIField(DisplayName = "Exclude from Payment Link Processing")]
+        public bool? UsrDisablePayLink { get; set; }
+        #endregion
+    }
+}]]></CDATA>
+    </Graph>
+    <Graph ClassName="CustomerMaint_PayLink_Extension" Source="#CDATA" IsNew="True" FileType="NewFile">
+        <CDATA name="Source"><![CDATA[using PX.Data;
+using PX.Objects.AR;
+
+namespace HeritageFabrics.AR
+{
+    /// <summary>
+    /// Graph extension for CustomerMaint (AR303000).
+    /// Defaults UsrDisablePayLink from the customer class when the class changes.
+    /// </summary>
+    public class CustomerMaint_PayLink_Extension : PXGraphExtension<CustomerMaint>
+    {
+        public static bool IsActive() => true;
+
+        protected void _(Events.FieldUpdated<Customer, Customer.customerClassID> e)
+        {
+            if (e.Row == null) return;
+
+            string classID = e.Row.CustomerClassID;
+            if (string.IsNullOrEmpty(classID)) return;
+
+            ARCustomerClass custClass = PXSelect<ARCustomerClass,
+                Where<ARCustomerClass.customerClassID, Equal<Required<ARCustomerClass.customerClassID>>>>
+                .Select(Base, classID);
+
+            if (custClass != null)
+            {
+                CustomerExt ext = e.Row.GetExtension<CustomerExt>();
+                if (ext != null)
+                {
+                    ext.UsrDisablePayLink = custClass.DisablePayLink ?? false;
+                }
+            }
+        }
+    }
+}]]></CDATA>
+    </Graph>
+    <Graph ClassName="ARInvoiceEntry_PayLink_Extension" Source="#CDATA" IsNew="True" FileType="NewFile">
+        <CDATA name="Source"><![CDATA[using System;
+using PX.Data;
+using PX.Objects.AR;
+
+namespace HeritageFabrics.AR
+{
+    /// <summary>
+    /// Graph extension for ARInvoiceEntry (AR301000 / AR.30.10.00).
+    /// Checks customer-level UsrDisablePayLink flag and disables
+    /// the Send Payment Link action when set to true.
+    /// </summary>
+    public class ARInvoiceEntry_PayLink_Extension : PXGraphExtension<ARInvoiceEntry>
+    {
+        public static bool IsActive() => true;
+
+        protected void _(Events.RowSelected<ARInvoice> e)
+        {
+            if (e.Row == null) return;
+
+            bool disablePayLink = IsPayLinkDisabledForCustomer(e.Row.CustomerID);
+
+            if (Base.Actions.Contains("SendPaymentLink"))
+            {
+                Base.Actions["SendPaymentLink"].SetEnabled(!disablePayLink);
+            }
+
+            if (Base.Actions.Contains("sendPayLink"))
+            {
+                Base.Actions["sendPayLink"].SetEnabled(!disablePayLink);
+            }
+        }
+
+        private bool IsPayLinkDisabledForCustomer(int? customerID)
+        {
+            if (customerID == null) return false;
+
+            Customer customer = PXSelect<Customer,
+                Where<Customer.bAccountID, Equal<Required<Customer.bAccountID>>>>
+                .Select(Base, customerID);
+
+            if (customer == null) return false;
+
+            CustomerExt ext = customer.GetExtension<CustomerExt>();
+            return ext?.UsrDisablePayLink == true;
+        }
+    }
+}]]></CDATA>
+    </Graph>
+    <Table TableName="Customer">
+        <Column TableName="Customer" ColumnName="UsrDisablePayLink" AllowNull="True" IsNewColumn="True" />
+    </Table>
     <Table TableName="POLine">
         <Column TableName="POLine" ColumnName="UsrExpArrivalDate" AllowNull="True" IsNewColumn="True" />
         <Column TableName="POLine" ColumnName="UsrActArrivalDate" AllowNull="True" IsNewColumn="True" />
