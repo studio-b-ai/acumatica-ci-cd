@@ -125,43 +125,6 @@ namespace HeritageFabrics.AR
     }
 }]]></CDATA>
     </Graph>
-    <Graph ClassName="CustomerMaint_PayLink_Extension" Source="#CDATA" IsNew="True" FileType="NewFile">
-        <CDATA name="Source"><![CDATA[using PX.Data;
-using PX.Objects.AR;
-
-namespace HeritageFabrics.AR
-{
-    /// <summary>
-    /// Graph extension for CustomerMaint (AR303000).
-    /// Defaults UsrDisablePayLink from the customer class when the class changes.
-    /// </summary>
-    public class CustomerMaint_PayLink_Extension : PXGraphExtension<CustomerMaint>
-    {
-        public static bool IsActive() => true;
-
-        protected void _(Events.FieldUpdated<Customer, Customer.customerClassID> e)
-        {
-            if (e.Row == null) return;
-
-            string classID = e.Row.CustomerClassID;
-            if (string.IsNullOrEmpty(classID)) return;
-
-            ARCustomerClass custClass = PXSelect<ARCustomerClass,
-                Where<ARCustomerClass.customerClassID, Equal<Required<ARCustomerClass.customerClassID>>>>
-                .Select(Base, classID);
-
-            if (custClass != null)
-            {
-                CustomerExt ext = e.Row.GetExtension<CustomerExt>();
-                if (ext != null)
-                {
-                    ext.UsrDisablePayLink = custClass.DisablePayLink ?? false;
-                }
-            }
-        }
-    }
-}]]></CDATA>
-    </Graph>
     <Graph ClassName="ARInvoiceEntry_PayLink_Extension" Source="#CDATA" IsNew="True" FileType="NewFile">
         <CDATA name="Source"><![CDATA[using System;
 using PX.Data;
