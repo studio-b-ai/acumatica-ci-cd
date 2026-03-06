@@ -174,4 +174,10 @@ namespace HeritageFabrics.AR
     }
 }]]></CDATA>
     </Graph>
+    <SqlScript Name="AddUsrDisablePayLink" Source="#CDATA" IsNew="True">
+        <CDATA name="Source"><![CDATA[IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE Name = N'UsrDisablePayLink' AND Object_ID = Object_ID(N'Customer'))
+BEGIN
+    ALTER TABLE [Customer] ADD [UsrDisablePayLink] [bit] NULL
+END]]></CDATA>
+    </SqlScript>
 </Customization>
