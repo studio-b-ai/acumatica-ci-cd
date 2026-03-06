@@ -174,12 +174,4 @@ namespace HeritageFabrics.AR
     }
 }]]></CDATA>
     </Graph>
-    <Table TableName="POLine">
-        <Column TableName="POLine" ColumnName="UsrExpArrivalDate" AllowNull="True" IsNewColumn="True" />
-        <Column TableName="POLine" ColumnName="UsrActArrivalDate" AllowNull="True" IsNewColumn="True" />
-    </Table>
-    <Table TableName="POOrder">
-        <Column TableName="POOrder" ColumnName="UsrExpArrivalDate" AllowNull="True" IsNewColumn="True" />
-        <Column TableName="POOrder" ColumnName="UsrActArrivalDate" AllowNull="True" IsNewColumn="True" />
-    </Table>
 </Customization>
