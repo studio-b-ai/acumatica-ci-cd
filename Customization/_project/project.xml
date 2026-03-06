@@ -174,9 +174,6 @@ namespace HeritageFabrics.AR
     }
 }]]></CDATA>
     </Graph>
-    <Table TableName="Customer">
-        <Column TableName="Customer" ColumnName="UsrDisablePayLink" AllowNull="True" IsNewColumn="True" />
-    </Table>
     <Table TableName="POLine">
         <Column TableName="POLine" ColumnName="UsrExpArrivalDate" AllowNull="True" IsNewColumn="True" />
         <Column TableName="POLine" ColumnName="UsrActArrivalDate" AllowNull="True" IsNewColumn="True" />
