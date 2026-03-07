@@ -5,10 +5,10 @@
 # Deploys a customization package via the Acumatica Customization API.
 #
 # API Flow:
-#   1. POST /entity/auth/login           — Authenticate session
-#   2. PUT  /CustomizationApi/import      — Upload .zip package
+#   1. POST /entity/auth/login            — Authenticate session
+#   2. POST /CustomizationApi/Import      — Upload .zip package
 #   3. POST /CustomizationApi/publishBegin — Start publish (with all active projects)
-#   4. GET  /CustomizationApi/publishEnd   — Poll until publish completes
+#   4. POST /CustomizationApi/publishEnd   — Poll until publish completes
 #   5. POST /entity/auth/logout           — Release session
 #
 # Usage:
@@ -195,8 +195,8 @@ ok "Authenticated to ${URL} (attempt ${LOGIN_ATTEMPT}/${LOGIN_MAX_RETRIES})"
 # ─── Step 2: Import Package ─────────────────────────────────────────────────
 log "Step 2/5: Importing customization package..."
 
-# Base64 encode the package
-PACKAGE_B64=$(base64 -w0 "${PACKAGE}" 2>/dev/null || base64 "${PACKAGE}" | tr -d '\n')
+# Base64 encode the package (Linux: base64 -w0, macOS: base64 -i)
+PACKAGE_B64=$(base64 -w0 "${PACKAGE}" 2>/dev/null || base64 -i "${PACKAGE}" | tr -d '\n')
 
 IMPORT_BODY=$(cat <<EOF
 {
@@ -204,7 +204,7 @@ IMPORT_BODY=$(cat <<EOF
   "projectDescription": "Deployed via CI/CD at $(date -u +%Y-%m-%dT%H:%M:%SZ)",
   "projectLevel": 0,
   "isReplaceIfExists": true,
-  "projectContent": "${PACKAGE_B64}"
+  "projectContentBase64": "${PACKAGE_B64}"
 }
 EOF
 )
@@ -213,11 +213,11 @@ RESPONSE_FILE=$(mktemp)
 CLEANUP_FILES+=("${RESPONSE_FILE}")
 
 HTTP_CODE=$(curl -s -o "${RESPONSE_FILE}" -w "%{http_code}" \
-  -X PUT \
+  -X POST \
   -H "Content-Type: application/json" \
   -b "${COOKIE_JAR}" \
   -d "${IMPORT_BODY}" \
-  "${URL}/CustomizationApi/import")
+  "${URL}/CustomizationApi/Import")
 
 if [[ "${HTTP_CODE}" == "404" || "${HTTP_CODE}" == "405" ]]; then
   err "Customization API not available (HTTP ${HTTP_CODE})"
@@ -265,7 +265,8 @@ PUBLISH_BODY=$(cat <<EOF
   "isMergeWithExistingPackages": false,
   "isOnlyValidation": false,
   "isOnlyDbUpdates": false,
-  "projectNames": ${PROJECT_NAMES}
+  "projectNames": ${PROJECT_NAMES},
+  "tenantMode": "Current"
 }
 EOF
 )
@@ -293,8 +294,10 @@ while [[ ${ELAPSED} -lt ${POLL_TIMEOUT} ]]; do
   ELAPSED=$((ELAPSED + POLL_INTERVAL))
 
   HTTP_CODE=$(curl -s -o "${RESPONSE_FILE}" -w "%{http_code}" \
-    -X GET \
+    -X POST \
+    -H "Content-Type: application/json" \
     -b "${COOKIE_JAR}" \
+    -d '{}' \
     "${URL}/CustomizationApi/publishEnd")
 
   BODY=$(cat "${RESPONSE_FILE}")
@@ -305,14 +308,15 @@ while [[ ${ELAPSED} -lt ${POLL_TIMEOUT} ]]; do
   #   - 200 with log/error content → finished (possibly with errors)
   #   - 422/500 → failed
 
-  if [[ "${HTTP_CODE}" == "200" ]]; then
-    if echo "${BODY}" | grep -qi '"isCompleted"\s*:\s*true'; then
-      ok "Publish completed successfully (${ELAPSED}s)"
-      break
-    elif echo "${BODY}" | grep -qi '"isFailed"\s*:\s*true'; then
+  # publishEnd returns JSON with isCompleted/isFailed on both 200 and 400
+  if [[ "${HTTP_CODE}" == "200" || "${HTTP_CODE}" == "400" ]]; then
+    if echo "${BODY}" | grep -qi '"isFailed"\s*:\s*true'; then
       err "Publish failed after ${ELAPSED}s"
       echo "${BODY}" >&2
       die "Publish reported failure. Check Acumatica System Monitor for details."
+    elif echo "${BODY}" | grep -qi '"isCompleted"\s*:\s*true'; then
+      ok "Publish completed successfully (${ELAPSED}s)"
+      break
     elif [[ "${BODY}" == "true" ]]; then
       ok "Publish completed successfully (${ELAPSED}s)"
       break

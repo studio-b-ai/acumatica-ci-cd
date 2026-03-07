@@ -9,10 +9,10 @@ additional features over the bash version:
   - Reusable AcumaticaCustomizationClient class
 
 API Flow:
-  1. POST /entity/auth/login            - Authenticate session
-  2. PUT  /CustomizationApi/import       - Upload .zip package
+  1. POST /entity/auth/login             - Authenticate session
+  2. POST /CustomizationApi/Import       - Upload .zip package
   3. POST /CustomizationApi/publishBegin - Start publish
-  4. GET  /CustomizationApi/publishEnd   - Poll until complete
+  4. POST /CustomizationApi/publishEnd   - Poll until complete
   5. POST /entity/auth/logout            - Release session
 
 Usage:
@@ -133,12 +133,12 @@ class AcumaticaCustomizationClient:
             "projectDescription": description,
             "projectLevel": 0,
             "isReplaceIfExists": replace_if_exists,
-            "projectContent": content_b64,
+            "projectContentBase64": content_b64,
         }
 
         _log(f"Importing {path.name} ({_filesize(path)})...")
-        resp = self.session.put(
-            f"{self.base_url}/CustomizationApi/import",
+        resp = self.session.post(
+            f"{self.base_url}/CustomizationApi/Import",
             json=payload,
             timeout=self.timeout,
         )
@@ -165,6 +165,7 @@ class AcumaticaCustomizationClient:
             "isOnlyValidation": validation_only,
             "isOnlyDbUpdates": False,
             "projectNames": project_names,
+            "tenantMode": "Current",
         }
 
         resp = self.session.post(
@@ -185,12 +186,14 @@ class AcumaticaCustomizationClient:
             time.sleep(poll_interval)
             elapsed += poll_interval
 
-            resp = self.session.get(
+            resp = self.session.post(
                 f"{self.base_url}/CustomizationApi/publishEnd",
+                json={},
                 timeout=self.timeout,
             )
 
-            if resp.status_code != 200:
+            # publishEnd returns JSON with isCompleted/isFailed on both 200 and 400
+            if resp.status_code not in (200, 400):
                 raise RuntimeError(
                     f"Publish poll error (HTTP {resp.status_code}): {resp.text[:500]}"
                 )
@@ -238,9 +241,9 @@ class AcumaticaCustomizationClient:
         """Download an existing customization package from Acumatica."""
         _log(f"Downloading package: {project_name}")
 
-        resp = self.session.get(
-            f"{self.base_url}/CustomizationApi/export",
-            params={"projectName": project_name},
+        resp = self.session.post(
+            f"{self.base_url}/CustomizationApi/getProject",
+            json={"projectName": project_name},
             timeout=self.timeout,
         )
 

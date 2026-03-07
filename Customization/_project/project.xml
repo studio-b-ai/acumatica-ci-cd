@@ -104,12 +104,6 @@ using PX.Objects.AR;
 
 namespace HeritageFabrics.AR
 {
-    /// <summary>
-    /// Adds a customer-level "Exclude from Payment Link Processing" flag.
-    /// The base product only has this on ARCustomerClass (DisablePayLink).
-    /// This extension allows per-customer override so factor customers
-    /// can be excluded without affecting the entire customer class.
-    /// </summary>
     public sealed class CustomerExt : PXCacheExtension<Customer>
     {
         public static bool IsActive() => true;
@@ -132,11 +126,6 @@ using PX.Objects.AR;
 
 namespace HeritageFabrics.AR
 {
-    /// <summary>
-    /// Graph extension for ARInvoiceEntry (AR301000 / AR.30.10.00).
-    /// Checks customer-level UsrDisablePayLink flag and disables
-    /// the Send Payment Link action when set to true.
-    /// </summary>
     public class ARInvoiceEntry_PayLink_Extension : PXGraphExtension<ARInvoiceEntry>
     {
         public static bool IsActive() => true;
@@ -181,12 +170,6 @@ using PX.Objects.SO;
 
 namespace HeritageFabrics.SO
 {
-    /// <summary>
-    /// Adds UsrHubSpotDealId to SalesOrder for bidirectional sync.
-    /// The sync worker writes the HubSpot Order record ID back to
-    /// Acumatica after upserting to HubSpot, enabling dedup and
-    /// cross-system lookups without relying on Attributes[].
-    /// </summary>
     public sealed class SOOrderExt : PXCacheExtension<SOOrder>
     {
         public static bool IsActive() => true;
