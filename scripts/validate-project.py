@@ -140,9 +140,18 @@ def validate(path: str, strict: bool = False):
         ok(f"Found {len(graphs)} <Graph> element(s)")
 
     # Check 7: Validate <SqlScript> elements
+    # NOTE: SM204505 IMPORT rejects <SqlScript> ("Unknown tag SqlScript").
+    # DAC [PXDB*] attributes auto-create columns, so SQL is rarely needed.
+    # If present, warn that it must be removed before .zip import.
     sql_scripts = root.findall(".//SqlScript")
     for script in sql_scripts:
         name = script.get("Name", "(missing)")
+        warn(
+            f"<SqlScript Name=\"{name}\"> will be REJECTED by SM204505 import "
+            f"(\"Unknown tag SqlScript\"). Remove before packaging .zip — "
+            f"DAC [PXDB*] attributes auto-create columns. "
+            f"Add SQL via Customization Project Editor if truly needed."
+        )
         source = script.get("Source")
         if source != "#CDATA":
             error(f"<SqlScript Name=\"{name}\"> Source should be \"#CDATA\", got \"{source}\"")
@@ -159,7 +168,7 @@ def validate(path: str, strict: bool = False):
                 warn(f"<SqlScript Name=\"{name}\"> has ALTER TABLE without IF NOT EXISTS guard")
 
     if sql_scripts:
-        ok(f"Found {len(sql_scripts)} <SqlScript> element(s)")
+        ok(f"Found {len(sql_scripts)} <SqlScript> element(s) (remove before import)")
 
     return len(errors) == 0
 
