@@ -184,15 +184,24 @@ namespace HeritageFabrics.SO
     }
 }]]></CDATA>
     </Graph>
-    <Table TableName="POOrder">
-        <Column ColumnName="UsrExpArrivalDate" AllowNull="True" />
-        <Column ColumnName="UsrActArrivalDate" AllowNull="True" />
-    </Table>
-    <Table TableName="POLine">
-        <Column ColumnName="UsrExpArrivalDate" AllowNull="True" />
-        <Column ColumnName="UsrActArrivalDate" AllowNull="True" />
-    </Table>
-    <Table TableName="SOOrder">
-        <Column ColumnName="UsrHubSpotDealId" AllowNull="True" />
-    </Table>
+    <Sql Name="CreateCustomColumns" Script="#CDATA">
+        <CDATA name="Script"><![CDATA[IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('POOrder') AND name = 'UsrExpArrivalDate')
+    ALTER TABLE POOrder ADD UsrExpArrivalDate datetime NULL;
+
+IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('POOrder') AND name = 'UsrActArrivalDate')
+    ALTER TABLE POOrder ADD UsrActArrivalDate datetime NULL;
+
+IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('POLine') AND name = 'UsrExpArrivalDate')
+    ALTER TABLE POLine ADD UsrExpArrivalDate datetime NULL;
+
+IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('POLine') AND name = 'UsrActArrivalDate')
+    ALTER TABLE POLine ADD UsrActArrivalDate datetime NULL;
+
+IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('SOOrder') AND name = 'UsrHubSpotDealId')
+    ALTER TABLE SOOrder ADD UsrHubSpotDealId nvarchar(50) NULL;
+
+IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('BAccount') AND name = 'UsrDisablePayLink')
+    ALTER TABLE BAccount ADD UsrDisablePayLink bit NULL;
+]]></CDATA>
+    </Sql>
 </Customization>
