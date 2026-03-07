@@ -1,4 +1,4 @@
-<Customization level="0" description="PO custom date fields + Customer payment link exclusion + SO HubSpot Deal ID" product-version="24.208">
+<Customization level="1" description="PO custom date fields + Customer payment link exclusion + SO HubSpot Deal ID" product-version="24.208">
     <Graph ClassName="POLineExt" Source="#CDATA" IsNew="True" FileType="NewFile">
         <CDATA name="Source"><![CDATA[using System;
 using PX.Data;
