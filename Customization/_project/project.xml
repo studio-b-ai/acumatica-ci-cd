@@ -256,4 +256,17 @@ IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('BAccount')
             </Children>
         </PXGridLevel>
     </Page>
+    <Page path="~/pages/so/so301000.aspx">
+        <PXFormView ID="form" ParentId="phF_form" TypeFullName="PX.Web.UI.PXFormView">
+            <Children Key="Template">
+                <AddItem>
+                    <PXTextEdit TypeFullName="PX.Web.UI.PXTextEdit">
+                        <Prop Key="Virtual:ApplyStylesheetSkin" />
+                        <Prop Key="ID" Value="edUsrHubSpotDealId" />
+                        <Prop Key="DataField" Value="UsrHubSpotDealId" />
+                    </PXTextEdit>
+                </AddItem>
+            </Children>
+        </PXFormView>
+    </Page>
 </Customization>
