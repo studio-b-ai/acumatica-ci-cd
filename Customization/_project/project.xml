@@ -204,4 +204,41 @@ IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('BAccount')
     ALTER TABLE BAccount ADD UsrDisablePayLink bit NULL;
 ]]></CDATA>
     </Sql>
+    <Page path="~/pages/po/po301000.aspx">
+        <PXFormView ID="form" ParentId="phF_form" TypeFullName="PX.Web.UI.PXFormView">
+            <Children Key="Template">
+                <AddItem>
+                    <PXDateTimeEdit TypeFullName="PX.Web.UI.PXDateTimeEdit">
+                        <Prop Key="Virtual:ApplyStylesheetSkin" />
+                        <Prop Key="ID" Value="edUsrExpArrivalDate" />
+                        <Prop Key="DataField" Value="UsrExpArrivalDate" />
+                        <Prop Key="CommitChanges" Value="True" />
+                    </PXDateTimeEdit>
+                </AddItem>
+                <AddItem>
+                    <PXDateTimeEdit TypeFullName="PX.Web.UI.PXDateTimeEdit">
+                        <Prop Key="Virtual:ApplyStylesheetSkin" />
+                        <Prop Key="ID" Value="edUsrActArrivalDate" />
+                        <Prop Key="DataField" Value="UsrActArrivalDate" />
+                    </PXDateTimeEdit>
+                </AddItem>
+            </Children>
+        </PXFormView>
+        <PXGridLevel DataMember="Transactions" ParentId="phG_tab_Items#0_grid_Levels#0" TypeFullName="PX.Web.UI.PXGridLevel">
+            <Children Key="Columns">
+                <AddItem>
+                    <PXGridColumn TypeFullName="PX.Web.UI.PXGridColumn">
+                        <Prop Key="DataField" Value="UsrExpArrivalDate" />
+                        <Prop Key="Width" Value="120px" />
+                    </PXGridColumn>
+                </AddItem>
+                <AddItem>
+                    <PXGridColumn TypeFullName="PX.Web.UI.PXGridColumn">
+                        <Prop Key="DataField" Value="UsrActArrivalDate" />
+                        <Prop Key="Width" Value="120px" />
+                    </PXGridColumn>
+                </AddItem>
+            </Children>
+        </PXGridLevel>
+    </Page>
 </Customization>
