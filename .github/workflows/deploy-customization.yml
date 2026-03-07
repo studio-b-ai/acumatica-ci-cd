@@ -66,6 +66,14 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Validate project.xml
+        run: python scripts/validate-project.py Customization/_project/project.xml
+
       - name: Check for C# extension library
         id: check_csproj
         run: |
