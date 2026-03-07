@@ -184,4 +184,18 @@ namespace HeritageFabrics.SO
     }
 }]]></CDATA>
     </Graph>
+    <Table TableName="BAccount">
+        <Column ColumnName="UsrDisablePayLink" AllowNull="True" />
+    </Table>
+    <Table TableName="POOrder">
+        <Column ColumnName="UsrExpArrivalDate" AllowNull="True" />
+        <Column ColumnName="UsrActArrivalDate" AllowNull="True" />
+    </Table>
+    <Table TableName="POLine">
+        <Column ColumnName="UsrExpArrivalDate" AllowNull="True" />
+        <Column ColumnName="UsrActArrivalDate" AllowNull="True" />
+    </Table>
+    <Table TableName="SOOrder">
+        <Column ColumnName="UsrHubSpotDealId" AllowNull="True" />
+    </Table>
 </Customization>
