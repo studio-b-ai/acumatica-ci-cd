@@ -184,4 +184,18 @@ namespace HeritageFabrics.SO
     }
 }]]></CDATA>
     </Graph>
+    <Table TableName="POOrder">
+        <Column ColumnName="UsrExpArrivalDate" DataType="DateTime" IsNewColumn="True" AllowNull="True" />
+        <Column ColumnName="UsrActArrivalDate" DataType="DateTime" IsNewColumn="True" AllowNull="True" />
+    </Table>
+    <Table TableName="POLine">
+        <Column ColumnName="UsrExpArrivalDate" DataType="DateTime" IsNewColumn="True" AllowNull="True" />
+        <Column ColumnName="UsrActArrivalDate" DataType="DateTime" IsNewColumn="True" AllowNull="True" />
+    </Table>
+    <Table TableName="SOOrder">
+        <Column ColumnName="UsrHubSpotDealId" DataType="NVarChar" Length="50" IsNewColumn="True" AllowNull="True" />
+    </Table>
+    <Table TableName="BAccount">
+        <Column ColumnName="UsrDisablePayLink" DataType="Bit" IsNewColumn="True" AllowNull="True" />
+    </Table>
 </Customization>
