@@ -1,4 +1,4 @@
-<Customization level="" description="PO custom date fields + Customer payment link exclusion" product-version="24.208">
+<Customization level="" description="PO custom date fields + Customer payment link exclusion + SO HubSpot Deal ID" product-version="24.208">
     <Graph ClassName="POLineExt" Source="#CDATA" IsNew="True" FileType="NewFile">
         <CDATA name="Source"><![CDATA[using System;
 using PX.Data;
@@ -171,6 +171,33 @@ namespace HeritageFabrics.AR
             CustomerExt ext = customer.GetExtension<CustomerExt>();
             return ext?.UsrDisablePayLink == true;
         }
+    }
+}]]></CDATA>
+    </Graph>
+    <Graph ClassName="SOOrderExt" Source="#CDATA" IsNew="True" FileType="NewFile">
+        <CDATA name="Source"><![CDATA[using PX.Data;
+using PX.Data.BQL;
+using PX.Objects.SO;
+
+namespace HeritageFabrics.SO
+{
+    /// <summary>
+    /// Adds UsrHubSpotDealId to SalesOrder for bidirectional sync.
+    /// The sync worker writes the HubSpot Order record ID back to
+    /// Acumatica after upserting to HubSpot, enabling dedup and
+    /// cross-system lookups without relying on Attributes[].
+    /// </summary>
+    public sealed class SOOrderExt : PXCacheExtension<SOOrder>
+    {
+        public static bool IsActive() => true;
+
+        #region UsrHubSpotDealId
+        public abstract class usrHubSpotDealId : BqlString.Field<usrHubSpotDealId> { }
+
+        [PXDBString(50, IsUnicode = true)]
+        [PXUIField(DisplayName = "HubSpot Order ID", Enabled = false)]
+        public string UsrHubSpotDealId { get; set; }
+        #endregion
     }
 }]]></CDATA>
     </Graph>
