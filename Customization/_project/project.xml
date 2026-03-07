@@ -201,7 +201,4 @@ namespace HeritageFabrics.SO
     }
 }]]></CDATA>
     </Graph>
-    <Table TableName="SOOrder">
-        <Column ColumnName="UsrHubSpotDealId" ColumnType="nvarchar" Length="50" IsNewColumn="True" />
-    </Table>
 </Customization>
