@@ -193,7 +193,7 @@ namespace HeritageFabrics.SO
         public abstract class usrHubSpotDealId : BqlString.Field<usrHubSpotDealId> { }
 
         [PXDBString(50, IsUnicode = true)]
-        [PXUIField(DisplayName = "HubSpot Order ID", Enabled = false)]
+        [PXUIField(DisplayName = "HubSpot Order ID", Visibility = PXUIVisibility.SelectorVisible)]
         public string UsrHubSpotDealId { get; set; }
         #endregion
     }
