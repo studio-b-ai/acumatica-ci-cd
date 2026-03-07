@@ -123,6 +123,7 @@ namespace HeritageFabrics.AR
         <CDATA name="Source"><![CDATA[using System;
 using PX.Data;
 using PX.Objects.AR;
+using PX.Objects.CS;
 
 namespace HeritageFabrics.AR
 {
@@ -157,8 +158,22 @@ namespace HeritageFabrics.AR
 
             if (customer == null) return false;
 
+            // Check 1: Explicit per-customer flag
             CustomerExt ext = customer.GetExtension<CustomerExt>();
-            return ext?.UsrDisablePayLink == true;
+            if (ext?.UsrDisablePayLink == true) return true;
+
+            // Check 2: Terms description contains "factor"
+            if (!string.IsNullOrEmpty(customer.TermsID))
+            {
+                Terms terms = PXSelect<Terms,
+                    Where<Terms.termsID, Equal<Required<Terms.termsID>>>>
+                    .Select(Base, customer.TermsID);
+                if (terms?.Descr != null &&
+                    terms.Descr.IndexOf("factor", StringComparison.OrdinalIgnoreCase) >= 0)
+                    return true;
+            }
+
+            return false;
         }
     }
 }]]></CDATA>
