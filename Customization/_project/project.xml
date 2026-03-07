@@ -195,7 +195,4 @@ namespace HeritageFabrics.SO
     <Table TableName="SOOrder">
         <Column ColumnName="UsrHubSpotDealId" DataType="NVarChar" Length="50" IsNewColumn="True" AllowNull="True" />
     </Table>
-    <Table TableName="BAccount">
-        <Column ColumnName="UsrDisablePayLink" DataType="Bit" IsNewColumn="True" AllowNull="True" />
-    </Table>
 </Customization>
