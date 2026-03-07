@@ -184,12 +184,15 @@ def validate_csharp(class_name: str, code: str, strict: bool):
         if "IsActive" not in code:
             error(f"{class_name}: Extension class missing IsActive() method")
 
-    # Check for known problematic types
+    # Check for known problematic types (skip comments)
+    code_no_comments = re.sub(r"///.*$", "", code, flags=re.MULTILINE)  # strip /// doc comments
+    code_no_comments = re.sub(r"//.*$", "", code_no_comments, flags=re.MULTILINE)  # strip // comments
+    code_no_comments = re.sub(r"/\*.*?\*/", "", code_no_comments, flags=re.DOTALL)  # strip /* */ blocks
     problematic_types = {
         "ARCustomerClass": "Not a public type in v24.2 (CS0246). Use PX.Objects.AR.CustomerClass",
     }
     for bad_type, fix in problematic_types.items():
-        if bad_type in code:
+        if bad_type in code_no_comments:
             error(f"{class_name}: References '{bad_type}' — {fix}")
 
     # Check custom field naming convention
