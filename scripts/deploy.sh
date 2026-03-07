@@ -7,9 +7,10 @@
 # API Flow:
 #   1. POST /entity/auth/login            — Authenticate session
 #   2. POST /CustomizationApi/Import      — Upload .zip package
-#   3. POST /CustomizationApi/publishBegin — Start publish (with all active projects)
+#   3. POST /CustomizationApi/publishBegin — Start publish (merges with existing)
 #   4. POST /CustomizationApi/publishEnd   — Poll until publish completes
-#   5. POST /entity/auth/logout           — Release session
+#   5. Smoke test — Re-auth + query to verify app pool restarted cleanly
+#   6. POST /entity/auth/logout           — Release session
 #
 # Usage:
 #   ./deploy.sh \
@@ -140,7 +141,7 @@ log "Package: ${PACKAGE} ($(du -h "${PACKAGE}" | cut -f1))"
 [[ "${VALIDATE_ONLY}" == true ]] && warn "VALIDATE ONLY — will not publish"
 
 # ─── Step 1: Login (with retry for API Login Limit) ─────────────────────────
-log "Step 1/5: Authenticating..."
+log "Step 1/6: Authenticating..."
 
 COOKIE_JAR=$(mktemp)
 CLEANUP_FILES+=("${COOKIE_JAR}")
@@ -193,7 +194,7 @@ fi
 ok "Authenticated to ${URL} (attempt ${LOGIN_ATTEMPT}/${LOGIN_MAX_RETRIES})"
 
 # ─── Step 2: Import Package ─────────────────────────────────────────────────
-log "Step 2/5: Importing customization package..."
+log "Step 2/6: Importing customization package..."
 
 # Base64 encode the package (Linux: base64 -w0, macOS: base64 -i)
 PACKAGE_B64=$(base64 -w0 "${PACKAGE}" 2>/dev/null || base64 -i "${PACKAGE}" | tr -d '\n')
@@ -245,7 +246,7 @@ if [[ "${VALIDATE_ONLY}" == true ]]; then
 fi
 
 # ─── Step 3: Publish Begin ───────────────────────────────────────────────────
-log "Step 3/5: Starting publish..."
+log "Step 3/6: Starting publish..."
 
 # Build project names array — always include the main project + any co-publish projects
 PROJECT_NAMES="[\"${PROJECT}\""
@@ -262,7 +263,7 @@ log "Publishing projects: ${PROJECT_NAMES}"
 
 PUBLISH_BODY=$(cat <<EOF
 {
-  "isMergeWithExistingPackages": false,
+  "isMergeWithExistingPackages": true,
   "isOnlyValidation": false,
   "isOnlyDbUpdates": false,
   "projectNames": ${PROJECT_NAMES},
@@ -286,7 +287,7 @@ fi
 ok "Publish started"
 
 # ─── Step 4: Poll Publish Status ─────────────────────────────────────────────
-log "Step 4/5: Waiting for publish to complete..."
+log "Step 4/6: Waiting for publish to complete..."
 
 ELAPSED=0
 while [[ ${ELAPSED} -lt ${POLL_TIMEOUT} ]]; do
@@ -339,8 +340,70 @@ if [[ ${ELAPSED} -ge ${POLL_TIMEOUT} ]]; then
   die "Publish timed out after ${POLL_TIMEOUT}s. Check Acumatica System Monitor."
 fi
 
-# ─── Step 5: Logout ─────────────────────────────────────────────────────────
-log "Step 5/5: Logging out..."
+# ─── Step 5: Post-Publish Smoke Test ─────────────────────────────────────────
+log "Step 5/6: Post-publish smoke test..."
+
+# App pool restarts after publish — wait for it to stabilize, then re-authenticate
+SMOKE_MAX_RETRIES=6
+SMOKE_RETRY_DELAY=10
+SMOKE_PASSED=false
+
+for i in $(seq 1 ${SMOKE_MAX_RETRIES}); do
+  sleep "${SMOKE_RETRY_DELAY}"
+
+  # Re-authenticate (previous session killed by app pool restart)
+  SMOKE_COOKIE=$(mktemp)
+  CLEANUP_FILES+=("${SMOKE_COOKIE}")
+
+  SMOKE_LOGIN_HTTP=$(curl -s -o /dev/null -w "%{http_code}" \
+    -X POST \
+    -H "Content-Type: application/json" \
+    -c "${SMOKE_COOKIE}" \
+    -d "${LOGIN_BODY}" \
+    "${URL}/entity/auth/login" 2>/dev/null || echo "000")
+
+  if [[ "${SMOKE_LOGIN_HTTP}" != "204" ]]; then
+    log "  Smoke test login attempt ${i}/${SMOKE_MAX_RETRIES}: HTTP ${SMOKE_LOGIN_HTTP} (app pool may still be restarting)"
+    continue
+  fi
+
+  # Query StockItem — lightweight probe that verifies customization DLLs loaded
+  SMOKE_QUERY_HTTP=$(curl -s -o /dev/null -w "%{http_code}" \
+    -b "${SMOKE_COOKIE}" \
+    "${URL}/entity/default/24.200.001/StockItem?\$top=1&\$select=InventoryID" 2>/dev/null || echo "000")
+
+  # Logout smoke session
+  curl -s -o /dev/null -X POST -b "${SMOKE_COOKIE}" "${URL}/entity/auth/logout" 2>/dev/null || true
+
+  if [[ "${SMOKE_QUERY_HTTP}" == "200" ]]; then
+    SMOKE_PASSED=true
+    break
+  else
+    log "  Smoke test query attempt ${i}/${SMOKE_MAX_RETRIES}: HTTP ${SMOKE_QUERY_HTTP}"
+  fi
+done
+
+if [[ "${SMOKE_PASSED}" == true ]]; then
+  ok "Post-publish smoke test passed — Acumatica API responding normally"
+else
+  err "POST-DEPLOY SMOKE TEST FAILED after ${SMOKE_MAX_RETRIES} attempts"
+  err "Acumatica may not have restarted correctly after publish."
+  err "Check Acumatica System Monitor and SM204505 immediately."
+
+  # Send Slack alert if webhook URL is available
+  if [[ -n "${SLACK_WEBHOOK_URL:-}" ]]; then
+    curl -s -X POST "${SLACK_WEBHOOK_URL}" \
+      -H "Content-Type: application/json" \
+      -d "{\"text\":\":rotating_light: *CUSTOMIZATION DEPLOY WARNING*\nPost-publish smoke test failed for \`${PROJECT}\` on \`${URL}\`.\nAcumatica API is not responding after app pool restart.\nCheck System Monitor and SM204505 immediately.\"}" 2>/dev/null || true
+  fi
+
+  # Don't die — the publish itself succeeded, we just can't verify yet.
+  # The app pool may just need more time. Alert and continue.
+  warn "Smoke test failed but publish completed — manual verification required"
+fi
+
+# ─── Step 6: Logout ─────────────────────────────────────────────────────────
+log "Step 6/6: Logging out..."
 # Logout happens in cleanup trap, but log it explicitly
 ok "Deployment complete!"
 
@@ -350,4 +413,5 @@ echo "  Project:     ${PROJECT}"
 echo "  Environment: ${URL}"
 echo "  Package:     $(basename "${PACKAGE}")"
 echo "  Duration:    ${ELAPSED}s"
+echo "  Smoke test:  $(${SMOKE_PASSED} && echo 'PASSED' || echo 'FAILED')"
 echo "============================================"

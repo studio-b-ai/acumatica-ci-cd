@@ -161,7 +161,7 @@ class AcumaticaCustomizationClient:
         _log(f"Publishing: {', '.join(project_names)}")
 
         payload = {
-            "isMergeWithExistingPackages": False,
+            "isMergeWithExistingPackages": True,
             "isOnlyValidation": validation_only,
             "isOnlyDbUpdates": False,
             "projectNames": project_names,
@@ -232,6 +232,45 @@ class AcumaticaCustomizationClient:
             f"Publish timed out after {poll_timeout}s. "
             "Check Acumatica System Monitor for status."
         )
+
+    def smoke_test(self, max_retries: int = 6, retry_delay: int = 10) -> bool:
+        """Post-publish smoke test — re-auth and query to verify app pool restarted."""
+        _log("Running post-publish smoke test...")
+
+        for attempt in range(1, max_retries + 1):
+            time.sleep(retry_delay)
+
+            try:
+                # Re-authenticate (app pool restart kills previous session)
+                self.logout()
+                self.login()
+
+                # Lightweight query to verify customization DLLs loaded
+                resp = self.session.get(
+                    f"{self.base_url}/entity/default/24.200.001/StockItem",
+                    params={"$top": "1", "$select": "InventoryID"},
+                    timeout=30,
+                )
+
+                if resp.status_code == 200:
+                    _log("Post-publish smoke test passed", style="ok")
+                    return True
+
+                _log(
+                    f"  Smoke test attempt {attempt}/{max_retries}: "
+                    f"HTTP {resp.status_code}",
+                )
+            except Exception as exc:
+                _log(
+                    f"  Smoke test attempt {attempt}/{max_retries}: {exc}",
+                )
+
+        _log(
+            f"Smoke test FAILED after {max_retries} attempts — "
+            "manual verification required",
+            style="warn",
+        )
+        return False
 
     def download_package(
         self,
@@ -423,6 +462,15 @@ def main():
                         project_names=all_projects,
                         poll_interval=args.poll_interval,
                         poll_timeout=args.poll_timeout,
+                    )
+
+            # Post-publish smoke test
+            if args.package and not args.validate_only:
+                smoke_ok = client.smoke_test()
+                if not smoke_ok:
+                    _log(
+                        "Smoke test failed — publish completed but API may be unstable",
+                        style="warn",
                     )
 
             _log("Deployment complete!", style="ok")
