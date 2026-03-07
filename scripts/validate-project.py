@@ -77,12 +77,19 @@ def validate(path: str, strict: bool = False):
     else:
         ok(f"product-version=\"{pv}\"")
 
-    # Check 4: No <Sql> elements (must be <SqlScript>)
+    # Check 4: Validate <Sql> elements (ALTER TABLE column creation)
     sql_elements = root.findall(".//Sql")
-    if sql_elements:
-        for elem in sql_elements:
-            name = elem.get("Name", "(unnamed)")
-            error(f"Found <Sql Name=\"{name}\"> — WRONG element name. Must be <SqlScript>")
+    for elem in sql_elements:
+        name = elem.get("Name", "(unnamed)")
+        source = elem.get("Script", "")
+        cdata = elem.find("CDATA")
+        if cdata is None or not (cdata.text or "").strip():
+            error(f"<Sql Name=\"{name}\"> missing or empty CDATA")
+        else:
+            sql_text = cdata.text or ""
+            if "ALTER TABLE" in sql_text and "IF NOT EXISTS" not in sql_text:
+                warn(f"<Sql Name=\"{name}\"> has ALTER TABLE without IF NOT EXISTS guard")
+            ok(f"<Sql Name=\"{name}\"> validated")
 
     # Check 5: <Table> elements with IsNewColumn="True"
     # Required for first-time column creation, but causes NullReferenceException
