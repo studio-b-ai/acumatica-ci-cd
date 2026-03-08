@@ -421,7 +421,7 @@ IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('BAccount')
                 <AddItem>
                     <PXTabItem TypeFullName="PX.Web.UI.PXTabItem">
                         <Prop Key="Text" Value="Relations" />
-                        <Children>
+                        <Children Key="1">
                             <PXGrid TypeFullName="PX.Web.UI.PXGrid">
                                 <Prop Key="ID" Value="grdRelations" />
                                 <Prop Key="DataSourceID" Value="ds" />
