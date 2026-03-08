@@ -327,28 +327,38 @@ import json, sys
 try:
     with open('${RESPONSE_FILE}') as f:
         data = json.load(f)
-    # Try common Acumatica publishEnd response fields
-    for key in ['log', 'message', 'exceptionMessage', 'errors', 'compilationErrors']:
-        if key in data and data[key]:
-            val = data[key]
-            if isinstance(val, list):
-                for item in val[:50]:
-                    print(item if isinstance(item, str) else json.dumps(item))
-            else:
-                # Truncate very long strings
-                s = str(val)
-                if len(s) > 5000:
-                    print(s[:5000] + '... (truncated)')
+
+    # Response can be: {log: [...]} or [{logType, message}...] or {message, errors...}
+    log_entries = []
+    if isinstance(data, dict):
+        log_entries = data.get('log', [])
+        if not log_entries:
+            # Check for direct error fields
+            for key in ['message', 'exceptionMessage', 'errors', 'compilationErrors']:
+                if key in data and data[key]:
+                    print(f'{key}: {str(data[key])[:3000]}')
+            if not any(k in data for k in ['message','exceptionMessage','errors']):
+                print('Top-level keys:', list(data.keys())[:20])
+    elif isinstance(data, list):
+        log_entries = data
+
+    if log_entries:
+        # Filter for errors/warnings (skip info-level patching messages)
+        errors = [e for e in log_entries if isinstance(e, dict) and e.get('logType','').lower() in ('error','warning','exception')]
+        if errors:
+            print(f'Found {len(errors)} error/warning entries:')
+            for e in errors[:30]:
+                print(f\"  [{e.get('logType','?')}] {e.get('message','(no message)')}\")
+        else:
+            # No explicit errors — show last 20 entries (errors often at end)
+            print(f'No error-level entries found in {len(log_entries)} log entries. Last 20:')
+            for e in log_entries[-20:]:
+                if isinstance(e, dict):
+                    print(f\"  [{e.get('logType','?')}] {e.get('message','(no message)')}\")
                 else:
-                    print(s)
-            sys.exit(0)
-    # If no known fields, dump top-level keys and first 2000 chars
-    print('Top-level keys:', list(data.keys())[:20])
-    s = json.dumps(data, indent=2)
-    print(s[:2000])
+                    print(f'  {str(e)[:200]}')
 except Exception as e:
     print(f'JSON parse error: {e}')
-    # Fallback: print first 2000 bytes raw
     with open('${RESPONSE_FILE}') as f:
         print(f.read(2000))
 " 2>&1 || cat "${RESPONSE_FILE}" | head -c 2000
