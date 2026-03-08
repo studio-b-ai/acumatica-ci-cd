@@ -1,4 +1,4 @@
-<Customization level="1" description="PO custom date fields + Customer payment link exclusion + SO HubSpot Deal ID + IGCM container date propagation + IN402000 Exp Arrival Date + PO Relations tab" product-version="24.208">
+<Customization level="1" description="PO custom date fields + Customer payment link exclusion + SO HubSpot Deal ID + IGCM container date propagation + IN402000 Exp Arrival Date" product-version="24.208">
     <Graph ClassName="POLineExt" Source="#CDATA" IsNew="True" FileType="NewFile">
         <CDATA name="Source"><![CDATA[using System;
 using PX.Data;
@@ -271,22 +271,6 @@ namespace HeritageFabrics.IGCM
                 }
             }
         }
-    }
-}]]></CDATA>
-    </Graph>
-    <Graph ClassName="POOrderEntry_Relations_Extension" Source="#CDATA" IsNew="True" FileType="NewFile">
-        <CDATA name="Source"><![CDATA[using PX.Data;
-using PX.Objects.PO;
-using PX.Objects.CR;
-
-namespace HeritageFabrics.PO
-{
-    public class POOrderEntry_Relations_Extension : PXGraphExtension<POOrderEntry>
-    {
-        public static bool IsActive() => true;
-
-        [PXViewName("Relations")]
-        public CRRelationsList<POOrder> Relations;
     }
 }]]></CDATA>
     </Graph>

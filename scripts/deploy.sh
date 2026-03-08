@@ -248,13 +248,18 @@ fi
 # ─── Step 3: Publish Begin ───────────────────────────────────────────────────
 log "Step 3/6: Starting publish..."
 
-# Build project names array — always include the main project + any co-publish projects
+# Build project names array — always include the main project + any co-publish projects (deduplicated)
+declare -A SEEN_PROJECTS
 PROJECT_NAMES="[\"${PROJECT}\""
+SEEN_PROJECTS["${PROJECT}"]=1
 if [[ -n "${ALSO_PUBLISH}" ]]; then
   IFS=',' read -ra EXTRA_PROJECTS <<< "${ALSO_PUBLISH}"
   for p in "${EXTRA_PROJECTS[@]}"; do
     p=$(echo "$p" | xargs)  # trim whitespace
-    [[ -n "$p" ]] && PROJECT_NAMES+=",\"${p}\""
+    if [[ -n "$p" && -z "${SEEN_PROJECTS[$p]+x}" ]]; then
+      PROJECT_NAMES+=",\"${p}\""
+      SEEN_PROJECTS["$p"]=1
+    fi
   done
 fi
 PROJECT_NAMES+="]"
@@ -281,7 +286,8 @@ HTTP_CODE=$(curl -s -o "${RESPONSE_FILE}" -w "%{http_code}" \
 
 if [[ "${HTTP_CODE}" != "200" && "${HTTP_CODE}" != "204" ]]; then
   err "Publish begin failed (HTTP ${HTTP_CODE})"
-  cat "${RESPONSE_FILE}" >&2
+  log "Error response body:"
+  cat "${RESPONSE_FILE}"
   die "Could not start publish process"
 fi
 ok "Publish started"
@@ -313,7 +319,8 @@ while [[ ${ELAPSED} -lt ${POLL_TIMEOUT} ]]; do
   if [[ "${HTTP_CODE}" == "200" || "${HTTP_CODE}" == "400" ]]; then
     if echo "${BODY}" | grep -qi '"isFailed"\s*:\s*true'; then
       err "Publish failed after ${ELAPSED}s"
-      echo "${BODY}" >&2
+      log "Publish response body:"
+      echo "${BODY}"
       die "Publish reported failure. Check Acumatica System Monitor for details."
     elif echo "${BODY}" | grep -qi '"isCompleted"\s*:\s*true'; then
       ok "Publish completed successfully (${ELAPSED}s)"
@@ -331,7 +338,8 @@ while [[ ${ELAPSED} -lt ${POLL_TIMEOUT} ]]; do
     fi
   elif [[ "${HTTP_CODE}" == "422" || "${HTTP_CODE}" == "500" ]]; then
     err "Publish error (HTTP ${HTTP_CODE})"
-    echo "${BODY}" >&2
+    log "Error response body:"
+    echo "${BODY}"
     die "Publish failed with server error"
   fi
 done
