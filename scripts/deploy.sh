@@ -318,9 +318,23 @@ while [[ ${ELAPSED} -lt ${POLL_TIMEOUT} ]]; do
   # publishEnd returns JSON with isCompleted/isFailed on both 200 and 400
   if [[ "${HTTP_CODE}" == "200" || "${HTTP_CODE}" == "400" ]]; then
     if echo "${BODY}" | grep -qi '"isFailed"\s*:\s*true'; then
-      err "Publish failed after ${ELAPSED}s"
-      log "Publish response body:"
-      echo "${BODY}"
+      err "Publish failed after ${ELAPSED}s (HTTP ${HTTP_CODE})"
+      err "--- publishEnd response body (${#BODY} chars) ---"
+      echo "${BODY}" | head -200
+      err "--- end response body ---"
+      # Also try to extract log field if present
+      if echo "${BODY}" | grep -qi '"log"'; then
+        err "--- extracted log field ---"
+        echo "${BODY}" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('log','(no log field)'))" 2>/dev/null || true
+        err "--- end log ---"
+      fi
+      # Write to GH Actions step summary if available
+      if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
+        echo "### Publish Error Details" >> "${GITHUB_STEP_SUMMARY}"
+        echo '```json' >> "${GITHUB_STEP_SUMMARY}"
+        echo "${BODY}" | head -200 >> "${GITHUB_STEP_SUMMARY}"
+        echo '```' >> "${GITHUB_STEP_SUMMARY}"
+      fi
       die "Publish reported failure. Check Acumatica System Monitor for details."
     elif echo "${BODY}" | grep -qi '"isCompleted"\s*:\s*true'; then
       ok "Publish completed successfully (${ELAPSED}s)"

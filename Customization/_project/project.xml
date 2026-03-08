@@ -313,47 +313,32 @@ namespace HeritageFabrics.IN
             if (e.Row == null) return;
             if (e.Row.Module != "PO" || string.IsNullOrEmpty(e.Row.RefNbr)) return;
 
-            try
+            InventoryAllocDetEnqResultExt ext = e.Row.GetExtension<InventoryAllocDetEnqResultExt>();
+            if (ext == null || ext.UsrExpArrivalDate != null) return;
+
+            // Look up POOrder to get UsrExpArrivalDate
+            POOrder po = null;
+
+            if (!string.IsNullOrEmpty(e.Row.QADocType))
             {
-                // Use PXCache-based value access instead of GetExtension
-                // to avoid extension initialization failures on inquiry result DACs
-                DateTime? existing = (DateTime?)e.Cache.GetValue(e.Row, "UsrExpArrivalDate");
-                if (existing != null) return;
-
-                // Look up POOrder to get UsrExpArrivalDate
-                POOrder po = null;
-
-                if (!string.IsNullOrEmpty(e.Row.QADocType))
-                {
-                    po = PXSelectReadonly<POOrder,
-                        Where<POOrder.orderType, Equal<Required<POOrder.orderType>>,
-                        And<POOrder.orderNbr, Equal<Required<POOrder.orderNbr>>>>>
-                        .Select(Base, e.Row.QADocType, e.Row.RefNbr);
-                }
-
-                // Fallback: lookup by order number only
-                if (po == null)
-                {
-                    po = PXSelectReadonly<POOrder,
-                        Where<POOrder.orderNbr, Equal<Required<POOrder.orderNbr>>>>
-                        .Select(Base, e.Row.RefNbr);
-                }
-
-                if (po != null)
-                {
-                    // Use static PXCache<T>.GetExtension — safer than instance method
-                    // for records loaded via PXSelectReadonly in foreign graphs
-                    POOrderExt poExt = PXCache<POOrder>.GetExtension<POOrderExt>(po);
-                    if (poExt?.UsrExpArrivalDate != null)
-                    {
-                        e.Cache.SetValue(e.Row, "UsrExpArrivalDate", poExt.UsrExpArrivalDate);
-                    }
-                }
+                po = PXSelectReadonly<POOrder,
+                    Where<POOrder.orderType, Equal<Required<POOrder.orderType>>,
+                    And<POOrder.orderNbr, Equal<Required<POOrder.orderNbr>>>>>
+                    .Select(Base, e.Row.QADocType, e.Row.RefNbr);
             }
-            catch
+
+            // Fallback: lookup by order number only
+            if (po == null)
             {
-                // Silently handle extension retrieval failures
-                // to prevent breaking the Inventory Allocation screen
+                po = PXSelectReadonly<POOrder,
+                    Where<POOrder.orderNbr, Equal<Required<POOrder.orderNbr>>>>
+                    .Select(Base, e.Row.RefNbr);
+            }
+
+            if (po != null)
+            {
+                POOrderExt poExt = po.GetExtension<POOrderExt>();
+                ext.UsrExpArrivalDate = poExt?.UsrExpArrivalDate;
             }
         }
     }
