@@ -1,4 +1,4 @@
-<Customization level="1" description="PO custom date fields + Customer payment link exclusion + SO HubSpot Deal ID" product-version="24.208">
+<Customization level="1" description="PO custom date fields + Customer payment link exclusion + SO HubSpot Deal ID + IGCM container date propagation + IN402000 Exp Arrival Date" product-version="24.208">
     <Graph ClassName="POLineExt" Source="#CDATA" IsNew="True" FileType="NewFile">
         <CDATA name="Source"><![CDATA[using System;
 using PX.Data;
@@ -199,6 +199,151 @@ namespace HeritageFabrics.SO
     }
 }]]></CDATA>
     </Graph>
+    <Graph ClassName="IGCMPOLandedCostEntry_Extension" Source="#CDATA" IsNew="True" FileType="NewFile">
+        <CDATA name="Source"><![CDATA[using System;
+using System.Collections.Generic;
+using PX.Data;
+using IGCM;
+using IGCM.DAC;
+using PX.Objects.PO;
+using HeritageFabrics.PO;
+
+namespace HeritageFabrics.IGCM
+{
+    public class IGCMPOLandedCostEntry_Extension : PXGraphExtension<IGCMPOLandedCostEntry>
+    {
+        public static bool IsActive() => true;
+
+        [PXOverride]
+        public void Persist(Action del)
+        {
+            // Capture container header and line PO references BEFORE base save
+            IGCMPOLandedCost header = (IGCMPOLandedCost)Base.Caches[typeof(IGCMPOLandedCost)].Current;
+            DateTime? containerDate = header?.ExpectedArrivalDate;
+
+            var poRefs = new List<Tuple<string, string, int?>>();
+
+            if (containerDate != null)
+            {
+                PXCache lineCache = Base.Caches[typeof(IGCMPOLandedCostLine)];
+                foreach (IGCMPOLandedCostLine line in lineCache.Cached)
+                {
+                    PXEntryStatus status = lineCache.GetStatus(line);
+                    if (status == PXEntryStatus.Deleted || status == PXEntryStatus.InsertedDeleted)
+                        continue;
+                    if (string.IsNullOrEmpty(line.POOrderType) || string.IsNullOrEmpty(line.PONbr))
+                        continue;
+                    poRefs.Add(Tuple.Create(line.POOrderType, line.PONbr, line.POLineNbr));
+                }
+            }
+
+            // Execute base save
+            del();
+
+            // After successful save, propagate container date to linked PO records
+            if (containerDate == null || poRefs.Count == 0) return;
+
+            HashSet<string> updatedHeaders = new HashSet<string>();
+
+            foreach (Tuple<string, string, int?> po in poRefs)
+            {
+                // Update PO Line
+                if (po.Item3 != null)
+                {
+                    PXDatabase.Update<POLine>(
+                        new PXDataFieldAssign<POLineExt.usrExpArrivalDate>(containerDate),
+                        new PXDataFieldRestrict<POLine.orderType>(po.Item1),
+                        new PXDataFieldRestrict<POLine.orderNbr>(po.Item2),
+                        new PXDataFieldRestrict<POLine.lineNbr>(po.Item3)
+                    );
+                }
+
+                // Update PO Header (once per unique PO)
+                string headerKey = po.Item1 + ":" + po.Item2;
+                if (!updatedHeaders.Contains(headerKey))
+                {
+                    PXDatabase.Update<POOrder>(
+                        new PXDataFieldAssign<POOrderExt.usrExpArrivalDate>(containerDate),
+                        new PXDataFieldRestrict<POOrder.orderType>(po.Item1),
+                        new PXDataFieldRestrict<POOrder.orderNbr>(po.Item2)
+                    );
+                    updatedHeaders.Add(headerKey);
+                }
+            }
+        }
+    }
+}]]></CDATA>
+    </Graph>
+    <Graph ClassName="InventoryAllocDetEnqResultExt" Source="#CDATA" IsNew="True" FileType="NewFile">
+        <CDATA name="Source"><![CDATA[using System;
+using PX.Data;
+using PX.Data.BQL;
+using PX.Objects.IN;
+
+namespace HeritageFabrics.IN
+{
+    public sealed class InventoryAllocDetEnqResultExt : PXCacheExtension<InventoryAllocDetEnqResult>
+    {
+        public static bool IsActive() => true;
+
+        #region UsrExpArrivalDate
+        public abstract class usrExpArrivalDate : BqlDateTime.Field<usrExpArrivalDate> { }
+        [PXDate]
+        [PXUIField(DisplayName = "Exp. Arrival Date")]
+        public DateTime? UsrExpArrivalDate { get; set; }
+        #endregion
+    }
+}]]></CDATA>
+    </Graph>
+    <Graph ClassName="InventoryAllocDetEnq_Extension" Source="#CDATA" IsNew="True" FileType="NewFile">
+        <CDATA name="Source"><![CDATA[using System;
+using PX.Data;
+using PX.Objects.IN;
+using PX.Objects.PO;
+using HeritageFabrics.PO;
+
+namespace HeritageFabrics.IN
+{
+    public class InventoryAllocDetEnq_Extension : PXGraphExtension<InventoryAllocDetEnq>
+    {
+        public static bool IsActive() => true;
+
+        protected void _(Events.RowSelected<InventoryAllocDetEnqResult> e)
+        {
+            if (e.Row == null) return;
+            if (e.Row.Module != "PO" || string.IsNullOrEmpty(e.Row.RefNbr)) return;
+
+            InventoryAllocDetEnqResultExt ext = e.Row.GetExtension<InventoryAllocDetEnqResultExt>();
+            if (ext == null || ext.UsrExpArrivalDate != null) return;
+
+            // Look up POOrder to get UsrExpArrivalDate
+            POOrder po = null;
+
+            if (!string.IsNullOrEmpty(e.Row.QADocType))
+            {
+                po = PXSelectReadonly<POOrder,
+                    Where<POOrder.orderType, Equal<Required<POOrder.orderType>>,
+                    And<POOrder.orderNbr, Equal<Required<POOrder.orderNbr>>>>>
+                    .Select(Base, e.Row.QADocType, e.Row.RefNbr);
+            }
+
+            // Fallback: lookup by order number only
+            if (po == null)
+            {
+                po = PXSelectReadonly<POOrder,
+                    Where<POOrder.orderNbr, Equal<Required<POOrder.orderNbr>>>>
+                    .Select(Base, e.Row.RefNbr);
+            }
+
+            if (po != null)
+            {
+                POOrderExt poExt = po.GetExtension<POOrderExt>();
+                ext.UsrExpArrivalDate = poExt?.UsrExpArrivalDate;
+            }
+        }
+    }
+}]]></CDATA>
+    </Graph>
     <Sql Name="CreateCustomColumns" Script="#CDATA">
         <CDATA name="Script"><![CDATA[IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('POOrder') AND name = 'UsrExpArrivalDate')
     ALTER TABLE POOrder ADD UsrExpArrivalDate datetime NULL;
@@ -268,5 +413,17 @@ IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('BAccount')
                 </AddItem>
             </Children>
         </PXFormView>
+    </Page>
+    <Page path="~/pages/in/in402000.aspx">
+        <PXGridLevel DataMember="ResultRecords" ParentId="phG_tab_Items#0_grid_Levels#0" TypeFullName="PX.Web.UI.PXGridLevel">
+            <Children Key="Columns">
+                <AddItem>
+                    <PXGridColumn TypeFullName="PX.Web.UI.PXGridColumn">
+                        <Prop Key="DataField" Value="UsrExpArrivalDate" />
+                        <Prop Key="Width" Value="120px" />
+                    </PXGridColumn>
+                </AddItem>
+            </Children>
+        </PXGridLevel>
     </Page>
 </Customization>
