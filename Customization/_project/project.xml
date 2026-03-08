@@ -274,19 +274,18 @@ namespace HeritageFabrics.IGCM
     }
 }]]></CDATA>
     </Graph>
-    <Graph ClassName="POOrderEntry_Relations_Extension" Source="#CDATA" IsNew="True" FileType="NewFile">
+    <Graph ClassName="POOrderEntry_CRRelationDetailsExt" Source="#CDATA" IsNew="True" FileType="NewFile">
         <CDATA name="Source"><![CDATA[using PX.Data;
 using PX.Objects.PO;
 using PX.Objects.CR;
+using PX.Objects.CR.Extensions;
 
 namespace HeritageFabrics.PO
 {
-    public class POOrderEntry_Relations_Extension : PXGraphExtension<POOrderEntry>
+    public class POOrderEntry_CRRelationDetailsExt
+        : CRRelationDetailsExt<POOrderEntry, POOrder, POOrder.noteID>
     {
         public static bool IsActive() => true;
-
-        [PXViewName("Relations")]
-        public CRRelationsList<POOrder.noteID> Relations;
     }
 }]]></CDATA>
     </Graph>
