@@ -485,14 +485,27 @@ declare -A ENTITY_MAP=(
 )
 ENTITY_WARNINGS=0
 
-# Reuse the existing API session cookie (AUTH_COOKIE from Step 1)
+# Authenticate a fresh session for entity tests (app pool restart invalidates old sessions)
+ENTITY_COOKIE=$(mktemp)
+CLEANUP_FILES+=("${ENTITY_COOKIE}")
 ENTITY_RESPONSE=$(mktemp)
 CLEANUP_FILES+=("${ENTITY_RESPONSE}")
+
+ENTITY_LOGIN_HTTP=$(curl -s -o /dev/null -w "%{http_code}" \
+  -X POST \
+  -H "Content-Type: application/json" \
+  -c "${ENTITY_COOKIE}" \
+  -d "${LOGIN_BODY}" \
+  "${URL}/entity/auth/login" 2>/dev/null || echo "000")
+
+if [[ "${ENTITY_LOGIN_HTTP}" != "204" ]]; then
+  warn "Entity smoke test login failed (HTTP ${ENTITY_LOGIN_HTTP}) — skipping"
+else
 
 for SCREEN_ID in "${!ENTITY_MAP[@]}"; do
   ENTITY_NAME="${ENTITY_MAP[${SCREEN_ID}]}"
   ENTITY_HTTP=$(curl -s -o "${ENTITY_RESPONSE}" -w "%{http_code}" \
-    -b "${AUTH_COOKIE}" \
+    -b "${ENTITY_COOKIE}" \
     "${URL}/entity/Default/24.200.001/${ENTITY_NAME}?\$top=1" 2>/dev/null || echo "000")
 
   if [[ "${ENTITY_HTTP}" == "200" ]]; then
@@ -522,6 +535,10 @@ if [[ ${ENTITY_WARNINGS} -gt 0 ]]; then
   else
     ok "All ${#ENTITY_MAP[@]} customized entities passed smoke test"
   fi
+
+  # Logout entity test session
+  curl -s -o /dev/null -X POST -b "${ENTITY_COOKIE}" "${URL}/entity/auth/logout" 2>/dev/null || true
+fi
 
 # ─── Step 6: Logout ─────────────────────────────────────────────────────────
 log "Step 6/6: Logging out..."
