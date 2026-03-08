@@ -329,32 +329,47 @@ namespace HeritageFabrics.IN
             if (e.Row == null) return;
             if (e.Row.Module != "PO" || string.IsNullOrEmpty(e.Row.RefNbr)) return;
 
-            InventoryAllocDetEnqResultExt ext = e.Row.GetExtension<InventoryAllocDetEnqResultExt>();
-            if (ext == null || ext.UsrExpArrivalDate != null) return;
-
-            // Look up POOrder to get UsrExpArrivalDate
-            POOrder po = null;
-
-            if (!string.IsNullOrEmpty(e.Row.QADocType))
+            try
             {
-                po = PXSelectReadonly<POOrder,
-                    Where<POOrder.orderType, Equal<Required<POOrder.orderType>>,
-                    And<POOrder.orderNbr, Equal<Required<POOrder.orderNbr>>>>>
-                    .Select(Base, e.Row.QADocType, e.Row.RefNbr);
+                // Use PXCache-based value access instead of GetExtension
+                // to avoid extension initialization failures on inquiry result DACs
+                DateTime? existing = (DateTime?)e.Cache.GetValue(e.Row, "UsrExpArrivalDate");
+                if (existing != null) return;
+
+                // Look up POOrder to get UsrExpArrivalDate
+                POOrder po = null;
+
+                if (!string.IsNullOrEmpty(e.Row.QADocType))
+                {
+                    po = PXSelectReadonly<POOrder,
+                        Where<POOrder.orderType, Equal<Required<POOrder.orderType>>,
+                        And<POOrder.orderNbr, Equal<Required<POOrder.orderNbr>>>>>
+                        .Select(Base, e.Row.QADocType, e.Row.RefNbr);
+                }
+
+                // Fallback: lookup by order number only
+                if (po == null)
+                {
+                    po = PXSelectReadonly<POOrder,
+                        Where<POOrder.orderNbr, Equal<Required<POOrder.orderNbr>>>>
+                        .Select(Base, e.Row.RefNbr);
+                }
+
+                if (po != null)
+                {
+                    // Use static PXCache<T>.GetExtension — safer than instance method
+                    // for records loaded via PXSelectReadonly in foreign graphs
+                    POOrderExt poExt = PXCache<POOrder>.GetExtension<POOrderExt>(po);
+                    if (poExt?.UsrExpArrivalDate != null)
+                    {
+                        e.Cache.SetValue(e.Row, "UsrExpArrivalDate", poExt.UsrExpArrivalDate);
+                    }
+                }
             }
-
-            // Fallback: lookup by order number only
-            if (po == null)
+            catch
             {
-                po = PXSelectReadonly<POOrder,
-                    Where<POOrder.orderNbr, Equal<Required<POOrder.orderNbr>>>>
-                    .Select(Base, e.Row.RefNbr);
-            }
-
-            if (po != null)
-            {
-                POOrderExt poExt = po.GetExtension<POOrderExt>();
-                ext.UsrExpArrivalDate = poExt?.UsrExpArrivalDate;
+                // Silently handle extension retrieval failures
+                // to prevent breaking the Inventory Allocation screen
             }
         }
     }
@@ -421,60 +436,79 @@ IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('BAccount')
                 <AddItem>
                     <PXTabItem TypeFullName="PX.Web.UI.PXTabItem">
                         <Prop Key="Text" Value="Relations" />
-                        <Children Key="1">
-                            <PXGrid TypeFullName="PX.Web.UI.PXGrid">
-                                <Prop Key="ID" Value="grdRelations" />
-                                <Prop Key="DataSourceID" Value="ds" />
-                                <Prop Key="SkinID" Value="Details" />
-                                <Prop Key="Width" Value="100%" />
-                                <Children Key="Levels">
-                                    <PXGridLevel TypeFullName="PX.Web.UI.PXGridLevel">
-                                        <Prop Key="DataMember" Value="Relations" />
-                                        <Children Key="Columns">
-                                            <PXGridColumn TypeFullName="PX.Web.UI.PXGridColumn">
-                                                <Prop Key="DataField" Value="Role" />
-                                                <Prop Key="Width" Value="120px" />
-                                                <Prop Key="CommitChanges" Value="True" />
-                                            </PXGridColumn>
-                                            <PXGridColumn TypeFullName="PX.Web.UI.PXGridColumn">
-                                                <Prop Key="DataField" Value="TargetType" />
-                                                <Prop Key="Width" Value="120px" />
-                                                <Prop Key="CommitChanges" Value="True" />
-                                            </PXGridColumn>
-                                            <PXGridColumn TypeFullName="PX.Web.UI.PXGridColumn">
-                                                <Prop Key="DataField" Value="TargetNoteID" />
-                                                <Prop Key="Width" Value="200px" />
-                                                <Prop Key="CommitChanges" Value="True" />
-                                                <Prop Key="DisplayMode" Value="Hint" />
-                                            </PXGridColumn>
-                                            <PXGridColumn TypeFullName="PX.Web.UI.PXGridColumn">
-                                                <Prop Key="DataField" Value="Name" />
-                                                <Prop Key="Width" Value="200px" />
-                                            </PXGridColumn>
-                                            <PXGridColumn TypeFullName="PX.Web.UI.PXGridColumn">
-                                                <Prop Key="DataField" Value="ContactID" />
-                                                <Prop Key="Width" Value="180px" />
-                                            </PXGridColumn>
-                                            <PXGridColumn TypeFullName="PX.Web.UI.PXGridColumn">
-                                                <Prop Key="DataField" Value="Email" />
-                                                <Prop Key="Width" Value="200px" />
-                                            </PXGridColumn>
-                                            <PXGridColumn TypeFullName="PX.Web.UI.PXGridColumn">
-                                                <Prop Key="DataField" Value="AddToCc" />
-                                                <Prop Key="Width" Value="80px" />
-                                                <Prop Key="Type" Value="CheckBox" />
-                                                <Prop Key="TextAlign" Value="Center" />
-                                            </PXGridColumn>
-                                        </Children>
-                                    </PXGridLevel>
-                                </Children>
-                                <Children Key="AutoSize">
-                                    <PXAutoSize TypeFullName="PX.Web.UI.PXAutoSize">
-                                        <Prop Key="Enabled" Value="True" />
-                                        <Prop Key="MinHeight" Value="150" />
-                                    </PXAutoSize>
-                                </Children>
-                            </PXGrid>
+                        <Children Key="Template">
+                            <AddItem>
+                                <PXGrid TypeFullName="PX.Web.UI.PXGrid">
+                                    <Prop Key="ID" Value="grdRelations" />
+                                    <Prop Key="DataSourceID" Value="ds" />
+                                    <Prop Key="SkinID" Value="Details" />
+                                    <Prop Key="Width" Value="100%" />
+                                    <Children Key="Levels">
+                                        <AddItem>
+                                            <PXGridLevel DataMember="Relations" TypeFullName="PX.Web.UI.PXGridLevel">
+                                                <Children Key="Columns">
+                                                    <AddItem>
+                                                        <PXGridColumn TypeFullName="PX.Web.UI.PXGridColumn">
+                                                            <Prop Key="DataField" Value="Role" />
+                                                            <Prop Key="Width" Value="120px" />
+                                                            <Prop Key="CommitChanges" Value="True" />
+                                                        </PXGridColumn>
+                                                    </AddItem>
+                                                    <AddItem>
+                                                        <PXGridColumn TypeFullName="PX.Web.UI.PXGridColumn">
+                                                            <Prop Key="DataField" Value="TargetType" />
+                                                            <Prop Key="Width" Value="120px" />
+                                                            <Prop Key="CommitChanges" Value="True" />
+                                                        </PXGridColumn>
+                                                    </AddItem>
+                                                    <AddItem>
+                                                        <PXGridColumn TypeFullName="PX.Web.UI.PXGridColumn">
+                                                            <Prop Key="DataField" Value="TargetNoteID" />
+                                                            <Prop Key="Width" Value="200px" />
+                                                            <Prop Key="CommitChanges" Value="True" />
+                                                            <Prop Key="DisplayMode" Value="Hint" />
+                                                        </PXGridColumn>
+                                                    </AddItem>
+                                                    <AddItem>
+                                                        <PXGridColumn TypeFullName="PX.Web.UI.PXGridColumn">
+                                                            <Prop Key="DataField" Value="Name" />
+                                                            <Prop Key="Width" Value="200px" />
+                                                        </PXGridColumn>
+                                                    </AddItem>
+                                                    <AddItem>
+                                                        <PXGridColumn TypeFullName="PX.Web.UI.PXGridColumn">
+                                                            <Prop Key="DataField" Value="ContactID" />
+                                                            <Prop Key="Width" Value="180px" />
+                                                        </PXGridColumn>
+                                                    </AddItem>
+                                                    <AddItem>
+                                                        <PXGridColumn TypeFullName="PX.Web.UI.PXGridColumn">
+                                                            <Prop Key="DataField" Value="Email" />
+                                                            <Prop Key="Width" Value="200px" />
+                                                        </PXGridColumn>
+                                                    </AddItem>
+                                                    <AddItem>
+                                                        <PXGridColumn TypeFullName="PX.Web.UI.PXGridColumn">
+                                                            <Prop Key="DataField" Value="AddToCc" />
+                                                            <Prop Key="Width" Value="80px" />
+                                                            <Prop Key="Type" Value="CheckBox" />
+                                                            <Prop Key="TextAlign" Value="Center" />
+                                                        </PXGridColumn>
+                                                    </AddItem>
+                                                </Children>
+                                            </PXGridLevel>
+                                        </AddItem>
+                                    </Children>
+                                    <Children Key="AutoSize">
+                                        <AddItem>
+                                            <PXAutoSize TypeFullName="PX.Web.UI.PXAutoSize">
+                                                <Prop Key="Enabled" Value="True" />
+                                                <Prop Key="MinHeight" Value="150" />
+                                            </PXAutoSize>
+                                        </AddItem>
+                                    </Children>
+                                </PXGrid>
+                            </AddItem>
                         </Children>
                     </PXTabItem>
                 </AddItem>
