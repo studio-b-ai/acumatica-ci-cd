@@ -147,6 +147,9 @@ def validate(path: str, strict: bool = False):
             # Basic C# validation
             validate_csharp(class_name, code, strict)
 
+            # Runtime safety checks (GetExtension patterns, inquiry guards)
+            validate_extension_safety(class_name, code, strict)
+
         ok(f"Found {len(graphs)} <Graph> element(s)")
 
     # Check 7: Validate <SqlScript> elements
@@ -234,6 +237,86 @@ def validate_csharp(class_name: str, code: str, strict: bool):
         pxdb_fields = re.findall(r"\[PXDB\w+[^\]]*\]\s*\n\s*(?!\[PXUIField)", code)
         if pxdb_fields:
             warn(f"{class_name}: Some [PXDB*] fields may be missing [PXUIField] attribute")
+
+
+def validate_extension_safety(class_name: str, code: str, strict: bool):
+    """Detect unsafe extension patterns that compile but crash at runtime.
+
+    These patterns cause NullReferenceException or InvalidCastException on
+    inquiry result DACs and foreign-graph records where extension collections
+    may not be initialized.
+    """
+
+    # Strip comments to avoid false positives
+    clean = re.sub(r"///.*$", "", code, flags=re.MULTILINE)
+    clean = re.sub(r"//.*$", "", clean, flags=re.MULTILINE)
+    clean = re.sub(r"/\*.*?\*/", "", clean, flags=re.DOTALL)
+
+    # Rule 1: e.Row.GetExtension<T>() in inquiry/projection graph extensions
+    # HIGH risk — crashes on inquiry result DACs (InventoryAllocDetEnqResult, etc.)
+    # Safe alternative: e.Cache.GetValue(e.Row, "FieldName")
+    # Only flag in inquiry graphs (*Enq*) where DAC rows are projections.
+    # In normal entry graphs (POOrderEntry, etc.), e.Row is the real DAC and this is safe.
+    is_inquiry_graph = bool(re.search(r"PXGraphExtension<\w*Enq\w*>", clean))
+    row_ext_matches = re.findall(r"e\.Row\.GetExtension<(\w+)>\(\)", clean)
+    for match in row_ext_matches:
+        if is_inquiry_graph:
+            msg = (
+                f"{class_name}: e.Row.GetExtension<{match}>() in inquiry extension — HIGH RISK\n"
+                f"         Crashes on inquiry/projection DACs. Use:\n"
+                f"         e.Cache.GetValue(e.Row, \"FieldName\") / e.Cache.SetValue(...)"
+            )
+            if strict:
+                error(msg)
+            else:
+                warn(msg)
+        else:
+            # In normal graphs, instance GetExtension on e.Row is generally safe
+            # but still worth a note in strict mode
+            if strict:
+                warn(
+                    f"{class_name}: e.Row.GetExtension<{match}>() — consider using\n"
+                    f"         e.Cache.GetValue/SetValue for defensive coding"
+                )
+
+    # Rule 2: Instance .GetExtension<T>() on PXSelect results (not via PXCache<T>)
+    # MEDIUM risk — unsafe on records from foreign graphs
+    # Safe alternative: PXCache<Entity>.GetExtension<Ext>(record)
+    # Find all .GetExtension<T>() calls, then exclude safe patterns
+    for m in re.finditer(r"\.GetExtension<(\w+)>\(\)", clean):
+        ext_type = m.group(1)
+        # Get context before the match to check if it's a safe pattern
+        prefix = clean[:m.start()]
+        # Skip if already caught by Rule 1 (e.Row.GetExtension)
+        if prefix.rstrip().endswith("e.Row"):
+            continue
+        # Skip if it's the safe static form: PXCache<T>.GetExtension
+        if re.search(r"PXCache<\w+>\s*$", prefix):
+            continue
+        msg = (
+            f"{class_name}: Instance .GetExtension<{ext_type}>() — MEDIUM RISK\n"
+            f"         Use static PXCache<Entity>.GetExtension<{ext_type}>(record) instead"
+        )
+        if strict:
+            error(msg)
+        else:
+            warn(msg)
+
+    # Rule 3: Inquiry graph extension with RowSelected but no try-catch
+    # HIGH risk — inquiry DACs are most fragile for extension failures
+    is_inquiry_ext = bool(re.search(r"PXGraphExtension<\w*Enq\w*>", clean))
+    has_row_selected = bool(re.search(r"RowSelected", clean))
+    has_catch = "catch" in clean
+    if is_inquiry_ext and has_row_selected and not has_catch:
+        msg = (
+            f"{class_name}: Inquiry graph extension with RowSelected but no try-catch\n"
+            f"         Inquiry result DACs are projection types — extension access is fragile.\n"
+            f"         Wrap handler body in try-catch to prevent screen crashes."
+        )
+        if strict:
+            error(msg)
+        else:
+            warn(msg)
 
 
 def main():

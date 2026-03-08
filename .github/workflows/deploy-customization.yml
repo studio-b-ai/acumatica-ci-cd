@@ -72,7 +72,13 @@ jobs:
           python-version: '3.12'
 
       - name: Validate project.xml
-        run: python scripts/validate-project.py Customization/_project/project.xml
+        run: |
+          python scripts/validate-project.py Customization/_project/project.xml
+          # Production deploys run strict mode — unsafe extension patterns become errors
+          if [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
+            echo "Running strict validation for production..."
+            python scripts/validate-project.py --strict Customization/_project/project.xml
+          fi
 
       - name: Check for C# extension library
         id: check_csproj
@@ -258,3 +264,29 @@ jobs:
           else
             echo "Validation failed — check logs above." >> "$GITHUB_STEP_SUMMARY"
           fi
+
+  # ──────────────────────────────────────────────
+  # Job 4: Post-Deploy Validation — trigger ui-test-suite
+  # ──────────────────────────────────────────────
+  post-deploy-validation:
+    name: Trigger Runtime Tests
+    needs: deploy
+    runs-on: ubuntu-latest
+    if: needs.deploy.result == 'success' && github.event_name != 'pull_request'
+
+    steps:
+      - name: Trigger ui-test-suite
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT_DISPATCH }}
+        run: |
+          if [[ -z "${GH_TOKEN}" ]]; then
+            echo "::warning::GH_PAT_DISPATCH secret not set — skipping ui-test-suite trigger"
+            exit 0
+          fi
+          gh api repos/studio-b-ai/ui-test-suite/dispatches \
+            --method POST \
+            -f event_type=post-deploy-validation \
+            -f "client_payload[commit]=${GITHUB_SHA::8}" \
+            -f "client_payload[project]=${PROJECT_NAME}" \
+            -f "client_payload[actor]=${GITHUB_ACTOR}"
+          echo "Triggered ui-test-suite post-deploy-validation run"

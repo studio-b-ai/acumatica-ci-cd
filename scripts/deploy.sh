@@ -468,6 +468,70 @@ else
   warn "Smoke test failed but publish completed — manual verification required"
 fi
 
+# ─── Step 5b: Screen-Level Smoke Tests ──────────────────────────────────────
+log "Step 5b: Screen-level smoke tests (customized screens)..."
+
+# Test ASPX pages for all customized screens to catch page-init failures.
+# This won't catch data-dependent errors (e.g., GetExtension on inquiry rows),
+# but will catch catastrophic page-load failures from broken customization code.
+SCREEN_IDS=("PO301000" "SO301000" "IN402000" "AR301000")
+SCREEN_WARNINGS=0
+SCREEN_COOKIE=$(mktemp)
+CLEANUP_FILES+=("${SCREEN_COOKIE}")
+
+# Authenticate for screen tests (reuse login body from Step 1)
+SCREEN_LOGIN_HTTP=$(curl -s -o /dev/null -w "%{http_code}" \
+  -X POST \
+  -H "Content-Type: application/json" \
+  -c "${SCREEN_COOKIE}" \
+  -d "${LOGIN_BODY}" \
+  "${URL}/entity/auth/login" 2>/dev/null || echo "000")
+
+if [[ "${SCREEN_LOGIN_HTTP}" != "204" ]]; then
+  warn "Screen smoke test login failed (HTTP ${SCREEN_LOGIN_HTTP}) — skipping screen tests"
+else
+  SCREEN_RESPONSE=$(mktemp)
+  CLEANUP_FILES+=("${SCREEN_RESPONSE}")
+
+  for SCREEN_ID in "${SCREEN_IDS[@]}"; do
+    SCREEN_HTTP=$(curl -s -o "${SCREEN_RESPONSE}" -w "%{http_code}" \
+      -b "${SCREEN_COOKIE}" \
+      -L \
+      "${URL}/Main?ScreenId=${SCREEN_ID}" 2>/dev/null || echo "000")
+
+    if [[ "${SCREEN_HTTP}" != "200" ]]; then
+      warn "Screen ${SCREEN_ID}: HTTP ${SCREEN_HTTP} (expected 200)"
+      SCREEN_WARNINGS=$((SCREEN_WARNINGS + 1))
+    elif grep -qi 'class="ErrorText"\|PX\.Data\.PXException\|An error has occurred\|NullReferenceException\|InvalidCastException' "${SCREEN_RESPONSE}" 2>/dev/null; then
+      warn "Screen ${SCREEN_ID}: Page loaded but contains error content"
+      # Extract error text if possible
+      grep -oiP '(?<=class="ErrorText">)[^<]+' "${SCREEN_RESPONSE}" 2>/dev/null | head -3 || true
+      SCREEN_WARNINGS=$((SCREEN_WARNINGS + 1))
+    else
+      ok "Screen ${SCREEN_ID}: OK"
+    fi
+  done
+
+  # Logout screen session
+  curl -s -o /dev/null -X POST -b "${SCREEN_COOKIE}" "${URL}/entity/auth/logout" 2>/dev/null || true
+
+  if [[ ${SCREEN_WARNINGS} -gt 0 ]]; then
+    warn "${SCREEN_WARNINGS} screen(s) returned warnings"
+    # Alert Slack — publish already succeeded, this is informational
+    if [[ -n "${SLACK_WEBHOOK_URL:-}" ]]; then
+      FAILED_SCREENS=""
+      for SCREEN_ID in "${SCREEN_IDS[@]}"; do
+        FAILED_SCREENS+="\\n  - ${SCREEN_ID}"
+      done
+      curl -s -X POST "${SLACK_WEBHOOK_URL}" \
+        -H "Content-Type: application/json" \
+        -d "{\"text\":\":warning: *Customization Screen Smoke Test Warnings*\nProject: \`${PROJECT}\` on \`${URL}\`\n${SCREEN_WARNINGS} screen(s) returned errors after publish.\nCheck GitHub Actions run for details.\"}" 2>/dev/null || true
+    fi
+  else
+    ok "All ${#SCREEN_IDS[@]} customized screens passed smoke test"
+  fi
+fi
+
 # ─── Step 6: Logout ─────────────────────────────────────────────────────────
 log "Step 6/6: Logging out..."
 # Logout happens in cleanup trap, but log it explicitly
