@@ -297,7 +297,7 @@ def validate_extension_safety(class_name: str, code: str, strict: bool):
             f"{class_name}: Instance .GetExtension<{ext_type}>() — MEDIUM RISK\n"
             f"         Use static PXCache<Entity>.GetExtension<{ext_type}>(record) instead"
         )
-        if strict:
+        if strict and is_inquiry_graph:
             error(msg)
         else:
             warn(msg)
