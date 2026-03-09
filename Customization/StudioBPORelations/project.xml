@@ -243,7 +243,7 @@ namespace StudioB.PO
     }
 }]]></CDATA>
     </Graph>
-    <Sql Name="StudioB_PORelations_Tables" Script="#CDATA">
+    <Sql Name="StudioB_PORelations_Tables_v2" Script="#CDATA">
         <CDATA name="Script"><![CDATA[-- UsrPORelation table
 IF NOT EXISTS (SELECT 1 FROM sys.tables WHERE name = 'UsrPORelation')
 CREATE TABLE UsrPORelation (

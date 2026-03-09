@@ -359,7 +359,7 @@ namespace HeritageFabrics.IN
     }
 }]]></CDATA>
     </Graph>
-    <Sql Name="CreateCustomColumns" Script="#CDATA">
+    <Sql Name="CreateCustomColumns_v2" Script="#CDATA">
         <CDATA name="Script"><![CDATA[IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('POOrder') AND name = 'UsrExpArrivalDate')
     ALTER TABLE POOrder ADD UsrExpArrivalDate datetime NULL;
 
@@ -377,45 +377,6 @@ IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('SOOrder') 
 
 IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('BAccount') AND name = 'UsrDisablePayLink')
     ALTER TABLE BAccount ADD UsrDisablePayLink bit NULL;
-
--- StudioB PO Relations: bare CREATE TABLE test (no IF NOT EXISTS, no IDENTITY)
-CREATE TABLE UsrPORelation (
-    CompanyID INT NOT NULL DEFAULT 0,
-    UsrPORelationID INT NOT NULL,
-    RefNoteID UNIQUEIDENTIFIER NULL,
-    Role NVARCHAR(50) NULL,
-    ContactName NVARCHAR(100) NULL,
-    Email NVARCHAR(100) NULL,
-    Phone NVARCHAR(50) NULL,
-    Company NVARCHAR(100) NULL,
-    AddToCC BIT NULL DEFAULT 0,
-    IsActive BIT NULL DEFAULT 1,
-    CreatedByID UNIQUEIDENTIFIER NULL,
-    CreatedByScreenID CHAR(8) NULL,
-    CreatedDateTime DATETIME NULL,
-    LastModifiedByID UNIQUEIDENTIFIER NULL,
-    LastModifiedByScreenID CHAR(8) NULL,
-    LastModifiedDateTime DATETIME NULL
-);
-
-CREATE TABLE UsrPOActivity (
-    CompanyID INT NOT NULL DEFAULT 0,
-    UsrPOActivityID INT NOT NULL,
-    RefNoteID UNIQUEIDENTIFIER NULL,
-    Type CHAR(2) NULL DEFAULT 'NT',
-    Subject NVARCHAR(255) NULL,
-    Body NVARCHAR(MAX) NULL,
-    Status CHAR(2) NULL DEFAULT 'OP',
-    Priority CHAR(1) NULL DEFAULT 'N',
-    StartDate DATETIME NULL,
-    OwnerID NVARCHAR(100) NULL,
-    CreatedByID UNIQUEIDENTIFIER NULL,
-    CreatedByScreenID CHAR(8) NULL,
-    CreatedDateTime DATETIME NULL,
-    LastModifiedByID UNIQUEIDENTIFIER NULL,
-    LastModifiedByScreenID CHAR(8) NULL,
-    LastModifiedDateTime DATETIME NULL
-);
 ]]></CDATA>
     </Sql>
     <Page path="~/pages/po/po301000.aspx">
