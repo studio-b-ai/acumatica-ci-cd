@@ -30,6 +30,10 @@
   "sql_columns": [
     {"table": "POOrder", "columns": ["UsrExpArrivalDate", "UsrActArrivalDate"]},
     {"table": "POLine", "columns": ["UsrExpArrivalDate", "UsrActArrivalDate"]},
-    {"table": "SOOrder", "columns": ["UsrHubSpotDealId"]}
-  ]
+    {"table": "SOOrder", "columns": ["UsrHubSpotDealId"]},
+    {"table": "BAccount", "columns": ["UsrDisablePayLink"]}
+  ],
+  "_notes": {
+    "UsrDisablePayLink": "CustomerExt : PXCacheExtension<Customer> field. Works on AR303000 screen and in C# (ARInvoiceEntry_PayLink_Extension), but NOT exposed via REST API $adHocSchema for Customer entity. SQL column on BAccount table. Cannot validate via REST API schema check — only via sql_columns."
+  }
 }
