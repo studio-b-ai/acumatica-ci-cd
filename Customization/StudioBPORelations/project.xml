@@ -243,8 +243,19 @@ namespace StudioB.PO
     }
 }]]></CDATA>
     </Graph>
-    <Sql Name="StudioB_PORelations_Tables_v2" Script="#CDATA">
-        <CDATA name="Script"><![CDATA[-- UsrPORelation table
+    <Graph ClassName="PORelationsInstaller" Source="#CDATA" IsNew="True" FileType="NewFile">
+        <CDATA name="Source"><![CDATA[using PX.Data;
+using PX.Data.Update;
+
+namespace StudioB.PO
+{
+    public class PORelationsInstaller : CustomizationPlugin
+    {
+        public override void UpdateDatabase()
+        {
+            WriteLog("StudioB PO Relations: Creating tables if not exist...");
+
+            string createRelations = @"
 IF NOT EXISTS (SELECT 1 FROM sys.tables WHERE name = 'UsrPORelation')
 CREATE TABLE UsrPORelation (
     CompanyID INT NOT NULL DEFAULT 0,
@@ -265,9 +276,9 @@ CREATE TABLE UsrPORelation (
     LastModifiedDateTime DATETIME NULL,
     tstamp TIMESTAMP NOT NULL,
     CONSTRAINT PK_UsrPORelation PRIMARY KEY CLUSTERED (CompanyID, UsrPORelationID)
-);
+);";
 
--- UsrPOActivity table
+            string createActivities = @"
 IF NOT EXISTS (SELECT 1 FROM sys.tables WHERE name = 'UsrPOActivity')
 CREATE TABLE UsrPOActivity (
     CompanyID INT NOT NULL DEFAULT 0,
@@ -288,15 +299,29 @@ CREATE TABLE UsrPOActivity (
     LastModifiedDateTime DATETIME NULL,
     tstamp TIMESTAMP NOT NULL,
     CONSTRAINT PK_UsrPOActivity PRIMARY KEY CLUSTERED (CompanyID, UsrPOActivityID)
-);
+);";
 
--- Indexes for parent lookup
+            string createIndex1 = @"
 IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_UsrPORelation_RefNoteID')
-    CREATE INDEX IX_UsrPORelation_RefNoteID ON UsrPORelation(CompanyID, RefNoteID);
+    CREATE INDEX IX_UsrPORelation_RefNoteID ON UsrPORelation(CompanyID, RefNoteID);";
 
+            string createIndex2 = @"
 IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_UsrPOActivity_RefNoteID')
-    CREATE INDEX IX_UsrPOActivity_RefNoteID ON UsrPOActivity(CompanyID, RefNoteID);]]></CDATA>
-    </Sql>
+    CREATE INDEX IX_UsrPOActivity_RefNoteID ON UsrPOActivity(CompanyID, RefNoteID);";
+
+            PXDatabase.Execute(createRelations);
+            WriteLog("StudioB PO Relations: UsrPORelation table ready.");
+
+            PXDatabase.Execute(createActivities);
+            WriteLog("StudioB PO Relations: UsrPOActivity table ready.");
+
+            PXDatabase.Execute(createIndex1);
+            PXDatabase.Execute(createIndex2);
+            WriteLog("StudioB PO Relations: Indexes created.");
+        }
+    }
+}]]></CDATA>
+    </Graph>
     <Page path="~/pages/po/po301000.aspx">
         <PXTab ID="tab" ParentId="phG_tab" TypeFullName="PX.Web.UI.PXTab">
             <Children Key="Items">
