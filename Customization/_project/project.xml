@@ -1,4 +1,4 @@
-<Customization level="1" description="PO custom date fields + PO CRM Relations + Customer payment link exclusion + SO HubSpot Deal ID + IGCM container date propagation + IN402000 Exp Arrival Date" product-version="24.208">
+<Customization level="1" description="PO custom date fields + PO CRM Relations/Activities + Customer payment link exclusion + SO HubSpot Deal ID + IGCM container date propagation + IN402000 Exp Arrival Date" product-version="24.208">
     <Graph ClassName="POLineExt" Source="#CDATA" IsNew="True" FileType="NewFile">
         <CDATA name="Source"><![CDATA[using System;
 using PX.Data;
@@ -383,6 +383,31 @@ namespace HeritageFabrics.PO
             {
                 e.Row.RefNoteID = current.NoteID;
             }
+        }
+    }
+}]]></CDATA>
+    </Graph>
+    <Graph ClassName="POOrderEntry_ActivityDetailsExt" Source="#CDATA" IsNew="True" FileType="NewFile">
+        <CDATA name="Source"><![CDATA[using System;
+using PX.Data;
+using PX.Data.BQL;
+using PX.Objects.PO;
+using PX.Objects.CR;
+using PX.Objects.Common.GraphExtensions.Abstract;
+using PX.Objects.Common.GraphExtensions.Abstract.DAC;
+
+namespace HeritageFabrics.PO
+{
+    public sealed class POOrderEntry_ActivityDetailsExt
+        : ActivityDetailsExt<POOrderEntry, POOrder>
+    {
+        public static bool IsActive() => true;
+
+        public override Type GetLinkConditionClause()
+        {
+            return typeof(
+                Where<CRPMTimeActivity.refNoteID
+                    .IsEqual<POOrder.noteID.FromCurrent>>);
         }
     }
 }]]></CDATA>
