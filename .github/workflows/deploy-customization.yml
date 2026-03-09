@@ -15,9 +15,16 @@
 #   ACUMATICA_STG_*           - Staging equivalents (same instance, test company)
 #
 # Required GitHub Variables:
-#   CUSTOMIZATION_PROJECT_NAME  - Name of the customization project in Acumatica
-#   ALSO_PUBLISH_PROJECTS       - Comma-separated list of other active projects to co-publish
-#                                 (VAR packages, Shopify connector, etc.) for conflict detection
+#   CUSTOMIZATION_PROJECT_NAME      - Name of the customization project in Acumatica
+#   ALSO_PUBLISH_PROJECTS           - Comma-separated list of other active projects to co-publish
+#                                     (VAR packages, Shopify connector, etc.) for conflict detection
+#   MAINTENANCE_NOTIFY_RECIPIENTS   - Comma-separated emails for maintenance countdown notifications
+#   MAINTENANCE_NOTIFY_SENDER       - Sender email for notifications (default: kevin@heritagefabrics.com)
+#
+# Optional GitHub Secrets (for email notifications via Microsoft Graph API):
+#   AZURE_TENANT_ID       - Entra tenant ID
+#   AZURE_CLIENT_ID       - Entra app client ID (Mail.Send permission required)
+#   AZURE_CLIENT_SECRET   - Entra app client secret
 
 name: Deploy Acumatica Customization
 
@@ -43,6 +50,11 @@ on:
           - production
       dry_run:
         description: 'Validate only (no publish)'
+        required: false
+        type: boolean
+        default: false
+      skip_countdown:
+        description: 'Emergency deploy — skip 20-min countdown (still takes snapshot)'
         required: false
         type: boolean
         default: false
@@ -209,6 +221,92 @@ jobs:
             echo "target=staging" >> "$GITHUB_OUTPUT"
           fi
 
+      # ── Pre-deploy snapshot ─────────────────────────────────────────────
+      - name: Install Python dependencies
+        run: pip install -r scripts/requirements.txt
+
+      - name: Pre-deploy snapshot
+        id: snapshot
+        if: steps.env.outputs.target == 'production' && github.event.inputs.dry_run != 'true'
+        continue-on-error: true
+        env:
+          ACUMATICA_URL: ${{ secrets.ACUMATICA_PROD_URL }}
+          ACUMATICA_USERNAME: ${{ secrets.ACUMATICA_PROD_USERNAME }}
+          ACUMATICA_PASSWORD: ${{ secrets.ACUMATICA_PROD_PASSWORD }}
+          ACUMATICA_TENANT: ${{ secrets.ACUMATICA_PROD_TENANT }}
+        run: |
+          ALSO_SNAP=""
+          if [ "${{ needs.build.outputs.has_porel }}" == "true" ]; then
+            ALSO_SNAP="--also-snapshot StudioBPORelations"
+          fi
+          python scripts/snapshot.py \
+            --project "${PROJECT_NAME}" \
+            --output backups/ \
+            ${ALSO_SNAP}
+
+      - name: Upload pre-deploy snapshot
+        if: steps.snapshot.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: pre-deploy-snapshot-${{ github.run_number }}
+          path: backups/*.zip
+          retention-days: 90
+
+      # ── Maintenance countdown (production only, skippable) ───────────
+      - name: Maintenance countdown notifications
+        if: |
+          steps.env.outputs.target == 'production' &&
+          github.event.inputs.skip_countdown != 'true' &&
+          github.event.inputs.dry_run != 'true'
+        env:
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          NOTIFY_RECIPIENTS: ${{ vars.MAINTENANCE_NOTIFY_RECIPIENTS }}
+          NOTIFY_SENDER: ${{ vars.MAINTENANCE_NOTIFY_SENDER || 'kevin@heritagefabrics.com' }}
+        run: |
+          # 20-minute warning
+          echo "::group::Sending 20-minute warning"
+          python scripts/notify.py --type countdown --minutes 20 \
+            --recipients "${NOTIFY_RECIPIENTS}" \
+            --sender "${NOTIFY_SENDER}" \
+            --project "${PROJECT_NAME}" \
+            --environment "${{ steps.env.outputs.target }}" \
+            --slack-webhook "${SLACK_WEBHOOK_URL}" || true
+          echo "::endgroup::"
+
+          echo "Waiting 15 minutes..."
+          sleep 900
+
+          # 5-minute warning
+          echo "::group::Sending 5-minute warning"
+          python scripts/notify.py --type countdown --minutes 5 \
+            --recipients "${NOTIFY_RECIPIENTS}" \
+            --sender "${NOTIFY_SENDER}" \
+            --project "${PROJECT_NAME}" \
+            --environment "${{ steps.env.outputs.target }}" \
+            --slack-webhook "${SLACK_WEBHOOK_URL}" || true
+          echo "::endgroup::"
+
+          echo "Waiting 4 minutes..."
+          sleep 240
+
+          # 1-minute warning
+          echo "::group::Sending 1-minute warning"
+          python scripts/notify.py --type countdown --minutes 1 \
+            --recipients "${NOTIFY_RECIPIENTS}" \
+            --sender "${NOTIFY_SENDER}" \
+            --project "${PROJECT_NAME}" \
+            --environment "${{ steps.env.outputs.target }}" \
+            --slack-webhook "${SLACK_WEBHOOK_URL}" || true
+          echo "::endgroup::"
+
+          echo "Final wait — 60 seconds..."
+          sleep 60
+          echo "Countdown complete — proceeding to deploy"
+
+      # ── Deploy ───────────────────────────────────────────────────────
       # Pass secrets directly as env vars — never write them to GITHUB_OUTPUT
       - name: Deploy customization via REST API
         env:
@@ -255,6 +353,45 @@ jobs:
           retention-days: 30
           if-no-files-found: ignore
 
+      # ── Post-deploy notifications ─────────────────────────────────────
+      - name: Notify system back online
+        if: success() && steps.env.outputs.target == 'production'
+        continue-on-error: true
+        env:
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          NOTIFY_RECIPIENTS: ${{ vars.MAINTENANCE_NOTIFY_RECIPIENTS }}
+          NOTIFY_SENDER: ${{ vars.MAINTENANCE_NOTIFY_SENDER || 'kevin@heritagefabrics.com' }}
+        run: |
+          python scripts/notify.py \
+            --type online \
+            --recipients "${NOTIFY_RECIPIENTS}" \
+            --sender "${NOTIFY_SENDER}" \
+            --project "${PROJECT_NAME}" \
+            --environment "${{ steps.env.outputs.target }}" \
+            --slack-webhook "${SLACK_WEBHOOK_URL}"
+
+      - name: Notify deploy failed
+        if: failure() && steps.env.outputs.target == 'production'
+        continue-on-error: true
+        env:
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          NOTIFY_RECIPIENTS: ${{ vars.MAINTENANCE_NOTIFY_RECIPIENTS }}
+          NOTIFY_SENDER: ${{ vars.MAINTENANCE_NOTIFY_SENDER || 'kevin@heritagefabrics.com' }}
+        run: |
+          python scripts/notify.py \
+            --type failed \
+            --recipients "${NOTIFY_RECIPIENTS}" \
+            --sender "${NOTIFY_SENDER}" \
+            --project "${PROJECT_NAME}" \
+            --environment "${{ steps.env.outputs.target }}" \
+            --slack-webhook "${SLACK_WEBHOOK_URL}"
+
       # Notify Slack on deploy failure
       - name: Slack notification on failure
         if: failure()
@@ -281,6 +418,13 @@ jobs:
           echo "| Package | \`${{ needs.build.outputs.package_name }}\` |" >> "$GITHUB_STEP_SUMMARY"
           echo "| Commit | \`${GITHUB_SHA::8}\` |" >> "$GITHUB_STEP_SUMMARY"
           echo "| Actor | @${GITHUB_ACTOR} |" >> "$GITHUB_STEP_SUMMARY"
+          SNAPSHOT_FILES=$(ls backups/*.zip 2>/dev/null | xargs -I{} basename {} | tr '\n' ', ' || echo "N/A")
+          echo "| Snapshot | ${SNAPSHOT_FILES:-N/A} |" >> "$GITHUB_STEP_SUMMARY"
+          if [[ "${TARGET}" == "production" && "${{ github.event.inputs.skip_countdown }}" != "true" && "${{ github.event.inputs.dry_run }}" != "true" ]]; then
+            echo "| Countdown | 20-5-1 min warnings sent |" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "| Countdown | Skipped |" >> "$GITHUB_STEP_SUMMARY"
+          fi
 
   # ──────────────────────────────────────────────
   # Job 3: Validate — PR check (no publish)
