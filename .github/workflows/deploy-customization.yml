@@ -241,8 +241,19 @@ jobs:
             --project "${PROJECT_NAME}" \
             --package "${PACKAGE_FILE}" \
             --also-publish "${ALSO_PUBLISH}" \
+            --backup \
+            --manifest publish-manifest.json \
             ${EXTRA_FLAGS} \
             $( [[ "${DRY_RUN}" == "true" ]] && echo "--validate-only" )
+
+      - name: Upload backup artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: customization-backup
+          path: dist/backup/*.zip
+          retention-days: 30
+          if-no-files-found: ignore
 
       # Notify Slack on deploy failure
       - name: Slack notification on failure

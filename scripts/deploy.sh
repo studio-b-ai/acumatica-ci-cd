@@ -39,10 +39,13 @@ PACKAGE=""
 ALSO_PUBLISH=""
 EXTRA_IMPORTS=()
 VALIDATE_ONLY=false
+BACKUP=false
+MANIFEST=""
 POLL_INTERVAL=10
 POLL_TIMEOUT=600    # 10 minutes max
 COOKIE_JAR=""
 CLEANUP_FILES=()
+BACKUP_FILE=""
 
 # ─── Colors ──────────────────────────────────────────────────────────────────
 RED='\033[0;31m'
@@ -90,6 +93,8 @@ Options:
   --also-publish NAMES   Comma-separated project names to co-publish for conflict check
   --extra-import NAME:FILE  Additional package to import (NAME=project name, FILE=zip path; repeatable)
   --validate-only        Upload and validate but do not publish
+  --backup               Download existing package before deploying (enables rollback)
+  --manifest FILE        Post-publish validation manifest (publish-manifest.json)
   --poll-interval SECS   Seconds between publish status checks (default: 10)
   --poll-timeout SECS    Max seconds to wait for publish (default: 600)
   -h, --help             Show this help
@@ -124,6 +129,8 @@ while [[ $# -gt 0 ]]; do
     --also-publish)   ALSO_PUBLISH="$2";   shift 2 ;;
     --extra-import)   EXTRA_IMPORTS+=("$2"); shift 2 ;;
     --validate-only)  VALIDATE_ONLY=true;  shift ;;
+    --backup)         BACKUP=true;         shift ;;
+    --manifest)       MANIFEST="$2";       shift 2 ;;
     --poll-interval)  POLL_INTERVAL="$2";  shift 2 ;;
     --poll-timeout)   POLL_TIMEOUT="$2";   shift 2 ;;
     -h|--help)        usage ;;
@@ -206,6 +213,52 @@ if [[ "${LOGIN_SUCCESS}" != true ]]; then
   die "Login failed after ${LOGIN_MAX_RETRIES} attempts (last HTTP ${HTTP_CODE}). Check credentials, URL, or API Login Limit."
 fi
 ok "Authenticated to ${URL} (attempt ${LOGIN_ATTEMPT}/${LOGIN_MAX_RETRIES})"
+
+# ─── Step 1b: Backup existing package (if --backup) ─────────────────────────
+if [[ "${BACKUP}" == true ]]; then
+  log "Step 1b: Downloading backup of existing package..."
+  BACKUP_DIR="${BACKUP_DIR:-dist/backup}"
+  mkdir -p "${BACKUP_DIR}"
+  BACKUP_FILE="${BACKUP_DIR}/${PROJECT}_backup_$(date +%Y%m%d-%H%M%S).zip"
+
+  BACKUP_RESPONSE=$(mktemp)
+  CLEANUP_FILES+=("${BACKUP_RESPONSE}")
+
+  HTTP_CODE=$(curl -s -o "${BACKUP_RESPONSE}" -w "%{http_code}" \
+    -X POST \
+    -H "Content-Type: application/json" \
+    -b "${COOKIE_JAR}" \
+    -d "{\"projectName\": \"${PROJECT}\"}" \
+    "${URL}/CustomizationApi/getProject")
+
+  if [[ "${HTTP_CODE}" == "200" ]]; then
+    # Response contains base64-encoded package — extract and decode
+    CONTENT_B64=$(python3 -c "
+import json, sys
+with open('${BACKUP_RESPONSE}') as f:
+    data = json.load(f)
+if isinstance(data, dict) and 'projectContentBase64' in data:
+    print(data['projectContentBase64'])
+elif isinstance(data, str):
+    print(data)
+else:
+    print('')
+" 2>/dev/null)
+
+    if [[ -n "${CONTENT_B64}" ]]; then
+      echo "${CONTENT_B64}" | base64 -d > "${BACKUP_FILE}" 2>/dev/null || \
+      echo "${CONTENT_B64}" | base64 --decode > "${BACKUP_FILE}" 2>/dev/null
+      BACKUP_SIZE=$(du -h "${BACKUP_FILE}" | cut -f1)
+      ok "Backup saved: ${BACKUP_FILE} (${BACKUP_SIZE})"
+    else
+      warn "Backup response did not contain package content — continuing without backup"
+      BACKUP_FILE=""
+    fi
+  else
+    warn "Could not download backup (HTTP ${HTTP_CODE}) — continuing without backup"
+    BACKUP_FILE=""
+  fi
+fi
 
 # ─── Step 2: Import Package ─────────────────────────────────────────────────
 log "Step 2/6: Importing customization package..."
@@ -609,6 +662,122 @@ if [[ ${ENTITY_WARNINGS} -gt 0 ]]; then
   curl -s -o /dev/null -X POST -b "${ENTITY_COOKIE}" "${URL}/entity/auth/logout" 2>/dev/null || true
 fi
 
+# ─── Step 5c: Post-Publish Manifest Validation ──────────────────────────────
+MANIFEST_PASSED=true
+if [[ -n "${MANIFEST}" && -f "${MANIFEST}" ]]; then
+  log "Step 5c: Post-publish manifest validation..."
+  SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+  VALIDATE_SCRIPT="${SCRIPT_DIR}/validate-publish.py"
+
+  if [[ -f "${VALIDATE_SCRIPT}" ]]; then
+    if python3 "${VALIDATE_SCRIPT}" \
+      --url "${URL}" \
+      --username "${USERNAME}" \
+      --password "${PASSWORD}" \
+      --tenant "${TENANT}" \
+      --manifest "${MANIFEST}"; then
+      ok "Post-publish manifest validation passed"
+    else
+      MANIFEST_PASSED=false
+      err "Post-publish manifest validation FAILED"
+
+      # Attempt rollback if backup exists
+      if [[ -n "${BACKUP_FILE}" && -f "${BACKUP_FILE}" ]]; then
+        warn "Attempting rollback using backup: ${BACKUP_FILE}"
+
+        # Re-authenticate
+        ROLLBACK_COOKIE=$(mktemp)
+        CLEANUP_FILES+=("${ROLLBACK_COOKIE}")
+
+        ROLLBACK_LOGIN=$(curl -s -o /dev/null -w "%{http_code}" \
+          -X POST -H "Content-Type: application/json" \
+          -c "${ROLLBACK_COOKIE}" \
+          -d "${LOGIN_BODY}" \
+          "${URL}/entity/auth/login" 2>/dev/null || echo "000")
+
+        if [[ "${ROLLBACK_LOGIN}" == "204" ]]; then
+          # Re-import backup
+          ROLLBACK_B64=$(base64 -w0 "${BACKUP_FILE}" 2>/dev/null || base64 -i "${BACKUP_FILE}" | tr -d '\n')
+          ROLLBACK_BODY="{\"projectName\":\"${PROJECT}\",\"projectDescription\":\"ROLLBACK from CI/CD at $(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"projectLevel\":0,\"isReplaceIfExists\":true,\"projectContentBase64\":\"${ROLLBACK_B64}\"}"
+
+          ROLLBACK_IMPORT=$(curl -s -o /dev/null -w "%{http_code}" \
+            -X POST -H "Content-Type: application/json" \
+            -b "${ROLLBACK_COOKIE}" \
+            -d "${ROLLBACK_BODY}" \
+            "${URL}/CustomizationApi/Import" 2>/dev/null || echo "000")
+
+          if [[ "${ROLLBACK_IMPORT}" == "200" || "${ROLLBACK_IMPORT}" == "204" ]]; then
+            ok "Backup re-imported — starting rollback publish..."
+
+            # Re-publish with same project list
+            curl -s -o /dev/null \
+              -X POST -H "Content-Type: application/json" \
+              -b "${ROLLBACK_COOKIE}" \
+              -d "${PUBLISH_BODY}" \
+              "${URL}/CustomizationApi/publishBegin" 2>/dev/null
+
+            # Poll rollback publish (shorter timeout)
+            ROLLBACK_ELAPSED=0
+            ROLLBACK_TIMEOUT=300
+            ROLLBACK_OK=false
+            while [[ ${ROLLBACK_ELAPSED} -lt ${ROLLBACK_TIMEOUT} ]]; do
+              sleep 10
+              ROLLBACK_ELAPSED=$((ROLLBACK_ELAPSED + 10))
+              RB_RESPONSE=$(mktemp)
+              CLEANUP_FILES+=("${RB_RESPONSE}")
+              RB_CODE=$(curl -s -o "${RB_RESPONSE}" -w "%{http_code}" \
+                -X POST -H "Content-Type: application/json" \
+                -b "${ROLLBACK_COOKIE}" -d '{}' \
+                "${URL}/CustomizationApi/publishEnd" 2>/dev/null || echo "000")
+              RB_BODY=$(cat "${RB_RESPONSE}")
+              if echo "${RB_BODY}" | grep -qi '"isCompleted"\s*:\s*true' || [[ "${RB_BODY}" == "true" ]]; then
+                ROLLBACK_OK=true
+                break
+              elif echo "${RB_BODY}" | grep -qi '"isFailed"\s*:\s*true'; then
+                break
+              fi
+            done
+
+            if [[ "${ROLLBACK_OK}" == true ]]; then
+              ok "ROLLBACK COMPLETED — previous version restored"
+            else
+              err "ROLLBACK FAILED — manual intervention required"
+            fi
+          else
+            err "Could not re-import backup (HTTP ${ROLLBACK_IMPORT}) — rollback failed"
+          fi
+
+          curl -s -o /dev/null -X POST -b "${ROLLBACK_COOKIE}" "${URL}/entity/auth/logout" 2>/dev/null || true
+        else
+          err "Could not authenticate for rollback (HTTP ${ROLLBACK_LOGIN})"
+        fi
+
+        # Alert Slack about rollback
+        if [[ -n "${SLACK_WEBHOOK_URL:-}" ]]; then
+          ROLLBACK_STATUS=$([[ "${ROLLBACK_OK:-false}" == true ]] && echo "ROLLED BACK" || echo "ROLLBACK FAILED")
+          curl -s -X POST "${SLACK_WEBHOOK_URL}" \
+            -H "Content-Type: application/json" \
+            -d "{\"text\":\":rotating_light: *Customization Post-Publish Validation FAILED*\nProject: \`${PROJECT}\` on \`${URL}\`\nStatus: ${ROLLBACK_STATUS}\nCustom fields missing from API response after publish.\nCheck GitHub Actions run for details.\"}" 2>/dev/null || true
+        fi
+
+        die "Post-publish validation failed — deployment rolled back"
+      else
+        warn "No backup available — cannot rollback automatically"
+        # Alert Slack
+        if [[ -n "${SLACK_WEBHOOK_URL:-}" ]]; then
+          curl -s -X POST "${SLACK_WEBHOOK_URL}" \
+            -H "Content-Type: application/json" \
+            -d "{\"text\":\":warning: *Customization Post-Publish Validation FAILED*\nProject: \`${PROJECT}\` on \`${URL}\`\nNo backup available for automatic rollback.\nCustom fields may be missing. Manual verification required.\"}" 2>/dev/null || true
+        fi
+      fi
+    fi
+  else
+    warn "validate-publish.py not found — skipping manifest validation"
+  fi
+elif [[ -n "${MANIFEST}" ]]; then
+  warn "Manifest file not found: ${MANIFEST} — skipping validation"
+fi
+
 # ─── Step 6: Logout ─────────────────────────────────────────────────────────
 log "Step 6/6: Logging out..."
 # Logout happens in cleanup trap, but log it explicitly
@@ -621,4 +790,5 @@ echo "  Environment: ${URL}"
 echo "  Package:     $(basename "${PACKAGE}")"
 echo "  Duration:    ${ELAPSED}s"
 echo "  Smoke test:  $(${SMOKE_PASSED} && echo 'PASSED' || echo 'FAILED')"
+echo "  Manifest:    $([[ "${MANIFEST_PASSED}" == true ]] && echo 'PASSED' || echo 'FAILED')"
 echo "============================================"
