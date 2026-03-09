@@ -392,6 +392,7 @@ namespace HeritageFabrics.PO
 using PX.Data;
 using PX.Objects.PO;
 using PX.Objects.CR;
+using PX.Objects.EP;
 
 namespace HeritageFabrics.PO
 {
@@ -400,7 +401,9 @@ namespace HeritageFabrics.PO
         public static bool IsActive() => true;
 
         [PXViewName("Activities")]
-        public CRActivityList<POOrder> Activities;
+        public PXSelect<CRPMTimeActivity,
+            Where<CRPMTimeActivity.refNoteID, Equal<Current<POOrder.noteID>>>,
+            OrderBy<Desc<CRPMTimeActivity.createdDateTime>>> Activities;
     }
 }]]></CDATA>
     </Graph>
