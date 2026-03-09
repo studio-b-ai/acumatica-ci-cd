@@ -298,7 +298,7 @@ IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_UsrPOActivity_RefNoteI
     CREATE INDEX IX_UsrPOActivity_RefNoteID ON UsrPOActivity(CompanyID, RefNoteID);]]></CDATA>
     </Sql>
     <Page path="~/pages/po/po301000.aspx">
-        <PXTab ParentId="phG_tab" TypeFullName="PX.Web.UI.PXTab">
+        <PXTab ID="tab" ParentId="phG_tab" TypeFullName="PX.Web.UI.PXTab">
             <Children Key="Items">
                 <AddItem>
                     <PXTabItem TypeFullName="PX.Web.UI.PXTabItem">
