@@ -438,11 +438,11 @@ try:
         data = json.load(f)
     log_entries = data.get('log', []) if isinstance(data, dict) else data if isinstance(data, list) else []
     if log_entries:
-        sql_lines = [e for e in log_entries if isinstance(e, dict) and any(kw in str(e.get('message','')).lower() for kw in ('sql','table','create','error','warning','exception','failed','usrpo'))]
+        sql_lines = [e for e in log_entries if isinstance(e, dict) and any(kw in str(e.get('message','')).lower() for kw in ('sql','table','create','error','warning','exception','failed','usrpo','script','plugin','updatedatabase','studiob'))]
         if sql_lines:
             print(f'  SQL-related log entries ({len(sql_lines)}):')
-            for e in sql_lines[:20]:
-                print(f\"    [{e.get('logType','?')}] {e.get('message','')[:200]}\")
+            for e in sql_lines:
+                print(f\"    [{e.get('logType','?')}] {e.get('message','')[:300]}\")
         else:
             print(f'  Publish log: {len(log_entries)} entries, no SQL-related messages found')
     else:
