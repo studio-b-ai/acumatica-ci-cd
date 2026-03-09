@@ -300,6 +300,10 @@ namespace StudioB.PO
                 return;
             }
 
+            // Fix SSL trust for Microsoft.Data.SqlClient (stricter than System.Data.SqlClient)
+            if (!connStr.Contains("TrustServerCertificate"))
+                connStr += ";TrustServerCertificate=True";
+
             WriteLog("StudioB PO Relations: Got connection string, executing DDL...");
 
             // Create UsrPORelation
