@@ -539,6 +539,73 @@ IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('BAccount')
                         </Children>
                     </PXTabItem>
                 </AddItem>
+                <AddItem>
+                    <PXTabItem Text="Activities" TypeFullName="PX.Web.UI.PXTabItem">
+                        <Children Key="Template">
+                            <AddItem>
+                                <PXGrid ID="grdActivities" TypeFullName="PX.Web.UI.PXGrid">
+                                    <Prop Key="Virtual:ApplyStylesheetSkin" />
+                                    <Prop Key="DataSourceID" Value="ds" />
+                                    <Prop Key="SkinID" Value="Inquire" />
+                                    <Prop Key="Width" Value="100%" />
+                                    <Prop Key="AllowPaging" Value="False" />
+                                    <Children Key="Levels">
+                                        <AddItem>
+                                            <PXGridLevel DataMember="Activities" TypeFullName="PX.Web.UI.PXGridLevel">
+                                                <Children Key="Columns">
+                                                    <AddItem>
+                                                        <PXGridColumn TypeFullName="PX.Web.UI.PXGridColumn">
+                                                            <Prop Key="DataField" Value="Type" />
+                                                            <Prop Key="Width" Value="80px" />
+                                                        </PXGridColumn>
+                                                    </AddItem>
+                                                    <AddItem>
+                                                        <PXGridColumn TypeFullName="PX.Web.UI.PXGridColumn">
+                                                            <Prop Key="DataField" Value="Subject" />
+                                                            <Prop Key="Width" Value="300px" />
+                                                        </PXGridColumn>
+                                                    </AddItem>
+                                                    <AddItem>
+                                                        <PXGridColumn TypeFullName="PX.Web.UI.PXGridColumn">
+                                                            <Prop Key="DataField" Value="StartDate" />
+                                                            <Prop Key="Width" Value="120px" />
+                                                        </PXGridColumn>
+                                                    </AddItem>
+                                                    <AddItem>
+                                                        <PXGridColumn TypeFullName="PX.Web.UI.PXGridColumn">
+                                                            <Prop Key="DataField" Value="UIStatus" />
+                                                            <Prop Key="Width" Value="100px" />
+                                                        </PXGridColumn>
+                                                    </AddItem>
+                                                    <AddItem>
+                                                        <PXGridColumn TypeFullName="PX.Web.UI.PXGridColumn">
+                                                            <Prop Key="DataField" Value="OwnerID" />
+                                                            <Prop Key="Width" Value="150px" />
+                                                        </PXGridColumn>
+                                                    </AddItem>
+                                                    <AddItem>
+                                                        <PXGridColumn TypeFullName="PX.Web.UI.PXGridColumn">
+                                                            <Prop Key="DataField" Value="CreatedDateTime" />
+                                                            <Prop Key="Width" Value="120px" />
+                                                        </PXGridColumn>
+                                                    </AddItem>
+                                                </Children>
+                                            </PXGridLevel>
+                                        </AddItem>
+                                    </Children>
+                                    <Children Key="AutoSize">
+                                        <AddItem>
+                                            <PXAutoSize TypeFullName="PX.Web.UI.PXAutoSize">
+                                                <Prop Key="Enabled" Value="True" />
+                                                <Prop Key="MinHeight" Value="150" />
+                                            </PXAutoSize>
+                                        </AddItem>
+                                    </Children>
+                                </PXGrid>
+                            </AddItem>
+                        </Children>
+                    </PXTabItem>
+                </AddItem>
             </Children>
         </PXTab>
     </Page>
