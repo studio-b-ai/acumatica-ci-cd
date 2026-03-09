@@ -150,6 +150,9 @@ def validate(path: str, strict: bool = False):
             # Runtime safety checks (GetExtension patterns, inquiry guards)
             validate_extension_safety(class_name, code, strict)
 
+            # CRM DAC compatibility checks
+            validate_crm_dac_safety(class_name, code, strict)
+
         ok(f"Found {len(graphs)} <Graph> element(s)")
 
     # Check 7: Validate <SqlScript> elements
@@ -317,6 +320,82 @@ def validate_extension_safety(class_name: str, code: str, strict: bool):
             error(msg)
         else:
             warn(msg)
+
+
+def validate_crm_dac_safety(class_name: str, code: str, strict: bool):
+    """Detect CRM DAC usage on non-CRM graphs.
+
+    CRM DACs (CRRelation, CRPMTimeActivity, CRActivity, PMTimeActivity) have
+    [PXSelector] field attributes that reference CRM views. When these DACs are
+    used in PXSelect views on non-CRM graphs (POOrderEntry, INReceiptEntry, etc.),
+    the graph crashes at runtime even though it compiles successfully.
+
+    CI/CD smoke tests may pass (HTTP 200 on entity query) but the screen itself
+    will fail with "The view doesn't exist" when opened in the browser.
+    """
+
+    # Strip comments
+    clean = re.sub(r"///.*$", "", code, flags=re.MULTILINE)
+    clean = re.sub(r"//.*$", "", clean, flags=re.MULTILINE)
+    clean = re.sub(r"/\*.*?\*/", "", clean, flags=re.DOTALL)
+
+    # CRM DACs that are incompatible with non-CRM graphs
+    crm_dacs = {
+        "CRRelation": "CRM Relations DAC — has [PXSelector] on EntityID/ContactID referencing CRM views",
+        "CRPMTimeActivity": "CRM Activities projection — joins PMTimeActivity + CRActivity (both CRM-dependent)",
+        "CRActivity": "CRM Activity DAC — field attributes reference CRM-only views",
+        "PMTimeActivity": "PM Time Activity DAC — field attributes reference CRM-only views",
+        "CRRelationsList": "Removed in Acumatica 2022 R2 — type does not exist in 24.2",
+        "CRActivityList": "Removed in Acumatica 24.2 — type does not exist",
+    }
+
+    # Non-CRM graphs where CRM DACs will crash
+    non_crm_graphs = [
+        "POOrderEntry", "POReceiptEntry", "INReceiptEntry",
+        "APInvoiceEntry", "APPaymentEntry", "INTransferEntry",
+        "INIssueEntry", "INAdjustmentEntry",
+    ]
+
+    # Detect which graph this extension targets
+    graph_match = re.search(r"PXGraphExtension<(\w+)>", clean)
+    if not graph_match:
+        return  # Not a graph extension — skip
+
+    target_graph = graph_match.group(1)
+    is_non_crm = target_graph in non_crm_graphs
+
+    # Check for CRM DAC usage
+    for dac, reason in crm_dacs.items():
+        # Match usage in PXSelect, PXSelectBase, field declarations, etc.
+        # But skip if it's just in a comment or string
+        pattern = rf"\b{re.escape(dac)}\b"
+        if re.search(pattern, clean):
+            if is_non_crm:
+                msg = (
+                    f"{class_name}: Uses '{dac}' on non-CRM graph '{target_graph}' — WILL CRASH AT RUNTIME\n"
+                    f"         {reason}\n"
+                    f"         Solution: Create custom DACs (e.g., UsrPORelation) with custom tables.\n"
+                    f"         See lessons-learned.md: 'CRM DACs Are Fundamentally Incompatible with Non-CRM Graphs'"
+                )
+                error(msg)
+            else:
+                # On CRM graphs it's fine, but note it
+                if strict:
+                    warn(
+                        f"{class_name}: Uses CRM DAC '{dac}' — ensure target graph has CRM infrastructure"
+                    )
+
+    # Also detect CRRelationDetailsExt on non-CRM graphs
+    cr_ext_match = re.search(r"CRRelationDetailsExt<(\w+)", clean)
+    if cr_ext_match:
+        ext_target = cr_ext_match.group(1)
+        if ext_target in non_crm_graphs:
+            error(
+                f"{class_name}: CRRelationDetailsExt<{ext_target}> — WILL CRASH AT RUNTIME\n"
+                f"         CRRelationDetailsExt requires CRM infrastructure (contact/address views).\n"
+                f"         Non-CRM graph '{ext_target}' does not provide these views.\n"
+                f"         Solution: Use custom DACs with custom tables instead."
+            )
 
 
 def main():

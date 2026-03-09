@@ -1,0 +1,39 @@
+{
+  "_comment": "Post-publish validation manifest. Defines expected custom fields per entity after a successful Acumatica customization publish. Used by validate-publish.py to verify fields exist in live API responses.",
+  "entities": {
+    "PurchaseOrder": {
+      "screen": "PO301000",
+      "custom_fields": [
+        "custom.Document.UsrExpArrivalDate",
+        "custom.Document.UsrActArrivalDate"
+      ]
+    },
+    "SalesOrder": {
+      "screen": "SO301000",
+      "custom_fields": [
+        "custom.Document.UsrHubSpotDealId"
+      ]
+    },
+    "Customer": {
+      "screen": "AR303000",
+      "custom_fields": []
+    },
+    "Invoice": {
+      "screen": "AR301000",
+      "custom_fields": []
+    },
+    "StockItem": {
+      "screen": "IN202500",
+      "custom_fields": []
+    }
+  },
+  "sql_columns": [
+    {"table": "POOrder", "columns": ["UsrExpArrivalDate", "UsrActArrivalDate"]},
+    {"table": "POLine", "columns": ["UsrExpArrivalDate", "UsrActArrivalDate"]},
+    {"table": "SOOrder", "columns": ["UsrHubSpotDealId"]},
+    {"table": "BAccount", "columns": ["UsrDisablePayLink"]}
+  ],
+  "_notes": {
+    "UsrDisablePayLink": "CustomerExt : PXCacheExtension<Customer> field. Works on AR303000 screen and in C# (ARInvoiceEntry_PayLink_Extension), but NOT exposed via REST API $adHocSchema for Customer entity. SQL column on BAccount table. Cannot validate via REST API schema check — only via sql_columns."
+  }
+}
