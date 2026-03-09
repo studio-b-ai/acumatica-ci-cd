@@ -213,6 +213,16 @@ class AcumaticaCustomizationClient:
                             f"{action} completed ({elapsed}s)",
                             style="ok",
                         )
+                        # Dump publish log for SQL diagnostics
+                        log_text = data.get("log", "")
+                        if log_text:
+                            for line in log_text.split("\n"):
+                                line = line.strip()
+                                if not line:
+                                    continue
+                                low = line.lower()
+                                if any(kw in low for kw in ("error", "warning", "sql", "table", "create", "failed", "exception")):
+                                    _log(f"  PUBLISH LOG: {line[:300]}", style="warn")
                         return
             except json.JSONDecodeError:
                 pass
