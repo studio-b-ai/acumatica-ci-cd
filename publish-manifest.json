@@ -16,9 +16,7 @@
     },
     "Customer": {
       "screen": "AR303000",
-      "custom_fields": [
-        "custom.BAccount.UsrDisablePayLink"
-      ]
+      "custom_fields": []
     },
     "Invoice": {
       "screen": "AR301000",
@@ -32,7 +30,6 @@
   "sql_columns": [
     {"table": "POOrder", "columns": ["UsrExpArrivalDate", "UsrActArrivalDate"]},
     {"table": "POLine", "columns": ["UsrExpArrivalDate", "UsrActArrivalDate"]},
-    {"table": "SOOrder", "columns": ["UsrHubSpotDealId"]},
-    {"table": "BAccount", "columns": ["UsrDisablePayLink"]}
+    {"table": "SOOrder", "columns": ["UsrHubSpotDealId"]}
   ]
 }

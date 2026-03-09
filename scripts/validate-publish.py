@@ -124,6 +124,26 @@ class AcumaticaSession:
         except Exception as e:
             return 0, str(e)
 
+    def query_schema(self, entity):
+        """Query the entity's ad-hoc schema to discover custom field definitions.
+
+        The $adHocSchema endpoint returns the entity template with all fields
+        (including custom DAC extension fields) defined with their types.
+        Regular $top=1 queries return custom: null — only the schema endpoint
+        exposes the full custom field structure.
+        """
+        url = f"{self.url}/entity/Default/24.200.001/{entity}/$adHocSchema"
+        req = urllib.request.Request(url, method="GET")
+        try:
+            resp = self.opener.open(req, timeout=30)
+            body = resp.read().decode("utf-8")
+            return resp.status, json.loads(body)
+        except urllib.error.HTTPError as e:
+            body = e.read().decode("utf-8") if e.fp else ""
+            return e.code, body
+        except Exception as e:
+            return 0, str(e)
+
 
 def check_custom_field(record, field_path):
     """Check if a dotted path like 'custom.Document.UsrHubSpotDealId' exists in a record."""
@@ -144,7 +164,7 @@ def validate_entity(session, entity_name, config):
 
     log(f"Checking {entity_name} ({screen})...")
 
-    # Step 1: Query entity
+    # Step 1: Entity reachability — can we query without HTTP 500?
     code, body = session.query_entity(entity_name)
 
     if code == 500:
@@ -159,21 +179,28 @@ def validate_entity(session, entity_name, config):
     if not custom_fields:
         return True
 
-    # Step 2: Check custom fields in response
-    # Response is an array of records — check the first one
-    records = body if isinstance(body, list) else [body]
-    if not records:
-        warn(f"{entity_name}: no records returned — cannot verify custom fields (empty entity)")
-        return True
+    # Step 2: Check custom fields via schema endpoint
+    # Regular $top=1 queries return custom: null — the $adHocSchema endpoint
+    # returns the entity template with all custom field definitions populated.
+    schema_code, schema_body = session.query_schema(entity_name)
 
-    record = records[0]
+    if schema_code != 200:
+        warn(f"{entity_name}: schema query returned HTTP {schema_code} — cannot verify custom fields via schema")
+        # Fall back to checking records (may still show custom: null)
+        records = body if isinstance(body, list) else [body]
+        if records and check_custom_field(records[0], "custom"):
+            schema_body = records[0]
+        else:
+            warn(f"{entity_name}: custom fields not available in record data either — skipping field checks")
+            return True
+
     all_fields_ok = True
 
     for field_path in custom_fields:
-        if check_custom_field(record, field_path):
-            ok(f"{entity_name}: field '{field_path}' present")
+        if check_custom_field(schema_body, field_path):
+            ok(f"{entity_name}: field '{field_path}' present in schema")
         else:
-            fail(f"{entity_name}: field '{field_path}' MISSING from API response")
+            fail(f"{entity_name}: field '{field_path}' MISSING from schema")
             all_fields_ok = False
 
     return all_fields_ok
