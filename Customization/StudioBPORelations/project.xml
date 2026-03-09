@@ -244,8 +244,8 @@ namespace StudioB.PO
 }]]></CDATA>
     </Graph>
     <Graph ClassName="PORelationsInstaller" Source="#CDATA" IsNew="True" FileType="NewFile">
-        <CDATA name="Source"><![CDATA[using PX.Data;
-using PX.Data.Update;
+        <CDATA name="Source"><![CDATA[using Customization;
+using PX.Data;
 
 namespace StudioB.PO
 {
