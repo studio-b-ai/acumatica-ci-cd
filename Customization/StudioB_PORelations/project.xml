@@ -1,0 +1,300 @@
+<Customization level="0" description="PO Relations and Activities — custom tabs on PO301000 for tracking contacts, notes, and tasks per purchase order. Standalone package, no CRM dependencies." product-version="24.208">
+    <Graph ClassName="UsrPORelation" Source="#CDATA" IsNew="True" FileType="NewFile">
+        <CDATA name="Source"><![CDATA[using System;
+using PX.Data;
+using PX.Data.BQL;
+using PX.Objects.PO;
+
+namespace StudioB.PO
+{
+    [Serializable]
+    [PXCacheName("PO Relation")]
+    public class UsrPORelation : IBqlTable
+    {
+        #region UsrPORelationID
+        public abstract class usrPORelationID : BqlInt.Field<usrPORelationID> { }
+        [PXDBIdentity(IsKey = true)]
+        public int? UsrPORelationID { get; set; }
+        #endregion
+
+        #region RefNoteID
+        public abstract class refNoteID : BqlGuid.Field<refNoteID> { }
+        [PXDBGuid]
+        [PXDBDefault(typeof(POOrder.noteID))]
+        [PXParent(typeof(Select<POOrder, Where<POOrder.noteID, Equal<Current<refNoteID>>>>))]
+        public Guid? RefNoteID { get; set; }
+        #endregion
+
+        #region Role
+        public abstract class role : BqlString.Field<role> { }
+        [PXDBString(50, IsUnicode = true)]
+        [PXDefault]
+        [PXUIField(DisplayName = "Role", Required = true)]
+        [PXStringList(
+            new[] { "BY", "AP", "SH", "FB", "QA", "SR", "OT" },
+            new[] { "Buyer", "AP Contact", "Shipping", "Freight Broker", "Inspector", "Sales Rep", "Other" }
+        )]
+        public string Role { get; set; }
+        #endregion
+
+        #region ContactName
+        public abstract class contactName : BqlString.Field<contactName> { }
+        [PXDBString(100, IsUnicode = true)]
+        [PXUIField(DisplayName = "Contact Name")]
+        public string ContactName { get; set; }
+        #endregion
+
+        #region Email
+        public abstract class email : BqlString.Field<email> { }
+        [PXDBString(100, IsUnicode = true)]
+        [PXUIField(DisplayName = "Email")]
+        public string Email { get; set; }
+        #endregion
+
+        #region Phone
+        public abstract class phone : BqlString.Field<phone> { }
+        [PXDBString(50, IsUnicode = true)]
+        [PXUIField(DisplayName = "Phone")]
+        public string Phone { get; set; }
+        #endregion
+
+        #region Company
+        public abstract class company : BqlString.Field<company> { }
+        [PXDBString(100, IsUnicode = true)]
+        [PXUIField(DisplayName = "Company")]
+        public string Company { get; set; }
+        #endregion
+
+        #region AddToCC
+        public abstract class addToCC : BqlBool.Field<addToCC> { }
+        [PXDBBool]
+        [PXDefault(false)]
+        [PXUIField(DisplayName = "Add to CC")]
+        public bool? AddToCC { get; set; }
+        #endregion
+
+        #region IsActive
+        public abstract class isActive : BqlBool.Field<isActive> { }
+        [PXDBBool]
+        [PXDefault(true)]
+        [PXUIField(DisplayName = "Active")]
+        public bool? IsActive { get; set; }
+        #endregion
+
+        #region Audit Fields
+        public abstract class createdByID : BqlGuid.Field<createdByID> { }
+        [PXDBCreatedByID] public Guid? CreatedByID { get; set; }
+
+        public abstract class createdByScreenID : BqlString.Field<createdByScreenID> { }
+        [PXDBCreatedByScreenID] public string CreatedByScreenID { get; set; }
+
+        public abstract class createdDateTime : BqlDateTime.Field<createdDateTime> { }
+        [PXDBCreatedDateTime] public DateTime? CreatedDateTime { get; set; }
+
+        public abstract class lastModifiedByID : BqlGuid.Field<lastModifiedByID> { }
+        [PXDBLastModifiedByID] public Guid? LastModifiedByID { get; set; }
+
+        public abstract class lastModifiedByScreenID : BqlString.Field<lastModifiedByScreenID> { }
+        [PXDBLastModifiedByScreenID] public string LastModifiedByScreenID { get; set; }
+
+        public abstract class lastModifiedDateTime : BqlDateTime.Field<lastModifiedDateTime> { }
+        [PXDBLastModifiedDateTime] public DateTime? LastModifiedDateTime { get; set; }
+
+        public abstract class tstamp : BqlByteArray.Field<tstamp> { }
+        [PXDBTimestamp] public byte[] Tstamp { get; set; }
+        #endregion
+    }
+}]]></CDATA>
+    </Graph>
+    <Graph ClassName="UsrPOActivity" Source="#CDATA" IsNew="True" FileType="NewFile">
+        <CDATA name="Source"><![CDATA[using System;
+using PX.Data;
+using PX.Data.BQL;
+using PX.Objects.PO;
+
+namespace StudioB.PO
+{
+    [Serializable]
+    [PXCacheName("PO Activity")]
+    public class UsrPOActivity : IBqlTable
+    {
+        #region UsrPOActivityID
+        public abstract class usrPOActivityID : BqlInt.Field<usrPOActivityID> { }
+        [PXDBIdentity(IsKey = true)]
+        public int? UsrPOActivityID { get; set; }
+        #endregion
+
+        #region RefNoteID
+        public abstract class refNoteID : BqlGuid.Field<refNoteID> { }
+        [PXDBGuid]
+        [PXDBDefault(typeof(POOrder.noteID))]
+        [PXParent(typeof(Select<POOrder, Where<POOrder.noteID, Equal<Current<refNoteID>>>>))]
+        public Guid? RefNoteID { get; set; }
+        #endregion
+
+        #region Type
+        public abstract class type : BqlString.Field<type> { }
+        [PXDBString(2, IsFixed = true)]
+        [PXDefault("NT")]
+        [PXUIField(DisplayName = "Type", Required = true)]
+        [PXStringList(
+            new[] { "NT", "TK", "CL", "EM", "MT" },
+            new[] { "Note", "Task", "Call", "Email", "Meeting" }
+        )]
+        public string Type { get; set; }
+        #endregion
+
+        #region Subject
+        public abstract class subject : BqlString.Field<subject> { }
+        [PXDBString(255, IsUnicode = true)]
+        [PXDefault]
+        [PXUIField(DisplayName = "Subject", Required = true)]
+        public string Subject { get; set; }
+        #endregion
+
+        #region Body
+        public abstract class body : BqlString.Field<body> { }
+        [PXDBText(IsUnicode = true)]
+        [PXUIField(DisplayName = "Details")]
+        public string Body { get; set; }
+        #endregion
+
+        #region Status
+        public abstract class status : BqlString.Field<status> { }
+        [PXDBString(2, IsFixed = true)]
+        [PXDefault("OP")]
+        [PXUIField(DisplayName = "Status")]
+        [PXStringList(
+            new[] { "OP", "CM", "CN" },
+            new[] { "Open", "Completed", "Cancelled" }
+        )]
+        public string Status { get; set; }
+        #endregion
+
+        #region Priority
+        public abstract class priority : BqlString.Field<priority> { }
+        [PXDBString(1, IsFixed = true)]
+        [PXDefault("N")]
+        [PXUIField(DisplayName = "Priority")]
+        [PXStringList(
+            new[] { "H", "N", "L" },
+            new[] { "High", "Normal", "Low" }
+        )]
+        public string Priority { get; set; }
+        #endregion
+
+        #region StartDate
+        public abstract class startDate : BqlDateTime.Field<startDate> { }
+        [PXDBDate]
+        [PXUIField(DisplayName = "Date")]
+        public DateTime? StartDate { get; set; }
+        #endregion
+
+        #region OwnerID
+        public abstract class ownerID : BqlString.Field<ownerID> { }
+        [PXDBString(100, IsUnicode = true)]
+        [PXUIField(DisplayName = "Owner")]
+        public string OwnerID { get; set; }
+        #endregion
+
+        #region Audit Fields
+        public abstract class createdByID : BqlGuid.Field<createdByID> { }
+        [PXDBCreatedByID] public Guid? CreatedByID { get; set; }
+
+        public abstract class createdByScreenID : BqlString.Field<createdByScreenID> { }
+        [PXDBCreatedByScreenID] public string CreatedByScreenID { get; set; }
+
+        public abstract class createdDateTime : BqlDateTime.Field<createdDateTime> { }
+        [PXDBCreatedDateTime] public DateTime? CreatedDateTime { get; set; }
+
+        public abstract class lastModifiedByID : BqlGuid.Field<lastModifiedByID> { }
+        [PXDBLastModifiedByID] public Guid? LastModifiedByID { get; set; }
+
+        public abstract class lastModifiedByScreenID : BqlString.Field<lastModifiedByScreenID> { }
+        [PXDBLastModifiedByScreenID] public string LastModifiedByScreenID { get; set; }
+
+        public abstract class lastModifiedDateTime : BqlDateTime.Field<lastModifiedDateTime> { }
+        [PXDBLastModifiedDateTime] public DateTime? LastModifiedDateTime { get; set; }
+
+        public abstract class tstamp : BqlByteArray.Field<tstamp> { }
+        [PXDBTimestamp] public byte[] Tstamp { get; set; }
+        #endregion
+    }
+}]]></CDATA>
+    </Graph>
+    <Graph ClassName="POOrderEntry_RelationsExt" Source="#CDATA" IsNew="True" FileType="NewFile">
+        <CDATA name="Source"><![CDATA[using PX.Data;
+using PX.Objects.PO;
+
+namespace StudioB.PO
+{
+    public class POOrderEntry_RelationsExt : PXGraphExtension<POOrderEntry>
+    {
+        public static bool IsActive() => true;
+
+        [PXViewName("Relations")]
+        public PXSelect<UsrPORelation,
+            Where<UsrPORelation.refNoteID, Equal<Current<POOrder.noteID>>>> Relations;
+
+        [PXViewName("Activities")]
+        public PXSelect<UsrPOActivity,
+            Where<UsrPOActivity.refNoteID, Equal<Current<POOrder.noteID>>>,
+            OrderBy<Desc<UsrPOActivity.createdDateTime>>> Activities;
+    }
+}]]></CDATA>
+    </Graph>
+    <Sql Name="StudioB_PORelations_Tables" Script="StudioB_PORelations_Tables.sql">
+        <CDATA name="Script"><![CDATA[-- UsrPORelation table
+IF NOT EXISTS (SELECT 1 FROM sys.tables WHERE name = 'UsrPORelation')
+CREATE TABLE UsrPORelation (
+    CompanyID INT NOT NULL DEFAULT 0,
+    UsrPORelationID INT IDENTITY(1,1) NOT NULL,
+    RefNoteID UNIQUEIDENTIFIER NULL,
+    Role NVARCHAR(50) NULL,
+    ContactName NVARCHAR(100) NULL,
+    Email NVARCHAR(100) NULL,
+    Phone NVARCHAR(50) NULL,
+    Company NVARCHAR(100) NULL,
+    AddToCC BIT NULL DEFAULT 0,
+    IsActive BIT NULL DEFAULT 1,
+    CreatedByID UNIQUEIDENTIFIER NULL,
+    CreatedByScreenID CHAR(8) NULL,
+    CreatedDateTime DATETIME NULL,
+    LastModifiedByID UNIQUEIDENTIFIER NULL,
+    LastModifiedByScreenID CHAR(8) NULL,
+    LastModifiedDateTime DATETIME NULL,
+    tstamp TIMESTAMP NOT NULL,
+    CONSTRAINT PK_UsrPORelation PRIMARY KEY CLUSTERED (CompanyID, UsrPORelationID)
+);
+
+-- UsrPOActivity table
+IF NOT EXISTS (SELECT 1 FROM sys.tables WHERE name = 'UsrPOActivity')
+CREATE TABLE UsrPOActivity (
+    CompanyID INT NOT NULL DEFAULT 0,
+    UsrPOActivityID INT IDENTITY(1,1) NOT NULL,
+    RefNoteID UNIQUEIDENTIFIER NULL,
+    Type CHAR(2) NULL DEFAULT 'NT',
+    Subject NVARCHAR(255) NULL,
+    Body NVARCHAR(MAX) NULL,
+    Status CHAR(2) NULL DEFAULT 'OP',
+    Priority CHAR(1) NULL DEFAULT 'N',
+    StartDate DATETIME NULL,
+    OwnerID NVARCHAR(100) NULL,
+    CreatedByID UNIQUEIDENTIFIER NULL,
+    CreatedByScreenID CHAR(8) NULL,
+    CreatedDateTime DATETIME NULL,
+    LastModifiedByID UNIQUEIDENTIFIER NULL,
+    LastModifiedByScreenID CHAR(8) NULL,
+    LastModifiedDateTime DATETIME NULL,
+    tstamp TIMESTAMP NOT NULL,
+    CONSTRAINT PK_UsrPOActivity PRIMARY KEY CLUSTERED (CompanyID, UsrPOActivityID)
+);
+
+-- Indexes for parent lookup
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_UsrPORelation_RefNoteID')
+    CREATE INDEX IX_UsrPORelation_RefNoteID ON UsrPORelation(CompanyID, RefNoteID);
+
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_UsrPOActivity_RefNoteID')
+    CREATE INDEX IX_UsrPOActivity_RefNoteID ON UsrPOActivity(CompanyID, RefNoteID);]]></CDATA>
+    </Sql>
+</Customization>

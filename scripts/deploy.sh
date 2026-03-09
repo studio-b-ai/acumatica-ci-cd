@@ -37,6 +37,7 @@ TENANT="${ACUMATICA_TENANT:-}"
 PROJECT=""
 PACKAGE=""
 ALSO_PUBLISH=""
+EXTRA_IMPORTS=()
 VALIDATE_ONLY=false
 POLL_INTERVAL=10
 POLL_TIMEOUT=600    # 10 minutes max
@@ -87,6 +88,7 @@ Options:
   --project NAME         Customization project name in Acumatica
   --package FILE         Path to .zip package to deploy
   --also-publish NAMES   Comma-separated project names to co-publish for conflict check
+  --extra-import FILE    Additional .zip package to import before publishing (repeatable)
   --validate-only        Upload and validate but do not publish
   --poll-interval SECS   Seconds between publish status checks (default: 10)
   --poll-timeout SECS    Max seconds to wait for publish (default: 600)
@@ -101,6 +103,11 @@ Examples:
 
   # Co-publish with VAR package
   ./deploy.sh --project MyCustom --package dist/MyCustom.zip --also-publish "VARPackage,ShopifyExt"
+
+  # Deploy multiple projects together
+  ./deploy.sh --project Main --package dist/Main.zip \
+    --extra-import dist/Addon.zip \
+    --also-publish "Main,Addon"
 EOF
   exit 0
 }
@@ -115,6 +122,7 @@ while [[ $# -gt 0 ]]; do
     --project)        PROJECT="$2";        shift 2 ;;
     --package)        PACKAGE="$2";        shift 2 ;;
     --also-publish)   ALSO_PUBLISH="$2";   shift 2 ;;
+    --extra-import)   EXTRA_IMPORTS+=("$2"); shift 2 ;;
     --validate-only)  VALIDATE_ONLY=true;  shift ;;
     --poll-interval)  POLL_INTERVAL="$2";  shift 2 ;;
     --poll-timeout)   POLL_TIMEOUT="$2";   shift 2 ;;
@@ -138,6 +146,10 @@ log "Target:  ${URL}"
 log "Project: ${PROJECT}"
 log "Package: ${PACKAGE} ($(du -h "${PACKAGE}" | cut -f1))"
 [[ -n "${ALSO_PUBLISH}" ]] && log "Co-publish with: ${ALSO_PUBLISH}"
+for extra in "${EXTRA_IMPORTS[@]}"; do
+  [[ ! -f "${extra}" ]] && die "Extra import file not found: ${extra}"
+  log "Extra import: ${extra} ($(du -h "${extra}" | cut -f1))"
+done
 [[ "${VALIDATE_ONLY}" == true ]] && warn "VALIDATE ONLY — will not publish"
 
 # ─── Step 1: Login (with retry for API Login Limit) ─────────────────────────
@@ -237,6 +249,39 @@ elif [[ "${HTTP_CODE}" != "200" && "${HTTP_CODE}" != "204" ]]; then
   die "Package import failed"
 fi
 ok "Package imported: ${PROJECT}"
+
+# ─── Step 2b: Import Extra Packages ──────────────────────────────────────────
+for extra in "${EXTRA_IMPORTS[@]}"; do
+  EXTRA_NAME=$(basename "${extra}" .zip)
+  log "Importing extra package: ${EXTRA_NAME}..."
+
+  EXTRA_B64=$(base64 -w0 "${extra}" 2>/dev/null || base64 -i "${extra}" | tr -d '\n')
+
+  EXTRA_IMPORT_BODY=$(cat <<EOFEXTRA
+{
+  "projectName": "${EXTRA_NAME}",
+  "projectDescription": "Deployed via CI/CD at $(date -u +%Y-%m-%dT%H:%M:%SZ)",
+  "projectLevel": 0,
+  "isReplaceIfExists": true,
+  "projectContentBase64": "${EXTRA_B64}"
+}
+EOFEXTRA
+)
+
+  HTTP_CODE=$(curl -s -o "${RESPONSE_FILE}" -w "%{http_code}" \
+    -X POST \
+    -H "Content-Type: application/json" \
+    -b "${COOKIE_JAR}" \
+    -d "${EXTRA_IMPORT_BODY}" \
+    "${URL}/CustomizationApi/Import")
+
+  if [[ "${HTTP_CODE}" != "200" && "${HTTP_CODE}" != "204" ]]; then
+    err "Extra import failed for ${EXTRA_NAME} (HTTP ${HTTP_CODE})"
+    cat "${RESPONSE_FILE}" >&2
+    die "Extra package import failed: ${EXTRA_NAME}"
+  fi
+  ok "Extra package imported: ${EXTRA_NAME}"
+done
 
 # ─── Validate-only exit point ────────────────────────────────────────────────
 if [[ "${VALIDATE_ONLY}" == true ]]; then

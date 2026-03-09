@@ -50,6 +50,7 @@ on:
 env:
   PROJECT_NAME: ${{ vars.CUSTOMIZATION_PROJECT_NAME || 'HeritageFabricsCustom' }}
   ALSO_PUBLISH: ${{ vars.ALSO_PUBLISH_PROJECTS || '' }}
+  POREL_PROJECT_NAME: StudioB_PORelations
 
 jobs:
   # ──────────────────────────────────────────────
@@ -61,6 +62,8 @@ jobs:
     outputs:
       package_path: ${{ steps.package.outputs.path }}
       package_name: ${{ steps.package.outputs.name }}
+      has_porel: ${{ steps.package_porel.outputs.has_porel }}
+      porel_path: ${{ steps.package_porel.outputs.path }}
 
     steps:
       - name: Checkout repository
@@ -71,13 +74,20 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Validate project.xml
+      - name: Validate project.xml files
         run: |
           python scripts/validate-project.py Customization/_project/project.xml
+          # Validate StudioB_PORelations if it exists
+          if [ -f "Customization/StudioB_PORelations/project.xml" ]; then
+            python scripts/validate-project.py Customization/StudioB_PORelations/project.xml
+          fi
           # Production deploys run strict mode — unsafe extension patterns become errors
           if [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
             echo "Running strict validation for production..."
             python scripts/validate-project.py --strict Customization/_project/project.xml
+            if [ -f "Customization/StudioB_PORelations/project.xml" ]; then
+              python scripts/validate-project.py --strict Customization/StudioB_PORelations/project.xml
+            fi
           fi
 
       - name: Check for C# extension library
@@ -136,11 +146,37 @@ jobs:
           echo "path=${PACKAGE_PATH}" >> "$GITHUB_OUTPUT"
           echo "name=${PACKAGE_NAME}" >> "$GITHUB_OUTPUT"
 
-      - name: Upload package artifact
+      - name: Package StudioB_PORelations
+        id: package_porel
+        run: |
+          if [ ! -d "Customization/StudioB_PORelations" ]; then
+            echo "has_porel=false" >> "$GITHUB_OUTPUT"
+            echo "No StudioB_PORelations project found — skipping"
+            exit 0
+          fi
+
+          TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+          POREL_NAME="StudioB_PORelations_${TIMESTAMP}.zip"
+          POREL_PATH="dist/${POREL_NAME}"
+
+          cd Customization/StudioB_PORelations
+          zip -r "../../${POREL_PATH}" . \
+            -x "*.DS_Store" \
+            -x "__MACOSX/*"
+          cd ../..
+
+          FILESIZE=$(du -h "${POREL_PATH}" | cut -f1)
+          echo "Packaged: ${POREL_NAME} (${FILESIZE})"
+
+          echo "has_porel=true" >> "$GITHUB_OUTPUT"
+          echo "path=${POREL_PATH}" >> "$GITHUB_OUTPUT"
+          echo "name=${POREL_NAME}" >> "$GITHUB_OUTPUT"
+
+      - name: Upload package artifacts
         uses: actions/upload-artifact@v4
         with:
           name: customization-package
-          path: ${{ steps.package.outputs.path }}
+          path: dist/*.zip
           retention-days: 30
 
   # ──────────────────────────────────────────────
@@ -182,14 +218,27 @@ jobs:
           ACUMATICA_TENANT: ${{ (steps.env.outputs.target == 'production') && secrets.ACUMATICA_PROD_TENANT || (secrets.ACUMATICA_STG_TENANT || secrets.ACUMATICA_PROD_TENANT) }}
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
         run: |
-          PACKAGE_FILE=$(ls dist/*.zip | head -1)
+          # Main package is the one matching PROJECT_NAME; extras are everything else
+          PACKAGE_FILE=$(ls dist/${PROJECT_NAME}_*.zip 2>/dev/null | head -1)
+          if [ -z "${PACKAGE_FILE}" ]; then
+            PACKAGE_FILE=$(ls dist/*.zip | head -1)
+          fi
           DRY_RUN="${{ github.event.inputs.dry_run || 'false' }}"
+
+          # Build extra-import flags for any additional packages
+          EXTRA_FLAGS=""
+          for pkg in dist/*.zip; do
+            if [ "${pkg}" != "${PACKAGE_FILE}" ]; then
+              EXTRA_FLAGS+=" --extra-import ${pkg}"
+            fi
+          done
 
           chmod +x scripts/deploy.sh
           scripts/deploy.sh \
             --project "${PROJECT_NAME}" \
             --package "${PACKAGE_FILE}" \
             --also-publish "${ALSO_PUBLISH}" \
+            ${EXTRA_FLAGS} \
             $( [[ "${DRY_RUN}" == "true" ]] && echo "--validate-only" )
 
       # Notify Slack on deploy failure
@@ -245,13 +294,25 @@ jobs:
           ACUMATICA_PASSWORD: ${{ secrets.ACUMATICA_STG_PASSWORD || secrets.ACUMATICA_PROD_PASSWORD }}
           ACUMATICA_TENANT: ${{ secrets.ACUMATICA_STG_TENANT || secrets.ACUMATICA_PROD_TENANT }}
         run: |
-          PACKAGE_FILE=$(ls dist/*.zip | head -1)
+          PACKAGE_FILE=$(ls dist/${PROJECT_NAME}_*.zip 2>/dev/null | head -1)
+          if [ -z "${PACKAGE_FILE}" ]; then
+            PACKAGE_FILE=$(ls dist/*.zip | head -1)
+          fi
+
+          # Build extra-import flags for any additional packages
+          EXTRA_FLAGS=""
+          for pkg in dist/*.zip; do
+            if [ "${pkg}" != "${PACKAGE_FILE}" ]; then
+              EXTRA_FLAGS+=" --extra-import ${pkg}"
+            fi
+          done
 
           chmod +x scripts/deploy.sh
           scripts/deploy.sh \
             --project "${PROJECT_NAME}" \
             --package "${PACKAGE_FILE}" \
             --also-publish "${ALSO_PUBLISH}" \
+            ${EXTRA_FLAGS} \
             --validate-only
 
       - name: Post validation result
