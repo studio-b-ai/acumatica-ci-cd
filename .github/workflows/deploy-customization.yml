@@ -50,7 +50,7 @@ on:
 env:
   PROJECT_NAME: ${{ vars.CUSTOMIZATION_PROJECT_NAME || 'HeritageFabricsCustom' }}
   ALSO_PUBLISH: ${{ vars.ALSO_PUBLISH_PROJECTS || '' }}
-  POREL_PROJECT_NAME: StudioB_PORelations
+  POREL_PROJECT_NAME: StudioBPORelations
 
 jobs:
   # ──────────────────────────────────────────────
@@ -77,16 +77,16 @@ jobs:
       - name: Validate project.xml files
         run: |
           python scripts/validate-project.py Customization/_project/project.xml
-          # Validate StudioB_PORelations if it exists
-          if [ -f "Customization/StudioB_PORelations/project.xml" ]; then
-            python scripts/validate-project.py Customization/StudioB_PORelations/project.xml
+          # Validate StudioBPORelations if it exists
+          if [ -f "Customization/StudioBPORelations/project.xml" ]; then
+            python scripts/validate-project.py Customization/StudioBPORelations/project.xml
           fi
           # Production deploys run strict mode — unsafe extension patterns become errors
           if [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
             echo "Running strict validation for production..."
             python scripts/validate-project.py --strict Customization/_project/project.xml
-            if [ -f "Customization/StudioB_PORelations/project.xml" ]; then
-              python scripts/validate-project.py --strict Customization/StudioB_PORelations/project.xml
+            if [ -f "Customization/StudioBPORelations/project.xml" ]; then
+              python scripts/validate-project.py --strict Customization/StudioBPORelations/project.xml
             fi
           fi
 
@@ -146,20 +146,20 @@ jobs:
           echo "path=${PACKAGE_PATH}" >> "$GITHUB_OUTPUT"
           echo "name=${PACKAGE_NAME}" >> "$GITHUB_OUTPUT"
 
-      - name: Package StudioB_PORelations
+      - name: Package StudioBPORelations
         id: package_porel
         run: |
-          if [ ! -d "Customization/StudioB_PORelations" ]; then
+          if [ ! -d "Customization/StudioBPORelations" ]; then
             echo "has_porel=false" >> "$GITHUB_OUTPUT"
-            echo "No StudioB_PORelations project found — skipping"
+            echo "No StudioBPORelations project found — skipping"
             exit 0
           fi
 
           TIMESTAMP=$(date +%Y%m%d-%H%M%S)
-          POREL_NAME="StudioB_PORelations_${TIMESTAMP}.zip"
+          POREL_NAME="StudioBPORelations_${TIMESTAMP}.zip"
           POREL_PATH="dist/${POREL_NAME}"
 
-          cd Customization/StudioB_PORelations
+          cd Customization/StudioBPORelations
           zip -r "../../${POREL_PATH}" . \
             -x "*.DS_Store" \
             -x "__MACOSX/*"
