@@ -233,83 +233,6 @@ namespace StudioB.PO
     {
         public static bool IsActive() => true;
 
-        private static volatile bool _tablesVerified = false;
-
-        public override void Initialize()
-        {
-            base.Initialize();
-            if (!_tablesVerified)
-            {
-                EnsureTablesExist();
-                _tablesVerified = true;
-            }
-        }
-
-        private void EnsureTablesExist()
-        {
-            try
-            {
-                PXDatabase.Execute(@"
-IF NOT EXISTS (SELECT 1 FROM sys.tables WHERE name = 'UsrPORelation')
-CREATE TABLE UsrPORelation (
-    CompanyID INT NOT NULL DEFAULT 0,
-    UsrPORelationID INT IDENTITY(1,1) NOT NULL,
-    RefNoteID UNIQUEIDENTIFIER NULL,
-    Role NVARCHAR(50) NULL,
-    ContactName NVARCHAR(100) NULL,
-    Email NVARCHAR(100) NULL,
-    Phone NVARCHAR(50) NULL,
-    Company NVARCHAR(100) NULL,
-    AddToCC BIT NULL DEFAULT 0,
-    IsActive BIT NULL DEFAULT 1,
-    CreatedByID UNIQUEIDENTIFIER NULL,
-    CreatedByScreenID CHAR(8) NULL,
-    CreatedDateTime DATETIME NULL,
-    LastModifiedByID UNIQUEIDENTIFIER NULL,
-    LastModifiedByScreenID CHAR(8) NULL,
-    LastModifiedDateTime DATETIME NULL,
-    tstamp TIMESTAMP NOT NULL,
-    CONSTRAINT PK_UsrPORelation PRIMARY KEY CLUSTERED (CompanyID, UsrPORelationID)
-);");
-
-                PXDatabase.Execute(@"
-IF NOT EXISTS (SELECT 1 FROM sys.tables WHERE name = 'UsrPOActivity')
-CREATE TABLE UsrPOActivity (
-    CompanyID INT NOT NULL DEFAULT 0,
-    UsrPOActivityID INT IDENTITY(1,1) NOT NULL,
-    RefNoteID UNIQUEIDENTIFIER NULL,
-    Type CHAR(2) NULL DEFAULT 'NT',
-    Subject NVARCHAR(255) NULL,
-    Body NVARCHAR(MAX) NULL,
-    Status CHAR(2) NULL DEFAULT 'OP',
-    Priority CHAR(1) NULL DEFAULT 'N',
-    StartDate DATETIME NULL,
-    OwnerID NVARCHAR(100) NULL,
-    CreatedByID UNIQUEIDENTIFIER NULL,
-    CreatedByScreenID CHAR(8) NULL,
-    CreatedDateTime DATETIME NULL,
-    LastModifiedByID UNIQUEIDENTIFIER NULL,
-    LastModifiedByScreenID CHAR(8) NULL,
-    LastModifiedDateTime DATETIME NULL,
-    tstamp TIMESTAMP NOT NULL,
-    CONSTRAINT PK_UsrPOActivity PRIMARY KEY CLUSTERED (CompanyID, UsrPOActivityID)
-);");
-
-                PXDatabase.Execute(@"
-IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_UsrPORelation_RefNoteID')
-    CREATE INDEX IX_UsrPORelation_RefNoteID ON UsrPORelation(CompanyID, RefNoteID);");
-
-                PXDatabase.Execute(@"
-IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_UsrPOActivity_RefNoteID')
-    CREATE INDEX IX_UsrPOActivity_RefNoteID ON UsrPOActivity(CompanyID, RefNoteID);");
-            }
-            catch (Exception)
-            {
-                // Tables may already exist or DDL may be restricted — fail silently
-                // The next SELECT will throw a clear error if tables don't exist
-            }
-        }
-
         [PXViewName("Relations")]
         public PXSelect<UsrPORelation,
             Where<UsrPORelation.refNoteID, Equal<Current<POOrder.noteID>>>> Relations;
@@ -331,36 +254,57 @@ namespace StudioB.PO
     {
         public override void UpdateDatabase()
         {
-            WriteLog("StudioB PO Relations: Starting table creation...");
+            WriteLog("StudioB PO Relations: Starting table creation via ADO.NET...");
 
-            // Step 1: Test basic SQL connectivity
+            // PXDatabase.Execute() is for stored procedures only — need raw ADO.NET for DDL
+            string connStr = null;
+
+            // Try multiple ways to get connection string
             try
             {
-                PXDatabase.Execute("SELECT 1");
-                WriteLog("StudioB PO Relations: SQL connectivity OK");
+                // Method 1: System.Configuration
+                var cs = System.Configuration.ConfigurationManager.ConnectionStrings["ProjectX"];
+                if (cs != null) connStr = cs.ConnectionString;
+                WriteLog("StudioB: ConnStr from ConfigurationManager: " + (connStr != null ? "found" : "null"));
             }
             catch (System.Exception ex)
             {
-                WriteLog("StudioB PO Relations: SQL connectivity FAILED: " + ex.GetType().FullName + ": " + ex.Message);
+                WriteLog("StudioB: ConfigurationManager failed: " + ex.Message);
+            }
+
+            if (connStr == null)
+            {
+                try
+                {
+                    // Method 2: Try all connection strings
+                    var allCs = System.Configuration.ConfigurationManager.ConnectionStrings;
+                    WriteLog("StudioB: Total connection strings: " + allCs.Count);
+                    for (int i = 0; i < allCs.Count; i++)
+                    {
+                        WriteLog("StudioB: ConnStr[" + i + "] name=" + allCs[i].Name);
+                        if (allCs[i].Name != "LocalSqlServer" && allCs[i].Name != "LocalMySqlServer")
+                        {
+                            connStr = allCs[i].ConnectionString;
+                        }
+                    }
+                }
+                catch (System.Exception ex)
+                {
+                    WriteLog("StudioB: Enumerate connstrings failed: " + ex.Message);
+                }
+            }
+
+            if (connStr == null)
+            {
+                WriteLog("StudioB PO Relations: No connection string found — cannot create tables");
                 return;
             }
 
-            // Step 2: Check if tables already exist
-            try
-            {
-                PXDatabase.Execute("SELECT TOP 0 * FROM UsrPORelation");
-                WriteLog("StudioB PO Relations: UsrPORelation already exists — skipping creation");
-                return; // Tables exist, nothing to do
-            }
-            catch (System.Exception)
-            {
-                WriteLog("StudioB PO Relations: UsrPORelation does not exist — will create");
-            }
+            WriteLog("StudioB PO Relations: Got connection string, executing DDL...");
 
-            // Step 3: Try CREATE TABLE
-            try
-            {
-                PXDatabase.Execute(@"
+            // Create UsrPORelation
+            ExecuteDDL(connStr, "UsrPORelation", @"
+IF NOT EXISTS (SELECT 1 FROM sys.tables WHERE name = 'UsrPORelation')
 CREATE TABLE UsrPORelation (
     CompanyID INT NOT NULL DEFAULT 0,
     UsrPORelationID INT IDENTITY(1,1) NOT NULL,
@@ -381,49 +325,10 @@ CREATE TABLE UsrPORelation (
     tstamp TIMESTAMP NOT NULL,
     CONSTRAINT PK_UsrPORelation PRIMARY KEY CLUSTERED (CompanyID, UsrPORelationID)
 )");
-                WriteLog("StudioB PO Relations: UsrPORelation table CREATED");
-            }
-            catch (System.Exception ex)
-            {
-                WriteLog("StudioB PO Relations: CREATE TABLE UsrPORelation FAILED: " + ex.GetType().FullName + ": " + ex.Message);
 
-                // Step 3b: Try without IDENTITY and TIMESTAMP
-                try
-                {
-                    PXDatabase.Execute(@"
-CREATE TABLE UsrPORelation (
-    CompanyID INT NOT NULL DEFAULT 0,
-    UsrPORelationID INT NOT NULL,
-    RefNoteID UNIQUEIDENTIFIER NULL,
-    Role NVARCHAR(50) NULL,
-    ContactName NVARCHAR(100) NULL,
-    Email NVARCHAR(100) NULL,
-    Phone NVARCHAR(50) NULL,
-    Company NVARCHAR(100) NULL,
-    AddToCC BIT NULL DEFAULT 0,
-    IsActive BIT NULL DEFAULT 1,
-    CreatedByID UNIQUEIDENTIFIER NULL,
-    CreatedByScreenID CHAR(8) NULL,
-    CreatedDateTime DATETIME NULL,
-    LastModifiedByID UNIQUEIDENTIFIER NULL,
-    LastModifiedByScreenID CHAR(8) NULL,
-    LastModifiedDateTime DATETIME NULL,
-    NoteID UNIQUEIDENTIFIER NULL,
-    CONSTRAINT PK_UsrPORelation PRIMARY KEY CLUSTERED (CompanyID, UsrPORelationID)
-)");
-                    WriteLog("StudioB PO Relations: UsrPORelation table CREATED (without IDENTITY)");
-                }
-                catch (System.Exception ex2)
-                {
-                    WriteLog("StudioB PO Relations: CREATE TABLE UsrPORelation (no IDENTITY) FAILED: " + ex2.GetType().FullName + ": " + ex2.Message);
-                    return;
-                }
-            }
-
-            // Step 4: Create UsrPOActivity
-            try
-            {
-                PXDatabase.Execute(@"
+            // Create UsrPOActivity
+            ExecuteDDL(connStr, "UsrPOActivity", @"
+IF NOT EXISTS (SELECT 1 FROM sys.tables WHERE name = 'UsrPOActivity')
 CREATE TABLE UsrPOActivity (
     CompanyID INT NOT NULL DEFAULT 0,
     UsrPOActivityID INT IDENTITY(1,1) NOT NULL,
@@ -444,26 +349,37 @@ CREATE TABLE UsrPOActivity (
     tstamp TIMESTAMP NOT NULL,
     CONSTRAINT PK_UsrPOActivity PRIMARY KEY CLUSTERED (CompanyID, UsrPOActivityID)
 )");
-                WriteLog("StudioB PO Relations: UsrPOActivity table CREATED");
-            }
-            catch (System.Exception ex)
-            {
-                WriteLog("StudioB PO Relations: CREATE TABLE UsrPOActivity FAILED: " + ex.GetType().FullName + ": " + ex.Message);
-            }
 
-            // Step 5: Create indexes
-            try
-            {
-                PXDatabase.Execute("CREATE INDEX IX_UsrPORelation_RefNoteID ON UsrPORelation(CompanyID, RefNoteID)");
-                PXDatabase.Execute("CREATE INDEX IX_UsrPOActivity_RefNoteID ON UsrPOActivity(CompanyID, RefNoteID)");
-                WriteLog("StudioB PO Relations: Indexes created");
-            }
-            catch (System.Exception ex)
-            {
-                WriteLog("StudioB PO Relations: Index creation: " + ex.Message);
-            }
+            // Create indexes
+            ExecuteDDL(connStr, "IX_UsrPORelation_RefNoteID",
+                "IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_UsrPORelation_RefNoteID') CREATE INDEX IX_UsrPORelation_RefNoteID ON UsrPORelation(CompanyID, RefNoteID)");
+
+            ExecuteDDL(connStr, "IX_UsrPOActivity_RefNoteID",
+                "IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_UsrPOActivity_RefNoteID') CREATE INDEX IX_UsrPOActivity_RefNoteID ON UsrPOActivity(CompanyID, RefNoteID)");
 
             WriteLog("StudioB PO Relations: UpdateDatabase complete");
+        }
+
+        private void ExecuteDDL(string connStr, string label, string sql)
+        {
+            try
+            {
+                using (var conn = new Microsoft.Data.SqlClient.SqlConnection(connStr))
+                {
+                    conn.Open();
+                    using (var cmd = conn.CreateCommand())
+                    {
+                        cmd.CommandText = sql;
+                        cmd.CommandTimeout = 60;
+                        cmd.ExecuteNonQuery();
+                    }
+                }
+                WriteLog("StudioB PO Relations: " + label + " — OK");
+            }
+            catch (System.Exception ex)
+            {
+                WriteLog("StudioB PO Relations: " + label + " — FAILED: " + ex.GetType().FullName + ": " + ex.Message);
+            }
         }
     }
 }]]></CDATA>
