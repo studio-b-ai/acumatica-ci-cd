@@ -306,10 +306,16 @@ IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_UsrPOActivity_RefNoteI
                         <Children Key="Template">
                             <AddItem>
                                 <PXGrid TypeFullName="PX.Web.UI.PXGrid">
-                                    <Prop Key="ID" Value="gridRelations" />
+                                    <Prop Key="Virtual:ApplyStylesheetSkin" />
+                                    <Prop Key="BorderWidth" Value="0px" />
+                                    <Prop Key="Height" Value="150px" />
                                     <Prop Key="SkinID" Value="Details" />
-                                    <Prop Key="DataSourceID" Value="ds" />
                                     <Prop Key="Width" Value="100%" />
+                                    <Prop Key="ID" Value="gridRelations" />
+                                    <Prop Key="AutoSize.Enabled" Value="True" />
+                                    <Prop Key="AutoSize.Container" Value="Window" />
+                                    <Prop Key="AutoSize.MinHeight" Value="150" />
+                                    <Prop Key="DataSourceID" Value="ds" />
                                     <Children Key="Levels">
                                         <AddItem>
                                             <PXGridLevel TypeFullName="PX.Web.UI.PXGridLevel">
@@ -365,13 +371,6 @@ IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_UsrPOActivity_RefNoteI
                                             </PXGridLevel>
                                         </AddItem>
                                     </Children>
-                                    <Children Key="AutoSize">
-                                        <AddItem>
-                                            <PXAutoSize TypeFullName="PX.Web.UI.PXAutoSize">
-                                                <Prop Key="Enabled" Value="True" />
-                                            </PXAutoSize>
-                                        </AddItem>
-                                    </Children>
                                 </PXGrid>
                             </AddItem>
                         </Children>
@@ -383,10 +382,16 @@ IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_UsrPOActivity_RefNoteI
                         <Children Key="Template">
                             <AddItem>
                                 <PXGrid TypeFullName="PX.Web.UI.PXGrid">
-                                    <Prop Key="ID" Value="gridActivities" />
+                                    <Prop Key="Virtual:ApplyStylesheetSkin" />
+                                    <Prop Key="BorderWidth" Value="0px" />
+                                    <Prop Key="Height" Value="150px" />
                                     <Prop Key="SkinID" Value="Details" />
-                                    <Prop Key="DataSourceID" Value="ds" />
                                     <Prop Key="Width" Value="100%" />
+                                    <Prop Key="ID" Value="gridActivities" />
+                                    <Prop Key="AutoSize.Enabled" Value="True" />
+                                    <Prop Key="AutoSize.Container" Value="Window" />
+                                    <Prop Key="AutoSize.MinHeight" Value="150" />
+                                    <Prop Key="DataSourceID" Value="ds" />
                                     <Children Key="Levels">
                                         <AddItem>
                                             <PXGridLevel TypeFullName="PX.Web.UI.PXGridLevel">
@@ -436,13 +441,6 @@ IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_UsrPOActivity_RefNoteI
                                                     </AddItem>
                                                 </Children>
                                             </PXGridLevel>
-                                        </AddItem>
-                                    </Children>
-                                    <Children Key="AutoSize">
-                                        <AddItem>
-                                            <PXAutoSize TypeFullName="PX.Web.UI.PXAutoSize">
-                                                <Prop Key="Enabled" Value="True" />
-                                            </PXAutoSize>
                                         </AddItem>
                                     </Children>
                                 </PXGrid>
