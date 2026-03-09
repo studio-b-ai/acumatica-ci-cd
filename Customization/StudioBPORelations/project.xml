@@ -254,44 +254,28 @@ namespace StudioB.PO
     {
         public override void UpdateDatabase()
         {
-            WriteLog("StudioB PO Relations: Starting table creation via ADO.NET...");
-
-            // PXDatabase.Execute() is for stored procedures only — need raw ADO.NET for DDL
+            // Get connection string from web.config
             string connStr = null;
-
-            // Try multiple ways to get connection string
             try
             {
-                // Method 1: System.Configuration
                 var cs = System.Configuration.ConfigurationManager.ConnectionStrings["ProjectX"];
                 if (cs != null) connStr = cs.ConnectionString;
-                WriteLog("StudioB: ConnStr from ConfigurationManager: " + (connStr != null ? "found" : "null"));
             }
-            catch (System.Exception ex)
-            {
-                WriteLog("StudioB: ConfigurationManager failed: " + ex.Message);
-            }
+            catch { }
 
             if (connStr == null)
             {
+                // Fallback: scan all connection strings
                 try
                 {
-                    // Method 2: Try all connection strings
                     var allCs = System.Configuration.ConfigurationManager.ConnectionStrings;
-                    WriteLog("StudioB: Total connection strings: " + allCs.Count);
                     for (int i = 0; i < allCs.Count; i++)
                     {
-                        WriteLog("StudioB: ConnStr[" + i + "] name=" + allCs[i].Name);
                         if (allCs[i].Name != "LocalSqlServer" && allCs[i].Name != "LocalMySqlServer")
-                        {
                             connStr = allCs[i].ConnectionString;
-                        }
                     }
                 }
-                catch (System.Exception ex)
-                {
-                    WriteLog("StudioB: Enumerate connstrings failed: " + ex.Message);
-                }
+                catch { }
             }
 
             if (connStr == null)
@@ -300,11 +284,9 @@ namespace StudioB.PO
                 return;
             }
 
-            // Fix SSL trust for Microsoft.Data.SqlClient (stricter than System.Data.SqlClient)
+            // Microsoft.Data.SqlClient requires explicit SSL trust for cloud SQL
             if (!connStr.Contains("TrustServerCertificate"))
                 connStr += ";TrustServerCertificate=True";
-
-            WriteLog("StudioB PO Relations: Got connection string, executing DDL...");
 
             // Create UsrPORelation
             ExecuteDDL(connStr, "UsrPORelation", @"
