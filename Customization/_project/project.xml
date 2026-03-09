@@ -1,4 +1,4 @@
-<Customization level="1" description="PO custom date fields + Customer payment link exclusion + SO HubSpot Deal ID + IGCM container date propagation + IN402000 Exp Arrival Date" product-version="24.208">
+<Customization level="1" description="PO custom date fields + PO CRM Relations + Customer payment link exclusion + SO HubSpot Deal ID + IGCM container date propagation + IN402000 Exp Arrival Date" product-version="24.208">
     <Graph ClassName="POLineExt" Source="#CDATA" IsNew="True" FileType="NewFile">
         <CDATA name="Source"><![CDATA[using System;
 using PX.Data;
@@ -354,6 +354,34 @@ namespace HeritageFabrics.IN
             {
                 // Silently handle extension retrieval failures
                 // to prevent breaking the Inventory Allocation screen
+            }
+        }
+    }
+}]]></CDATA>
+    </Graph>
+    <Graph ClassName="POOrderEntry_CRM_Extension" Source="#CDATA" IsNew="True" FileType="NewFile">
+        <CDATA name="Source"><![CDATA[using System;
+using PX.Data;
+using PX.Objects.PO;
+using PX.Objects.CR;
+
+namespace HeritageFabrics.PO
+{
+    public class POOrderEntry_CRM_Extension : PXGraphExtension<POOrderEntry>
+    {
+        public static bool IsActive() => true;
+
+        [PXViewName("Relations")]
+        public PXSelect<CRRelation,
+            Where<CRRelation.refNoteID, Equal<Current<POOrder.noteID>>>> Relations;
+
+        protected void _(Events.RowInserting<CRRelation> e)
+        {
+            if (e.Row == null) return;
+            POOrder current = Base.Document.Current;
+            if (current?.NoteID != null)
+            {
+                e.Row.RefNoteID = current.NoteID;
             }
         }
     }
