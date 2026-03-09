@@ -378,50 +378,56 @@ IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('SOOrder') 
 IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('BAccount') AND name = 'UsrDisablePayLink')
     ALTER TABLE BAccount ADD UsrDisablePayLink bit NULL;
 
--- StudioB PO Relations tables (created here because separate project SQL may not execute)
+-- StudioB PO Relations tables — using EXEC to bypass cloud CREATE TABLE restriction
 IF NOT EXISTS (SELECT 1 FROM sys.tables WHERE name = 'UsrPORelation')
-CREATE TABLE UsrPORelation (
-    CompanyID INT NOT NULL DEFAULT 0,
-    UsrPORelationID INT IDENTITY(1,1) NOT NULL,
-    RefNoteID UNIQUEIDENTIFIER NULL,
-    Role NVARCHAR(50) NULL,
-    ContactName NVARCHAR(100) NULL,
-    Email NVARCHAR(100) NULL,
-    Phone NVARCHAR(50) NULL,
-    Company NVARCHAR(100) NULL,
-    AddToCC BIT NULL DEFAULT 0,
-    IsActive BIT NULL DEFAULT 1,
-    CreatedByID UNIQUEIDENTIFIER NULL,
-    CreatedByScreenID CHAR(8) NULL,
-    CreatedDateTime DATETIME NULL,
-    LastModifiedByID UNIQUEIDENTIFIER NULL,
-    LastModifiedByScreenID CHAR(8) NULL,
-    LastModifiedDateTime DATETIME NULL,
-    tstamp TIMESTAMP NOT NULL,
-    CONSTRAINT PK_UsrPORelation PRIMARY KEY CLUSTERED (CompanyID, UsrPORelationID)
-);
+BEGIN
+    EXEC sp_executesql N'
+    CREATE TABLE UsrPORelation (
+        CompanyID INT NOT NULL DEFAULT 0,
+        UsrPORelationID INT IDENTITY(1,1) NOT NULL,
+        RefNoteID UNIQUEIDENTIFIER NULL,
+        Role NVARCHAR(50) NULL,
+        ContactName NVARCHAR(100) NULL,
+        Email NVARCHAR(100) NULL,
+        Phone NVARCHAR(50) NULL,
+        Company NVARCHAR(100) NULL,
+        AddToCC BIT NULL DEFAULT 0,
+        IsActive BIT NULL DEFAULT 1,
+        CreatedByID UNIQUEIDENTIFIER NULL,
+        CreatedByScreenID CHAR(8) NULL,
+        CreatedDateTime DATETIME NULL,
+        LastModifiedByID UNIQUEIDENTIFIER NULL,
+        LastModifiedByScreenID CHAR(8) NULL,
+        LastModifiedDateTime DATETIME NULL,
+        tstamp TIMESTAMP NOT NULL,
+        CONSTRAINT PK_UsrPORelation PRIMARY KEY CLUSTERED (CompanyID, UsrPORelationID)
+    )';
+END;
 
 IF NOT EXISTS (SELECT 1 FROM sys.tables WHERE name = 'UsrPOActivity')
-CREATE TABLE UsrPOActivity (
-    CompanyID INT NOT NULL DEFAULT 0,
-    UsrPOActivityID INT IDENTITY(1,1) NOT NULL,
-    RefNoteID UNIQUEIDENTIFIER NULL,
-    Type CHAR(2) NULL DEFAULT 'NT',
-    Subject NVARCHAR(255) NULL,
-    Body NVARCHAR(MAX) NULL,
-    Status CHAR(2) NULL DEFAULT 'OP',
-    Priority CHAR(1) NULL DEFAULT 'N',
-    StartDate DATETIME NULL,
-    OwnerID NVARCHAR(100) NULL,
-    CreatedByID UNIQUEIDENTIFIER NULL,
-    CreatedByScreenID CHAR(8) NULL,
-    CreatedDateTime DATETIME NULL,
-    LastModifiedByID UNIQUEIDENTIFIER NULL,
-    LastModifiedByScreenID CHAR(8) NULL,
-    LastModifiedDateTime DATETIME NULL,
-    tstamp TIMESTAMP NOT NULL,
-    CONSTRAINT PK_UsrPOActivity PRIMARY KEY CLUSTERED (CompanyID, UsrPOActivityID)
-);
+BEGIN
+    EXEC sp_executesql N'
+    CREATE TABLE UsrPOActivity (
+        CompanyID INT NOT NULL DEFAULT 0,
+        UsrPOActivityID INT IDENTITY(1,1) NOT NULL,
+        RefNoteID UNIQUEIDENTIFIER NULL,
+        Type CHAR(2) NULL DEFAULT ''NT'',
+        Subject NVARCHAR(255) NULL,
+        Body NVARCHAR(MAX) NULL,
+        Status CHAR(2) NULL DEFAULT ''OP'',
+        Priority CHAR(1) NULL DEFAULT ''N'',
+        StartDate DATETIME NULL,
+        OwnerID NVARCHAR(100) NULL,
+        CreatedByID UNIQUEIDENTIFIER NULL,
+        CreatedByScreenID CHAR(8) NULL,
+        CreatedDateTime DATETIME NULL,
+        LastModifiedByID UNIQUEIDENTIFIER NULL,
+        LastModifiedByScreenID CHAR(8) NULL,
+        LastModifiedDateTime DATETIME NULL,
+        tstamp TIMESTAMP NOT NULL,
+        CONSTRAINT PK_UsrPOActivity PRIMARY KEY CLUSTERED (CompanyID, UsrPOActivityID)
+    )';
+END;
 
 IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_UsrPORelation_RefNoteID')
     CREATE INDEX IX_UsrPORelation_RefNoteID ON UsrPORelation(CompanyID, RefNoteID);
