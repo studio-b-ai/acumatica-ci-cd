@@ -430,6 +430,27 @@ for key in ['log', 'message', 'exceptionMessage', 'errors']:
       die "Publish reported failure. Check Acumatica System Monitor for details."
     elif echo "${BODY}" | grep -qi '"isCompleted"\s*:\s*true'; then
       ok "Publish completed successfully (${ELAPSED}s)"
+      # Dump SQL-relevant publish log entries for diagnostics
+      python3 -c "
+import json, sys
+try:
+    with open('${RESPONSE_FILE}') as f:
+        data = json.load(f)
+    log_entries = data.get('log', []) if isinstance(data, dict) else data if isinstance(data, list) else []
+    if log_entries:
+        sql_lines = [e for e in log_entries if isinstance(e, dict) and any(kw in str(e.get('message','')).lower() for kw in ('sql','table','create','error','warning','exception','failed','usrpo'))]
+        if sql_lines:
+            print(f'  SQL-related log entries ({len(sql_lines)}):')
+            for e in sql_lines[:20]:
+                print(f\"    [{e.get('logType','?')}] {e.get('message','')[:200]}\")
+        else:
+            print(f'  Publish log: {len(log_entries)} entries, no SQL-related messages found')
+    else:
+        print('  Publish log: empty (no log entries in response)')
+        print(f'  Response keys: {list(data.keys()) if isinstance(data, dict) else \"not a dict\"}')
+except Exception as e:
+    print(f'  Log parse error: {e}')
+" 2>&1 || true
       break
     elif [[ "${BODY}" == "true" ]]; then
       ok "Publish completed successfully (${ELAPSED}s)"

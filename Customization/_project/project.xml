@@ -378,15 +378,10 @@ IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('SOOrder') 
 IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('BAccount') AND name = 'UsrDisablePayLink')
     ALTER TABLE BAccount ADD UsrDisablePayLink bit NULL;
 
--- StudioB PO Relations: diagnostic test — simplest possible CREATE TABLE
-IF NOT EXISTS (SELECT 1 FROM sys.tables WHERE name = 'UsrSqlTest')
-    CREATE TABLE UsrSqlTest (TestID INT NOT NULL);
-
--- If the above works, create the real tables
-IF NOT EXISTS (SELECT 1 FROM sys.tables WHERE name = 'UsrPORelation')
+-- StudioB PO Relations: bare CREATE TABLE test (no IF NOT EXISTS, no IDENTITY)
 CREATE TABLE UsrPORelation (
     CompanyID INT NOT NULL DEFAULT 0,
-    UsrPORelationID INT IDENTITY(1,1) NOT NULL,
+    UsrPORelationID INT NOT NULL,
     RefNoteID UNIQUEIDENTIFIER NULL,
     Role NVARCHAR(50) NULL,
     ContactName NVARCHAR(100) NULL,
@@ -400,15 +395,12 @@ CREATE TABLE UsrPORelation (
     CreatedDateTime DATETIME NULL,
     LastModifiedByID UNIQUEIDENTIFIER NULL,
     LastModifiedByScreenID CHAR(8) NULL,
-    LastModifiedDateTime DATETIME NULL,
-    tstamp TIMESTAMP NOT NULL,
-    CONSTRAINT PK_UsrPORelation PRIMARY KEY CLUSTERED (CompanyID, UsrPORelationID)
+    LastModifiedDateTime DATETIME NULL
 );
 
-IF NOT EXISTS (SELECT 1 FROM sys.tables WHERE name = 'UsrPOActivity')
 CREATE TABLE UsrPOActivity (
     CompanyID INT NOT NULL DEFAULT 0,
-    UsrPOActivityID INT IDENTITY(1,1) NOT NULL,
+    UsrPOActivityID INT NOT NULL,
     RefNoteID UNIQUEIDENTIFIER NULL,
     Type CHAR(2) NULL DEFAULT 'NT',
     Subject NVARCHAR(255) NULL,
@@ -422,16 +414,8 @@ CREATE TABLE UsrPOActivity (
     CreatedDateTime DATETIME NULL,
     LastModifiedByID UNIQUEIDENTIFIER NULL,
     LastModifiedByScreenID CHAR(8) NULL,
-    LastModifiedDateTime DATETIME NULL,
-    tstamp TIMESTAMP NOT NULL,
-    CONSTRAINT PK_UsrPOActivity PRIMARY KEY CLUSTERED (CompanyID, UsrPOActivityID)
+    LastModifiedDateTime DATETIME NULL
 );
-
-IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_UsrPORelation_RefNoteID')
-    CREATE INDEX IX_UsrPORelation_RefNoteID ON UsrPORelation(CompanyID, RefNoteID);
-
-IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_UsrPOActivity_RefNoteID')
-    CREATE INDEX IX_UsrPOActivity_RefNoteID ON UsrPOActivity(CompanyID, RefNoteID);
 ]]></CDATA>
     </Sql>
     <Page path="~/pages/po/po301000.aspx">
