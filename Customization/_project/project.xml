@@ -390,25 +390,17 @@ namespace HeritageFabrics.PO
     <Graph ClassName="POOrderEntry_ActivityDetailsExt" Source="#CDATA" IsNew="True" FileType="NewFile">
         <CDATA name="Source"><![CDATA[using System;
 using PX.Data;
-using PX.Data.BQL;
 using PX.Objects.PO;
 using PX.Objects.CR;
-using PX.Objects.Common.GraphExtensions.Abstract;
-using PX.Objects.Common.GraphExtensions.Abstract.DAC;
 
 namespace HeritageFabrics.PO
 {
-    public sealed class POOrderEntry_ActivityDetailsExt
-        : ActivityDetailsExt<POOrderEntry, POOrder>
+    public class POOrderEntry_ActivityDetailsExt : PXGraphExtension<POOrderEntry>
     {
         public static bool IsActive() => true;
 
-        public override Type GetLinkConditionClause()
-        {
-            return typeof(
-                Where<CRPMTimeActivity.refNoteID
-                    .IsEqual<POOrder.noteID.FromCurrent>>);
-        }
+        [PXViewName("Activities")]
+        public CRActivityList<POOrder> Activities;
     }
 }]]></CDATA>
     </Graph>
