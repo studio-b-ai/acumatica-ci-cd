@@ -88,7 +88,7 @@ Options:
   --project NAME         Customization project name in Acumatica
   --package FILE         Path to .zip package to deploy
   --also-publish NAMES   Comma-separated project names to co-publish for conflict check
-  --extra-import FILE    Additional .zip package to import before publishing (repeatable)
+  --extra-import NAME:FILE  Additional package to import (NAME=project name, FILE=zip path; repeatable)
   --validate-only        Upload and validate but do not publish
   --poll-interval SECS   Seconds between publish status checks (default: 10)
   --poll-timeout SECS    Max seconds to wait for publish (default: 600)
@@ -106,7 +106,7 @@ Examples:
 
   # Deploy multiple projects together
   ./deploy.sh --project Main --package dist/Main.zip \
-    --extra-import dist/Addon.zip \
+    --extra-import "Addon:dist/Addon.zip" \
     --also-publish "Main,Addon"
 EOF
   exit 0
@@ -147,8 +147,10 @@ log "Project: ${PROJECT}"
 log "Package: ${PACKAGE} ($(du -h "${PACKAGE}" | cut -f1))"
 [[ -n "${ALSO_PUBLISH}" ]] && log "Co-publish with: ${ALSO_PUBLISH}"
 for extra in "${EXTRA_IMPORTS[@]}"; do
-  [[ ! -f "${extra}" ]] && die "Extra import file not found: ${extra}"
-  log "Extra import: ${extra} ($(du -h "${extra}" | cut -f1))"
+  EXTRA_FILE="${extra#*:}"
+  EXTRA_PROJ="${extra%%:*}"
+  [[ ! -f "${EXTRA_FILE}" ]] && die "Extra import file not found: ${EXTRA_FILE}"
+  log "Extra import: ${EXTRA_PROJ} → ${EXTRA_FILE} ($(du -h "${EXTRA_FILE}" | cut -f1))"
 done
 [[ "${VALIDATE_ONLY}" == true ]] && warn "VALIDATE ONLY — will not publish"
 
@@ -252,14 +254,15 @@ ok "Package imported: ${PROJECT}"
 
 # ─── Step 2b: Import Extra Packages ──────────────────────────────────────────
 for extra in "${EXTRA_IMPORTS[@]}"; do
-  EXTRA_NAME=$(basename "${extra}" .zip)
-  log "Importing extra package: ${EXTRA_NAME}..."
+  EXTRA_FILE="${extra#*:}"
+  EXTRA_PROJ="${extra%%:*}"
+  log "Importing extra package: ${EXTRA_PROJ}..."
 
-  EXTRA_B64=$(base64 -w0 "${extra}" 2>/dev/null || base64 -i "${extra}" | tr -d '\n')
+  EXTRA_B64=$(base64 -w0 "${EXTRA_FILE}" 2>/dev/null || base64 -i "${EXTRA_FILE}" | tr -d '\n')
 
   EXTRA_IMPORT_BODY=$(cat <<EOFEXTRA
 {
-  "projectName": "${EXTRA_NAME}",
+  "projectName": "${EXTRA_PROJ}",
   "projectDescription": "Deployed via CI/CD at $(date -u +%Y-%m-%dT%H:%M:%SZ)",
   "projectLevel": 0,
   "isReplaceIfExists": true,
@@ -276,11 +279,11 @@ EOFEXTRA
     "${URL}/CustomizationApi/Import")
 
   if [[ "${HTTP_CODE}" != "200" && "${HTTP_CODE}" != "204" ]]; then
-    err "Extra import failed for ${EXTRA_NAME} (HTTP ${HTTP_CODE})"
+    err "Extra import failed for ${EXTRA_PROJ} (HTTP ${HTTP_CODE})"
     cat "${RESPONSE_FILE}" >&2
-    die "Extra package import failed: ${EXTRA_NAME}"
+    die "Extra package import failed: ${EXTRA_PROJ}"
   fi
-  ok "Extra package imported: ${EXTRA_NAME}"
+  ok "Extra package imported: ${EXTRA_PROJ}"
 done
 
 # ─── Validate-only exit point ────────────────────────────────────────────────

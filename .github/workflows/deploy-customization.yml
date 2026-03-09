@@ -225,11 +225,14 @@ jobs:
           fi
           DRY_RUN="${{ github.event.inputs.dry_run || 'false' }}"
 
-          # Build extra-import flags for any additional packages
+          # Build extra-import flags for any additional packages (name:path format)
           EXTRA_FLAGS=""
           for pkg in dist/*.zip; do
             if [ "${pkg}" != "${PACKAGE_FILE}" ]; then
-              EXTRA_FLAGS+=" --extra-import ${pkg}"
+              # Extract project name by removing timestamp suffix (_YYYYMMDD-HHMMSS.zip)
+              PKG_BASE=$(basename "${pkg}" .zip)
+              PKG_NAME=$(echo "${PKG_BASE}" | sed 's/_[0-9]\{8\}-[0-9]\{6\}$//')
+              EXTRA_FLAGS+=" --extra-import ${PKG_NAME}:${pkg}"
             fi
           done
 
@@ -299,11 +302,14 @@ jobs:
             PACKAGE_FILE=$(ls dist/*.zip | head -1)
           fi
 
-          # Build extra-import flags for any additional packages
+          # Build extra-import flags for any additional packages (name:path format)
           EXTRA_FLAGS=""
           for pkg in dist/*.zip; do
             if [ "${pkg}" != "${PACKAGE_FILE}" ]; then
-              EXTRA_FLAGS+=" --extra-import ${pkg}"
+              # Extract project name by removing timestamp suffix (_YYYYMMDD-HHMMSS.zip)
+              PKG_BASE=$(basename "${pkg}" .zip)
+              PKG_NAME=$(echo "${PKG_BASE}" | sed 's/_[0-9]\{8\}-[0-9]\{6\}$//')
+              EXTRA_FLAGS+=" --extra-import ${PKG_NAME}:${pkg}"
             fi
           done
 
