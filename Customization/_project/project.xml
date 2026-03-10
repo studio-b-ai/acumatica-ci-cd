@@ -94,6 +94,12 @@ namespace HeritageFabrics.PO
         [PXUIField(DisplayName = "Act. Arrival Date", Visibility = PXUIVisibility.SelectorVisible)]
         public DateTime? UsrActArrivalDate { get; set; }
         #endregion
+        #region UsrContainerRef
+        public abstract class usrContainerRef : BqlString.Field<usrContainerRef> { }
+        [PXDBString(50, IsUnicode = true)]
+        [PXUIField(DisplayName = "Container / BOL Ref")]
+        public string UsrContainerRef { get; set; }
+        #endregion
     }
 }]]></CDATA>
     </Graph>
@@ -377,11 +383,21 @@ IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('SOOrder') 
 
 IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('BAccount') AND name = 'UsrDisablePayLink')
     ALTER TABLE BAccount ADD UsrDisablePayLink bit NULL;
+
+IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('POOrder') AND name = 'UsrContainerRef')
+    ALTER TABLE POOrder ADD UsrContainerRef nvarchar(50) NULL;
 ]]></CDATA>
     </Sql>
     <Page path="~/pages/po/po301000.aspx">
         <PXFormView ID="form" ParentId="phF_form" TypeFullName="PX.Web.UI.PXFormView">
             <Children Key="Template">
+                <AddItem>
+                    <PXTextEdit TypeFullName="PX.Web.UI.PXTextEdit">
+                        <Prop Key="Virtual:ApplyStylesheetSkin" />
+                        <Prop Key="ID" Value="edUsrContainerRef" />
+                        <Prop Key="DataField" Value="UsrContainerRef" />
+                    </PXTextEdit>
+                </AddItem>
                 <AddItem>
                     <PXDateTimeEdit TypeFullName="PX.Web.UI.PXDateTimeEdit">
                         <Prop Key="Virtual:ApplyStylesheetSkin" />
