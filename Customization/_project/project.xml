@@ -210,8 +210,8 @@ namespace HeritageFabrics.SO
         [PXDefault(PersistingCheck = PXPersistingCheck.Nothing)]
         [PXUIField(DisplayName = "WMS Status")]
         [PXStringList(
-            new[] { "N", "A", "P", "K", "S" },
-            new[] { "Not Started", "Allocated", "Picking", "Packed", "Shipped" }
+            new[] { "N", "A", "P", "F", "K", "S" },
+            new[] { "Not Started", "Allocated", "Picking", "Finishing", "Packed", "Shipped" }
         )]
         public string UsrWMSStatus { get; set; }
         #endregion
