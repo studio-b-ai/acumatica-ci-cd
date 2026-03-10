@@ -72,7 +72,7 @@ cleanup() {
   fi
 
   # Remove temp files
-  for f in "${CLEANUP_FILES[@]}"; do
+  for f in ${CLEANUP_FILES[@]+"${CLEANUP_FILES[@]}"}; do
     rm -f "$f" 2>/dev/null || true
   done
 }
@@ -153,7 +153,7 @@ log "Target:  ${URL}"
 log "Project: ${PROJECT}"
 log "Package: ${PACKAGE} ($(du -h "${PACKAGE}" | cut -f1))"
 [[ -n "${ALSO_PUBLISH}" ]] && log "Co-publish with: ${ALSO_PUBLISH}"
-for extra in "${EXTRA_IMPORTS[@]}"; do
+for extra in ${EXTRA_IMPORTS[@]+"${EXTRA_IMPORTS[@]}"}; do
   EXTRA_FILE="${extra#*:}"
   EXTRA_PROJ="${extra%%:*}"
   [[ ! -f "${EXTRA_FILE}" ]] && die "Extra import file not found: ${EXTRA_FILE}"
@@ -306,7 +306,7 @@ fi
 ok "Package imported: ${PROJECT}"
 
 # ─── Step 2b: Import Extra Packages ──────────────────────────────────────────
-for extra in "${EXTRA_IMPORTS[@]}"; do
+for extra in ${EXTRA_IMPORTS[@]+"${EXTRA_IMPORTS[@]}"}; do
   EXTRA_FILE="${extra#*:}"
   EXTRA_PROJ="${extra%%:*}"
   log "Importing extra package: ${EXTRA_PROJ}..."
