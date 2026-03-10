@@ -1,4 +1,4 @@
-<Customization level="1" description="PO custom date fields + Customer payment link exclusion + SO HubSpot Deal ID + IGCM container date propagation + IN402000 Exp Arrival Date" product-version="24.208">
+<Customization level="1" description="PO custom date fields + Customer payment link exclusion + SO HubSpot Deal ID + WMS Status + IGCM container date propagation + IN402000 Exp Arrival Date" product-version="24.208">
     <Graph ClassName="POLineExt" Source="#CDATA" IsNew="True" FileType="NewFile">
         <CDATA name="Source"><![CDATA[using System;
 using PX.Data;
@@ -202,6 +202,19 @@ namespace HeritageFabrics.SO
         [PXUIField(DisplayName = "HubSpot Order ID", Visibility = PXUIVisibility.SelectorVisible)]
         public string UsrHubSpotDealId { get; set; }
         #endregion
+
+        #region UsrWMSStatus
+        public abstract class usrWMSStatus : BqlString.Field<usrWMSStatus> { }
+
+        [PXDBString(20, IsUnicode = true)]
+        [PXDefault(PersistingCheck = PXPersistingCheck.Nothing)]
+        [PXUIField(DisplayName = "WMS Status")]
+        [PXStringList(
+            new[] { "N", "A", "P", "K", "S" },
+            new[] { "Not Started", "Allocated", "Picking", "Packed", "Shipped" }
+        )]
+        public string UsrWMSStatus { get; set; }
+        #endregion
     }
 }]]></CDATA>
     </Graph>
@@ -386,6 +399,9 @@ IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('BAccount')
 
 IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('POOrder') AND name = 'UsrContainerRef')
     ALTER TABLE POOrder ADD UsrContainerRef nvarchar(50) NULL;
+
+IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('SOOrder') AND name = 'UsrWMSStatus')
+    ALTER TABLE SOOrder ADD UsrWMSStatus nvarchar(20) NULL;
 ]]></CDATA>
     </Sql>
     <Page path="~/pages/po/po301000.aspx">
@@ -441,6 +457,14 @@ IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('POOrder') 
                         <Prop Key="ID" Value="edUsrHubSpotDealId" />
                         <Prop Key="DataField" Value="UsrHubSpotDealId" />
                     </PXTextEdit>
+                </AddItem>
+                <AddItem>
+                    <PXDropDown TypeFullName="PX.Web.UI.PXDropDown">
+                        <Prop Key="Virtual:ApplyStylesheetSkin" />
+                        <Prop Key="ID" Value="edUsrWMSStatus" />
+                        <Prop Key="DataField" Value="UsrWMSStatus" />
+                        <Prop Key="Enabled" Value="False" />
+                    </PXDropDown>
                 </AddItem>
             </Children>
         </PXFormView>
