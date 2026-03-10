@@ -2,6 +2,9 @@
 # ============================================================================
 # Acumatica Customization Deployment Script
 # ============================================================================
+# ⚠️  AFTER-HOURS ONLY: Run after 6pm CT. Publishing restarts the app pool,
+#     terminating all active user sessions. No exceptions without Kevin's approval.
+# ============================================================================
 # Deploys a customization package via the Acumatica Customization API.
 #
 # API Flow:

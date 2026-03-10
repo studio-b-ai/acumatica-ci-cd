@@ -1,8 +1,14 @@
 # Acumatica Customization CI/CD Pipeline
 # Deploys customization projects via the Customization API
 #
+# ⚠️  AFTER-HOURS ONLY POLICY: All production deploys MUST occur after 6pm CT.
+#     Publishing restarts the Acumatica app pool, terminating all active user sessions.
+#     Push code to branches during the day → merge to main after 6pm CT.
+#     workflow_dispatch also available for manual after-hours deployment.
+#     No exceptions without Kevin's explicit approval.
+#
 # Triggers:
-#   - Push to main     → Deploy to PRODUCTION
+#   - Push to main     → Deploy to PRODUCTION (merge after 6pm CT only!)
 #   - Push to staging   → Deploy to STAGING
 #   - Pull request      → Validate against STAGING (no publish)
 #   - Manual dispatch   → Choose target environment
@@ -219,6 +225,28 @@ jobs:
             echo "target=production" >> "$GITHUB_OUTPUT"
           else
             echo "target=staging" >> "$GITHUB_OUTPUT"
+          fi
+
+      # ── After-hours policy check (production only) ──────────────────
+      - name: Check business hours (after 6pm CT policy)
+        if: steps.env.outputs.target == 'production' && github.event.inputs.skip_countdown != 'true'
+        run: |
+          # Get current hour in US Central Time
+          CT_HOUR=$(TZ="America/Chicago" date +%H)
+          CT_TIME=$(TZ="America/Chicago" date "+%I:%M %p %Z")
+          echo "Current time: ${CT_TIME} (hour: ${CT_HOUR})"
+
+          if [ "${CT_HOUR}" -lt 18 ]; then
+            echo "::warning::⚠️ AFTER-HOURS POLICY: Production deploys should occur after 6pm CT."
+            echo "::warning::Current time is ${CT_TIME}. Publishing restarts the app pool and terminates all active user sessions."
+            echo "::warning::To override, use workflow_dispatch with 'skip_countdown' enabled."
+            echo ""
+            echo "❌ Failing deploy — production customization changes are restricted to after 6pm CT."
+            echo "Push code to a branch during the day, then merge to main after 6pm CT."
+            echo "For emergency deploys, use workflow_dispatch with 'Emergency deploy' checked."
+            exit 1
+          else
+            echo "✅ After-hours check passed — ${CT_TIME} is after 6pm CT"
           fi
 
       # ── Pre-deploy snapshot ─────────────────────────────────────────────
