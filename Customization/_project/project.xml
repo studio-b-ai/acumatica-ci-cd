@@ -316,10 +316,9 @@ namespace HeritageFabrics.IN
     </Graph>
     <Graph ClassName="InventoryAllocDetEnq_Extension" Source="#CDATA" IsNew="True" FileType="NewFile">
         <CDATA name="Source"><![CDATA[using System;
+using System.Collections.Generic;
 using PX.Data;
 using PX.Objects.IN;
-using PX.Objects.PO;
-using HeritageFabrics.PO;
 
 namespace HeritageFabrics.IN
 {
@@ -327,36 +326,50 @@ namespace HeritageFabrics.IN
     {
         public static bool IsActive() => true;
 
-        protected void _(Events.RowSelected<InventoryAllocDetEnqResult> e)
-        {
-            if (e.Row == null) return;
-            if (e.Row.Module != "PO" || string.IsNullOrEmpty(e.Row.RefNbr)) return;
+        // Cache PO RefNbr → arrival date to avoid N+1 queries
+        private readonly Dictionary<string, DateTime?> _arrivalDateCache
+            = new Dictionary<string, DateTime?>(StringComparer.OrdinalIgnoreCase);
 
+        /// <summary>
+        /// FieldSelecting fires when the grid reads each row's UsrExpArrivalDate value.
+        /// Looks up the PO header's UsrExpArrivalDate via direct SQL with explicit
+        /// column names — avoids BQL extension field resolution issues in foreign graphs.
+        /// </summary>
+        protected void InventoryAllocDetEnqResult_UsrExpArrivalDate_FieldSelecting(
+            PXCache sender, PXFieldSelectingEventArgs e)
+        {
+            var row = e.Row as InventoryAllocDetEnqResult;
+            if (row == null || string.IsNullOrEmpty(row.RefNbr)) return;
+
+            string refNbr = row.RefNbr.Trim();
+
+            if (_arrivalDateCache.TryGetValue(refNbr, out DateTime? cached))
+            {
+                e.ReturnValue = cached;
+                return;
+            }
+
+            DateTime? arrivalDate = null;
             try
             {
-                DateTime? existing = (DateTime?)e.Cache.GetValue(e.Row, "UsrExpArrivalDate");
-                if (existing != null) return;
-
-                // Direct DB read — bypasses PXCache extension resolution issues
-                // that occur when reading DAC extensions in foreign inquiry graphs
-                using (PXDataRecord rec = PXDatabase.SelectSingle<POOrder>(
-                    new PXDataField<POOrderExt.usrExpArrivalDate>(),
-                    new PXDataFieldValue<POOrder.orderNbr>(e.Row.RefNbr)))
+                // Explicit column names — no BQL extension type resolution needed
+                using (PXDataRecord rec = PXDatabase.SelectSingle<PX.Objects.PO.POOrder>(
+                    new PXDataField("UsrExpArrivalDate"),
+                    new PXDataFieldValue("OrderNbr", refNbr)))
                 {
                     if (rec != null)
                     {
-                        DateTime? arrivalDate = rec.GetDateTime(0);
-                        if (arrivalDate != null)
-                        {
-                            e.Cache.SetValue(e.Row, "UsrExpArrivalDate", arrivalDate);
-                        }
+                        arrivalDate = rec.GetDateTime(0);
                     }
                 }
             }
             catch
             {
-                // Silently handle if custom column doesn't exist yet
+                // Column may not exist yet after initial publish
             }
+
+            _arrivalDateCache[refNbr] = arrivalDate;
+            e.ReturnValue = arrivalDate;
         }
     }
 }]]></CDATA>
