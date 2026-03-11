@@ -334,45 +334,28 @@ namespace HeritageFabrics.IN
 
             try
             {
-                // Use PXCache-based value access instead of GetExtension
-                // to avoid extension initialization failures on inquiry result DACs
                 DateTime? existing = (DateTime?)e.Cache.GetValue(e.Row, "UsrExpArrivalDate");
                 if (existing != null) return;
 
-                // Look up POOrder to get UsrExpArrivalDate
-                POOrder po = null;
-
-                if (!string.IsNullOrEmpty(e.Row.QADocType))
+                // Direct DB read — bypasses PXCache extension resolution issues
+                // that occur when reading DAC extensions in foreign inquiry graphs
+                using (PXDataRecord rec = PXDatabase.SelectSingle<POOrder>(
+                    new PXDataField<POOrderExt.usrExpArrivalDate>(),
+                    new PXDataFieldValue<POOrder.orderNbr>(e.Row.RefNbr)))
                 {
-                    po = PXSelectReadonly<POOrder,
-                        Where<POOrder.orderType, Equal<Required<POOrder.orderType>>,
-                        And<POOrder.orderNbr, Equal<Required<POOrder.orderNbr>>>>>
-                        .Select(Base, e.Row.QADocType, e.Row.RefNbr);
-                }
-
-                // Fallback: lookup by order number only
-                if (po == null)
-                {
-                    po = PXSelectReadonly<POOrder,
-                        Where<POOrder.orderNbr, Equal<Required<POOrder.orderNbr>>>>
-                        .Select(Base, e.Row.RefNbr);
-                }
-
-                if (po != null)
-                {
-                    // Use static PXCache<T>.GetExtension — safer than instance method
-                    // for records loaded via PXSelectReadonly in foreign graphs
-                    POOrderExt poExt = PXCache<POOrder>.GetExtension<POOrderExt>(po);
-                    if (poExt?.UsrExpArrivalDate != null)
+                    if (rec != null)
                     {
-                        e.Cache.SetValue(e.Row, "UsrExpArrivalDate", poExt.UsrExpArrivalDate);
+                        DateTime? arrivalDate = rec.GetDateTime(0);
+                        if (arrivalDate != null)
+                        {
+                            e.Cache.SetValue(e.Row, "UsrExpArrivalDate", arrivalDate);
+                        }
                     }
                 }
             }
             catch
             {
-                // Silently handle extension retrieval failures
-                // to prevent breaking the Inventory Allocation screen
+                // Silently handle if custom column doesn't exist yet
             }
         }
     }
