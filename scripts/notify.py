@@ -322,6 +322,12 @@ def main() -> None:
         help="Slack incoming webhook URL",
     )
     parser.add_argument(
+        "--skip-email",
+        action="store_true",
+        default=False,
+        help="Skip email delivery (e.g., after-hours deploy). Slack still sends.",
+    )
+    parser.add_argument(
         "--tenant-id",
         default=os.environ.get("AZURE_TENANT_ID", ""),
     )
@@ -358,7 +364,9 @@ def main() -> None:
     _log(f"Sending {args.type} notification to {len(recipients)} recipient(s)")
 
     # Send email via Microsoft Graph API
-    if args.tenant_id and args.client_id and args.client_secret:
+    if args.skip_email:
+        _log("Email skipped (after-hours deployment)", style="info")
+    elif args.tenant_id and args.client_id and args.client_secret:
         try:
             sender = GraphMailSender(
                 args.tenant_id, args.client_id, args.client_secret

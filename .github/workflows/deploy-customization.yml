@@ -252,12 +252,26 @@ jobs:
           path: backups/*.zip
           retention-days: 90
 
-      # ── Maintenance countdown (production only, skippable) ───────────
+      # ── After-hours detection (6pm–6am CT → skip employee emails) ────
+      - name: Check if after-hours (6pm-6am CT)
+        id: hours
+        run: |
+          CT_HOUR=$(TZ=America/Chicago date +%H)
+          if [ "$CT_HOUR" -ge 18 ] || [ "$CT_HOUR" -lt 6 ]; then
+            echo "after_hours=true" >> "$GITHUB_OUTPUT"
+            echo "After-hours deploy (${CT_HOUR}:00 CT) — employee emails suppressed"
+          else
+            echo "after_hours=false" >> "$GITHUB_OUTPUT"
+            echo "Business-hours deploy (${CT_HOUR}:00 CT) — employee emails will be sent"
+          fi
+
+      # ── Maintenance countdown (production only, business hours only) ─
       - name: Maintenance countdown notifications
         if: |
           steps.env.outputs.target == 'production' &&
           github.event.inputs.skip_countdown != 'true' &&
-          github.event.inputs.dry_run != 'true'
+          github.event.inputs.dry_run != 'true' &&
+          steps.hours.outputs.after_hours != 'true'
         env:
           AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
           AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
@@ -371,7 +385,8 @@ jobs:
             --sender "${NOTIFY_SENDER}" \
             --project "${PROJECT_NAME}" \
             --environment "${{ steps.env.outputs.target }}" \
-            --slack-webhook "${SLACK_WEBHOOK_URL}"
+            --slack-webhook "${SLACK_WEBHOOK_URL}" \
+            ${{ steps.hours.outputs.after_hours == 'true' && '--skip-email' || '' }}
 
       - name: Notify deploy failed
         if: failure() && steps.env.outputs.target == 'production'
@@ -390,7 +405,8 @@ jobs:
             --sender "${NOTIFY_SENDER}" \
             --project "${PROJECT_NAME}" \
             --environment "${{ steps.env.outputs.target }}" \
-            --slack-webhook "${SLACK_WEBHOOK_URL}"
+            --slack-webhook "${SLACK_WEBHOOK_URL}" \
+            ${{ steps.hours.outputs.after_hours == 'true' && '--skip-email' || '' }}
 
       # Notify Slack on deploy failure
       - name: Slack notification on failure
