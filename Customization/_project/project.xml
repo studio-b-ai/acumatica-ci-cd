@@ -378,6 +378,63 @@ namespace HeritageFabrics.IN
     }
 }]]></CDATA>
     </Graph>
+    <Graph ClassName="HeritageFabricsSchemaInstaller" Source="#CDATA" IsNew="True" FileType="NewFile">
+        <CDATA name="Source"><![CDATA[using System;
+using System.Configuration;
+using Customization;
+
+namespace HeritageFabrics
+{
+    // CustomizationPlugin.UpdateDatabase() is called on every publish.
+    // IF NOT EXISTS guards make it idempotent.
+    // Uses raw ADO.NET (Microsoft.Data.SqlClient) because:
+    //   - PXDatabase.Execute() is a stored-proc caller, not raw SQL
+    //   - <Sql> elements silently skip when tracked as "already applied"
+    //   - TrustServerCertificate=True required by Microsoft.Data.SqlClient on cloud
+    public class HeritageFabricsSchemaInstaller : CustomizationPlugin
+    {
+        public override void UpdateDatabase()
+        {
+            try
+            {
+                var cs = ConfigurationManager.ConnectionStrings["ProjectX"];
+                string connStr = cs.ConnectionString + ";TrustServerCertificate=True";
+
+                using (var conn = new Microsoft.Data.SqlClient.SqlConnection(connStr))
+                {
+                    conn.Open();
+                    string[] statements = new[]
+                    {
+                        "IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('POOrder') AND name = 'UsrExpArrivalDate') ALTER TABLE POOrder ADD UsrExpArrivalDate datetime NULL",
+                        "IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('POOrder') AND name = 'UsrActArrivalDate') ALTER TABLE POOrder ADD UsrActArrivalDate datetime NULL",
+                        "IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('POLine') AND name = 'UsrExpArrivalDate') ALTER TABLE POLine ADD UsrExpArrivalDate datetime NULL",
+                        "IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('POLine') AND name = 'UsrActArrivalDate') ALTER TABLE POLine ADD UsrActArrivalDate datetime NULL",
+                        "IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('SOOrder') AND name = 'UsrHubSpotDealId') ALTER TABLE SOOrder ADD UsrHubSpotDealId nvarchar(50) NULL",
+                        "IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('BAccount') AND name = 'UsrDisablePayLink') ALTER TABLE BAccount ADD UsrDisablePayLink bit NULL",
+                        "IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('POOrder') AND name = 'UsrContainerRef') ALTER TABLE POOrder ADD UsrContainerRef nvarchar(50) NULL",
+                        "IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('SOOrder') AND name = 'UsrWMSStatus') ALTER TABLE SOOrder ADD UsrWMSStatus nvarchar(20) NULL"
+                    };
+                    foreach (string sql in statements)
+                    {
+                        using (var cmd = conn.CreateCommand())
+                        {
+                            cmd.CommandText = sql;
+                            cmd.ExecuteNonQuery();
+                        }
+                        WriteLog("[SchemaInstaller] OK: " + sql.Substring(sql.IndexOf("name = '") + 8).TrimEnd('\'').Split('\'')[0]);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                WriteLog("[SchemaInstaller] ERROR: " + ex.GetType().FullName + ": " + ex.Message);
+                if (ex.InnerException != null)
+                    WriteLog("[SchemaInstaller] Inner: " + ex.InnerException.Message);
+            }
+        }
+    }
+}]]></CDATA>
+    </Graph>
     <Sql Name="CreateCustomColumns_v3" Script="#CDATA">
         <CDATA name="Script"><![CDATA[IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('POOrder') AND name = 'UsrExpArrivalDate')
     ALTER TABLE POOrder ADD UsrExpArrivalDate datetime NULL;
