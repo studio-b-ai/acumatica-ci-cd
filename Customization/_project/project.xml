@@ -418,7 +418,7 @@ namespace HeritageFabrics
     }
 }]]></CDATA>
     </Graph>
-    <Sql Name="CreateCustomColumns_v3" Script="#CDATA">
+    <Sql Name="CreateCustomColumns_v4" Script="#CDATA">
         <CDATA name="Script"><![CDATA[IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('POOrder') AND name = 'UsrExpArrivalDate')
     ALTER TABLE POOrder ADD UsrExpArrivalDate datetime NULL;
 
