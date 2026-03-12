@@ -326,50 +326,57 @@ namespace HeritageFabrics.IN
     {
         public static bool IsActive() => true;
 
-        // Cache PO RefNbr → arrival date to avoid N+1 queries
-        private readonly Dictionary<string, DateTime?> _arrivalDateCache
+        private readonly Dictionary<string, DateTime?> _dateCache
             = new Dictionary<string, DateTime?>(StringComparer.OrdinalIgnoreCase);
 
         /// <summary>
-        /// FieldSelecting fires when the grid reads each row's UsrExpArrivalDate value.
-        /// Looks up the PO header's UsrExpArrivalDate via direct SQL with explicit
-        /// column names — avoids BQL extension field resolution issues in foreign graphs.
+        /// RowSelected fires for each visible row in the inquiry grid.
+        /// Populates the virtual UsrExpArrivalDate from the linked PO header.
+        /// Uses generic event syntax (guaranteed to wire up for extension fields).
         /// </summary>
-        protected void InventoryAllocDetEnqResult_UsrExpArrivalDate_FieldSelecting(
-            PXCache sender, PXFieldSelectingEventArgs e)
+        protected void _(Events.RowSelected<InventoryAllocDetEnqResult> e)
         {
-            var row = e.Row as InventoryAllocDetEnqResult;
-            if (row == null || string.IsNullOrEmpty(row.RefNbr)) return;
+            if (e.Row == null || string.IsNullOrEmpty(e.Row.RefNbr)) return;
 
-            string refNbr = row.RefNbr.Trim();
+            string refNbr = e.Row.RefNbr.Trim();
 
-            if (_arrivalDateCache.TryGetValue(refNbr, out DateTime? cached))
+            // Skip if already populated
+            DateTime? current = (DateTime?)e.Cache.GetValue(e.Row, "UsrExpArrivalDate");
+            if (current != null) return;
+
+            DateTime? arrivalDate = LookupPOArrivalDate(refNbr);
+
+            if (arrivalDate != null)
             {
-                e.ReturnValue = cached;
-                return;
+                e.Cache.SetValue(e.Row, "UsrExpArrivalDate", arrivalDate);
             }
+        }
+
+        private DateTime? LookupPOArrivalDate(string refNbr)
+        {
+            if (_dateCache.TryGetValue(refNbr, out DateTime? cached))
+                return cached;
 
             DateTime? arrivalDate = null;
             try
             {
-                // Explicit column names — no BQL extension type resolution needed
+                // Explicit column names — avoids BQL extension field resolution
+                // issues that occur in foreign inquiry graphs
                 using (PXDataRecord rec = PXDatabase.SelectSingle<PX.Objects.PO.POOrder>(
                     new PXDataField("UsrExpArrivalDate"),
                     new PXDataFieldValue("OrderNbr", refNbr)))
                 {
-                    if (rec != null)
-                    {
-                        arrivalDate = rec.GetDateTime(0);
-                    }
+                    arrivalDate = rec?.GetDateTime(0);
                 }
             }
-            catch
+            catch (Exception ex)
             {
-                // Column may not exist yet after initial publish
+                PXTrace.WriteError(
+                    $"IN402000 UsrExpArrivalDate lookup error for RefNbr={refNbr}: {ex.Message}");
             }
 
-            _arrivalDateCache[refNbr] = arrivalDate;
-            e.ReturnValue = arrivalDate;
+            _dateCache[refNbr] = arrivalDate;
+            return arrivalDate;
         }
     }
 }]]></CDATA>
