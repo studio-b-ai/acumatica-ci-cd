@@ -528,3 +528,9 @@ jobs:
             -f "client_payload[project]=${PROJECT_NAME}" \
             -f "client_payload[actor]=${GITHUB_ACTOR}"
           echo "Triggered ui-test-suite post-deploy-validation run"
+
+      - name: Dispatch test config for new custom fields
+        if: success()
+        run: npx tsx scripts/post-publish-hook.ts Customization/_project
+        env:
+          GH_PAT_DISPATCH: ${{ secrets.GH_PAT_DISPATCH }}
