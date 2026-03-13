@@ -381,6 +381,40 @@ namespace HeritageFabrics.IN
     }
 }]]></CDATA>
     </Graph>
+    <Graph ClassName="SOShipmentEntry_Extension" Source="#CDATA" IsNew="True" FileType="NewFile">
+        <CDATA name="Source"><![CDATA[using System;
+using System.Collections;
+using System.Collections.Generic;
+using PX.Data;
+using PX.Objects.SO;
+using PX.Reports;
+
+namespace HeritageFabrics.SO
+{
+    public class SOShipmentEntry_Extension : PXGraphExtension<SOShipmentEntry>
+    {
+        public static bool IsActive() => true;
+
+        public PXAction<SOShipment> cutRollHangTag;
+        [PXUIField(DisplayName = "Cut Roll Hang Tag", MapEnableRights = PXCacheRights.Select)]
+        [PXButton]
+        protected virtual IEnumerable CutRollHangTag(PXAdapter adapter)
+        {
+            SOShipment shipment = Base.Document.Current;
+            if (shipment?.ShipmentNbr != null)
+            {
+                var parameters = new Dictionary<string, string>
+                {
+                    ["ShipmentNbr"] = shipment.ShipmentNbr
+                };
+
+                throw new PXReportRequiredException(parameters, "WM302000", "Cut Roll Hang Tag Report");
+            }
+            return adapter.Get();
+        }
+    }
+}]]></CDATA>
+    </Graph>
     <Graph ClassName="HeritageFabricsSchemaInstaller" Source="#CDATA" IsNew="True" FileType="NewFile">
         <CDATA name="Source"><![CDATA[using System;
 using System.Configuration;
