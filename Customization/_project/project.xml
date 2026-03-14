@@ -1,4 +1,4 @@
-<Customization level="1" description="PO custom date fields + Customer payment link exclusion + SO HubSpot Deal ID + WMS Status + IGCM container date propagation + IN402000 Exp Arrival Date + PO Receipt Print Labels button" product-version="24.208">
+<Customization level="1" description="PO custom date fields + Customer payment link exclusion (AR303000 UI) + SO HubSpot Deal ID + WMS Status + IGCM container date propagation + IN402000 Exp Arrival Date + PO Receipt Print Labels button" product-version="24.208">
     <Graph ClassName="POLineExt" Source="#CDATA" IsNew="True" FileType="NewFile">
         <CDATA name="Source"><![CDATA[using System;
 using PX.Data;
@@ -559,6 +559,20 @@ IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('SOOrder') 
                         <Prop Key="DataField" Value="UsrWMSStatus" />
                         <Prop Key="Enabled" Value="False" />
                     </PXDropDown>
+                </AddItem>
+            </Children>
+        </PXFormView>
+    </Page>
+    <Page path="~/pages/ar/ar303000.aspx">
+        <PXFormView ID="DefFinancial" ParentId="phF_DefFinancial" TypeFullName="PX.Web.UI.PXFormView">
+            <Children Key="Template">
+                <AddItem>
+                    <PXCheckBox TypeFullName="PX.Web.UI.PXCheckBox">
+                        <Prop Key="Virtual:ApplyStylesheetSkin" />
+                        <Prop Key="ID" Value="chkUsrDisablePayLink" />
+                        <Prop Key="DataField" Value="UsrDisablePayLink" />
+                        <Prop Key="Text" Value="Exclude from Payment Link Processing" />
+                    </PXCheckBox>
                 </AddItem>
             </Children>
         </PXFormView>
