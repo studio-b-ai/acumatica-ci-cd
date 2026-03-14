@@ -215,6 +215,23 @@ namespace HeritageFabrics.SO
         )]
         public string UsrWMSStatus { get; set; }
         #endregion
+
+        #region UsrComplianceHold
+        public abstract class usrComplianceHold : BqlBool.Field<usrComplianceHold> { }
+
+        [PXDBBool]
+        [PXDefault(false, PersistingCheck = PXPersistingCheck.Nothing)]
+        [PXUIField(DisplayName = "Compliance Hold", Enabled = false)]
+        public bool? UsrComplianceHold { get; set; }
+        #endregion
+
+        #region UsrComplianceHoldReason
+        public abstract class usrComplianceHoldReason : BqlString.Field<usrComplianceHoldReason> { }
+
+        [PXDBString(500, IsUnicode = true)]
+        [PXUIField(DisplayName = "Compliance Hold Reason", Enabled = false)]
+        public string UsrComplianceHoldReason { get; set; }
+        #endregion
     }
 }]]></CDATA>
     </Graph>
@@ -415,7 +432,9 @@ namespace HeritageFabrics
                         "IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('SOOrder') AND name = 'UsrHubSpotDealId') ALTER TABLE SOOrder ADD UsrHubSpotDealId nvarchar(50) NULL",
                         "IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('BAccount') AND name = 'UsrDisablePayLink') ALTER TABLE BAccount ADD UsrDisablePayLink bit NULL",
                         "IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('POOrder') AND name = 'UsrContainerRef') ALTER TABLE POOrder ADD UsrContainerRef nvarchar(50) NULL",
-                        "IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('SOOrder') AND name = 'UsrWMSStatus') ALTER TABLE SOOrder ADD UsrWMSStatus nvarchar(20) NULL"
+                        "IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('SOOrder') AND name = 'UsrWMSStatus') ALTER TABLE SOOrder ADD UsrWMSStatus nvarchar(20) NULL",
+                        "IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('SOOrder') AND name = 'UsrComplianceHold') ALTER TABLE SOOrder ADD UsrComplianceHold bit NULL",
+                        "IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('SOOrder') AND name = 'UsrComplianceHoldReason') ALTER TABLE SOOrder ADD UsrComplianceHoldReason nvarchar(500) NULL"
                     };
                     foreach (string sql in statements)
                     {
@@ -472,7 +491,7 @@ namespace HeritageFabrics.PO
     }
 }]]></CDATA>
     </Graph>
-    <Sql Name="CreateCustomColumns_v4" Script="#CDATA">
+    <Sql Name="CreateCustomColumns_v5" Script="#CDATA">
         <CDATA name="Script"><![CDATA[IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('POOrder') AND name = 'UsrExpArrivalDate')
     ALTER TABLE POOrder ADD UsrExpArrivalDate datetime NULL;
 
@@ -496,6 +515,12 @@ IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('POOrder') 
 
 IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('SOOrder') AND name = 'UsrWMSStatus')
     ALTER TABLE SOOrder ADD UsrWMSStatus nvarchar(20) NULL;
+
+IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('SOOrder') AND name = 'UsrComplianceHold')
+    ALTER TABLE SOOrder ADD UsrComplianceHold bit NULL;
+
+IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('SOOrder') AND name = 'UsrComplianceHoldReason')
+    ALTER TABLE SOOrder ADD UsrComplianceHoldReason nvarchar(500) NULL;
 ]]></CDATA>
     </Sql>
     <Page path="~/pages/po/po301000.aspx">
