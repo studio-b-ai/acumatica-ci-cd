@@ -115,6 +115,53 @@ async def list_tools() -> list[types.Tool]:
             description="Update a record.",
             inputSchema={"type": "object", "properties": {"entity": {"type": "string"}, "key": {"type": "string"}, "fields": {"type": "object"}}, "required": ["entity", "key", "fields"]},
         ),
+        types.Tool(
+            name="acumatica_create_sales_order",
+            description=(
+                "Create a Sales Order in Acumatica. Builds a well-typed SO payload including "
+                "customer, line items, and an optional Note (visible in the Sales Order Notes "
+                "panel) sourced from a customer comments field on the samples request form."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "customer_id": {
+                        "type": "string",
+                        "description": "Acumatica customer account ID (e.g., 'C000123')",
+                    },
+                    "order_type": {
+                        "type": "string",
+                        "description": "Sales order type code (default: 'SO')",
+                    },
+                    "description": {
+                        "type": "string",
+                        "description": "Short order description / external reference",
+                    },
+                    "line_items": {
+                        "type": "array",
+                        "description": "Line items for the order",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "inventory_id": {"type": "string"},
+                                "quantity":     {"type": "number"},
+                                "warehouse_id": {"type": "string"},
+                            },
+                            "required": ["inventory_id", "quantity"],
+                        },
+                    },
+                    "comments": {
+                        "type": "string",
+                        "description": (
+                            "Optional free-text customer comment from the samples request form. "
+                            "When present this is written to the Note field on the Sales Order "
+                            "so warehouse staff can see it without opening a custom field."
+                        ),
+                    },
+                },
+                "required": ["customer_id", "line_items"],
+            },
+        ),
 
         # ─── Customization API Tools ──────────────────────────────────────
         types.Tool(
@@ -210,6 +257,63 @@ async def call_tool(name: str, arguments: dict) -> list[types.TextContent]:
         return [types.TextContent(type="text", text=json.dumps({"error": str(e)}, indent=2))]
 
 
+def _build_sales_order_payload(args: dict) -> dict:
+    """
+    Construct the Acumatica contract-based REST API payload for a Sales Order.
+
+    Key fields
+    ----------
+    Note
+        Written from the ``comments`` arg when truthy. Acumatica's Default
+        endpoint (24.200.001) exposes the entity-level note as ``Note`` at the
+        top level of the SalesOrder entity — the same field visible in the
+        Notes panel (📎) on SO301000.  We prefix the raw comment with a
+        human-readable label so warehouse staff immediately know the source.
+
+    If a ``description`` is also supplied we leave it in ``Description``
+    (the short header field) and do *not* overwrite it with the comment —
+    both fields coexist independently on the order.
+    """
+    order_type = args.get("order_type", "SO")
+
+    payload: dict = {
+        "OrderType":  {"value": order_type},
+        "CustomerID": {"value": args["customer_id"]},
+    }
+
+    if args.get("description"):
+        payload["Description"] = {"value": args["description"]}
+
+    # ── Note / customer comments ──────────────────────────────────────────
+    # Only include the Note field when the caller supplied a non-empty comment.
+    # Prefix makes the provenance clear to anyone reading the order in Acumatica.
+    comments: str = (args.get("comments") or "").strip()
+    if comments:
+        payload["Note"] = {"value": f"Customer comment from samples form: {comments}"}
+
+    # ── Line items ────────────────────────────────────────────────────────
+    details = []
+    for item in args.get("line_items", []):
+        line: dict = {
+            "InventoryID": {"value": item["inventory_id"]},
+            "Quantity":    {"value": item["quantity"]},
+        }
+        if item.get("warehouse_id"):
+            line["WarehouseID"] = {"value": item["warehouse_id"]}
+        details.append(line)
+
+    if details:
+        payload["Details"] = details
+
+    return payload
+
+
+def _create_sales_order(args: dict) -> Any:
+    """Create a Sales Order via the Acumatica contract-based REST endpoint."""
+    payload = _build_sales_order_payload(args)
+    return acumatica_put("SalesOrder", payload)
+
+
 def _dispatch(name: str, args: dict) -> Any:
 
     if name == "acumatica_current_user":
@@ -237,6 +341,8 @@ def _dispatch(name: str, args: dict) -> Any:
     if name == "acumatica_update_record":
         return acumatica_put(f"{args['entity']}/{args['key']}", args["fields"])
 
+    if name == "acumatica_create_sales_order":
+        return _create_sales_order(args)
 
     # --- CUSTOMIZATION API: EXPORT ---
     if name == "acumatica_customization_export":
