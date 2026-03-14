@@ -1,4 +1,4 @@
-<Customization level="1" description="PO custom date fields + Customer payment link exclusion + SO HubSpot Deal ID + WMS Status + IGCM container date propagation + IN402000 Exp Arrival Date" product-version="24.208">
+<Customization level="1" description="PO custom date fields + Customer payment link exclusion + SO HubSpot Deal ID + WMS Status + IGCM container date propagation + IN402000 Exp Arrival Date + PO Receipt Print Labels button" product-version="24.208">
     <Graph ClassName="POLineExt" Source="#CDATA" IsNew="True" FileType="NewFile">
         <CDATA name="Source"><![CDATA[using System;
 using PX.Data;
@@ -434,6 +434,40 @@ namespace HeritageFabrics
                 if (ex.InnerException != null)
                     WriteLog("[SchemaInstaller] Inner: " + ex.InnerException.Message);
             }
+        }
+    }
+}]]></CDATA>
+    </Graph>
+    <Graph ClassName="POReceiptEntry_Extension" Source="#CDATA" IsNew="True" FileType="NewFile">
+        <CDATA name="Source"><![CDATA[using System;
+using System.Collections;
+using System.Collections.Generic;
+using PX.Data;
+using PX.Data.BQL;
+using PX.Objects.PO;
+
+namespace HeritageFabrics.PO
+{
+    public class POReceiptEntry_Extension : PXGraphExtension<POReceiptEntry>
+    {
+        public static bool IsActive() => true;
+
+        public PXAction<POReceipt> PrintPurchaseReceiptLabels;
+        [PXButton(CommitChanges = true)]
+        [PXUIField(DisplayName = "Print Purchase Receipt Labels", MapEnableRights = PXCacheRights.Select)]
+        protected virtual IEnumerable printPurchaseReceiptLabels(PXAdapter adapter)
+        {
+            PXReportRequiredException ex = null;
+            var row = Base.Caches[typeof(POReceipt)].Current as POReceipt;
+            if (row != null)
+            {
+                var parameters = new Dictionary<string, string>();
+                parameters["ReceiptType"] = row.ReceiptType?.ToString();
+                parameters["ReceiptNbr"] = row.ReceiptNbr?.ToString();
+                ex = new PXReportRequiredException(parameters, "PO646901");
+            }
+            if (ex != null) throw ex;
+            return adapter.Get();
         }
     }
 }]]></CDATA>
