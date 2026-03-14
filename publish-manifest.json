@@ -11,7 +11,9 @@
     "SalesOrder": {
       "screen": "SO301000",
       "custom_fields": [
-        "custom.Document.UsrHubSpotDealId"
+        "custom.Document.UsrHubSpotDealId",
+        "custom.Document.UsrComplianceHold",
+        "custom.Document.UsrComplianceHoldReason"
       ]
     },
     "Customer": {
@@ -30,7 +32,7 @@
   "sql_columns": [
     {"table": "POOrder", "columns": ["UsrExpArrivalDate", "UsrActArrivalDate"]},
     {"table": "POLine", "columns": ["UsrExpArrivalDate", "UsrActArrivalDate"]},
-    {"table": "SOOrder", "columns": ["UsrHubSpotDealId"]},
+    {"table": "SOOrder", "columns": ["UsrHubSpotDealId", "UsrComplianceHold", "UsrComplianceHoldReason"]},
     {"table": "BAccount", "columns": ["UsrDisablePayLink"]}
   ],
   "_notes": {

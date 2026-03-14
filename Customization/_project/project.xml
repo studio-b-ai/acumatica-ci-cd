@@ -635,6 +635,20 @@ IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('SOOrder') 
                         <Prop Key="Enabled" Value="False" />
                     </PXDropDown>
                 </AddItem>
+                <AddItem>
+                    <PXCheckBox TypeFullName="PX.Web.UI.PXCheckBox">
+                        <Prop Key="ID" Value="chkUsrComplianceHold" />
+                        <Prop Key="DataField" Value="UsrComplianceHold" />
+                    </PXCheckBox>
+                </AddItem>
+                <AddItem>
+                    <PXTextEdit TypeFullName="PX.Web.UI.PXTextEdit">
+                        <Prop Key="ID" Value="edUsrComplianceHoldReason" />
+                        <Prop Key="DataField" Value="UsrComplianceHoldReason" />
+                        <Prop Key="TextMode" Value="MultiLine" />
+                        <Prop Key="Height" Value="60px" />
+                    </PXTextEdit>
+                </AddItem>
             </Children>
         </PXFormView>
     </Page>
