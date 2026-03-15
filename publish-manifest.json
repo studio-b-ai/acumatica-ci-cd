@@ -26,15 +26,22 @@
     "StockItem": {
       "screen": "IN202500",
       "custom_fields": []
+    },
+    "Shipment": {
+      "screen": "SO302000",
+      "custom_fields": [],
+      "_skipped_fields": ["UsrBoxLabelPrinted — server-side idempotency flag for Device Hub auto-print; not surfaced via REST API adHocSchema. Validate via sql_columns only."]
     }
   },
   "sql_columns": [
     {"table": "POOrder", "columns": ["UsrExpArrivalDate", "UsrActArrivalDate"]},
     {"table": "POLine", "columns": ["UsrExpArrivalDate", "UsrActArrivalDate"]},
     {"table": "SOOrder", "columns": ["UsrHubSpotDealId"]},
-    {"table": "BAccount", "columns": ["UsrDisablePayLink"]}
+    {"table": "BAccount", "columns": ["UsrDisablePayLink"]},
+    {"table": "SOShipment", "columns": ["UsrBoxLabelPrinted"]}
   ],
   "_notes": {
-    "UsrDisablePayLink": "CustomerExt : PXCacheExtension<Customer> field. Works on AR303000 screen and in C# (ARInvoiceEntry_PayLink_Extension), but NOT exposed via REST API $adHocSchema for Customer entity. SQL column on BAccount table. Cannot validate via REST API schema check — only via sql_columns."
+    "UsrDisablePayLink": "CustomerExt : PXCacheExtension<Customer> field. Works on AR303000 screen and in C# (ARInvoiceEntry_PayLink_Extension), but NOT exposed via REST API $adHocSchema for Customer entity. SQL column on BAccount table. Cannot validate via REST API schema check — only via sql_columns.",
+    "UsrBoxLabelPrinted": "SOShipmentLabelExt : PXCacheExtension<SOShipment> field. Idempotency guard for Device Hub box-label auto-print (SOShipmentEntry_LabelAutoPrint). Set to true after all SMPrintJob records queued for every SOPackageDetailEx on the shipment. Reset to false if shipment status leaves Confirmed ('N'). Not surfaced via REST API — validate via sql_columns only."
   }
 }
