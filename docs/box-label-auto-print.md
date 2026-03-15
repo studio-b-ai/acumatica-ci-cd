@@ -1,4 +1,4 @@
-# Auto Print Box Label — Device Hub Setup Guide
+# Box Label Printing — Device Hub Setup & Usage Guide
 
 **Platform:** Heritage Fabrics / Studio B — Acumatica 24.208  
 **Customization Project:** `ShipmentLabelAutoPrint`  
@@ -8,20 +8,22 @@
 
 ## 1. Overview
 
-When a shipment's **Kensium WMS Pick Status** is set to **Committed** (`C`) and the shipment is in **Confirmed** status, box labels are automatically sent to the warehouse thermal printer via **Acumatica Device Hub** — no manual button press required.
+Box labels for shipments are printed to the warehouse thermal printer via **Acumatica Device Hub** in two ways:
 
-**One label is printed per package** on the shipment (`SOPackageDetailEx` rows). The system queues a separate Device Hub print job for each package, targeting the `BoxLabel4x6` report.
+| Mode | Trigger | When to use |
+|------|---------|-------------|
+| **Auto-Print** | Shipment's WMS Pick Status transitions to **Committed** (`C`) while status is **Confirmed** | Normal warehouse workflow — no user action needed |
+| **Manual Print** | User clicks **Actions → Print Box Labels** on the Shipments screen (SO302000) | Reprints after a printer jam, after correcting packages, or when the auto-print was missed |
+
+**One label is printed per package** on the shipment (`SOPackageDetailEx` rows). Each package generates a separate Device Hub print job for the `BoxLabel4x6` report.
 
 ### How It Works (Summary)
 
-1. A warehouse user (or the WMS integration) sets the shipment's Pick Status to **Committed** on the Shipments screen (SO302000).
-2. The `SOShipmentEntry_LabelAutoPrint` graph extension detects the status transition.
-3. It verifies the shipment is in **Confirmed** status (`N`) and that labels have not already been printed for this shipment (idempotency guard).
-4. One `SMPrintJob` record is created per package, carrying `ShipmentNbr` and `PackageLineNbr` as report parameters.
-5. Device Hub picks up the queued jobs and dispatches them to the configured thermal printer.
-6. The `UsrBoxLabelPrinted` flag on the shipment is set to `true` to prevent duplicate prints on subsequent saves.
+1. **Auto-path:** A warehouse user (or the WMS integration) sets the shipment's Pick Status to **Committed** on the Shipments screen. The `SOShipmentEntry_LabelAutoPrint` graph extension detects the status transition, verifies the shipment is **Confirmed** and that labels have not already been printed (idempotency guard), and queues one `SMPrintJob` per package.
+2. **Manual path:** A user clicks **Actions → Print Box Labels** on any shipment with packages. The extension resets `UsrBoxLabelPrinted` to `false`, re-queues all package labels through the same Device Hub pipeline, then saves the record with `UsrBoxLabelPrinted = true`.
+3. In both paths, Device Hub picks up the queued jobs and dispatches them to the configured thermal printer.
 
-> **Note:** The printer used is the **Device Hub printer configured in the current user's Acumatica User Preferences** (SM202010 → Printer Name). Each user who triggers a label print must have a printer assigned there.
+> **Printer used:** The **Device Hub printer configured in the current user's Acumatica User Preferences** (SM202010 → Printer Name). Each user who triggers a label print (auto or manual) must have a printer assigned there.
 
 ---
 
@@ -34,9 +36,9 @@ Before the feature will work, confirm all of the following are in place:
 | 1 | **Acumatica Device Hub** installed and running on the warehouse print server | The Windows service must be running and connected to the Acumatica instance |
 | 2 | **4×6 thermal label printer** connected and configured on the print server | Tested with Zebra ZD420, ZT230; any 4×6 thermal printer with a Windows driver is supported |
 | 3 | **`BoxLabel4x6.rpx` report** published to the Acumatica instance | The report must be registered in Report Designer (SM208000) with Report ID `BoxLabel4x6` exactly — the code matches this ID case-sensitively |
-| 4 | **`ShipmentLabelAutoPrint` customization project** published | Deploys `SOShipmentLabelExt` (DAC), `SOShipmentEntry_LabelAutoPrint` (graph extension), and `ShipmentLabelSchemaInstaller` (adds `UsrBoxLabelPrinted` column to `SOShipment`) |
+| 4 | **`ShipmentLabelAutoPrint` customization project** published | Deploys `SOShipmentLabelExt` (DAC), `SOShipmentEntry_LabelAutoPrint` (graph extension with both auto-print and manual action), and `ShipmentLabelSchemaInstaller` (adds `UsrBoxLabelPrinted` column to `SOShipment`) |
 | 5 | **`UsrBoxLabelPrinted` column** present on the `SOShipment` SQL table | Created automatically on first publish by `ShipmentLabelSchemaInstaller`. Verify via `validate-publish.py` (`sql_columns` check) |
-| 6 | **Kensium WMS** installed and the `UsrFRPickStatus` field present on shipments | The extension reads this field by name at runtime; if absent, the trigger simply never fires |
+| 6 | **Kensium WMS** installed and the `UsrFRPickStatus` field present on shipments | Required for auto-print only. The extension reads this field by name at runtime; if absent, the auto-print trigger never fires (manual print still works) |
 
 ---
 
@@ -60,17 +62,68 @@ Before the feature will work, confirm all of the following are in place:
 
 ### 3c. Set Each User's Default Printer (SM202010)
 
-Each warehouse user who may trigger label printing must have a printer assigned in their personal preferences:
+Each warehouse user who may trigger label printing (auto or manual) must have a printer assigned in their personal preferences:
 
 1. Go to **User Preferences** — screen **SM202010** — (or the user icon → Preferences).
 2. In the **Printer Name** field, select the thermal label printer.
 3. Save.
 
-> **This is the printer the auto-print code uses.** If no printer is set for the logged-in user, labels will not be queued, and a yellow warning banner will appear on the Shipments screen.
+> **This is the printer both the auto-print and manual Print Box Labels button use.** If no printer is set for the logged-in user, labels will not be queued, and a yellow warning banner will appear on the Shipments screen.
 
 ---
 
-## 4. Report Parameters
+## 4. Using the Manual "Print Box Labels" Button
+
+### Location
+
+The button is in the **Actions** drop-down menu at the top of the Shipments screen (**SO302000**):
+
+```
+Actions ▾
+  ├─ Confirm Shipment
+  ├─ Create Invoice
+  ├─ ...
+  └─ Print Box Labels   ← custom button
+```
+
+### Enabled / Disabled State
+
+| Condition | Button state |
+|-----------|-------------|
+| Shipment has ≥ 1 package on the Packages tab | **Enabled** |
+| Shipment has no packages | **Disabled** (grayed out) |
+
+The button is always **visible** regardless of shipment status — this is intentional so users know the feature exists even before packages are added. It is never hidden, only disabled when there is nothing to print.
+
+### What Happens When Clicked
+
+1. `UsrBoxLabelPrinted` is reset to `false` on the current shipment (allowing re-queuing regardless of previous print state).
+2. All `SOPackageDetailEx` rows for the shipment are fetched.
+3. The current user's Device Hub printer is resolved from User Preferences.
+4. One `SMPrintJob` is submitted per package.
+5. On success, `UsrBoxLabelPrinted` is set to `true` and the shipment is saved.
+6. A **green confirmation message** appears on the shipment header field:
+
+   > *Box labels queued for printing (3 labels).*
+
+   If some packages failed, the message includes a partial-failure note:
+
+   > *Box labels queued for printing (2 labels) (1 package(s) failed — check Device Hub logs).*
+
+7. If no printer is configured for the user, or Device Hub is unavailable, an **orange warning banner** appears with instructions, and no labels are queued.
+
+### Error Messages
+
+| Message | Cause | Resolution |
+|---------|-------|------------|
+| *No packages are defined on this shipment...* | Packages tab is empty | Add packages before printing |
+| *No Device Hub printer is configured for your user account...* | `PrinterName` blank in SM202010 | Set a printer in User Preferences |
+| *Box labels could not be printed. Device Hub may be offline...* | All package jobs threw exceptions | Check Device Hub service, check SM205070 trace log for `[BoxLabel]` entries |
+| *Box label auto-print encountered an error: ...* | Unexpected exception | Check trace log; the exact error is in the message |
+
+---
+
+## 5. Report Parameters
 
 The `BoxLabel4x6` report accepts exactly two parameters. These are automatically populated by the customization code — no manual entry is needed during normal operation.
 
@@ -83,7 +136,7 @@ These same parameters can be used when **manually re-running** the report from t
 
 ---
 
-## 5. Label Layout
+## 6. Label Layout
 
 Each printed label is 4 inches × 6 inches and contains the following information:
 
@@ -110,26 +163,27 @@ One row per inventory line within the package:
 
 ---
 
-## 6. Troubleshooting
+## 7. Troubleshooting
 
 ### Labels are not printing at all
 
 | Check | Action |
 |-------|--------|
 | **Device Hub service** | On the print server, open Windows Services and confirm `Acumatica Device Hub` is **Running**. Restart it if needed. |
-| **User printer setting** | Go to SM202010 for the user who confirmed the shipment. Confirm a printer is assigned in the **Printer Name** field. Without this, the code logs a warning and skips queuing. |
+| **User printer setting** | Go to SM202010 for the user who triggered the print. Confirm a printer is assigned in the **Printer Name** field. Without this, the code logs a warning and skips queuing. |
 | **Printer mapping** | In SM206530, confirm `BoxLabel4x6` is mapped to the thermal printer and the printer is **Active**. |
-| **Shipment status** | Labels only trigger when the shipment status is **Confirmed** (`N`) *and* Pick Status transitions to **Committed** (`C`). If the shipment is still Open or already Completed, no labels will fire. |
-| **`UsrBoxLabelPrinted` flag** | Open the shipment in SO302000. If the **Box Labels Printed** checkbox is already checked (`true`), the system treated labels as already sent. See [Re-printing Labels](#7-re-printing-labels). |
+| **Auto-print only — shipment status** | Auto-print only fires when the shipment status is **Confirmed** (`N`) *and* Pick Status transitions to **Committed** (`C`). Manual print has no status requirement. |
+| **`UsrBoxLabelPrinted` flag** | Open the shipment in SO302000. If the **Box Labels Printed** checkbox is already checked (`true`), the auto-print treated labels as already sent. The manual button ignores this flag and always reprints. |
 | **Acumatica Trace Log** | Go to **SM205070** (Trace Log) and search for `[BoxLabel]` entries. Errors and warnings from the customization are logged with this prefix. |
 
 ### Duplicate labels are printing
 
-The `UsrBoxLabelPrinted` flag prevents duplicates on re-save. If duplicates occur:
+The `UsrBoxLabelPrinted` flag prevents duplicates on re-save for the **auto-print path**. If duplicates occur:
 
 1. Open the shipment in SO302000.
 2. Check the **Box Labels Printed** field — if it reads `false` (unchecked) while labels have already printed, the flag may not have been saved (e.g., the session was interrupted after queuing but before the database commit).
-3. If duplicates continue, check whether an external process or integration is repeatedly setting Pick Status to `C` → something else → `C`, which would re-trigger the auto-print each time. Coordinate with the WMS team.
+3. If an external process or integration is repeatedly setting Pick Status to `C` → something else → `C`, that re-triggers the auto-print each time. Coordinate with the WMS team.
+4. Note: clicking **Print Box Labels** manually always resets and reprints — this is by design for the manual path. Do not click it multiple times rapidly.
 
 ### Alternate ID (customer part number) is blank on the label
 
@@ -142,29 +196,38 @@ The label pulls the customer cross-reference from `INItemXRef`. If this column i
 
 ### Box count is wrong (e.g., "Box 1 of 1" when there are multiple boxes)
 
-The label reads the total package count from the packages already saved on the shipment at print time. The count will be wrong if packages were added after labels were printed, or if packages were not yet added when the Pick Status was set to Committed.
+The label reads the total package count from the packages already saved on the shipment at print time. The count will be wrong if packages were added after labels were printed.
 
-**Resolution:** Make sure all boxes are added to the shipment (Packages tab on SO302000) **before** setting the Pick Status to Committed, or re-print labels after the final package count is set (see below).
+**Resolution:** Make sure all boxes are added to the shipment (Packages tab on SO302000) **before** printing labels, then use **Actions → Print Box Labels** to reprint with the correct count.
 
 ---
 
-## 7. Re-printing Labels
+## 8. Re-printing Labels
 
 Use these steps when labels need to be re-printed — for example, after a printer jam, after correcting package contents, or after a wrong label was produced.
 
-### Option A — Reset the Flag and Re-save (Recommended)
+### Option A — Use the "Print Box Labels" Button (Recommended)
 
-This re-triggers the auto-print pipeline through the normal workflow:
+This is the fastest method and is available directly on the screen:
 
 1. Open the shipment in **SO302000**.
-2. Locate the **Box Labels Printed** field (visible on the shipment header; field name `UsrBoxLabelPrinted`).
+2. Click **Actions → Print Box Labels**.
+3. Labels for all packages are immediately re-queued to your Device Hub printer.
+4. The `UsrBoxLabelPrinted` flag is automatically reset and then re-set to `true` after successful queuing.
+
+> No need to manually uncheck the **Box Labels Printed** field — the button handles the reset internally.
+
+### Option B — Reset the Flag and Re-trigger Auto-Print
+
+This re-triggers the auto-print pipeline through the WMS workflow:
+
+1. Open the shipment in **SO302000**.
+2. Locate the **Box Labels Printed** field (visible on the shipment header).
 3. Uncheck the checkbox to set it to `false`.
 4. Save the shipment.
-5. If the Pick Status is already **Committed** and the shipment is still **Confirmed**, you can now re-trigger printing by making any minor edit and saving — or ask your system administrator to toggle the Pick Status to a different value and back to **Committed**.
+5. Ask your WMS team to toggle the Pick Status away from **Committed** and back to **Committed**. This re-triggers the auto-print gate check.
 
-> If the **Box Labels Printed** field is not visible on the screen layout, an administrator can add it via the screen editor, or use Option B below.
-
-### Option B — Manually Run the Report
+### Option C — Manually Run the Report
 
 This prints labels immediately without touching the `UsrBoxLabelPrinted` flag:
 
@@ -175,7 +238,7 @@ This prints labels immediately without touching the `UsrBoxLabelPrinted` flag:
    - `PackageLineNbr` = the specific package line to reprint (repeat for each box)
 4. Choose the thermal printer and print.
 
-### Option C — Reset the Flag via SQL (Admin / Emergency Use Only)
+### Option D — Reset the Flag via SQL (Admin / Emergency Use Only)
 
 If the screen is inaccessible or a bulk reset is needed, a database administrator can run:
 
@@ -195,10 +258,48 @@ WHERE Status <> 'N';            -- non-Confirmed shipments
 
 ---
 
+## 9. Code Architecture — Shared Print Method
+
+Both print paths share the same private `ExecuteBoxLabelPrint()` method in `SOShipmentEntry_LabelAutoPrint`. This ensures identical Device Hub logic, parameter building, and error handling regardless of how printing is triggered.
+
+```
+RowUpdated (auto-print)          printBoxLabels action (manual)
+        │                                   │
+        │ isManualAction = false             │ isManualAction = true
+        └─────────────┬─────────────────────┘
+                      ▼
+          ExecuteBoxLabelPrint()
+          ┌─────────────────────────────────────────┐
+          │ 1. Query SOPackageDetailEx for shipment  │
+          │ 2. Resolve printer from UserPreferences  │
+          │ 3. QueueSingleLabelJob() per package     │
+          │    └─ SMPrintJobMaint.PrintJob.Insert()  │
+          │    └─ AttachReportParameter() x2         │
+          │    └─ SMPrintJobMaint.Actions.PressSave()│
+          │ 4. SetValueExt UsrBoxLabelPrinted = true │
+          │ 5a. [auto] PXTrace.WriteInformation      │
+          │ 5b. [manual] RaiseExceptionHandling msg  │
+          └─────────────────────────────────────────┘
+```
+
+**Key behavioral differences between paths:**
+
+| Behaviour | Auto-Print (`isManualAction = false`) | Manual Button (`isManualAction = true`) |
+|-----------|--------------------------------------|-----------------------------------------|
+| Success feedback | Silent (PXTrace only) | Green confirmation banner on screen |
+| No-packages error | PXTrace warning, returns silently | `PXException` shown to user |
+| No-printer error | Warning banner, returns silently | `PXException` shown to user |
+| All-jobs-failed error | Warning banner, returns silently | `PXException` shown to user |
+| Unexpected exception | PXTrace + warning banner; **never throws** (protects WMS workflow) | Re-throws as `PXException` |
+| PressSave after print | No (handled by normal shipment save) | Yes (explicit call in action handler) |
+
+---
+
 ## Quick Reference
 
 | Topic | Location |
 |-------|----------|
+| **Manual Print Box Labels button** | SO302000 → Actions menu |
 | Device Hub Printers | SM206530 |
 | User Preferences (printer assignment) | SM202010 |
 | Shipments screen | SO302000 |

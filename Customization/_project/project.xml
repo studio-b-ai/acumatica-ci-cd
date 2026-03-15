@@ -1,4 +1,4 @@
-<Customization level="1" description="PO custom date fields + Customer payment link exclusion + SO HubSpot Deal ID + WMS Status + IGCM container date propagation + IN402000 Exp Arrival Date + PO Receipt Print Labels button + SO302000 auto box-label Device Hub print on WMS Committed" product-version="24.208">
+<Customization level="1" description="PO custom date fields + Customer payment link exclusion + SO HubSpot Deal ID + WMS Status + IGCM container date propagation + IN402000 Exp Arrival Date + PO Receipt Print Labels button + SO302000 auto box-label Device Hub print on WMS Committed + SO302000 manual Print Box Labels action button" product-version="24.208">
     <Graph ClassName="POLineExt" Source="#CDATA" IsNew="True" FileType="NewFile">
         <CDATA name="Source"><![CDATA[using System;
 using PX.Data;
@@ -676,5 +676,40 @@ IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('SOOrder') 
                 </AddItem>
             </Children>
         </PXGridLevel>
+    </Page>
+
+    <!--
+    ============================================================================
+    SO302000 - Shipments screen
+    Adds "Print Box Labels" to the Actions toolbar drop-down menu.
+
+    How this wires up:
+      * The PXToolBarButton CommandName="PrintBoxLabels" maps (case-insensitively)
+        to the public PXAction<SOShipment> PrintBoxLabels field declared on
+        SOShipmentEntry_LabelAutoPrint.
+      * CommandSourceID="ds" points to the page PXDataSource control (standard
+        ID on all SO screens) so Acumatica resolves the enabled/visible state from
+        SetEnabled / SetVisible calls made in RowSelected.
+      * Placing the item inside usercaption_toolbar (the main toolbar at the top
+        of every detail screen) puts it in the Actions drop-down alongside standard
+        shipment actions such as Confirm Shipment and Get Rates.
+      * MenuAutoOpen="True" ensures the parent menu auto-opens on click rather
+        than requiring a secondary click to expand.
+    ============================================================================
+    -->
+    <Page path="~/pages/so/so302000.aspx">
+        <PXToolBar ID="usercaption_toolbar" ParentId="usercaption_toolbar" TypeFullName="PX.Web.UI.PXToolBar">
+            <Children Key="Items">
+                <AddItem>
+                    <PXToolBarButton TypeFullName="PX.Web.UI.PXToolBarButton">
+                        <Prop Key="Text" Value="Print Box Labels" />
+                        <Prop Key="CommandName" Value="PrintBoxLabels" />
+                        <Prop Key="CommandSourceID" Value="ds" />
+                        <Prop Key="MenuAutoOpen" Value="True" />
+                        <Prop Key="DivID" Value="PrintBoxLabels" />
+                    </PXToolBarButton>
+                </AddItem>
+            </Children>
+        </PXToolBar>
     </Page>
 </Customization>

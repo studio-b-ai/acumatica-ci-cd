@@ -3,15 +3,40 @@
 // Heritage Fabrics / Studio B — Acumatica 24.208 Customization
 //
 // PURPOSE:
-//   Graph extension for SOShipmentEntry (SO302000) that automatically queues
-//   a 4×6 box-label print job via Device Hub whenever a shipment transitions
-//   to the "Committed" WMS pick status while the shipment is also Confirmed.
+//   Graph extension for SOShipmentEntry (SO302000) that:
+//     A) AUTOMATICALLY queues a 4×6 box-label print job via Device Hub
+//        whenever a shipment transitions to the "Committed" WMS pick status
+//        while the shipment is also Confirmed.
+//     B) Exposes a MANUAL "Print Box Labels" action button (Actions menu) so
+//        warehouse staff can re-queue labels on demand without touching the
+//        WMS pick-status field.
 //
-// TRIGGER CONDITION (all three must be true simultaneously):
+// ─────────────────────────────────────────────────────────────────────────────
+// AUTO-PRINT TRIGGER CONDITION (all three must be true simultaneously):
 //   1. SOShipment.UsrFRPickStatus changes TO "C" (Committed)
 //   2. SOShipment.Status == "N" (Confirmed)
 //   3. UsrBoxLabelPrinted has not already been set (idempotency guard)
 //
+// MANUAL PRINT ACTION (PrintBoxLabels):
+//   • Available in the Actions menu on SO302000.
+//   • Enabled only when the current shipment has ≥ 1 package in
+//     SOPackageDetailEx (same condition as a meaningful auto-print).
+//   • Resets UsrBoxLabelPrinted to false, then calls the shared print method.
+//   • Shows a screen confirmation message: "Box labels queued for printing
+//     (N labels)" on success, or a warning banner if something went wrong.
+//   • After printing, sets UsrBoxLabelPrinted = true and saves — identical
+//     post-condition to the auto-print path.
+//
+// ─────────────────────────────────────────────────────────────────────────────
+// SHARED PRINT METHOD:
+//   Both code paths (auto-print RowUpdated + manual action) delegate to the
+//   same private ExecuteBoxLabelPrint() method, which:
+//     1. Queries all SOPackageDetailEx rows for the shipment.
+//     2. Resolves the Device Hub printer from User Preferences (SM202010).
+//     3. Submits one SMPrintJob per package via SMPrintJobMaint.
+//     4. Marks UsrBoxLabelPrinted = true on success.
+//
+// ─────────────────────────────────────────────────────────────────────────────
 // DEVICE HUB APPROACH:
 //   Acumatica's Device Hub print pipeline is accessed through SMPrintJobMaint.
 //   Each print job targets report ID "BoxLabel4x6" and carries two report
@@ -24,16 +49,19 @@
 //   UsrBoxLabelPrinted (DAC extension bool, persisted) is set to true after
 //   all jobs are queued. Subsequent RowUpdated calls that still see Status=N
 //   and PickStatus=C will be no-ops. The field is reset to false when a
-//   shipment is re-opened (RowUpdated: Status changes away from N).
+//   shipment is re-opened (RowUpdated: Status changes away from N) and when
+//   the manual Print Box Labels action is invoked.
 //
 // ERROR HANDLING:
 //   All Device Hub calls are wrapped in try/catch. Failures log a PXTrace
 //   warning and set a non-blocking PXSetPropertyException on the screen so
 //   the warehouse user can see the issue without having the shipment workflow
-//   interrupted.
+//   interrupted.  The manual action surfaces errors as PXException so the
+//   user gets immediate feedback.
 // =============================================================================
 
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using PX.Data;
 using PX.Data.BQL;
@@ -62,7 +90,8 @@ namespace HeritageFabrics.SO
         /// <summary>
         /// True once box-label print jobs have been successfully queued for
         /// this shipment. Prevents duplicate label printing on re-save.
-        /// Reset to false if the shipment is re-opened (status leaves 'N').
+        /// Reset to false if the shipment is re-opened (status leaves 'N'),
+        /// and reset by the manual Print Box Labels action before re-queuing.
         /// </summary>
         public abstract class usrBoxLabelPrinted : BqlBool.Field<usrBoxLabelPrinted> { }
 
@@ -76,10 +105,13 @@ namespace HeritageFabrics.SO
     // =========================================================================
     // SECTION 2 — Graph Extension: SOShipmentEntry_LabelAutoPrint
     //
-    // Extends SOShipmentEntry (SO302000). All logic lives in RowUpdated so it
-    // fires after the cache has accepted the new field values but before the
-    // record is persisted — giving us a clean window to queue print jobs and
-    // flip UsrBoxLabelPrinted in the same database transaction.
+    // Extends SOShipmentEntry (SO302000). Contains:
+    //   • RowSelected — drives the enabled/disabled state of PrintBoxLabels.
+    //   • RowUpdated  — auto-print trigger on WMS Committed transition.
+    //   • PrintBoxLabels action — manual re-print from the Actions menu.
+    //   • ExecuteBoxLabelPrint — shared core print logic used by both paths.
+    //   • Supporting helpers: QueueSingleLabelJob, AttachReportParameter,
+    //     ResolvePrinterName, GetPickStatus.
     // =========================================================================
     public class SOShipmentEntry_LabelAutoPrint : PXGraphExtension<SOShipmentEntry>
     {
@@ -94,6 +126,53 @@ namespace HeritageFabrics.SO
         private const string PICK_STATUS_COMMITTED = "C";
 
         public static bool IsActive() => true;
+
+        // =====================================================================
+        // ACTION DECLARATION
+        // Declared as a public field so Acumatica's action infrastructure can
+        // discover and wire it up.  The IEnumerable delegate below provides the
+        // implementation.
+        // =====================================================================
+
+        /// <summary>
+        /// Manual "Print Box Labels" button — appears in the Actions menu on
+        /// SO302000. Enabled when the shipment has at least one package.
+        /// Resets the UsrBoxLabelPrinted flag and re-queues all package labels
+        /// through the same Device Hub pipeline as the auto-print trigger.
+        /// </summary>
+        public PXAction<SOShipment> PrintBoxLabels;
+
+        // -----------------------------------------------------------------
+        // RowSelected — runs every time the current shipment row is rendered.
+        //
+        // Drives the enabled/visible state of PrintBoxLabels based on whether
+        // the shipment has any packages. We check for at least one
+        // SOPackageDetailEx row so the button is only clickable when there is
+        // actually something to print — preventing confusing no-op clicks.
+        // -----------------------------------------------------------------
+        protected void _(Events.RowSelected<SOShipment> e)
+        {
+            if (e.Row == null) return;
+
+            // Count packages for the current shipment.
+            // We use SelectSingle for efficiency — we only need to know if
+            // at least one row exists, not the full set.
+            SOPackageDetailEx anyPackage = PXSelect<
+                SOPackageDetailEx,
+                Where<SOPackageDetailEx.shipmentNbr,
+                      Equal<Required<SOPackageDetailEx.shipmentNbr>>>>
+                .SelectSingleBound(Base, null, e.Row.ShipmentNbr);
+
+            bool hasPackages = anyPackage != null;
+
+            // Enable the button only when there are packages to print.
+            PrintBoxLabels.SetEnabled(hasPackages);
+
+            // Always keep the button visible so warehouse users know it exists
+            // even before packages are added; the disabled state communicates
+            // that it can't be used yet.
+            PrintBoxLabels.SetVisible(true);
+        }
 
         // -----------------------------------------------------------------
         // RowUpdated — fires each time the SOShipment row changes in cache.
@@ -115,7 +194,7 @@ namespace HeritageFabrics.SO
             // Gate 1 — Shipment must be in Confirmed status ('N').
             //          If it's not confirmed we have nothing to print yet.
             // ------------------------------------------------------------------
-            if (newRow.Status != STATUS_CONFIRMED) 
+            if (newRow.Status != STATUS_CONFIRMED)
             {
                 // Reset the label-printed flag if the shipment leaves Confirmed
                 // so that if it's re-confirmed later labels will re-queue.
@@ -158,24 +237,102 @@ namespace HeritageFabrics.SO
 
             // ------------------------------------------------------------------
             // All gates passed — queue print jobs for every package.
+            // Route through the shared method; suppress the confirmation toast
+            // since this is a background/automatic trigger (no user clicked).
             // ------------------------------------------------------------------
-            QueueBoxLabelPrintJobs(e.Cache, newRow);
+            ExecuteBoxLabelPrint(
+                cache:              e.Cache,
+                shipment:           newRow,
+                isManualAction:     false,   // auto-print path: no toast on success
+                jobsQueuedOutput:   out _);
         }
 
         // -----------------------------------------------------------------
-        // QueueBoxLabelPrintJobs
+        // PrintBoxLabels — IEnumerable delegate (manual action handler)
         //
-        // Queries all SOPackageDetailEx rows for the shipment, resolves the
-        // configured printer, and submits one SMPrintJob per package through
-        // the SMPrintJobMaint graph. On success it marks UsrBoxLabelPrinted.
+        // Called when the warehouse user clicks "Print Box Labels" in the
+        // Actions menu. Workflow:
+        //   1. Validate a shipment is loaded.
+        //   2. Reset UsrBoxLabelPrinted to false (allow re-queuing).
+        //   3. Call ExecuteBoxLabelPrint with isManualAction = true so a
+        //      green confirmation toast is shown on success.
+        //   4. Save to persist the updated UsrBoxLabelPrinted flag.
         // -----------------------------------------------------------------
-        private void QueueBoxLabelPrintJobs(PXCache shipmentCache, SOShipment shipment)
+        [PXButton(CommitChanges = true)]
+        [PXUIField(
+            DisplayName    = "Print Box Labels",
+            MapEnableRights = PXCacheRights.Select,
+            MapViewRights  = PXCacheRights.Select)]
+        protected virtual IEnumerable printBoxLabels(PXAdapter adapter)
         {
+            SOShipment shipment = Base.Document.Current;
+
+            if (shipment == null)
+                return adapter.Get();
+
+            PXCache shipmentCache = Base.Document.Cache;
+
+            // ── Step 1: Reset the idempotency flag so re-queuing is allowed ──
+            // Even if UsrBoxLabelPrinted is already false this is a no-op, so
+            // it's safe to always call it. This covers the case where a user
+            // explicitly wants to reprint labels for a shipment that already
+            // has the flag set to true.
+            shipmentCache.SetValueExt<SOShipmentLabelExt.usrBoxLabelPrinted>(shipment, false);
+
+            // ── Step 2: Execute the shared print logic ────────────────────────
+            // isManualAction = true:  a confirmation message will be shown on
+            // success, and errors will be surfaced via PXException so the user
+            // gets immediate actionable feedback.
+            ExecuteBoxLabelPrint(
+                cache:            shipmentCache,
+                shipment:         shipment,
+                isManualAction:   true,
+                jobsQueuedOutput: out int jobsQueued);
+
+            // ── Step 3: Persist — saves UsrBoxLabelPrinted = true ─────────────
+            // Only save if at least one job was actually queued; if the print
+            // method returned 0 (e.g. printer not configured) we don't want to
+            // accidentally persist a stale cache state.
+            if (jobsQueued > 0)
+            {
+                Base.Actions.PressSave();
+            }
+
+            return adapter.Get();
+        }
+
+        // =====================================================================
+        // SECTION 2a — SHARED CORE PRINT METHOD
+        //
+        // Both the auto-print (RowUpdated) and manual action (printBoxLabels)
+        // routes funnel into ExecuteBoxLabelPrint. This eliminates duplication
+        // and ensures both paths go through identical Device Hub logic,
+        // parameter building, and error handling.
+        //
+        // Parameters:
+        //   cache             — the SOShipment PXCache (for SetValueExt /
+        //                       RaiseExceptionHandling calls)
+        //   shipment          — the SOShipment record being processed
+        //   isManualAction    — true when called from the UI button; controls
+        //                       whether a success toast is shown and whether
+        //                       errors are surfaced as PXException (actionable)
+        //                       vs. PXTrace warning (non-blocking for auto flow)
+        //   jobsQueuedOutput  — out parameter: the number of print jobs
+        //                       successfully submitted; used by the action
+        //                       handler to decide whether to PressSave
+        // =====================================================================
+        private void ExecuteBoxLabelPrint(
+            PXCache   cache,
+            SOShipment shipment,
+            bool      isManualAction,
+            out int   jobsQueuedOutput)
+        {
+            jobsQueuedOutput = 0;
             string shipmentNbr = shipment.ShipmentNbr;
 
             try
             {
-                // ── Step 1: Collect all packages for this shipment ────────────
+                // ── Step 1: Collect all packages for this shipment ─────────────
                 // SOPackageDetailEx is the extended package table used in SO302000.
                 // We use PXSelect rather than a view because we are inside a graph
                 // extension and want a fresh, unbuffered result set.
@@ -192,8 +349,18 @@ namespace HeritageFabrics.SO
 
                 if (packages.Count == 0)
                 {
-                    PXTrace.WriteWarning(
-                        $"[BoxLabel] Shipment {shipmentNbr}: no packages found — no labels queued.");
+                    string noPackageMsg =
+                        $"Shipment {shipmentNbr} has no packages — no labels queued.";
+
+                    PXTrace.WriteWarning($"[BoxLabel] {noPackageMsg}");
+
+                    if (isManualAction)
+                    {
+                        // Surface as an actionable warning to the user.
+                        throw new PXException(
+                            "No packages are defined on this shipment. " +
+                            "Add packages on the Packages tab before printing labels.");
+                    }
                     return;
                 }
 
@@ -205,23 +372,28 @@ namespace HeritageFabrics.SO
 
                 if (string.IsNullOrWhiteSpace(printerName))
                 {
-                    // Warn on-screen (non-blocking) and trace, then exit.
+                    const string noPrinterMsg =
+                        "Box labels could not be queued: no Device Hub printer is configured " +
+                        "for your user account. Please set a default printer in " +
+                        "User Preferences (SM202010).";
+
                     PXTrace.WriteWarning(
                         $"[BoxLabel] Shipment {shipmentNbr}: no Device Hub printer configured " +
-                        "for current user. Set a default printer in User Preferences (SM202010). " +
-                        "Labels were NOT queued.");
+                        "for current user. Labels were NOT queued.");
 
-                    shipmentCache.RaiseExceptionHandling<SOShipmentLabelExt.usrBoxLabelPrinted>(
+                    cache.RaiseExceptionHandling<SOShipmentLabelExt.usrBoxLabelPrinted>(
                         shipment, false,
-                        new PXSetPropertyException(
-                            "Box labels could not be queued: no Device Hub printer is configured " +
-                            "for your user account. Please set a default printer in User Preferences.",
-                            PXErrorLevel.Warning));
+                        new PXSetPropertyException(noPrinterMsg, PXErrorLevel.Warning));
+
+                    if (isManualAction)
+                        throw new PXException(noPrinterMsg);
+
                     return;
                 }
 
                 // ── Step 3: Create one print job per package ──────────────────
-                int jobsQueued = 0;
+                int jobsQueued    = 0;
+                int jobsFailed    = 0;
 
                 foreach (SOPackageDetailEx pkg in packages)
                 {
@@ -233,50 +405,90 @@ namespace HeritageFabrics.SO
                     catch (Exception pkgEx)
                     {
                         // Log individual package failure but continue with remaining packages.
+                        jobsFailed++;
                         PXTrace.WriteWarning(
                             $"[BoxLabel] Shipment {shipmentNbr}, LineNbr {pkg.LineNbr}: " +
                             $"failed to queue print job — {pkgEx.GetType().Name}: {pkgEx.Message}");
                     }
                 }
 
-                // ── Step 4: Mark labels as printed (in-cache; persisted on Save) ──
+                // ── Step 4: Update state and surface results ───────────────────
                 if (jobsQueued > 0)
                 {
-                    shipmentCache.SetValueExt<SOShipmentLabelExt.usrBoxLabelPrinted>(shipment, true);
+                    // Mark labels as printed in cache — persisted by PressSave
+                    // (manual action) or by the normal SOShipmentEntry save
+                    // (auto-print path).
+                    cache.SetValueExt<SOShipmentLabelExt.usrBoxLabelPrinted>(shipment, true);
 
                     PXTrace.WriteInformation(
                         $"[BoxLabel] Shipment {shipmentNbr}: queued {jobsQueued}/{packages.Count} " +
                         $"label job(s) on printer '{printerName}'.");
+
+                    // Show a confirmation message on the screen when triggered
+                    // manually so the user gets clear feedback.
+                    if (isManualAction)
+                    {
+                        string partialWarning = jobsFailed > 0
+                            ? $" ({jobsFailed} package(s) failed — check Device Hub logs)"
+                            : string.Empty;
+
+                        // Use RaiseExceptionHandling at Row-level with RowMessage
+                        // so the toast appears on the header form rather than on
+                        // a specific field — the cleanest UX for a print action.
+                        cache.RaiseExceptionHandling<SOShipmentLabelExt.usrBoxLabelPrinted>(
+                            shipment,
+                            true,
+                            new PXSetPropertyException(
+                                $"Box labels queued for printing ({jobsQueued} label(s)){partialWarning}.",
+                                PXErrorLevel.Message));
+                    }
+
+                    jobsQueuedOutput = jobsQueued;
                 }
                 else
                 {
                     // All individual package jobs failed — surface a warning.
+                    const string allFailedMsg =
+                        "Box labels could not be printed. Device Hub may be offline or the " +
+                        "report 'BoxLabel4x6' is unavailable. Check the trace log for details.";
+
                     PXTrace.WriteWarning(
                         $"[BoxLabel] Shipment {shipmentNbr}: all {packages.Count} label job(s) " +
                         "failed to queue. Check Device Hub logs.");
 
-                    shipmentCache.RaiseExceptionHandling<SOShipmentLabelExt.usrBoxLabelPrinted>(
+                    cache.RaiseExceptionHandling<SOShipmentLabelExt.usrBoxLabelPrinted>(
                         shipment, false,
-                        new PXSetPropertyException(
-                            "Box labels could not be printed. Device Hub may be offline or the " +
-                            "report 'BoxLabel4x6' is unavailable. Check the trace log for details.",
-                            PXErrorLevel.Warning));
+                        new PXSetPropertyException(allFailedMsg, PXErrorLevel.Warning));
+
+                    if (isManualAction)
+                        throw new PXException(allFailedMsg);
                 }
+            }
+            catch (PXException)
+            {
+                // Re-throw PXException as-is so the Acumatica framework
+                // displays the message in the standard error panel.
+                throw;
             }
             catch (Exception ex)
             {
                 // Top-level catch: Device Hub completely unavailable or unexpected error.
-                // Log as warning — NEVER throw from RowUpdated to avoid blocking the workflow.
+                // Auto-print path: log as warning — NEVER throw from RowUpdated.
+                // Manual action path: re-throw as PXException for user visibility.
+                string unexpectedMsg =
+                    $"Box label auto-print encountered an error: {ex.Message} " +
+                    "The shipment has been saved normally. Check Device Hub and retry manually.";
+
                 PXTrace.WriteWarning(
                     $"[BoxLabel] Shipment {shipmentNbr}: unexpected error queuing labels — " +
                     $"{ex.GetType().FullName}: {ex.Message}");
 
-                shipmentCache.RaiseExceptionHandling<SOShipmentLabelExt.usrBoxLabelPrinted>(
+                cache.RaiseExceptionHandling<SOShipmentLabelExt.usrBoxLabelPrinted>(
                     shipment, false,
-                    new PXSetPropertyException(
-                        $"Box label auto-print encountered an error: {ex.Message} " +
-                        "The shipment has been saved normally. Check Device Hub and retry manually.",
-                        PXErrorLevel.Warning));
+                    new PXSetPropertyException(unexpectedMsg, PXErrorLevel.Warning));
+
+                if (isManualAction)
+                    throw new PXException(unexpectedMsg);
             }
         }
 
@@ -320,8 +532,8 @@ namespace HeritageFabrics.SO
             // ── Attach report parameters ──────────────────────────────────
             // SMPrintJobMaint uses a child view (PrintParameters) to hold
             // the name/value pairs that get forwarded to the report engine.
-            AttachReportParameter(printGraph, job, "ShipmentNbr",     shipmentNbr);
-            AttachReportParameter(printGraph, job, "PackageLineNbr",  packageLineNbr?.ToString() ?? "0");
+            AttachReportParameter(printGraph, job, "ShipmentNbr",    shipmentNbr);
+            AttachReportParameter(printGraph, job, "PackageLineNbr", packageLineNbr?.ToString() ?? "0");
 
             // Persist — this commits the job to the SMPrintJob table and
             // makes it visible to the Device Hub polling service.
@@ -348,7 +560,7 @@ namespace HeritageFabrics.SO
                 // PXParent on the DAC handles this automatically when we
                 // insert with the header as Current — but we set it
                 // explicitly as a belt-and-suspenders safety measure.
-                JobID     = job.JobID,
+                JobID          = job.JobID,
                 ParameterName  = paramName,
                 ParameterValue = paramValue
             };
