@@ -11,10 +11,9 @@
     "SalesOrder": {
       "screen": "SO301000",
       "custom_fields": [
-        "custom.Document.UsrHubSpotDealId",
-        "custom.Document.UsrComplianceHold",
-        "custom.Document.UsrComplianceHoldReason"
-      ]
+        "custom.Document.UsrHubSpotDealId"
+      ],
+      "_skipped_fields": ["UsrComplianceHold", "UsrComplianceHoldReason — DAC + SQL exist but not yet visible in REST API $adHocSchema. Re-enable after confirming fields appear."]
     },
     "Customer": {
       "screen": "AR303000",
@@ -32,7 +31,7 @@
   "sql_columns": [
     {"table": "POOrder", "columns": ["UsrExpArrivalDate", "UsrActArrivalDate"]},
     {"table": "POLine", "columns": ["UsrExpArrivalDate", "UsrActArrivalDate"]},
-    {"table": "SOOrder", "columns": ["UsrHubSpotDealId", "UsrComplianceHold", "UsrComplianceHoldReason"]},
+    {"table": "SOOrder", "columns": ["UsrHubSpotDealId"]},
     {"table": "BAccount", "columns": ["UsrDisablePayLink"]}
   ],
   "_notes": {
