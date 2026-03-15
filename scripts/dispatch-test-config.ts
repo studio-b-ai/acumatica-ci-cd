@@ -10,7 +10,7 @@
  */
 
 const GITHUB_API = 'https://api.github.com';
-const TARGET_REPO = 'studio-b-ai/heritage-wms';
+const TARGET_REPO = 'studio-b-ai/ui-test-suite';
 
 async function dispatch(command: string, args: string): Promise<boolean> {
   const token = process.env.GH_PAT_DISPATCH;
