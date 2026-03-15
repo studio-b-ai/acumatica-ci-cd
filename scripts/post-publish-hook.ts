@@ -52,7 +52,7 @@ const DAC_TO_VIEW: Record<string, string> = {
   'PX.Objects.AP.Vendor': 'BAccount',
   'PX.Objects.CR.CRCase': 'Case',
   'PX.Objects.AP.APInvoice': 'Document',
-  'PX.Objects.AR.ARPayment': 'Document',
+  'PX.Objects.AR.ARPayment': 'Payment',
   'PX.Objects.SO.SOLine': 'Transactions',
   'PX.Objects.CR.CROpportunity': 'Opportunity',
 };
@@ -86,7 +86,10 @@ function parseDacExtensions(projectDir: string): DacField[] {
     );
     if (!classMatch) continue;
 
-    const dacName = classMatch[1].trim();
+    // classMatch[1] is always defined when the capturing group matches, but
+    // noUncheckedIndexedAccess requires an explicit guard.
+    const dacName = classMatch[1]?.trim();
+    if (!dacName) continue;
     const entity = DAC_TO_ENTITY[dacName];
     const view = DAC_TO_VIEW[dacName];
     if (!entity || !view) continue;
@@ -95,7 +98,10 @@ function parseDacExtensions(projectDir: string): DacField[] {
     const fieldPattern = /public\s+(?:abstract\s+)?class\s+(Usr\w+)\s*:/g;
     let match: RegExpExecArray | null;
     while ((match = fieldPattern.exec(content)) !== null) {
+      // match[1] is always defined when the capturing group matches, but
+      // noUncheckedIndexedAccess requires an explicit guard.
       const fieldName = match[1];
+      if (!fieldName) continue;
       fields.push({
         dacName,
         fieldName,
@@ -109,6 +115,7 @@ function parseDacExtensions(projectDir: string): DacField[] {
     const propPattern = /public\s+\w+\??\s+(Usr\w+)\s*\{/g;
     while ((match = propPattern.exec(content)) !== null) {
       const fieldName = match[1];
+      if (!fieldName) continue;
       // Skip if already found via abstract class pattern
       if (fields.some((f) => f.fieldName === fieldName && f.dacName === dacName)) continue;
       fields.push({

@@ -1,0 +1,14 @@
+{
+  "name": "webhook-router",
+  "version": "1.0.0",
+  "description": "Heritage Fabrics / Studio B — Acumatica webhook router and automation scripts",
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "build": "tsc"
+  },
+  "devDependencies": {
+    "@types/node": "^25.5.0",
+    "typescript": "^5.4.5"
+  }
+}
