@@ -82,6 +82,12 @@
               <GIOn LineNbr="1" ParentField="OrderType" Condition="E " ChildField="OrderType" Operation="A" />
               <GIOn LineNbr="2" ParentField="OrderNbr" Condition="E " ChildField="OrderNbr" Operation="A" />
             </GIRelation>
+            <!-- JOIN 7: POLine LEFT JOIN IGCMPOLandedCostLine -->
+            <GIRelation LineNbr="7" ChildTable="IGCMPOLandedCostLine" IsActive="1" JoinType="L">
+              <GIOn LineNbr="1" ParentField="OrderType" Condition="E " ChildField="POOrderType" Operation="A" />
+              <GIOn LineNbr="2" ParentField="OrderNbr" Condition="E " ChildField="PONbr" Operation="A" />
+              <GIOn LineNbr="3" ParentField="LineNbr" Condition="E " ChildField="POLineNbr" Operation="A" />
+            </GIRelation>
             <GIResult LineNbr="12" SortOrder="12" IsActive="1" Field="OpenQty" Width="80" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Open Qty on PO" RowID="a1000001-0000-0000-0000-000000000012" />
             <GIResult LineNbr="13" SortOrder="13" IsActive="1" Field="UsrExpArrivalDate" Width="100" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Expected Arrival" RowID="a1000001-0000-0000-0000-000000000013" />
           </GITable>
@@ -91,6 +97,19 @@
             <GIResult LineNbr="11" SortOrder="11" IsActive="1" Field="OrderNbr" Width="100" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="PO Number" RowID="a1000001-0000-0000-0000-000000000011" />
           </GITable>
 
+          <!-- Table 8: IGCMPOLandedCostLine (container line) -->
+          <GITable Alias="IGCMPOLandedCostLine" Name="IGCM.PO.IGCMPOLandedCostLine">
+            <!-- JOIN 8: IGCMPOLandedCostLine LEFT JOIN IGCMPOLandedCost -->
+            <GIRelation LineNbr="8" ChildTable="IGCMPOLandedCost" IsActive="1" JoinType="L">
+              <GIOn LineNbr="1" ParentField="RefNbr" Condition="E " ChildField="RefNbr" Operation="A" />
+            </GIRelation>
+            <GIResult LineNbr="14" SortOrder="14" IsActive="1" Field="ContainerNbr" Width="100" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Container Number" RowID="a1000001-0000-0000-0000-000000000014" />
+          </GITable>
+
+          <!-- Table 9: IGCMPOLandedCost (container header) -->
+          <GITable Alias="IGCMPOLandedCost" Name="IGCM.PO.IGCMPOLandedCost">
+            <GIResult LineNbr="15" SortOrder="15" IsActive="1" Field="RefNbr" Width="100" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Container Trans#" RowID="a1000001-0000-0000-0000-000000000015" />
+          </GITable>
 
           <!-- WHERE conditions using OR NULL pattern for LEFT JOIN compatibility -->
           <!-- (INSiteStatus.SiteID = '99' OR INSiteStatus.SiteID IS NULL) -->
