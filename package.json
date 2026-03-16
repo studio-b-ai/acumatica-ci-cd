@@ -1,0 +1,14 @@
+{
+  "name": "heritage-fabrics-acumatica-cicd",
+  "version": "1.0.0",
+  "description": "Heritage Fabrics / Studio B — Acumatica CI/CD scripts and shared type definitions",
+  "private": true,
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^25.5.0",
+    "typescript": "^5.4.5"
+  }
+}
