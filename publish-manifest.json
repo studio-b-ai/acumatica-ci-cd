@@ -12,9 +12,7 @@
     "SalesOrder": {
       "screen": "SO301000",
       "custom_fields": [
-        "custom.Document.UsrHubSpotDealId",
-        "custom.Document.UsrComplianceHold",
-        "custom.Document.UsrComplianceHoldReason"
+        "custom.Document.UsrHubSpotDealId"
       ]
     },
     "Customer": {
@@ -37,6 +35,8 @@
     {"table": "BAccount", "columns": ["UsrDisablePayLink"]}
   ],
   "_notes": {
-    "UsrDisablePayLink": "CustomerExt : PXCacheExtension<Customer> field. Works on AR303000 screen and in C# (ARInvoiceEntry_PayLink_Extension), but NOT exposed via REST API $adHocSchema for Customer entity. SQL column on BAccount table. Cannot validate via REST API schema check — only via sql_columns."
+    "UsrDisablePayLink": "CustomerExt : PXCacheExtension<Customer> field. Works on AR303000 screen and in C# (ARInvoiceEntry_PayLink_Extension), but NOT exposed via REST API $adHocSchema for Customer entity. SQL column on BAccount table. Cannot validate via REST API schema check — only via sql_columns.",
+    "UsrComplianceHold": "SOOrderExt DAC + graph extension exist but ALTER TABLE fails silently on Acumatica cloud. Columns need manual creation via SM203510. Once columns exist, fields will appear in $adHocSchema and can be promoted to custom_fields.",
+    "UsrComplianceHoldReason": "See UsrComplianceHold note."
   }
 }
