@@ -18,6 +18,10 @@ Thumbs.db
 **/obj/
 *.user
 
+# Node.js (agents may install packages during enhancement work)
+node_modules/
+package-lock.json
+
 # Python
 __pycache__/
 *.pyc
