@@ -320,6 +320,27 @@ jobs:
           sleep 60
           echo "Countdown complete — proceeding to deploy"
 
+      # ── Maintenance Mode — pause all Acumatica workers before publish ─
+      - name: Enter maintenance mode
+        if: steps.env.outputs.target == 'production' && github.event.inputs.dry_run != 'true'
+        env:
+          WEBHOOK_ROUTER_URL: https://webhook-router-production-e161.up.railway.app
+          PROVISION_API_KEY: ${{ secrets.PROVISION_API_KEY }}
+        run: |
+          echo "Setting maintenance mode on webhook-router..."
+          HTTP_CODE=$(curl -s -o /tmp/maint-response.json -w "%{http_code}" \
+            -X POST "${WEBHOOK_ROUTER_URL}/maintenance/start" \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer ${PROVISION_API_KEY}" \
+            -d '{"reason":"Acumatica customization publish — app pool restart expected","ttl_seconds":3600}')
+          if [ "${HTTP_CODE}" = "200" ]; then
+            echo "✅ Maintenance mode active — all Acumatica workers paused"
+            cat /tmp/maint-response.json
+          else
+            echo "⚠️ Could not set maintenance mode (HTTP ${HTTP_CODE}) — continuing anyway"
+            cat /tmp/maint-response.json 2>/dev/null || true
+          fi
+
       # ── Deploy ───────────────────────────────────────────────────────
       # Pass secrets directly as env vars — never write them to GITHUB_OUTPUT
       - name: Deploy customization via REST API
@@ -366,6 +387,25 @@ jobs:
           path: dist/backup/*.zip
           retention-days: 30
           if-no-files-found: ignore
+
+      # ── Exit maintenance mode — resume all Acumatica workers ──────────
+      - name: Exit maintenance mode
+        if: always() && steps.env.outputs.target == 'production' && github.event.inputs.dry_run != 'true'
+        continue-on-error: true
+        env:
+          WEBHOOK_ROUTER_URL: https://webhook-router-production-e161.up.railway.app
+          PROVISION_API_KEY: ${{ secrets.PROVISION_API_KEY }}
+        run: |
+          echo "Clearing maintenance mode..."
+          HTTP_CODE=$(curl -s -o /tmp/maint-end.json -w "%{http_code}" \
+            -X POST "${WEBHOOK_ROUTER_URL}/maintenance/end" \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer ${PROVISION_API_KEY}")
+          if [ "${HTTP_CODE}" = "200" ]; then
+            echo "✅ Maintenance mode cleared — workers resuming"
+          else
+            echo "⚠️ Could not clear maintenance mode (HTTP ${HTTP_CODE}) — TTL will auto-expire"
+          fi
 
       # ── Post-deploy notifications ─────────────────────────────────────
       - name: Notify system back online
