@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "build": "tsc"
+    "build": "tsc",
+    "test": "node --experimental-strip-types --test src/engine/allocationEngine.test.ts"
   },
   "devDependencies": {
     "@types/node": "^25.5.0",
