@@ -461,6 +461,20 @@ jobs:
               -d "{\"text\":\":x: *Acumatica Customization Deploy FAILED*\nProject: \`${PROJECT_NAME}\`\nEnvironment: \`${TARGET}\`\nCommit: \`${GITHUB_SHA::8}\`\nActor: @${GITHUB_ACTOR}\nRun: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}\"}"
           fi
 
+      - name: Notify auto-remediation
+        if: failure() && github.ref == 'refs/heads/main'
+        env:
+          WEBHOOK_ROUTER_URL: ${{ secrets.WEBHOOK_ROUTER_URL }}
+        run: |
+          if [ -z "${WEBHOOK_ROUTER_URL}" ]; then
+            echo "::warning::WEBHOOK_ROUTER_URL not set — skipping auto-remediation"
+            exit 0
+          fi
+          curl -sf -X POST "${WEBHOOK_ROUTER_URL}/webhook/github/ci-failure" \
+            -H "Content-Type: application/json" \
+            -d '{"repo":"${{ github.repository }}","runId":${{ github.run_id }},"sha":"${{ github.sha }}","branch":"${{ github.ref_name }}"}'
+        continue-on-error: true
+
       - name: Post deployment summary
         if: always()
         run: |
