@@ -666,4 +666,65 @@ IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('SOOrder') 
             </Children>
         </PXGridLevel>
     </Page>
+    <Inquiry ScreenID="GI.00.70.01" DisplayName="Lot Availability">
+        <Tables>
+            <Table Alias="INLotSerialStatus" Name="INLotSerialStatus" />
+        </Tables>
+        <Relations />
+        <Wheres />
+        <Fields>
+            <Field>
+                <Name>InventoryID</Name>
+                <Alias>InventoryID</Alias>
+                <Table>INLotSerialStatus</Table>
+                <DisplayName>Inventory ID</DisplayName>
+            </Field>
+            <Field>
+                <Name>LotSerialNbr</Name>
+                <Alias>LotSerialNbr</Alias>
+                <Table>INLotSerialStatus</Table>
+                <DisplayName>Lot/Serial Nbr</DisplayName>
+            </Field>
+            <Field>
+                <Name>SiteID</Name>
+                <Alias>SiteID</Alias>
+                <Table>INLotSerialStatus</Table>
+                <DisplayName>Warehouse</DisplayName>
+            </Field>
+            <Field>
+                <Name>LocationID</Name>
+                <Alias>LocationID</Alias>
+                <Table>INLotSerialStatus</Table>
+                <DisplayName>Location</DisplayName>
+            </Field>
+            <Field>
+                <Name>QtyOnHand</Name>
+                <Alias>QtyOnHand</Alias>
+                <Table>INLotSerialStatus</Table>
+                <DisplayName>Qty On Hand</DisplayName>
+            </Field>
+            <Field>
+                <Name>ExpireDate</Name>
+                <Alias>ExpireDate</Alias>
+                <Table>INLotSerialStatus</Table>
+                <DisplayName>Expiration Date</DisplayName>
+            </Field>
+            <Field>
+                <Name>ReceiptDate</Name>
+                <Alias>ReceiptDate</Alias>
+                <Table>INLotSerialStatus</Table>
+                <DisplayName>Receipt Date</DisplayName>
+            </Field>
+        </Fields>
+        <Sortings>
+            <Sorting>
+                <Field>InventoryID</Field>
+                <SortOrder>Ascending</SortOrder>
+            </Sorting>
+            <Sorting>
+                <Field>LotSerialNbr</Field>
+                <SortOrder>Ascending</SortOrder>
+            </Sorting>
+        </Sortings>
+    </Inquiry>
 </Customization>
