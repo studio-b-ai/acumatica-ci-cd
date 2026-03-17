@@ -462,7 +462,7 @@ jobs:
           fi
 
       - name: Notify auto-remediation
-        if: failure() && github.ref == 'refs/heads/main'
+        if: github.ref == 'refs/heads/main'
         env:
           WEBHOOK_ROUTER_URL: ${{ secrets.WEBHOOK_ROUTER_URL }}
         run: |
