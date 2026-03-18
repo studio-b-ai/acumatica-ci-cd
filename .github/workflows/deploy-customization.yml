@@ -28,12 +28,27 @@
 
 name: Deploy Acumatica Customization
 
+# ━━━ CONCURRENCY CONTROL ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# Acumatica publishes restart the app pool and recompile ALL customization
+# projects. Overlapping publishes can corrupt the runtime state.
+# Only ONE deploy may run per branch at a time. If a new push arrives while
+# a deploy is in progress, the in-progress run is cancelled.
+# See: AAR-2026-03-18-acumatica-outage.md
+concurrency:
+  group: acumatica-deploy-${{ github.ref }}
+  cancel-in-progress: true
+
 on:
   push:
     branches: [main, staging]
     paths:
       - 'Customization/**'
-      - 'scripts/**'
+      - 'scripts/deploy.sh'
+      - 'scripts/deploy.py'
+      - 'scripts/validate-project.py'
+      - 'scripts/validate-publish.py'
+      - 'scripts/snapshot.py'
+      - 'scripts/notify.py'
       - '.github/workflows/deploy-customization.yml'
   pull_request:
     branches: [main, staging]
@@ -462,7 +477,7 @@ jobs:
           fi
 
       - name: Notify auto-remediation
-        if: github.ref == 'refs/heads/main'
+        if: failure() && github.ref == 'refs/heads/main'
         env:
           WEBHOOK_ROUTER_URL: ${{ secrets.WEBHOOK_ROUTER_URL }}
         run: |
