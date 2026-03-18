@@ -158,12 +158,11 @@ def print_schema(xml):
         for c in sorted(set(containers)):
             print(f"  Container: {c}")
 
-    # Print DisplayName mappings for human-readable field labels
-    displays = re.findall(r"<FieldName>(.*?)</FieldName>.*?<DisplayName>(.*?)</DisplayName>", schema, re.DOTALL)
-    if displays:
-        print(f"\nField→DisplayName (first 40):")
-        for fname, dname in displays[:40]:
-            print(f"  {fname} = \"{dname}\"")
+    # Dump raw schema XML in chunks for debugging
+    # Find each Container block and print its Name + direct child Fields
+    print(f"\n--- Raw Schema XML (first 8000 chars) ---")
+    print(schema[:8000])
+    print("--- End Raw ---")
 
     print("=== End Schema ===\n")
 
