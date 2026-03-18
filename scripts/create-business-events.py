@@ -109,18 +109,62 @@ def get_schema(jar):
 
 
 def print_schema(xml):
-    """Extract and print all Container/Field names from schema."""
-    containers = re.findall(r"<Name>(.*?)</Name>", xml)
-    display = re.findall(r"<DisplayName>(.*?)</DisplayName>", xml)
-    field_names = re.findall(r"<FieldName>(.*?)</FieldName>", xml)
+    """Extract and print Container→Field hierarchy from schema XML."""
+    # Parse containers and their fields using a simple state machine
+    # The schema XML has nested <Container> elements with <Fields>/<Children>
+    print("\n=== SM302050 Schema (Raw Container→Field Map) ===")
 
-    print("\n=== SM302050 Schema ===")
-    print(f"Containers/Views found: {len(set(containers))}")
-    for c in sorted(set(containers)):
-        print(f"  Container: {c}")
-    print(f"\nField names (sample, first 60):")
-    for f in field_names[:60]:
-        print(f"  Field: {f}")
+    # Find all Container blocks with their Name and nested Fields
+    container_pattern = r"<Container>(.*?)</Container>"
+    name_pattern = r"<Name>(.*?)</Name>"
+    field_pattern = r"<Field>(.*?)</Field>"
+    display_pattern = r"<DisplayName>(.*?)</DisplayName>"
+    object_pattern = r"<ObjectName>(.*?)</ObjectName>"
+
+    # Extract the GetSchemaResult content
+    schema_match = re.search(r"<GetSchemaResult>(.*)</GetSchemaResult>", xml, re.DOTALL)
+    if not schema_match:
+        print("  Could not find GetSchemaResult in response")
+        print(f"  Response length: {len(xml)}")
+        print(f"  Response preview: {xml[:500]}")
+        print("=== End Schema ===\n")
+        return
+
+    schema = schema_match.group(1)
+
+    # Print all unique ObjectName values (these are the view names for Commands)
+    objects = re.findall(object_pattern, schema)
+    print(f"\nObjectName values (view names for SOAP Commands):")
+    for o in sorted(set(objects)):
+        print(f"  ObjectName: {o}")
+
+    # Print all Field elements with their ObjectName context
+    fields = re.findall(r"<Field>.*?<FieldName>(.*?)</FieldName>.*?<ObjectName>(.*?)</ObjectName>.*?</Field>", schema, re.DOTALL)
+    if not fields:
+        # Try without ObjectName
+        fields_only = re.findall(r"<FieldName>(.*?)</FieldName>", schema)
+        print(f"\nField names (no ObjectName context, first 80):")
+        for f in fields_only[:80]:
+            print(f"  Field: {f}")
+    else:
+        print(f"\nField→ObjectName pairs ({len(fields)} fields):")
+        for fname, oname in fields[:80]:
+            print(f"  {oname}.{fname}")
+
+    # Also extract container names for reference
+    containers = re.findall(r"<Container>.*?<Name>(.*?)</Name>", schema, re.DOTALL)
+    if containers:
+        print(f"\nContainer names:")
+        for c in sorted(set(containers)):
+            print(f"  Container: {c}")
+
+    # Print DisplayName mappings for human-readable field labels
+    displays = re.findall(r"<FieldName>(.*?)</FieldName>.*?<DisplayName>(.*?)</DisplayName>", schema, re.DOTALL)
+    if displays:
+        print(f"\nField→DisplayName (first 40):")
+        for fname, dname in displays[:40]:
+            print(f"  {fname} = \"{dname}\"")
+
     print("=== End Schema ===\n")
 
 
