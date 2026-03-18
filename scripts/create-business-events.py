@@ -31,10 +31,12 @@ DRY_RUN      = os.environ.get("DRY_RUN", "false").lower() == "true"
 
 WEBHOOK_URL  = "https://webhook-router-production-e161.up.railway.app/webhook/acumatica/allocate-inventory"
 
-# Build SOAP URL — Acumatica multi-tenant requires company in path
-# e.g. https://heritagefabrics.acumatica.com/Heritage%20Fabrics/Soap/SM302050.asmx
-_company_path = COMPANY.replace(" ", "%20")
-SOAP_URL = f"{BASE_URL}/{_company_path}/Soap/SM302050.asmx"
+# Build SOAP URL.
+# Acumatica multi-tenant: company in URL path gives HTTP 401 (requires pre-auth).
+# Root path /Soap/<ScreenID>.asmx accepts the SOAP Login operation directly;
+# company is determined from the Login credentials server-side.
+SOAP_URL = f"{BASE_URL}/Soap/SM302050.asmx"
+print(f"SOAP URL: {SOAP_URL}")
 
 # ── SOAP helpers ─────────────────────────────────────────────────────────────
 
@@ -267,7 +269,6 @@ def main():
         print("Error: ACUMATICA_USERNAME and ACUMATICA_PASSWORD must be set")
         sys.exit(1)
 
-    print(f"SOAP URL: {SOAP_URL}")
     print(f"DRY_RUN: {DRY_RUN}, SCHEMA_ONLY: {SCHEMA_ONLY}")
 
     jar = login()
