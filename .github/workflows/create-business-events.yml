@@ -1,0 +1,50 @@
+name: Create Business Events (SM302050)
+
+# Creates 3 Business Events on SO301000 that fire the lot-allocation webhook:
+#   SO-AUTOALLOC-NEW       — Record Inserted, trigger=entry
+#   SO-AUTOALLOC-HOLD      — Hold→False,      trigger=remove-hold
+#   SO-AUTOALLOC-BACKORDER — IsBackOrder→False, trigger=remove-backorder
+#
+# Run SCHEMA_ONLY=true first to verify connectivity and see field names.
+# Run DRY_RUN=true to validate script logic without writing to Acumatica.
+
+on:
+  workflow_dispatch:
+    inputs:
+      schema_only:
+        description: "Print SM302050 field schema only (no writes)"
+        type: boolean
+        default: false
+      dry_run:
+        description: "Dry run (no Acumatica writes)"
+        type: boolean
+        default: false
+      target:
+        description: "Target environment"
+        type: choice
+        options: ["production", "staging"]
+        default: "production"
+
+jobs:
+  create-events:
+    name: Create Business Events
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.target || 'production' }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Run create-business-events.py
+        env:
+          ACUMATICA_URL:      ${{ github.event.inputs.target == 'staging' && secrets.ACUMATICA_STG_URL      || secrets.ACUMATICA_PROD_URL }}
+          ACUMATICA_USERNAME: ${{ github.event.inputs.target == 'staging' && secrets.ACUMATICA_STG_USERNAME || secrets.ACUMATICA_PROD_USERNAME }}
+          ACUMATICA_PASSWORD: ${{ github.event.inputs.target == 'staging' && secrets.ACUMATICA_STG_PASSWORD || secrets.ACUMATICA_PROD_PASSWORD }}
+          ACUMATICA_TENANT:   ${{ github.event.inputs.target == 'staging' && secrets.ACUMATICA_STG_TENANT   || secrets.ACUMATICA_PROD_TENANT }}
+          SCHEMA_ONLY:        ${{ github.event.inputs.schema_only || 'false' }}
+          DRY_RUN:            ${{ github.event.inputs.dry_run || 'false' }}
+        run: python3 scripts/create-business-events.py
