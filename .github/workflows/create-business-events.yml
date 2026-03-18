@@ -47,4 +47,4 @@ jobs:
           ACUMATICA_TENANT:   ${{ github.event.inputs.target == 'staging' && secrets.ACUMATICA_STG_TENANT   || secrets.ACUMATICA_PROD_TENANT }}
           SCHEMA_ONLY:        ${{ github.event.inputs.schema_only || 'false' }}
           DRY_RUN:            ${{ github.event.inputs.dry_run || 'false' }}
-        run: python3 scripts/create-business-events.py
+        run: python3 tools/create-business-events.py
