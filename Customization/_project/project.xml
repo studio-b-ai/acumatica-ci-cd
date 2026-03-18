@@ -542,10 +542,364 @@ namespace HeritageFabrics.PO
 }]]></CDATA>
     </Graph>
     <Graph ClassName="SOShipmentLabelExt" Source="#CDATA" IsNew="True" FileType="NewFile">
-        <CDATA name="Source"><![CDATA[// *** SOURCE MANAGED IN ShipmentLabelAutoPrint.cs — see that file for full source ***
-// This entry causes Acumatica to compile ShipmentLabelAutoPrint.cs as part of the project.
-// The actual class bodies are in the .cs file alongside this project.xml.
-]]></CDATA>
+        <CDATA name="Source"><![CDATA[using System;
+using PX.Data;
+using PX.Data.BQL;
+using PX.Objects.SO;
+
+namespace HeritageFabrics.SO
+{
+    public sealed class SOShipmentLabelExt : PXCacheExtension<SOShipment>
+    {
+        public static bool IsActive() => true;
+
+        #region UsrBoxLabelPrinted
+        public abstract class usrBoxLabelPrinted : BqlBool.Field<usrBoxLabelPrinted> { }
+
+        [PXDBBool]
+        [PXDefault(false, PersistingCheck = PXPersistingCheck.Nothing)]
+        [PXUIField(DisplayName = "Box Labels Printed", Enabled = false, Visibility = PXUIVisibility.SelectorVisible)]
+        public bool? UsrBoxLabelPrinted { get; set; }
+        #endregion
+    }
+}]]></CDATA>
+    </Graph>
+    <Graph ClassName="SOShipmentEntry_LabelAutoPrint" Source="#CDATA" IsNew="True" FileType="NewFile">
+        <CDATA name="Source"><![CDATA[using System;
+using System.Collections;
+using System.Collections.Generic;
+using PX.Data;
+using PX.Data.BQL;
+using PX.Data.BQL.Fluent;
+using PX.Objects.SO;
+using PX.Objects.CS;
+using PX.SM;
+
+namespace HeritageFabrics.SO
+{
+    public class SOShipmentEntry_LabelAutoPrint : PXGraphExtension<SOShipmentEntry>
+    {
+        private const string BOX_LABEL_REPORT_ID = "BoxLabel4x6";
+        private const string STATUS_CONFIRMED = "N";
+        private const string PICK_STATUS_COMMITTED = "C";
+
+        public static bool IsActive() => true;
+
+        public PXAction<SOShipment> PrintBoxLabels;
+
+        protected void _(Events.RowSelected<SOShipment> e)
+        {
+            if (e.Row == null) return;
+
+            SOPackageDetailEx anyPackage = PXSelect<
+                SOPackageDetailEx,
+                Where<SOPackageDetailEx.shipmentNbr,
+                      Equal<Required<SOPackageDetailEx.shipmentNbr>>>>
+                .SelectSingleBound(Base, null, e.Row.ShipmentNbr);
+
+            bool hasPackages = anyPackage != null;
+            PrintBoxLabels.SetEnabled(hasPackages);
+            PrintBoxLabels.SetVisible(true);
+        }
+
+        protected void _(Events.RowUpdated<SOShipment> e)
+        {
+            if (e.Row == null || e.OldRow == null) return;
+
+            SOShipment newRow = e.Row;
+            SOShipment oldRow = e.OldRow;
+
+            if (newRow.Status != STATUS_CONFIRMED)
+            {
+                SOShipmentLabelExt ext = newRow.GetExtension<SOShipmentLabelExt>();
+                if (ext?.UsrBoxLabelPrinted == true)
+                {
+                    e.Cache.SetValueExt<SOShipmentLabelExt.usrBoxLabelPrinted>(newRow, false);
+                }
+                return;
+            }
+
+            string newPickStatus = GetPickStatus(e.Cache, newRow);
+            string oldPickStatus = GetPickStatus(e.Cache, oldRow);
+
+            bool pickStatusJustCommitted =
+                string.Equals(newPickStatus, PICK_STATUS_COMMITTED, StringComparison.Ordinal) &&
+                !string.Equals(oldPickStatus, PICK_STATUS_COMMITTED, StringComparison.Ordinal);
+
+            if (!pickStatusJustCommitted) return;
+
+            SOShipmentLabelExt labelExt = newRow.GetExtension<SOShipmentLabelExt>();
+            if (labelExt?.UsrBoxLabelPrinted == true)
+            {
+                PXTrace.WriteInformation(
+                    $"[BoxLabel] Shipment {newRow.ShipmentNbr}: labels already printed — skipping.");
+                return;
+            }
+
+            ExecuteBoxLabelPrint(
+                cache:            e.Cache,
+                shipment:         newRow,
+                isManualAction:   false,
+                jobsQueuedOutput: out _);
+        }
+
+        [PXButton(CommitChanges = true)]
+        [PXUIField(
+            DisplayName     = "Print Box Labels",
+            MapEnableRights = PXCacheRights.Select,
+            MapViewRights   = PXCacheRights.Select)]
+        protected virtual IEnumerable printBoxLabels(PXAdapter adapter)
+        {
+            SOShipment shipment = Base.Document.Current;
+            if (shipment == null)
+                return adapter.Get();
+
+            PXCache shipmentCache = Base.Document.Cache;
+            shipmentCache.SetValueExt<SOShipmentLabelExt.usrBoxLabelPrinted>(shipment, false);
+
+            ExecuteBoxLabelPrint(
+                cache:            shipmentCache,
+                shipment:         shipment,
+                isManualAction:   true,
+                jobsQueuedOutput: out int jobsQueued);
+
+            if (jobsQueued > 0)
+            {
+                Base.Actions.PressSave();
+            }
+
+            return adapter.Get();
+        }
+
+        private void ExecuteBoxLabelPrint(
+            PXCache    cache,
+            SOShipment shipment,
+            bool       isManualAction,
+            out int    jobsQueuedOutput)
+        {
+            jobsQueuedOutput = 0;
+            string shipmentNbr = shipment.ShipmentNbr;
+
+            try
+            {
+                List<SOPackageDetailEx> packages = new List<SOPackageDetailEx>();
+                foreach (SOPackageDetailEx pkg in PXSelect<
+                    SOPackageDetailEx,
+                    Where<SOPackageDetailEx.shipmentNbr,
+                          Equal<Required<SOPackageDetailEx.shipmentNbr>>>>
+                    .Select(Base, shipmentNbr))
+                {
+                    packages.Add(pkg);
+                }
+
+                if (packages.Count == 0)
+                {
+                    PXTrace.WriteWarning($"[BoxLabel] Shipment {shipmentNbr} has no packages.");
+                    if (isManualAction)
+                        throw new PXException("No packages are defined on this shipment. Add packages on the Packages tab before printing labels.");
+                    return;
+                }
+
+                string printerName = ResolvePrinterName();
+                if (string.IsNullOrWhiteSpace(printerName))
+                {
+                    const string noPrinterMsg =
+                        "Box labels could not be queued: no Device Hub printer is configured for your user account. " +
+                        "Please set a default printer in User Preferences (SM202010).";
+                    PXTrace.WriteWarning($"[BoxLabel] Shipment {shipmentNbr}: no Device Hub printer configured.");
+                    cache.RaiseExceptionHandling<SOShipmentLabelExt.usrBoxLabelPrinted>(
+                        shipment, false, new PXSetPropertyException(noPrinterMsg, PXErrorLevel.Warning));
+                    if (isManualAction) throw new PXException(noPrinterMsg);
+                    return;
+                }
+
+                int jobsQueued = 0;
+                int jobsFailed = 0;
+                foreach (SOPackageDetailEx pkg in packages)
+                {
+                    try
+                    {
+                        QueueSingleLabelJob(shipmentNbr, pkg.LineNbr, printerName);
+                        jobsQueued++;
+                    }
+                    catch (Exception pkgEx)
+                    {
+                        jobsFailed++;
+                        PXTrace.WriteWarning(
+                            $"[BoxLabel] Shipment {shipmentNbr}, LineNbr {pkg.LineNbr}: " +
+                            $"failed to queue — {pkgEx.GetType().Name}: {pkgEx.Message}");
+                    }
+                }
+
+                if (jobsQueued > 0)
+                {
+                    cache.SetValueExt<SOShipmentLabelExt.usrBoxLabelPrinted>(shipment, true);
+                    PXTrace.WriteInformation(
+                        $"[BoxLabel] Shipment {shipmentNbr}: queued {jobsQueued}/{packages.Count} label(s) on '{printerName}'.");
+                    if (isManualAction)
+                    {
+                        string partialWarning = jobsFailed > 0
+                            ? $" ({jobsFailed} package(s) failed — check Device Hub logs)"
+                            : string.Empty;
+                        cache.RaiseExceptionHandling<SOShipmentLabelExt.usrBoxLabelPrinted>(
+                            shipment, true,
+                            new PXSetPropertyException(
+                                $"Box labels queued for printing ({jobsQueued} label(s)){partialWarning}.",
+                                PXErrorLevel.Message));
+                    }
+                    jobsQueuedOutput = jobsQueued;
+                }
+                else
+                {
+                    const string allFailedMsg =
+                        "Box labels could not be printed. Device Hub may be offline or the report 'BoxLabel4x6' is unavailable.";
+                    PXTrace.WriteWarning($"[BoxLabel] Shipment {shipmentNbr}: all {packages.Count} label job(s) failed.");
+                    cache.RaiseExceptionHandling<SOShipmentLabelExt.usrBoxLabelPrinted>(
+                        shipment, false, new PXSetPropertyException(allFailedMsg, PXErrorLevel.Warning));
+                    if (isManualAction) throw new PXException(allFailedMsg);
+                }
+            }
+            catch (PXException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                string unexpectedMsg =
+                    $"Box label auto-print encountered an error: {ex.Message} " +
+                    "The shipment has been saved normally. Check Device Hub and retry manually.";
+                PXTrace.WriteWarning(
+                    $"[BoxLabel] Shipment {shipmentNbr}: unexpected error — {ex.GetType().FullName}: {ex.Message}");
+                cache.RaiseExceptionHandling<SOShipmentLabelExt.usrBoxLabelPrinted>(
+                    shipment, false, new PXSetPropertyException(unexpectedMsg, PXErrorLevel.Warning));
+                if (isManualAction) throw new PXException(unexpectedMsg);
+            }
+        }
+
+        private void QueueSingleLabelJob(string shipmentNbr, int? packageLineNbr, string printerName)
+        {
+            SMPrintJobMaint printGraph = PXGraph.CreateInstance<SMPrintJobMaint>();
+            SMPrintJob job = new SMPrintJob
+            {
+                PrinterName    = printerName,
+                ReportID       = BOX_LABEL_REPORT_ID,
+                NumberOfCopies = 1
+            };
+            job = printGraph.PrintJob.Insert(job);
+            AttachReportParameter(printGraph, job, "ShipmentNbr",    shipmentNbr);
+            AttachReportParameter(printGraph, job, "PackageLineNbr", packageLineNbr?.ToString() ?? "0");
+            printGraph.Actions.PressSave();
+        }
+
+        private static void AttachReportParameter(
+            SMPrintJobMaint printGraph,
+            SMPrintJob      job,
+            string          paramName,
+            string          paramValue)
+        {
+            SMPrintJobParameter param = new SMPrintJobParameter
+            {
+                JobID          = job.JobID,
+                ParameterName  = paramName,
+                ParameterValue = paramValue
+            };
+            printGraph.PrintParameters.Insert(param);
+        }
+
+        private string ResolvePrinterName()
+        {
+            Guid? userID = PXAccess.GetUserID();
+            if (userID == null) return null;
+            UserPreferences prefs = PXSelect<
+                UserPreferences,
+                Where<UserPreferences.userID, Equal<Required<UserPreferences.userID>>>>
+                .Select(Base, userID);
+            return prefs?.PrinterName;
+        }
+
+        private static string GetPickStatus(PXCache cache, SOShipment row)
+        {
+            if (row == null) return null;
+            try
+            {
+                object rawValue = cache.GetValue(row, "UsrFRPickStatus");
+                return rawValue as string;
+            }
+            catch
+            {
+                return null;
+            }
+        }
+    }
+}]]></CDATA>
+    </Graph>
+    <Graph ClassName="ShipmentLabelSchemaInstaller" Source="#CDATA" IsNew="True" FileType="NewFile">
+        <CDATA name="Source"><![CDATA[using System;
+using Customization;
+
+namespace HeritageFabrics.SO
+{
+    public class ShipmentLabelSchemaInstaller : CustomizationPlugin
+    {
+        public override void UpdateDatabase()
+        {
+            string connStr = null;
+            try
+            {
+                var cs = System.Configuration.ConfigurationManager.ConnectionStrings["ProjectX"];
+                if (cs != null) connStr = cs.ConnectionString;
+            }
+            catch { }
+
+            if (connStr == null)
+            {
+                try
+                {
+                    var all = System.Configuration.ConfigurationManager.ConnectionStrings;
+                    for (int i = 0; i < all.Count; i++)
+                    {
+                        string name = all[i].Name;
+                        if (name != "LocalSqlServer" && name != "LocalMySqlServer")
+                            connStr = all[i].ConnectionString;
+                    }
+                }
+                catch { }
+            }
+
+            if (connStr == null)
+            {
+                WriteLog("[ShipmentLabelSchema] ERROR: No connection string found.");
+                return;
+            }
+
+            if (!connStr.Contains("TrustServerCertificate"))
+                connStr += ";TrustServerCertificate=True";
+
+            try
+            {
+                using (var conn = new Microsoft.Data.SqlClient.SqlConnection(connStr))
+                {
+                    conn.Open();
+                    using (var cmd = conn.CreateCommand())
+                    {
+                        cmd.CommandText =
+                            "IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('SOShipment') AND name = 'UsrBoxLabelPrinted') " +
+                            "ALTER TABLE SOShipment ADD UsrBoxLabelPrinted bit NULL";
+                        cmd.CommandTimeout = 60;
+                        cmd.ExecuteNonQuery();
+                    }
+                    WriteLog("[ShipmentLabelSchema] OK: UsrBoxLabelPrinted column ensured on SOShipment.");
+                }
+            }
+            catch (Exception ex)
+            {
+                WriteLog($"[ShipmentLabelSchema] ERROR: {ex.GetType().FullName}: {ex.Message}");
+                if (ex.InnerException != null)
+                    WriteLog($"[ShipmentLabelSchema] Inner: {ex.InnerException.Message}");
+            }
+        }
+    }
+}]]></CDATA>
     </Graph>
     <Sql Name="CreateCustomColumns_v6_BoxLabel" Script="#CDATA">
         <CDATA name="Script"><![CDATA[IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('SOShipment') AND name = 'UsrBoxLabelPrinted')
