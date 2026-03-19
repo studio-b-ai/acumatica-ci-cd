@@ -1039,4 +1039,6 @@ IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('BAccount')
       </Children>
     </PXGridLevel>
   </Page>
+    <Graph ClassName="IGCMPOLandedCostEntry_Extension" Source="Code\Graph\IGCMPOLandedCostEntry_Extension.cs" IsNew="True" FileType="ExistingFile">
+    </Graph>
 </Customization>
