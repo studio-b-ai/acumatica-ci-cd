@@ -120,7 +120,7 @@ namespace Aesthetik.WMS
 
         #region Custom Field Names (DAC extensions)
 
-        // INLotSerialClass extension fields
+        // INLotSerClass extension fields (DAC is INLotSerClass, table is INLotSerialClass)
         public const string Fld_MinRemnantYardage    = "UsrMinRemnant";
         public const string Fld_AutoPrintLabel       = "UsrAutoPrint";
         public const string Fld_DefaultWidth         = "UsrDefaultWidth";

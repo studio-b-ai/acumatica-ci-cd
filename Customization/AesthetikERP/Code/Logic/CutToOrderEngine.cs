@@ -38,11 +38,11 @@ namespace Aesthetik.WMS
             var setupExt = setup?.GetItem<INSetup>()?.GetExtension<INSetupExt>();
 
             // Check for class-level override
-            var lotClass = SelectFrom<INLotSerialClass>
-                .Where<INLotSerialClass.lotSerClassID
+            var lotClass = SelectFrom<INLotSerClass>
+                .Where<INLotSerClass.lotSerClassID
                     .IsEqual<@P.AsString>>
                 .View.ReadOnly.Select(_graph, PieceGoodsConstants.LotSerialClassID);
-            var classExt = lotClass?.GetItem<INLotSerialClass>()
+            var classExt = lotClass?.GetItem<INLotSerClass>()
                 ?.GetExtension<INLotSerialClassExt>();
 
             return new CutConfig

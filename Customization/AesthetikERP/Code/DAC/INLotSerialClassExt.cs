@@ -6,12 +6,12 @@ using PX.Objects.IN;
 namespace Aesthetik.WMS
 {
     /// <summary>
-    /// DAC extension for INLotSerialClass.
+    /// DAC extension for INLotSerClass (the C# DAC; database table is INLotSerialClass).
     /// Adds PIECEGOODS-specific configuration fields to the lot/serial class definition.
     /// These fields control per-class behavior for the piece goods workflow:
     /// minimum remnant threshold, auto-print on receiving, default width, and pre-receiving toggle.
     /// </summary>
-    public sealed class INLotSerialClassExt : PXCacheExtension<INLotSerialClass>
+    public sealed class INLotSerialClassExt : PXCacheExtension<INLotSerClass>
     {
         public static bool IsActive() => true;
 

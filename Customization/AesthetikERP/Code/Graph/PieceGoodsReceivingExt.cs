@@ -356,11 +356,11 @@ namespace Aesthetik.WMS
         /// <summary>Gets default width from the PIECEGOODS class.</summary>
         private decimal GetDefaultWidth()
         {
-            var lotClass = SelectFrom<INLotSerialClass>
-                .Where<INLotSerialClass.lotSerClassID.IsEqual<@P.AsString>>
+            var lotClass = SelectFrom<INLotSerClass>
+                .Where<INLotSerClass.lotSerClassID.IsEqual<@P.AsString>>
                 .View.ReadOnly.Select(Base, PieceGoodsConstants.LotSerialClassID);
 
-            var ext = lotClass?.GetItem<INLotSerialClass>()?.GetExtension<INLotSerialClassExt>();
+            var ext = lotClass?.GetItem<INLotSerClass>()?.GetExtension<INLotSerialClassExt>();
             return ext?.UsrDefaultWidth ?? 54.0m;
         }
 

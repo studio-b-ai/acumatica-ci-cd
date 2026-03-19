@@ -434,11 +434,11 @@ namespace Aesthetik.WMS
                 int seq = GetNextSerialSequence(sku, today);
 
                 // Load lot/serial class extension for default width
-                var lotClass = SelectFrom<INLotSerialClass>
-                    .Where<INLotSerialClass.lotSerClassID
+                var lotClass = SelectFrom<INLotSerClass>
+                    .Where<INLotSerClass.lotSerClassID
                         .IsEqual<@P.AsString>>
                     .View.ReadOnly.Select(_graph, PieceGoodsConstants.LotSerialClassID);
-                var classExt = lotClass?.GetItem<INLotSerialClass>()
+                var classExt = lotClass?.GetItem<INLotSerClass>()
                     ?.GetExtension<INLotSerialClassExt>();
                 decimal defaultWidth = classExt?.UsrDefaultWidth ?? 54.0m;
 
