@@ -9,8 +9,6 @@ namespace StudioB.PO
     [PXCacheName("PO Relation")]
     public class UsrPORelation : IBqlTable
     {
-        public static bool IsActive() => true;
-
         #region UsrPORelationID
         public abstract class usrPORelationID : BqlInt.Field<usrPORelationID> { }
         [PXDBIdentity(IsKey = true)]

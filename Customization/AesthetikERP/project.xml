@@ -23,7 +23,8 @@ namespace HeritageFabrics.AR
 }]]></CDATA>
     </Graph>
     <Graph ClassName="INLotSerialClassExt" Source="#CDATA" IsNew="True" FileType="NewFile">
-        <CDATA name="Source"><![CDATA[using PX.Data;
+        <CDATA name="Source"><![CDATA[using System;
+using PX.Data;
 using PX.Data.BQL;
 using PX.Objects.IN;
 
@@ -96,7 +97,8 @@ namespace Aesthetik.WMS
 }]]></CDATA>
     </Graph>
     <Graph ClassName="INLotSerialStatusExt" Source="#CDATA" IsNew="True" FileType="NewFile">
-        <CDATA name="Source"><![CDATA[using PX.Data;
+        <CDATA name="Source"><![CDATA[using System;
+using PX.Data;
 using PX.Data.BQL;
 using PX.Objects.IN;
 
@@ -237,7 +239,8 @@ namespace Aesthetik.WMS
 }]]></CDATA>
     </Graph>
     <Graph ClassName="INSetupExt" Source="#CDATA" IsNew="True" FileType="NewFile">
-        <CDATA name="Source"><![CDATA[using PX.Data;
+        <CDATA name="Source"><![CDATA[using System;
+using PX.Data;
 using PX.Data.BQL;
 using PX.Objects.IN;
 
@@ -581,8 +584,6 @@ namespace StudioB.PO
     [PXCacheName("PO Activity")]
     public class UsrPOActivity : IBqlTable
     {
-        public static bool IsActive() => true;
-
         #region UsrPOActivityID
         public abstract class usrPOActivityID : BqlInt.Field<usrPOActivityID> { }
         [PXDBIdentity(IsKey = true)]
@@ -685,8 +686,6 @@ namespace StudioB.PO
     [PXCacheName("PO Relation")]
     public class UsrPORelation : IBqlTable
     {
-        public static bool IsActive() => true;
-
         #region UsrPORelationID
         public abstract class usrPORelationID : BqlInt.Field<usrPORelationID> { }
         [PXDBIdentity(IsKey = true)]
@@ -2078,6 +2077,7 @@ using PX.Data.BQL;
 using PX.Data.BQL.Fluent;
 using PX.Objects.IN;
 using PX.Objects.SO;
+using PX.Objects.SO.WMS;
 using PX.BarcodeProcessing;
 
 namespace Aesthetik.WMS

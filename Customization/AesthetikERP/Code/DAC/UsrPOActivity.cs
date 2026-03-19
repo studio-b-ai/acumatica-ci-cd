@@ -9,8 +9,6 @@ namespace StudioB.PO
     [PXCacheName("PO Activity")]
     public class UsrPOActivity : IBqlTable
     {
-        public static bool IsActive() => true;
-
         #region UsrPOActivityID
         public abstract class usrPOActivityID : BqlInt.Field<usrPOActivityID> { }
         [PXDBIdentity(IsKey = true)]
