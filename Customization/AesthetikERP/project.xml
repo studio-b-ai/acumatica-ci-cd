@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<Customization level="1" description="AesthetikERP — Consolidated customization: PO dates, Customer pay link, SO HubSpot/WMS/Compliance, Auto-Allocation, PO Relations/Activities, WMS extensions" product-version="24.208">
+<Customization level="2" description="AesthetikERP — Consolidated customization: PO dates, Customer pay link, SO HubSpot/WMS/Compliance, Auto-Allocation, PO Relations/Activities, WMS extensions" product-version="24.208">
     <Graph ClassName="CustomerExt" Source="#CDATA" IsNew="True" FileType="NewFile">
         <CDATA name="Source"><![CDATA[using PX.Data;
 using PX.Data.BQL;
