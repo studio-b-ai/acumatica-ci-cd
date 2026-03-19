@@ -24,6 +24,10 @@ __pycache__/
 .venv/
 venv/
 
+# Node / TypeScript tooling
+node_modules/
+package-lock.json
+
 # Secrets (never commit)
 .env
 *.env.local
