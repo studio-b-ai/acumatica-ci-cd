@@ -5191,68 +5191,7 @@ IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('BAccount')
       </Children>
     </PXFormView>
   </Page>
-  <Page path="~/pages/in/in402500.aspx">
-    <PXGridLevel DataMember="INLotSerialStatusRecords" ParentId="phG_grid_Levels#0" TypeFullName="PX.Web.UI.PXGridLevel">
-      <Children Key="Columns">
-        <AddItem>
-          <PXGridColumn TypeFullName="PX.Web.UI.PXGridColumn">
-            <Prop Key="DataField" Value="UsrActualYardage" />
-            <Prop Key="Width" Value="100px" />
-          </PXGridColumn>
-        </AddItem>
-        <AddItem>
-          <PXGridColumn TypeFullName="PX.Web.UI.PXGridColumn">
-            <Prop Key="DataField" Value="UsrDyeLot" />
-            <Prop Key="Width" Value="100px" />
-          </PXGridColumn>
-        </AddItem>
-        <AddItem>
-          <PXGridColumn TypeFullName="PX.Web.UI.PXGridColumn">
-            <Prop Key="DataField" Value="UsrWidth" />
-            <Prop Key="Width" Value="80px" />
-          </PXGridColumn>
-        </AddItem>
-        <AddItem>
-          <PXGridColumn TypeFullName="PX.Web.UI.PXGridColumn">
-            <Prop Key="DataField" Value="UsrShadeCode" />
-            <Prop Key="Width" Value="80px" />
-          </PXGridColumn>
-        </AddItem>
-        <AddItem>
-          <PXGridColumn TypeFullName="PX.Web.UI.PXGridColumn">
-            <Prop Key="DataField" Value="UsrSourceRoll" />
-            <Prop Key="Width" Value="120px" />
-          </PXGridColumn>
-        </AddItem>
-        <AddItem>
-          <PXGridColumn TypeFullName="PX.Web.UI.PXGridColumn">
-            <Prop Key="DataField" Value="UsrDefectFlag" />
-            <Prop Key="Width" Value="70px" />
-            <Prop Key="Type" Value="CheckBox" />
-            <Prop Key="TextAlign" Value="Center" />
-          </PXGridColumn>
-        </AddItem>
-        <AddItem>
-          <PXGridColumn TypeFullName="PX.Web.UI.PXGridColumn">
-            <Prop Key="DataField" Value="UsrInventoryStatus" />
-            <Prop Key="Width" Value="100px" />
-          </PXGridColumn>
-        </AddItem>
-        <AddItem>
-          <PXGridColumn TypeFullName="PX.Web.UI.PXGridColumn">
-            <Prop Key="DataField" Value="UsrPreAssignedBin" />
-            <Prop Key="Width" Value="120px" />
-          </PXGridColumn>
-        </AddItem>
-        <AddItem>
-          <PXGridColumn TypeFullName="PX.Web.UI.PXGridColumn">
-            <Prop Key="DataField" Value="UsrContainerNo" />
-            <Prop Key="Width" Value="120px" />
-          </PXGridColumn>
-        </AddItem>
-      </Children>
-    </PXGridLevel>
-  </Page>
+  <!-- IN402500 page removed — screen does not exist in this Acumatica version -->
   <Page path="~/pages/po/po301000.aspx">
     <PXFormView ID="form" ParentId="phF_form" TypeFullName="PX.Web.UI.PXFormView">
       <Children Key="Template">
