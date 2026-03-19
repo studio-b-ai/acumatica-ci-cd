@@ -7,19 +7,13 @@ using PX.Data.BQL.Fluent;
 using PX.Objects.IN;
 using PX.Objects.SO;
 
-namespace Aesthetik.WMS
+namespace HeritageFabrics.SO
 {
-    /// <summary>
-    /// Auto-allocates lot/serial numbers for PC (Piece) and FO (Finisher Order) sales orders.
-    /// When a line is entered with an item and quantity, selects the best available bolt:
-    ///   1. FIFO first (oldest bolt by receipt date)
-    ///   2. Tightest fit above minimum (smallest bolt >= ordered qty)
-    /// Updates the line's LotSerialNbr and OrderQty to the full bolt quantity.
-    /// If no bolt meets the minimum, leaves the line unallocated (backorder).
-    /// </summary>
     public class SOOrderEntry_AutoAllocation : PXGraphExtension<SOOrderEntry>
     {
         public static bool IsActive() => true;
+
+        private const string PieceGoodsClassID = "PIECEGOODS";
 
         // Track assigned serials within the current order to prevent double-assignment
         private readonly HashSet<string> _assignedSerials = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -78,20 +72,8 @@ namespace Aesthetik.WMS
                 // Must be fully unreserved (entire bolt available)
                 if (qtyAvail != qtyOnHand) continue;
 
-                // Check extension fields if available
-                var ext = status.GetExtension<INLotSerialStatusExt>();
-                if (ext != null)
-                {
-                    // Skip defective rolls
-                    if (ext.UsrDefectFlag == true) continue;
-
-                    // Skip rolls not in a pickable status
-                    string invStatus = ext.UsrInventoryStatus;
-                    if (!string.IsNullOrEmpty(invStatus) &&
-                        invStatus != PieceGoodsConstants.InvStatus_Available &&
-                        invStatus != PieceGoodsConstants.InvStatus_PutAway)
-                        continue;
-                }
+                // WMS extension checks removed — INLotSerialStatusExt is in the WMS package.
+                // When WMS is deployed, defect/status filtering will be handled there.
 
                 candidates.Add(new BoltCandidate
                 {
@@ -151,7 +133,7 @@ namespace Aesthetik.WMS
 
             return string.Equals(
                 ((InventoryItem)item).LotSerClassID,
-                PieceGoodsConstants.LotSerialClassID,
+                PieceGoodsClassID,
                 StringComparison.OrdinalIgnoreCase);
         }
 
