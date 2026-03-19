@@ -89,36 +89,36 @@ IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('BAccount')
   ALTER TABLE BAccount ADD UsrDisablePayLink bit NULL;
 ]]></CDATA>
   </Sql>
-  <Code>
-    <File Path="Code\DAC\INLotSerialClassExt.cs" />
-    <File Path="Code\DAC\INLotSerialStatusExt.cs" />
-    <File Path="Code\DAC\INSetupExt.cs" />
-    <File Path="Code\Graph\INSetupMaintExt.cs" />
-    <File Path="Code\Graph\PieceGoodsScanExtension.cs" />
-    <File Path="Code\Graph\PieceGoodsReceivingExt.cs" />
-    <File Path="Code\Graph\TextilePickOptimizer.cs" />
-    <File Path="Code\Graph\CrossDockManager.cs" />
-    <File Path="Code\Graph\WMSDatabaseInstaller.cs" />
-    <File Path="Code\Logic\CutToOrderEngine.cs" />
-    <File Path="Code\Logic\PreReceivingEngine.cs" />
-    <File Path="Code\Helpers\PieceGoodsConstants.cs" />
-    <File Path="Code\Helpers\BarcodeParser.cs" />
-    <File Path="Code\DAC\POOrderExt.cs" />
-    <File Path="Code\DAC\POLineExt.cs" />
-    <File Path="Code\DAC\CustomerExt.cs" />
-    <File Path="Code\DAC\SOOrderExt.cs" />
-    <File Path="Code\DAC\InventoryAllocDetEnqResultExt.cs" />
-    <File Path="Code\Graph\POOrderEntry_Extension.cs" />
-    <File Path="Code\Graph\ARInvoiceEntry_PayLink_Extension.cs" />
-    <File Path="Code\Graph\IGCMPOLandedCostEntry_Extension.cs" />
-    <File Path="Code\Graph\InventoryAllocDetEnq_Extension.cs" />
-    <File Path="Code\Graph\SOOrderEntry_AutoAllocation.cs" />
-    <File Path="Code\Graph\SOOrderEntry_ComplianceHold.cs" />
-    <File Path="Code\Graph\POReceiptEntry_Extension.cs" />
-    <File Path="Code\Graph\POOrderEntry_RelationsExt.cs" />
-    <File Path="Code\DAC\UsrPORelation.cs" />
-    <File Path="Code\DAC\UsrPOActivity.cs" />
-  </Code>
+  <Files>
+    <File AppRelativePath="Code\DAC\INLotSerialClassExt.cs" />
+    <File AppRelativePath="Code\DAC\INLotSerialStatusExt.cs" />
+    <File AppRelativePath="Code\DAC\INSetupExt.cs" />
+    <File AppRelativePath="Code\Graph\INSetupMaintExt.cs" />
+    <File AppRelativePath="Code\Graph\PieceGoodsScanExtension.cs" />
+    <File AppRelativePath="Code\Graph\PieceGoodsReceivingExt.cs" />
+    <File AppRelativePath="Code\Graph\TextilePickOptimizer.cs" />
+    <File AppRelativePath="Code\Graph\CrossDockManager.cs" />
+    <File AppRelativePath="Code\Graph\WMSDatabaseInstaller.cs" />
+    <File AppRelativePath="Code\Logic\CutToOrderEngine.cs" />
+    <File AppRelativePath="Code\Logic\PreReceivingEngine.cs" />
+    <File AppRelativePath="Code\Helpers\PieceGoodsConstants.cs" />
+    <File AppRelativePath="Code\Helpers\BarcodeParser.cs" />
+    <File AppRelativePath="Code\DAC\POOrderExt.cs" />
+    <File AppRelativePath="Code\DAC\POLineExt.cs" />
+    <File AppRelativePath="Code\DAC\CustomerExt.cs" />
+    <File AppRelativePath="Code\DAC\SOOrderExt.cs" />
+    <File AppRelativePath="Code\DAC\InventoryAllocDetEnqResultExt.cs" />
+    <File AppRelativePath="Code\Graph\POOrderEntry_Extension.cs" />
+    <File AppRelativePath="Code\Graph\ARInvoiceEntry_PayLink_Extension.cs" />
+    <File AppRelativePath="Code\Graph\IGCMPOLandedCostEntry_Extension.cs" />
+    <File AppRelativePath="Code\Graph\InventoryAllocDetEnq_Extension.cs" />
+    <File AppRelativePath="Code\Graph\SOOrderEntry_AutoAllocation.cs" />
+    <File AppRelativePath="Code\Graph\SOOrderEntry_ComplianceHold.cs" />
+    <File AppRelativePath="Code\Graph\POReceiptEntry_Extension.cs" />
+    <File AppRelativePath="Code\Graph\POOrderEntry_RelationsExt.cs" />
+    <File AppRelativePath="Code\DAC\UsrPORelation.cs" />
+    <File AppRelativePath="Code\DAC\UsrPOActivity.cs" />
+  </Files>
   <Page path="~/pages/in/in202500.aspx">
     <PXFormView ID="form" ParentId="phF_form" TypeFullName="PX.Web.UI.PXFormView">
       <Children Key="Template">
