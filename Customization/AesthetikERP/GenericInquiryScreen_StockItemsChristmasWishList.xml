@@ -1,0 +1,99 @@
+<GenericInquiryScreen>
+  <data-set>
+    <relations format-version="3" relations-version="20190410" main-table="GIDesign" stable-sharing="True" file-name="StockItemsChristmasWishList">
+      <link from="GIFilter (DesignID)" to="GIDesign (DesignID)" />
+      <link from="GIGroupBy (DesignID)" to="GIDesign (DesignID)" />
+      <link from="GINavigationCondition (DesignID)" to="GIDesign (DesignID)" />
+      <link from="GINavigationParameter (DesignID)" to="GIDesign (DesignID)" />
+      <link from="GINavigationScreen (DesignID)" to="GIDesign (DesignID)" />
+      <link from="GIOn (DesignID)" to="GIDesign (DesignID)" />
+      <link from="GIRelation (DesignID)" to="GIDesign (DesignID)" />
+      <link from="GIResult (DesignID)" to="GIDesign (DesignID)" />
+      <link from="GISort (DesignID)" to="GIDesign (DesignID)" />
+      <link from="GITable (DesignID)" to="GIDesign (DesignID)" />
+      <link from="GIWhere (DesignID)" to="GIDesign (DesignID)" />
+      <link from="GIOn (DesignID,LineNbr)" to="GIRelation (DesignID,LineNbr)" />
+      <link from="GIRelation (DesignID)" to="GITable (DesignID,Alias)" />
+      <link from="GIResult (DesignID)" to="GITable (DesignID,Alias)" />
+    </relations>
+    <layout>
+      <group id="1" sorting="Natural" filtering="Natural" />
+    </layout>
+    <data>
+      <GIDesign>
+        <row DesignID="a69d2178-68ba-4d3b-be89-2a419027337b" Name="Stock Items Christmas Wish list" ScreenID="GI640608" FilterColCount="3" PageSize="0" ExportTop="0" NewRecordCreationEnabled="0" MassDeleteEnabled="0" AutoConfirmDelete="0" MassRecordsUpdateEnabled="0" MassActionsOnRecordsEnabled="0" ExposeViaOData="1" ExposeViaMobile="0">
+          <GITable Alias="InventoryItem" Name="PX.Objects.IN.InventoryItem">
+            <GIRelation LineNbr="1" ChildTable="INSiteStatus" IsActive="1" JoinType="L">
+              <GIOn LineNbr="1" ParentField="InventoryID" Condition="E " ChildField="InventoryID" Operation="A" />
+            </GIRelation>
+            <GIRelation LineNbr="2" ChildTable="TemplateItem" IsActive="1" JoinType="L">
+              <GIOn LineNbr="1" ParentField="TemplateItemID" Condition="E " ChildField="InventoryID" Operation="A" />
+            </GIRelation>
+            <GIRelation LineNbr="3" ChildTable="POVendorInventory" IsActive="1" JoinType="L">
+              <GIOn LineNbr="1" ParentField="InventoryID" Condition="E " ChildField="InventoryID" Operation="A" />
+            </GIRelation>
+            <GIRelation LineNbr="4" ChildTable="WMSTLVendorLeadTimes" IsActive="1" JoinType="L">
+              <GIOn LineNbr="1" ParentField="InventoryID" Condition="E " ChildField="InventoryID" Operation="A" />
+            </GIRelation>
+            <GIRelation LineNbr="5" ChildTable="POLine" IsActive="1" JoinType="L">
+              <GIOn LineNbr="1" ParentField="InventoryID" Condition="E " ChildField="InventoryID" Operation="A" />
+            </GIRelation>
+            <GIResult LineNbr="1" SortOrder="1" IsActive="1" Field="InventoryCD" Width="120" IsVisible="1" DefaultNav="1" QuickFilter="0" FastFilter="1" Caption="Stock Item SKU" RowID="a6400001-0000-0000-0000-000000000001" />
+            <GIResult LineNbr="2" SortOrder="2" IsActive="1" Field="Descr" Width="220" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Description" RowID="a6400001-0000-0000-0000-000000000002" />
+            <GIResult LineNbr="6" SortOrder="6" IsActive="1" Field="ItemStatus" Width="80" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Status" RowID="a6400001-0000-0000-0000-000000000006" />
+            <GIResult LineNbr="10" SortOrder="10" IsActive="1" Field="CountryOfOrigin" Width="100" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Country of Origin" RowID="a6400001-0000-0000-0000-000000000010" />
+          </GITable>
+          <GITable Alias="INSiteStatus" Name="PX.Objects.IN.INSiteStatus">
+            <GIResult LineNbr="4" SortOrder="4" IsActive="1" Field="QtyAvail" Width="100" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Qty Available" RowID="a6400001-0000-0000-0000-000000000004" />
+            <GIResult LineNbr="5" SortOrder="5" IsActive="1" Field="QtyOnHand" Width="100" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Qty On Hand" RowID="a6400001-0000-0000-0000-000000000005" />
+          </GITable>
+          <GITable Alias="TemplateItem" Name="PX.Objects.IN.InventoryItem">
+            <GIResult LineNbr="3" SortOrder="3" IsActive="1" Field="Descr" Width="180" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Template Description" RowID="a6400001-0000-0000-0000-000000000003" />
+          </GITable>
+          <GITable Alias="POVendorInventory" Name="PX.Objects.PO.POVendorInventory">
+            <GIResult LineNbr="7" SortOrder="7" IsActive="1" Field="VendorID" Width="100" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Vendor" RowID="a6400001-0000-0000-0000-000000000007" />
+          </GITable>
+          <GITable Alias="WMSTLVendorLeadTimes" Name="WMSTLVendorLeadTimes">
+            <GIResult LineNbr="8" SortOrder="8" IsActive="1" Field="LeadTimeDays" Width="80" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Lead Time (Days)" RowID="a6400001-0000-0000-0000-000000000008" />
+          </GITable>
+          <GITable Alias="POLine" Name="PX.Objects.PO.POLine">
+            <GIRelation LineNbr="6" ChildTable="POOrder" IsActive="1" JoinType="L">
+              <GIOn LineNbr="1" ParentField="OrderType" Condition="E " ChildField="OrderType" Operation="A" />
+              <GIOn LineNbr="2" ParentField="OrderNbr" Condition="E " ChildField="OrderNbr" Operation="A" />
+            </GIRelation>
+            <GIRelation LineNbr="7" ChildTable="IGCMPOLandedCostLine" IsActive="1" JoinType="L">
+              <GIOn LineNbr="1" ParentField="OrderType" Condition="E " ChildField="POOrderType" Operation="A" />
+              <GIOn LineNbr="2" ParentField="OrderNbr" Condition="E " ChildField="PONbr" Operation="A" />
+              <GIOn LineNbr="3" ParentField="LineNbr" Condition="E " ChildField="POLineNbr" Operation="A" />
+            </GIRelation>
+            <GIResult LineNbr="12" SortOrder="12" IsActive="1" Field="OpenQty" Width="80" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Open Qty on PO" RowID="a6400001-0000-0000-0000-000000000012" />
+            <GIResult LineNbr="13" SortOrder="13" IsActive="1" Field="UsrExpArrivalDate" Width="100" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Expected Arrival" RowID="a6400001-0000-0000-0000-000000000013" />
+          </GITable>
+          <GITable Alias="POOrder" Name="PX.Objects.PO.POOrder">
+            <GIResult LineNbr="11" SortOrder="11" IsActive="1" Field="OrderNbr" Width="100" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="PO Number" RowID="a6400001-0000-0000-0000-000000000011" />
+          </GITable>
+          <GITable Alias="IGCMPOLandedCostLine" Name="IGCM.PO.IGCMPOLandedCostLine">
+            <GIRelation LineNbr="8" ChildTable="IGCMPOLandedCost" IsActive="1" JoinType="L">
+              <GIOn LineNbr="1" ParentField="RefNbr" Condition="E " ChildField="RefNbr" Operation="A" />
+            </GIRelation>
+            <GIResult LineNbr="14" SortOrder="14" IsActive="1" Field="ContainerNbr" Width="100" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Container Number" RowID="a6400001-0000-0000-0000-000000000014" />
+          </GITable>
+          <GITable Alias="IGCMPOLandedCost" Name="IGCM.PO.IGCMPOLandedCost">
+            <GIResult LineNbr="15" SortOrder="15" IsActive="1" Field="RefNbr" Width="100" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Container Trans#" RowID="a6400001-0000-0000-0000-000000000015" />
+          </GITable>
+          <GIWhere LineNbr="1" OpenBrackets="1" IsActive="1" DataFieldName="INSiteStatus.SiteID" Condition="E " IsExpression="0" Value1="99" Operation="O" />
+          <GIWhere LineNbr="2" CloseBrackets="1" IsActive="1" DataFieldName="INSiteStatus.SiteID" Condition="NU" IsExpression="0" Operation="A" />
+          <GIWhere LineNbr="3" IsActive="1" DataFieldName="InventoryItem.StkItem" Condition="E " IsExpression="0" Value1="True" Operation="A" />
+          <GIWhere LineNbr="4" OpenBrackets="1" IsActive="1" DataFieldName="POVendorInventory.IsDefault" Condition="E " IsExpression="0" Value1="True" Operation="O" />
+          <GIWhere LineNbr="5" CloseBrackets="1" IsActive="1" DataFieldName="POVendorInventory.IsDefault" Condition="NU" IsExpression="0" Operation="A" />
+          <GIWhere LineNbr="6" OpenBrackets="1" IsActive="1" DataFieldName="POLine.OpenQty" Condition="G " IsExpression="0" Value1="0" Operation="O" />
+          <GIWhere LineNbr="7" CloseBrackets="1" IsActive="1" DataFieldName="POLine.OpenQty" Condition="NU" IsExpression="0" Operation="A" />
+          <GIWhere LineNbr="8" OpenBrackets="1" IsActive="1" DataFieldName="POOrder.Status" Condition="E " IsExpression="0" Value1="N" Operation="O" />
+          <GIWhere LineNbr="9" IsActive="1" DataFieldName="POOrder.Status" Condition="E " IsExpression="0" Value1="O" Operation="O" />
+          <GIWhere LineNbr="10" CloseBrackets="1" IsActive="1" DataFieldName="POOrder.Status" Condition="NU" IsExpression="0" Operation="A" />
+          <GISort LineNbr="1" IsActive="1" DataFieldName="InventoryItem.InventoryCD" SortOrder="A" />
+        </row>
+      </GIDesign>
+    </data>
+  </data-set>
+</GenericInquiryScreen>
