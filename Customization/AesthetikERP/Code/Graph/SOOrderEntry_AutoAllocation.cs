@@ -11,145 +11,104 @@ namespace HeritageFabrics.SO
 {
     public class SOOrderEntry_AutoAllocation : PXGraphExtension<SOOrderEntry>
     {
-        // Temporarily disabled — aggregate validation fix in progress (2026-03-20)
-        public static bool IsActive() => false;
+        public static bool IsActive() => true;
 
         private const string PieceGoodsClassID = "PIECENBR";
 
-        // Prevents our FieldUpdated<orderQty> from running during lot-serial's
-        // own internal SetValueExt<orderQty> calls.
-        private bool _allocating = false;
+        // Track assigned serials within the current order to prevent double-assignment
+        private readonly HashSet<string> _assignedSerials = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-        // Passes bolt from FieldVerifying → FieldUpdated (keyed by LineNbr).
-        private readonly Dictionary<int, BoltCandidate> _pendingBolt =
-            new Dictionary<int, BoltCandidate>();
-
-        // Prevents double-assignment within the same order.
-        private readonly HashSet<string> _assignedSerials =
-            new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
-        /// <summary>
-        /// FieldVerifying fires BEFORE the cache stores the new value.
-        /// We substitute e.NewValue with the bolt qty here — so the cache always
-        /// stores the bolt qty as if the user typed it.  RowUpdated fires once with
-        /// the bolt qty; SumCalc recalculates SOOrder.orderQty correctly.
-        /// No nested event chains, no stale aggregate.
-        /// </summary>
-        protected void _(Events.FieldVerifying<SOLine, SOLine.orderQty> e)
+        protected void _(Events.RowUpdated<SOLine> e)
         {
-            if (_allocating) return;
-            if (e.Row == null || e.NewValue == null) return;
-
-            // Only on PC / FO orders
-            SOOrder order = Base.Document.Current;
-            if (order == null) return;
-            if (order.OrderType != "PC" && order.OrderType != "FO") return;
-
-            // Skip if lot already assigned on this line
-            if (!string.IsNullOrEmpty(e.Row.LotSerialNbr)) return;
-
-            // Parse the incoming qty
-            decimal newQty;
-            try { newQty = Convert.ToDecimal(e.NewValue); }
-            catch { return; }
-            if (newQty <= 0) return;
-
-            if (e.Row.InventoryID == null) return;
-            if (!IsPieceGoodsItem(e.Row.InventoryID)) return;
-
-            int? siteID = e.Row.SiteID ?? order.DefaultSiteID;
-            if (siteID == null) return;
-
-            RebuildAssignedSerials(e.Row.LineNbr);
-
-            var bolt = FindBestBolt(e.Row.InventoryID.Value, siteID.Value, newQty);
-            if (bolt == null) return;
-
-            // Store bolt for FieldUpdated (lot-serial assignment)
-            _pendingBolt[e.Row.LineNbr ?? -1] = bolt;
-
-            // Substitute: cache stores bolt qty, not the user's typed value.
-            // RowUpdated then fires once with the correct qty → SumCalc is clean.
-            e.NewValue = bolt.QtyOnHand;
-        }
-
-        /// <summary>
-        /// FieldUpdated fires after the cache has stored the (already-substituted)
-        /// bolt qty.  We assign the lot serial via SetValueExt here so the full
-        /// Acumatica lot-serial event chain runs (split creation etc.) with the
-        /// correct qty already committed.
-        /// _allocating blocks re-entry if INLotSerialNbrAttribute internally calls
-        /// SetValueExt<orderQty> during split creation.
-        /// </summary>
-        protected void _(Events.FieldUpdated<SOLine, SOLine.orderQty> e)
-        {
-            if (_allocating) return;
             if (e.Row == null) return;
 
-            int key = e.Row.LineNbr ?? -1;
-            if (!_pendingBolt.TryGetValue(key, out var bolt)) return;
-            _pendingBolt.Remove(key);
+            // Only for PC and FO order types
+            SOOrder order = Base.Document.Current;
+            if (order == null) return;
+            string orderType = order.OrderType;
+            if (orderType != "PC" && orderType != "FO") return;
 
-            _allocating = true;
-            try
-            {
-                Base.Transactions.Cache.SetValueExt<SOLine.lotSerialNbr>(e.Row, bolt.LotSerialNbr);
-            }
-            finally
-            {
-                _allocating = false;
-            }
-        }
+            // Guard: skip if lot already assigned (prevents re-trigger from qty update)
+            if (!string.IsNullOrEmpty(e.Row.LotSerialNbr)) return;
 
-        /// <summary>
-        /// Cleans up both tracking structures when a line is removed.
-        /// </summary>
-        protected void _(Events.RowDeleted<SOLine> e)
-        {
-            if (e.Row?.LotSerialNbr != null)
-                _assignedSerials.Remove(e.Row.LotSerialNbr);
+            // Need both item and qty to proceed
+            if (e.Row.InventoryID == null || (e.Row.OrderQty ?? 0) <= 0) return;
 
-            if (e.Row?.LineNbr != null)
-                _pendingBolt.Remove(e.Row.LineNbr.Value);
-        }
+            // Only process PIECENBR items (Piece Number - Lot Tracked)
+            if (!IsPieceGoodsItem(e.Row.InventoryID)) return;
 
-        private BoltCandidate FindBestBolt(int inventoryID, int siteID, decimal minQty)
-        {
+            decimal minQty = e.Row.OrderQty ?? 0;
+            int inventoryID = e.Row.InventoryID.Value;
+            int? siteID = e.Row.SiteID ?? order.DefaultSiteID;
+
+            if (siteID == null) return;
+
+            // Rebuild assigned serials from other lines in this order
+            RebuildAssignedSerials(e.Row.LineNbr);
+
+            // Query INLotSerialStatus for available bolts
             var allSerials = SelectFrom<INLotSerialStatus>
                 .Where<INLotSerialStatus.inventoryID.IsEqual<@P.AsInt>
                     .And<INLotSerialStatus.siteID.IsEqual<@P.AsInt>>>
-                .View.ReadOnly.Select(Base, inventoryID, siteID);
+                .View.ReadOnly.Select(Base, inventoryID, siteID.Value);
 
+            // Filter and score candidates
             var candidates = new List<BoltCandidate>();
 
             foreach (PXResult<INLotSerialStatus> row in allSerials)
             {
                 var status = (INLotSerialStatus)row;
                 if (status.LotSerialNbr == null) continue;
+
+                // Skip already assigned to another line in this order
                 if (_assignedSerials.Contains(status.LotSerialNbr)) continue;
 
                 decimal qtyOnHand = status.QtyOnHand ?? 0;
-                decimal qtyAvail  = status.QtyAvail  ?? 0;
+                decimal qtyAvail = status.QtyAvail ?? 0;
 
+                // Must have enough quantity to meet minimum
                 if (qtyOnHand < minQty) continue;
-                if (qtyAvail != qtyOnHand) continue;   // must be fully unreserved
+
+                // Must be fully unreserved (entire bolt available)
+                if (qtyAvail != qtyOnHand) continue;
+
+                // WMS extension checks removed — INLotSerialStatusExt is in the WMS package.
+                // When WMS is deployed, defect/status filtering will be handled there.
 
                 candidates.Add(new BoltCandidate
                 {
                     LotSerialNbr = status.LotSerialNbr,
-                    QtyOnHand    = qtyOnHand,
-                    ReceiptDate  = status.ReceiptDate ?? status.LastModifiedDateTime?.Date,
+                    QtyOnHand = qtyOnHand,
+                    ReceiptDate = status.ReceiptDate ?? status.LastModifiedDateTime?.Date,
                 });
             }
 
-            if (candidates.Count == 0) return null;
+            if (candidates.Count == 0) return; // No bolt meets minimum — leave unallocated
 
-            return candidates
+            // Sort: FIFO first (oldest receipt date), then tightest fit (smallest qty >= minimum)
+            var best = candidates
                 .OrderBy(c => c.ReceiptDate ?? DateTime.MaxValue)
                 .ThenBy(c => c.QtyOnHand)
                 .First();
+
+            // Assign lot and update quantity to full bolt
+            Base.Transactions.Cache.SetValueExt<SOLine.lotSerialNbr>(e.Row, best.LotSerialNbr);
+            Base.Transactions.Cache.SetValueExt<SOLine.orderQty>(e.Row, best.QtyOnHand);
         }
 
+        /// <summary>
+        /// When a line is deleted, remove its serial from the tracking set.
+        /// </summary>
+        protected void _(Events.RowDeleted<SOLine> e)
+        {
+            if (e.Row?.LotSerialNbr != null)
+                _assignedSerials.Remove(e.Row.LotSerialNbr);
+        }
+
+        /// <summary>
+        /// Rebuilds the set of serials already assigned to other lines in this order.
+        /// Excludes the current line being processed.
+        /// </summary>
         private void RebuildAssignedSerials(int? excludeLineNbr)
         {
             _assignedSerials.Clear();
@@ -161,6 +120,7 @@ namespace HeritageFabrics.SO
             }
         }
 
+        /// <summary>Checks if an item uses the PIECENBR lot/serial class.</summary>
         private bool IsPieceGoodsItem(int? inventoryID)
         {
             if (inventoryID == null) return false;
@@ -179,9 +139,9 @@ namespace HeritageFabrics.SO
 
         private class BoltCandidate
         {
-            public string    LotSerialNbr { get; set; }
-            public decimal   QtyOnHand    { get; set; }
-            public DateTime? ReceiptDate  { get; set; }
+            public string LotSerialNbr { get; set; }
+            public decimal QtyOnHand { get; set; }
+            public DateTime? ReceiptDate { get; set; }
         }
     }
 }
