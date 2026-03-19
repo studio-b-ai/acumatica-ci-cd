@@ -851,7 +851,7 @@ namespace HeritageFabrics.SO
     }
 }]]></CDATA>
     </Graph>
-  <Sql Name="AesthetikERP_Columns_v1" Script="#CDATA">
+  <Sql Name="AesthetikERP_Columns_v2" Script="#CDATA">
     <CDATA name="Script"><![CDATA[
 -- POOrder extension fields (3 columns) -- from HeritageFabricsPOv5
 IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('POOrder') AND name = 'UsrExpArrivalDate')
