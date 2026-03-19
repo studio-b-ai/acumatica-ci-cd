@@ -668,7 +668,7 @@ namespace HeritageFabrics.SO
     {
         public static bool IsActive() => true;
 
-        private const string PieceGoodsClassID = "PIECEGOODS";
+        private const string PieceGoodsClassID = "PIECENBR";
 
         // Track assigned serials within the current order to prevent double-assignment
         private readonly HashSet<string> _assignedSerials = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -689,7 +689,7 @@ namespace HeritageFabrics.SO
             // Need both item and qty to proceed
             if (e.Row.InventoryID == null || (e.Row.OrderQty ?? 0) <= 0) return;
 
-            // Only process PIECEGOODS items
+            // Only process PIECENBR items (Piece Number - Lot Tracked)
             if (!IsPieceGoodsItem(e.Row.InventoryID)) return;
 
             decimal minQty = e.Row.OrderQty ?? 0;
@@ -775,7 +775,7 @@ namespace HeritageFabrics.SO
             }
         }
 
-        /// <summary>Checks if an item uses the PIECEGOODS lot/serial class.</summary>
+        /// <summary>Checks if an item uses the PIECENBR lot/serial class.</summary>
         private bool IsPieceGoodsItem(int? inventoryID)
         {
             if (inventoryID == null) return false;
@@ -851,7 +851,7 @@ namespace HeritageFabrics.SO
     }
 }]]></CDATA>
     </Graph>
-  <Sql Name="AesthetikERP_Columns_v1" Script="#CDATA">
+  <Sql Name="AesthetikERP_Columns_v2" Script="#CDATA">
     <CDATA name="Script"><![CDATA[
 -- POOrder extension fields (3 columns) -- from HeritageFabricsPOv5
 IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('POOrder') AND name = 'UsrExpArrivalDate')
