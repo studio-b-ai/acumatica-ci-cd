@@ -1,0 +1,676 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Customization
+  ProjectID="AesthetikERP"
+  Description="Unified Aesthetik ERP — WMS, PO dates/relations, HubSpot sync, Pay Link, compliance hold, PC/FO auto-allocation, IGCM container propagation"
+  Level="1"
+  IsWorking="True">
+  <Sql Name="AesthetikWMS_Columns_v1" Script="#CDATA">
+    <CDATA name="Script"><![CDATA[
+-- INLotSerialClass extension fields (4 columns)
+IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('INLotSerialClass') AND name = 'UsrMinRemnant')
+  ALTER TABLE INLotSerialClass ADD UsrMinRemnant decimal(18,2) NULL;
+IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('INLotSerialClass') AND name = 'UsrAutoPrint')
+  ALTER TABLE INLotSerialClass ADD UsrAutoPrint bit NULL;
+IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('INLotSerialClass') AND name = 'UsrDefaultWidth')
+  ALTER TABLE INLotSerialClass ADD UsrDefaultWidth decimal(18,1) NULL;
+IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('INLotSerialClass') AND name = 'UsrPreRecvEnabled')
+  ALTER TABLE INLotSerialClass ADD UsrPreRecvEnabled bit NULL;
+-- INLotSerialStatus extension fields (9 columns)
+IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('INLotSerialStatus') AND name = 'UsrActualYardage')
+  ALTER TABLE INLotSerialStatus ADD UsrActualYardage decimal(18,2) NULL;
+IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('INLotSerialStatus') AND name = 'UsrDyeLot')
+  ALTER TABLE INLotSerialStatus ADD UsrDyeLot nvarchar(30) NULL;
+IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('INLotSerialStatus') AND name = 'UsrWidth')
+  ALTER TABLE INLotSerialStatus ADD UsrWidth decimal(18,1) NULL;
+IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('INLotSerialStatus') AND name = 'UsrShadeCode')
+  ALTER TABLE INLotSerialStatus ADD UsrShadeCode nvarchar(10) NULL;
+IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('INLotSerialStatus') AND name = 'UsrSourceRoll')
+  ALTER TABLE INLotSerialStatus ADD UsrSourceRoll nvarchar(30) NULL;
+IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('INLotSerialStatus') AND name = 'UsrDefectFlag')
+  ALTER TABLE INLotSerialStatus ADD UsrDefectFlag bit NULL;
+IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('INLotSerialStatus') AND name = 'UsrInventoryStatus')
+  ALTER TABLE INLotSerialStatus ADD UsrInventoryStatus nvarchar(15) NULL;
+IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('INLotSerialStatus') AND name = 'UsrPreAssignedBin')
+  ALTER TABLE INLotSerialStatus ADD UsrPreAssignedBin nvarchar(30) NULL;
+IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('INLotSerialStatus') AND name = 'UsrContainerNo')
+  ALTER TABLE INLotSerialStatus ADD UsrContainerNo nvarchar(30) NULL;
+-- INSetup extension fields — Piece Goods preferences (14 columns)
+IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('INSetup') AND name = 'UsrPGMinRemnant')
+  ALTER TABLE INSetup ADD UsrPGMinRemnant decimal(18,2) NULL;
+IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('INSetup') AND name = 'UsrPGAutoQtyMode')
+  ALTER TABLE INSetup ADD UsrPGAutoQtyMode bit NULL;
+IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('INSetup') AND name = 'UsrPGAutoPrint')
+  ALTER TABLE INSetup ADD UsrPGAutoPrint bit NULL;
+IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('INSetup') AND name = 'UsrPGCutSuffix')
+  ALTER TABLE INSetup ADD UsrPGCutSuffix nvarchar(20) NULL;
+IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('INSetup') AND name = 'UsrPGPreRecv')
+  ALTER TABLE INSetup ADD UsrPGPreRecv bit NULL;
+IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('INSetup') AND name = 'UsrPGCrossDock')
+  ALTER TABLE INSetup ADD UsrPGCrossDock bit NULL;
+IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('INSetup') AND name = 'UsrPGXDockAge')
+  ALTER TABLE INSetup ADD UsrPGXDockAge int NULL;
+IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('INSetup') AND name = 'UsrPGInTransitWt')
+  ALTER TABLE INSetup ADD UsrPGInTransitWt int NULL;
+IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('INSetup') AND name = 'UsrPGYardageVar')
+  ALTER TABLE INSetup ADD UsrPGYardageVar decimal(18,4) NULL;
+IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('INSetup') AND name = 'UsrPGWtExact')
+  ALTER TABLE INSetup ADD UsrPGWtExact int NULL;
+IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('INSetup') AND name = 'UsrPGWtRemnant')
+  ALTER TABLE INSetup ADD UsrPGWtRemnant int NULL;
+IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('INSetup') AND name = 'UsrPGWtDyeLot')
+  ALTER TABLE INSetup ADD UsrPGWtDyeLot int NULL;
+IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('INSetup') AND name = 'UsrPGWtLocation')
+  ALTER TABLE INSetup ADD UsrPGWtLocation int NULL;
+IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('INSetup') AND name = 'UsrPGWtFIFO')
+  ALTER TABLE INSetup ADD UsrPGWtFIFO int NULL;
+-- POOrder extension fields (3 columns) — from HeritageFabricsPOv5
+IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('POOrder') AND name = 'UsrExpArrivalDate')
+  ALTER TABLE POOrder ADD UsrExpArrivalDate datetime NULL;
+IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('POOrder') AND name = 'UsrActArrivalDate')
+  ALTER TABLE POOrder ADD UsrActArrivalDate datetime NULL;
+IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('POOrder') AND name = 'UsrContainerRef')
+  ALTER TABLE POOrder ADD UsrContainerRef nvarchar(50) NULL;
+-- POLine extension fields (2 columns) — from HeritageFabricsPOv5
+IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('POLine') AND name = 'UsrExpArrivalDate')
+  ALTER TABLE POLine ADD UsrExpArrivalDate datetime NULL;
+IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('POLine') AND name = 'UsrActArrivalDate')
+  ALTER TABLE POLine ADD UsrActArrivalDate datetime NULL;
+-- SOOrder extension fields (4 columns) — from HeritageFabricsPOv5
+IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('SOOrder') AND name = 'UsrHubSpotDealId')
+  ALTER TABLE SOOrder ADD UsrHubSpotDealId nvarchar(50) NULL;
+IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('SOOrder') AND name = 'UsrWMSStatus')
+  ALTER TABLE SOOrder ADD UsrWMSStatus nvarchar(20) NULL;
+IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('SOOrder') AND name = 'UsrComplianceHold')
+  ALTER TABLE SOOrder ADD UsrComplianceHold bit NULL;
+IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('SOOrder') AND name = 'UsrComplianceHoldReason')
+  ALTER TABLE SOOrder ADD UsrComplianceHoldReason nvarchar(500) NULL;
+-- BAccount extension field (1 column) — from HeritageFabricsPOv5
+IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('BAccount') AND name = 'UsrDisablePayLink')
+  ALTER TABLE BAccount ADD UsrDisablePayLink bit NULL;
+]]></CDATA>
+  </Sql>
+  <Code>
+    <File Path="Code\DAC\INLotSerialClassExt.cs" />
+    <File Path="Code\DAC\INLotSerialStatusExt.cs" />
+    <File Path="Code\DAC\INSetupExt.cs" />
+    <File Path="Code\Graph\INSetupMaintExt.cs" />
+    <File Path="Code\Graph\PieceGoodsScanExtension.cs" />
+    <File Path="Code\Graph\PieceGoodsReceivingExt.cs" />
+    <File Path="Code\Graph\TextilePickOptimizer.cs" />
+    <File Path="Code\Graph\CrossDockManager.cs" />
+    <File Path="Code\Graph\WMSDatabaseInstaller.cs" />
+    <File Path="Code\Logic\CutToOrderEngine.cs" />
+    <File Path="Code\Logic\PreReceivingEngine.cs" />
+    <File Path="Code\Helpers\PieceGoodsConstants.cs" />
+    <File Path="Code\Helpers\BarcodeParser.cs" />
+    <File Path="Code\DAC\POOrderExt.cs" />
+    <File Path="Code\DAC\POLineExt.cs" />
+    <File Path="Code\DAC\CustomerExt.cs" />
+    <File Path="Code\DAC\SOOrderExt.cs" />
+    <File Path="Code\DAC\InventoryAllocDetEnqResultExt.cs" />
+    <File Path="Code\Graph\POOrderEntry_Extension.cs" />
+    <File Path="Code\Graph\ARInvoiceEntry_PayLink_Extension.cs" />
+    <File Path="Code\Graph\IGCMPOLandedCostEntry_Extension.cs" />
+    <File Path="Code\Graph\InventoryAllocDetEnq_Extension.cs" />
+    <File Path="Code\Graph\SOOrderEntry_AutoAllocation.cs" />
+    <File Path="Code\Graph\SOOrderEntry_ComplianceHold.cs" />
+    <File Path="Code\Graph\POReceiptEntry_Extension.cs" />
+    <File Path="Code\Graph\POOrderEntry_RelationsExt.cs" />
+    <File Path="Code\DAC\UsrPORelation.cs" />
+    <File Path="Code\DAC\UsrPOActivity.cs" />
+  </Code>
+  <Page path="~/pages/in/in202500.aspx">
+    <PXFormView ID="form" ParentId="phF_form" TypeFullName="PX.Web.UI.PXFormView">
+      <Children Key="Template">
+        <AddItem>
+          <PXNumberEdit TypeFullName="PX.Web.UI.PXNumberEdit">
+            <Prop Key="Virtual:ApplyStylesheetSkin" />
+            <Prop Key="ID" Value="edUsrMinRemnant" />
+            <Prop Key="DataField" Value="UsrMinRemnant" />
+          </PXNumberEdit>
+        </AddItem>
+        <AddItem>
+          <PXCheckBox TypeFullName="PX.Web.UI.PXCheckBox">
+            <Prop Key="Virtual:ApplyStylesheetSkin" />
+            <Prop Key="ID" Value="chkUsrAutoPrint" />
+            <Prop Key="DataField" Value="UsrAutoPrint" />
+            <Prop Key="Text" Value="Auto-Print Labels" />
+          </PXCheckBox>
+        </AddItem>
+        <AddItem>
+          <PXNumberEdit TypeFullName="PX.Web.UI.PXNumberEdit">
+            <Prop Key="Virtual:ApplyStylesheetSkin" />
+            <Prop Key="ID" Value="edUsrDefaultWidth" />
+            <Prop Key="DataField" Value="UsrDefaultWidth" />
+          </PXNumberEdit>
+        </AddItem>
+        <AddItem>
+          <PXCheckBox TypeFullName="PX.Web.UI.PXCheckBox">
+            <Prop Key="Virtual:ApplyStylesheetSkin" />
+            <Prop Key="ID" Value="chkUsrPreRecvEnabled" />
+            <Prop Key="DataField" Value="UsrPreRecvEnabled" />
+            <Prop Key="Text" Value="Enable Pre-Receiving" />
+          </PXCheckBox>
+        </AddItem>
+      </Children>
+    </PXFormView>
+  </Page>
+  <Page path="~/pages/in/in201000.aspx">
+    <PXTab ID="tab" ParentId="phG_tab" TypeFullName="PX.Web.UI.PXTab">
+      <Children Key="Items">
+        <AddItem>
+          <PXTabItem TypeFullName="PX.Web.UI.PXTabItem">
+            <Prop Key="Text" Value="Piece Goods" />
+            <Children Key="Template">
+              <AddItem>
+                <PXLayoutRule TypeFullName="PX.Web.UI.PXLayoutRule">
+                  <Prop Key="StartGroup" Value="True" />
+                  <Prop Key="GroupCaption" Value="General" />
+                  <Prop Key="StartColumn" Value="True" />
+                  <Prop Key="ColumnWidth" Value="XM" />
+                  <Prop Key="ID" Value="lrPGGeneral" />
+                </PXLayoutRule>
+              </AddItem>
+              <AddItem>
+                <PXNumberEdit TypeFullName="PX.Web.UI.PXNumberEdit">
+                  <Prop Key="Virtual:ApplyStylesheetSkin" />
+                  <Prop Key="ID" Value="edUsrPGMinRemnant" />
+                  <Prop Key="DataField" Value="UsrPGMinRemnant" />
+                </PXNumberEdit>
+              </AddItem>
+              <AddItem>
+                <PXCheckBox TypeFullName="PX.Web.UI.PXCheckBox">
+                  <Prop Key="Virtual:ApplyStylesheetSkin" />
+                  <Prop Key="ID" Value="chkUsrPGAutoQtyMode" />
+                  <Prop Key="DataField" Value="UsrPGAutoQtyMode" />
+                  <Prop Key="Text" Value="Auto-Confirm Qty on Scan" />
+                </PXCheckBox>
+              </AddItem>
+              <AddItem>
+                <PXCheckBox TypeFullName="PX.Web.UI.PXCheckBox">
+                  <Prop Key="Virtual:ApplyStylesheetSkin" />
+                  <Prop Key="ID" Value="chkUsrPGAutoPrint" />
+                  <Prop Key="DataField" Value="UsrPGAutoPrint" />
+                  <Prop Key="Text" Value="Auto-Print on Receiving" />
+                </PXCheckBox>
+              </AddItem>
+              <AddItem>
+                <PXTextEdit TypeFullName="PX.Web.UI.PXTextEdit">
+                  <Prop Key="Virtual:ApplyStylesheetSkin" />
+                  <Prop Key="ID" Value="edUsrPGCutSuffix" />
+                  <Prop Key="DataField" Value="UsrPGCutSuffix" />
+                </PXTextEdit>
+              </AddItem>
+              <AddItem>
+                <PXLayoutRule TypeFullName="PX.Web.UI.PXLayoutRule">
+                  <Prop Key="StartGroup" Value="True" />
+                  <Prop Key="GroupCaption" Value="Pre-Receiving and Cross-Dock" />
+                  <Prop Key="ID" Value="lrPGPreRecv" />
+                </PXLayoutRule>
+              </AddItem>
+              <AddItem>
+                <PXCheckBox TypeFullName="PX.Web.UI.PXCheckBox">
+                  <Prop Key="Virtual:ApplyStylesheetSkin" />
+                  <Prop Key="ID" Value="chkUsrPGPreRecv" />
+                  <Prop Key="DataField" Value="UsrPGPreRecv" />
+                  <Prop Key="Text" Value="Enable Pre-Receiving" />
+                </PXCheckBox>
+              </AddItem>
+              <AddItem>
+                <PXCheckBox TypeFullName="PX.Web.UI.PXCheckBox">
+                  <Prop Key="Virtual:ApplyStylesheetSkin" />
+                  <Prop Key="ID" Value="chkUsrPGCrossDock" />
+                  <Prop Key="DataField" Value="UsrPGCrossDock" />
+                  <Prop Key="Text" Value="Enable Cross-Dock" />
+                </PXCheckBox>
+              </AddItem>
+              <AddItem>
+                <PXNumberEdit TypeFullName="PX.Web.UI.PXNumberEdit">
+                  <Prop Key="Virtual:ApplyStylesheetSkin" />
+                  <Prop Key="ID" Value="edUsrPGXDockAge" />
+                  <Prop Key="DataField" Value="UsrPGXDockAge" />
+                </PXNumberEdit>
+              </AddItem>
+              <AddItem>
+                <PXNumberEdit TypeFullName="PX.Web.UI.PXNumberEdit">
+                  <Prop Key="Virtual:ApplyStylesheetSkin" />
+                  <Prop Key="ID" Value="edUsrPGInTransitWt" />
+                  <Prop Key="DataField" Value="UsrPGInTransitWt" />
+                </PXNumberEdit>
+              </AddItem>
+              <AddItem>
+                <PXNumberEdit TypeFullName="PX.Web.UI.PXNumberEdit">
+                  <Prop Key="Virtual:ApplyStylesheetSkin" />
+                  <Prop Key="ID" Value="edUsrPGYardageVar" />
+                  <Prop Key="DataField" Value="UsrPGYardageVar" />
+                </PXNumberEdit>
+              </AddItem>
+              <AddItem>
+                <PXLayoutRule TypeFullName="PX.Web.UI.PXLayoutRule">
+                  <Prop Key="StartGroup" Value="True" />
+                  <Prop Key="GroupCaption" Value="Pick Optimizer Weights" />
+                  <Prop Key="StartColumn" Value="True" />
+                  <Prop Key="ColumnWidth" Value="XM" />
+                  <Prop Key="ID" Value="lrPGWeights" />
+                </PXLayoutRule>
+              </AddItem>
+              <AddItem>
+                <PXNumberEdit TypeFullName="PX.Web.UI.PXNumberEdit">
+                  <Prop Key="Virtual:ApplyStylesheetSkin" />
+                  <Prop Key="ID" Value="edUsrPGWtExact" />
+                  <Prop Key="DataField" Value="UsrPGWtExact" />
+                </PXNumberEdit>
+              </AddItem>
+              <AddItem>
+                <PXNumberEdit TypeFullName="PX.Web.UI.PXNumberEdit">
+                  <Prop Key="Virtual:ApplyStylesheetSkin" />
+                  <Prop Key="ID" Value="edUsrPGWtRemnant" />
+                  <Prop Key="DataField" Value="UsrPGWtRemnant" />
+                </PXNumberEdit>
+              </AddItem>
+              <AddItem>
+                <PXNumberEdit TypeFullName="PX.Web.UI.PXNumberEdit">
+                  <Prop Key="Virtual:ApplyStylesheetSkin" />
+                  <Prop Key="ID" Value="edUsrPGWtDyeLot" />
+                  <Prop Key="DataField" Value="UsrPGWtDyeLot" />
+                </PXNumberEdit>
+              </AddItem>
+              <AddItem>
+                <PXNumberEdit TypeFullName="PX.Web.UI.PXNumberEdit">
+                  <Prop Key="Virtual:ApplyStylesheetSkin" />
+                  <Prop Key="ID" Value="edUsrPGWtLocation" />
+                  <Prop Key="DataField" Value="UsrPGWtLocation" />
+                </PXNumberEdit>
+              </AddItem>
+              <AddItem>
+                <PXNumberEdit TypeFullName="PX.Web.UI.PXNumberEdit">
+                  <Prop Key="Virtual:ApplyStylesheetSkin" />
+                  <Prop Key="ID" Value="edUsrPGWtFIFO" />
+                  <Prop Key="DataField" Value="UsrPGWtFIFO" />
+                </PXNumberEdit>
+              </AddItem>
+            </Children>
+          </PXTabItem>
+        </AddItem>
+      </Children>
+    </PXTab>
+  </Page>
+  <Page path="~/pages/so/so302020.aspx">
+    <PXFormView ID="form" ParentId="phF_form" TypeFullName="PX.Web.UI.PXFormView">
+      <Children Key="Template">
+        <AddItem>
+          <PXNumberEdit TypeFullName="PX.Web.UI.PXNumberEdit">
+            <Prop Key="Virtual:ApplyStylesheetSkin" />
+            <Prop Key="ID" Value="edUsrActualYardage" />
+            <Prop Key="DataField" Value="UsrActualYardage" />
+            <Prop Key="Enabled" Value="False" />
+          </PXNumberEdit>
+        </AddItem>
+        <AddItem>
+          <PXTextEdit TypeFullName="PX.Web.UI.PXTextEdit">
+            <Prop Key="Virtual:ApplyStylesheetSkin" />
+            <Prop Key="ID" Value="edUsrDyeLot" />
+            <Prop Key="DataField" Value="UsrDyeLot" />
+            <Prop Key="Enabled" Value="False" />
+          </PXTextEdit>
+        </AddItem>
+        <AddItem>
+          <PXNumberEdit TypeFullName="PX.Web.UI.PXNumberEdit">
+            <Prop Key="Virtual:ApplyStylesheetSkin" />
+            <Prop Key="ID" Value="edUsrWidth" />
+            <Prop Key="DataField" Value="UsrWidth" />
+            <Prop Key="Enabled" Value="False" />
+          </PXNumberEdit>
+        </AddItem>
+        <AddItem>
+          <PXTextEdit TypeFullName="PX.Web.UI.PXTextEdit">
+            <Prop Key="Virtual:ApplyStylesheetSkin" />
+            <Prop Key="ID" Value="edUsrShadeCode" />
+            <Prop Key="DataField" Value="UsrShadeCode" />
+            <Prop Key="Enabled" Value="False" />
+          </PXTextEdit>
+        </AddItem>
+        <AddItem>
+          <PXCheckBox TypeFullName="PX.Web.UI.PXCheckBox">
+            <Prop Key="Virtual:ApplyStylesheetSkin" />
+            <Prop Key="ID" Value="chkUsrDefectFlag" />
+            <Prop Key="DataField" Value="UsrDefectFlag" />
+            <Prop Key="Text" Value="Defect" />
+            <Prop Key="Enabled" Value="False" />
+          </PXCheckBox>
+        </AddItem>
+      </Children>
+    </PXFormView>
+  </Page>
+  <Page path="~/pages/po/po302000.aspx">
+    <PXFormView ID="form" ParentId="phF_form" TypeFullName="PX.Web.UI.PXFormView">
+      <Children Key="Template">
+        <AddItem>
+          <PXNumberEdit TypeFullName="PX.Web.UI.PXNumberEdit">
+            <Prop Key="Virtual:ApplyStylesheetSkin" />
+            <Prop Key="ID" Value="edUsrActualYardage" />
+            <Prop Key="DataField" Value="UsrActualYardage" />
+          </PXNumberEdit>
+        </AddItem>
+        <AddItem>
+          <PXTextEdit TypeFullName="PX.Web.UI.PXTextEdit">
+            <Prop Key="Virtual:ApplyStylesheetSkin" />
+            <Prop Key="ID" Value="edUsrDyeLot" />
+            <Prop Key="DataField" Value="UsrDyeLot" />
+          </PXTextEdit>
+        </AddItem>
+        <AddItem>
+          <PXTextEdit TypeFullName="PX.Web.UI.PXTextEdit">
+            <Prop Key="Virtual:ApplyStylesheetSkin" />
+            <Prop Key="ID" Value="edUsrContainerNo" />
+            <Prop Key="DataField" Value="UsrContainerNo" />
+          </PXTextEdit>
+        </AddItem>
+        <AddItem>
+          <PXDropDown TypeFullName="PX.Web.UI.PXDropDown">
+            <Prop Key="Virtual:ApplyStylesheetSkin" />
+            <Prop Key="ID" Value="edUsrInventoryStatus" />
+            <Prop Key="DataField" Value="UsrInventoryStatus" />
+          </PXDropDown>
+        </AddItem>
+      </Children>
+    </PXFormView>
+  </Page>
+  <Page path="~/pages/in/in402500.aspx">
+    <PXGridLevel DataMember="INLotSerialStatusRecords" ParentId="phG_grid_Levels#0" TypeFullName="PX.Web.UI.PXGridLevel">
+      <Children Key="Columns">
+        <AddItem>
+          <PXGridColumn TypeFullName="PX.Web.UI.PXGridColumn">
+            <Prop Key="DataField" Value="UsrActualYardage" />
+            <Prop Key="Width" Value="100px" />
+          </PXGridColumn>
+        </AddItem>
+        <AddItem>
+          <PXGridColumn TypeFullName="PX.Web.UI.PXGridColumn">
+            <Prop Key="DataField" Value="UsrDyeLot" />
+            <Prop Key="Width" Value="100px" />
+          </PXGridColumn>
+        </AddItem>
+        <AddItem>
+          <PXGridColumn TypeFullName="PX.Web.UI.PXGridColumn">
+            <Prop Key="DataField" Value="UsrWidth" />
+            <Prop Key="Width" Value="80px" />
+          </PXGridColumn>
+        </AddItem>
+        <AddItem>
+          <PXGridColumn TypeFullName="PX.Web.UI.PXGridColumn">
+            <Prop Key="DataField" Value="UsrShadeCode" />
+            <Prop Key="Width" Value="80px" />
+          </PXGridColumn>
+        </AddItem>
+        <AddItem>
+          <PXGridColumn TypeFullName="PX.Web.UI.PXGridColumn">
+            <Prop Key="DataField" Value="UsrSourceRoll" />
+            <Prop Key="Width" Value="120px" />
+          </PXGridColumn>
+        </AddItem>
+        <AddItem>
+          <PXGridColumn TypeFullName="PX.Web.UI.PXGridColumn">
+            <Prop Key="DataField" Value="UsrDefectFlag" />
+            <Prop Key="Width" Value="70px" />
+            <Prop Key="Type" Value="CheckBox" />
+            <Prop Key="TextAlign" Value="Center" />
+          </PXGridColumn>
+        </AddItem>
+        <AddItem>
+          <PXGridColumn TypeFullName="PX.Web.UI.PXGridColumn">
+            <Prop Key="DataField" Value="UsrInventoryStatus" />
+            <Prop Key="Width" Value="100px" />
+          </PXGridColumn>
+        </AddItem>
+        <AddItem>
+          <PXGridColumn TypeFullName="PX.Web.UI.PXGridColumn">
+            <Prop Key="DataField" Value="UsrPreAssignedBin" />
+            <Prop Key="Width" Value="120px" />
+          </PXGridColumn>
+        </AddItem>
+        <AddItem>
+          <PXGridColumn TypeFullName="PX.Web.UI.PXGridColumn">
+            <Prop Key="DataField" Value="UsrContainerNo" />
+            <Prop Key="Width" Value="120px" />
+          </PXGridColumn>
+        </AddItem>
+      </Children>
+    </PXGridLevel>
+  </Page>
+  <Page path="~/pages/po/po301000.aspx">
+    <PXFormView ID="form" ParentId="phF_form" TypeFullName="PX.Web.UI.PXFormView">
+      <Children Key="Template">
+        <AddItem>
+          <PXTextEdit TypeFullName="PX.Web.UI.PXTextEdit">
+            <Prop Key="Virtual:ApplyStylesheetSkin" />
+            <Prop Key="ID" Value="edUsrContainerRef" />
+            <Prop Key="DataField" Value="UsrContainerRef" />
+          </PXTextEdit>
+        </AddItem>
+        <AddItem>
+          <PXDateTimeEdit TypeFullName="PX.Web.UI.PXDateTimeEdit">
+            <Prop Key="Virtual:ApplyStylesheetSkin" />
+            <Prop Key="ID" Value="edUsrExpArrivalDate" />
+            <Prop Key="DataField" Value="UsrExpArrivalDate" />
+            <Prop Key="CommitChanges" Value="True" />
+          </PXDateTimeEdit>
+        </AddItem>
+        <AddItem>
+          <PXDateTimeEdit TypeFullName="PX.Web.UI.PXDateTimeEdit">
+            <Prop Key="Virtual:ApplyStylesheetSkin" />
+            <Prop Key="ID" Value="edUsrActArrivalDate" />
+            <Prop Key="DataField" Value="UsrActArrivalDate" />
+          </PXDateTimeEdit>
+        </AddItem>
+      </Children>
+    </PXFormView>
+    <PXGridLevel DataMember="Transactions" ParentId="phG_tab_Items#0_grid_Levels#0" TypeFullName="PX.Web.UI.PXGridLevel">
+      <Children Key="Columns">
+        <AddItem>
+          <PXGridColumn TypeFullName="PX.Web.UI.PXGridColumn">
+            <Prop Key="DataField" Value="UsrExpArrivalDate" />
+            <Prop Key="Width" Value="120px" />
+          </PXGridColumn>
+        </AddItem>
+        <AddItem>
+          <PXGridColumn TypeFullName="PX.Web.UI.PXGridColumn">
+            <Prop Key="DataField" Value="UsrActArrivalDate" />
+            <Prop Key="Width" Value="120px" />
+          </PXGridColumn>
+        </AddItem>
+      </Children>
+    </PXGridLevel>
+    <PXTab ID="tab" ParentId="phG_tab" TypeFullName="PX.Web.UI.PXTab">
+      <Children Key="Items">
+        <AddItem>
+          <PXTabItem TypeFullName="PX.Web.UI.PXTabItem">
+            <Prop Key="Text" Value="Relations" />
+            <Children Key="Template">
+              <AddItem>
+                <PXGrid TypeFullName="PX.Web.UI.PXGrid">
+                  <Prop Key="ID" Value="gridRelations" />
+                  <Prop Key="SkinID" Value="Details" />
+                  <Prop Key="DataSourceID" Value="ds" />
+                  <Prop Key="Width" Value="100%" />
+                  <Prop Key="AllowFilter" Value="True" />
+                  <Children Key="Levels">
+                    <AddItem>
+                      <PXGridLevel TypeFullName="PX.Web.UI.PXGridLevel">
+                        <Prop Key="DataMember" Value="Relations" />
+                        <Children Key="Columns">
+                          <AddItem>
+                            <PXGridColumn TypeFullName="PX.Web.UI.PXGridColumn">
+                              <Prop Key="DataField" Value="Role" />
+                              <Prop Key="Width" Value="120px" />
+                            </PXGridColumn>
+                          </AddItem>
+                          <AddItem>
+                            <PXGridColumn TypeFullName="PX.Web.UI.PXGridColumn">
+                              <Prop Key="DataField" Value="ContactName" />
+                              <Prop Key="Width" Value="150px" />
+                            </PXGridColumn>
+                          </AddItem>
+                          <AddItem>
+                            <PXGridColumn TypeFullName="PX.Web.UI.PXGridColumn">
+                              <Prop Key="DataField" Value="Email" />
+                              <Prop Key="Width" Value="200px" />
+                            </PXGridColumn>
+                          </AddItem>
+                          <AddItem>
+                            <PXGridColumn TypeFullName="PX.Web.UI.PXGridColumn">
+                              <Prop Key="DataField" Value="Phone" />
+                              <Prop Key="Width" Value="120px" />
+                            </PXGridColumn>
+                          </AddItem>
+                          <AddItem>
+                            <PXGridColumn TypeFullName="PX.Web.UI.PXGridColumn">
+                              <Prop Key="DataField" Value="Company" />
+                              <Prop Key="Width" Value="150px" />
+                            </PXGridColumn>
+                          </AddItem>
+                          <AddItem>
+                            <PXGridColumn TypeFullName="PX.Web.UI.PXGridColumn">
+                              <Prop Key="DataField" Value="AddToCC" />
+                              <Prop Key="Width" Value="70px" />
+                              <Prop Key="Type" Value="CheckBox" />
+                              <Prop Key="TextAlign" Value="Center" />
+                            </PXGridColumn>
+                          </AddItem>
+                          <AddItem>
+                            <PXGridColumn TypeFullName="PX.Web.UI.PXGridColumn">
+                              <Prop Key="DataField" Value="IsActive" />
+                              <Prop Key="Width" Value="70px" />
+                              <Prop Key="Type" Value="CheckBox" />
+                              <Prop Key="TextAlign" Value="Center" />
+                            </PXGridColumn>
+                          </AddItem>
+                        </Children>
+                      </PXGridLevel>
+                    </AddItem>
+                  </Children>
+                </PXGrid>
+              </AddItem>
+            </Children>
+          </PXTabItem>
+        </AddItem>
+        <AddItem>
+          <PXTabItem TypeFullName="PX.Web.UI.PXTabItem">
+            <Prop Key="Text" Value="Activities" />
+            <Children Key="Template">
+              <AddItem>
+                <PXGrid TypeFullName="PX.Web.UI.PXGrid">
+                  <Prop Key="ID" Value="gridActivities" />
+                  <Prop Key="SkinID" Value="Details" />
+                  <Prop Key="DataSourceID" Value="ds" />
+                  <Prop Key="Width" Value="100%" />
+                  <Prop Key="AllowFilter" Value="True" />
+                  <Children Key="Levels">
+                    <AddItem>
+                      <PXGridLevel TypeFullName="PX.Web.UI.PXGridLevel">
+                        <Prop Key="DataMember" Value="Activities" />
+                        <Children Key="Columns">
+                          <AddItem>
+                            <PXGridColumn TypeFullName="PX.Web.UI.PXGridColumn">
+                              <Prop Key="DataField" Value="Type" />
+                              <Prop Key="Width" Value="100px" />
+                            </PXGridColumn>
+                          </AddItem>
+                          <AddItem>
+                            <PXGridColumn TypeFullName="PX.Web.UI.PXGridColumn">
+                              <Prop Key="DataField" Value="Subject" />
+                              <Prop Key="Width" Value="250px" />
+                            </PXGridColumn>
+                          </AddItem>
+                          <AddItem>
+                            <PXGridColumn TypeFullName="PX.Web.UI.PXGridColumn">
+                              <Prop Key="DataField" Value="StartDate" />
+                              <Prop Key="Width" Value="120px" />
+                            </PXGridColumn>
+                          </AddItem>
+                          <AddItem>
+                            <PXGridColumn TypeFullName="PX.Web.UI.PXGridColumn">
+                              <Prop Key="DataField" Value="Status" />
+                              <Prop Key="Width" Value="100px" />
+                            </PXGridColumn>
+                          </AddItem>
+                          <AddItem>
+                            <PXGridColumn TypeFullName="PX.Web.UI.PXGridColumn">
+                              <Prop Key="DataField" Value="Priority" />
+                              <Prop Key="Width" Value="80px" />
+                            </PXGridColumn>
+                          </AddItem>
+                          <AddItem>
+                            <PXGridColumn TypeFullName="PX.Web.UI.PXGridColumn">
+                              <Prop Key="DataField" Value="OwnerID" />
+                              <Prop Key="Width" Value="120px" />
+                            </PXGridColumn>
+                          </AddItem>
+                          <AddItem>
+                            <PXGridColumn TypeFullName="PX.Web.UI.PXGridColumn">
+                              <Prop Key="DataField" Value="CreatedDateTime" />
+                              <Prop Key="Width" Value="150px" />
+                            </PXGridColumn>
+                          </AddItem>
+                        </Children>
+                      </PXGridLevel>
+                    </AddItem>
+                  </Children>
+                </PXGrid>
+              </AddItem>
+            </Children>
+          </PXTabItem>
+        </AddItem>
+      </Children>
+    </PXTab>
+  </Page>
+  <Page path="~/pages/so/so301000.aspx">
+    <PXFormView ID="form" ParentId="phF_form" TypeFullName="PX.Web.UI.PXFormView">
+      <Children Key="Template">
+        <AddItem>
+          <PXTextEdit TypeFullName="PX.Web.UI.PXTextEdit">
+            <Prop Key="Virtual:ApplyStylesheetSkin" />
+            <Prop Key="ID" Value="edUsrHubSpotDealId" />
+            <Prop Key="DataField" Value="UsrHubSpotDealId" />
+          </PXTextEdit>
+        </AddItem>
+        <AddItem>
+          <PXDropDown TypeFullName="PX.Web.UI.PXDropDown">
+            <Prop Key="Virtual:ApplyStylesheetSkin" />
+            <Prop Key="ID" Value="edUsrWMSStatus" />
+            <Prop Key="DataField" Value="UsrWMSStatus" />
+            <Prop Key="Enabled" Value="False" />
+          </PXDropDown>
+        </AddItem>
+        <AddItem>
+          <PXCheckBox TypeFullName="PX.Web.UI.PXCheckBox">
+            <Prop Key="ID" Value="chkUsrComplianceHold" />
+            <Prop Key="DataField" Value="UsrComplianceHold" />
+            <Prop Key="Enabled" Value="False" />
+          </PXCheckBox>
+        </AddItem>
+        <AddItem>
+          <PXTextEdit TypeFullName="PX.Web.UI.PXTextEdit">
+            <Prop Key="ID" Value="edUsrComplianceHoldReason" />
+            <Prop Key="DataField" Value="UsrComplianceHoldReason" />
+            <Prop Key="TextMode" Value="MultiLine" />
+            <Prop Key="Height" Value="60px" />
+            <Prop Key="Enabled" Value="False" />
+          </PXTextEdit>
+        </AddItem>
+      </Children>
+    </PXFormView>
+  </Page>
+  <Page path="~/pages/in/in402000.aspx">
+    <PXGridLevel DataMember="ResultRecords" ParentId="phG_tab_Items#0_grid_Levels#0" TypeFullName="PX.Web.UI.PXGridLevel">
+      <Children Key="Columns">
+        <AddItem>
+          <PXGridColumn TypeFullName="PX.Web.UI.PXGridColumn">
+            <Prop Key="DataField" Value="UsrExpArrivalDate" />
+            <Prop Key="Width" Value="120px" />
+          </PXGridColumn>
+        </AddItem>
+      </Children>
+    </PXGridLevel>
+  </Page>
+</Customization>

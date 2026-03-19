@@ -60,9 +60,8 @@ on:
         default: false
 
 env:
-  PROJECT_NAME: ${{ vars.CUSTOMIZATION_PROJECT_NAME || 'HeritageFabricsCustom' }}
+  PROJECT_NAME: ${{ vars.CUSTOMIZATION_PROJECT_NAME || 'AesthetikERP' }}
   ALSO_PUBLISH: ${{ vars.ALSO_PUBLISH_PROJECTS || '' }}
-  POREL_PROJECT_NAME: StudioBPORelations
 
 jobs:
   # ──────────────────────────────────────────────
@@ -74,8 +73,6 @@ jobs:
     outputs:
       package_path: ${{ steps.package.outputs.path }}
       package_name: ${{ steps.package.outputs.name }}
-      has_porel: ${{ steps.package_porel.outputs.has_porel }}
-      porel_path: ${{ steps.package_porel.outputs.path }}
 
     steps:
       - name: Checkout repository
@@ -86,20 +83,13 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Validate project.xml files
+      - name: Validate project.xml
         run: |
-          python scripts/validate-project.py Customization/_project/project.xml
-          # Validate StudioBPORelations if it exists
-          if [ -f "Customization/StudioBPORelations/project.xml" ]; then
-            python scripts/validate-project.py Customization/StudioBPORelations/project.xml
-          fi
+          python scripts/validate-project.py Customization/AesthetikERP/project.xml
           # Production deploys run strict mode — unsafe extension patterns become errors
           if [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
             echo "Running strict validation for production..."
-            python scripts/validate-project.py --strict Customization/_project/project.xml
-            if [ -f "Customization/StudioBPORelations/project.xml" ]; then
-              python scripts/validate-project.py --strict Customization/StudioBPORelations/project.xml
-            fi
+            python scripts/validate-project.py --strict Customization/AesthetikERP/project.xml
           fi
 
       - name: Check for C# extension library
@@ -136,7 +126,7 @@ jobs:
 
           mkdir -p dist
 
-          cd Customization/_project
+          cd Customization/AesthetikERP
           zip -r "../../${PACKAGE_PATH}" . \
             -x "*.DS_Store" \
             -x "__MACOSX/*" \
@@ -157,32 +147,6 @@ jobs:
 
           echo "path=${PACKAGE_PATH}" >> "$GITHUB_OUTPUT"
           echo "name=${PACKAGE_NAME}" >> "$GITHUB_OUTPUT"
-
-      - name: Package StudioBPORelations
-        id: package_porel
-        run: |
-          if [ ! -d "Customization/StudioBPORelations" ]; then
-            echo "has_porel=false" >> "$GITHUB_OUTPUT"
-            echo "No StudioBPORelations project found — skipping"
-            exit 0
-          fi
-
-          TIMESTAMP=$(date +%Y%m%d-%H%M%S)
-          POREL_NAME="StudioBPORelations_${TIMESTAMP}.zip"
-          POREL_PATH="dist/${POREL_NAME}"
-
-          cd Customization/StudioBPORelations
-          zip -r "../../${POREL_PATH}" . \
-            -x "*.DS_Store" \
-            -x "__MACOSX/*"
-          cd ../..
-
-          FILESIZE=$(du -h "${POREL_PATH}" | cut -f1)
-          echo "Packaged: ${POREL_NAME} (${FILESIZE})"
-
-          echo "has_porel=true" >> "$GITHUB_OUTPUT"
-          echo "path=${POREL_PATH}" >> "$GITHUB_OUTPUT"
-          echo "name=${POREL_NAME}" >> "$GITHUB_OUTPUT"
 
       - name: Upload package artifacts
         uses: actions/upload-artifact@v4
@@ -235,14 +199,9 @@ jobs:
           ACUMATICA_PASSWORD: ${{ secrets.ACUMATICA_PROD_PASSWORD }}
           ACUMATICA_TENANT: ${{ secrets.ACUMATICA_PROD_TENANT }}
         run: |
-          ALSO_SNAP=""
-          if [ "${{ needs.build.outputs.has_porel }}" == "true" ]; then
-            ALSO_SNAP="--also-snapshot StudioBPORelations"
-          fi
           python scripts/snapshot.py \
             --project "${PROJECT_NAME}" \
-            --output backups/ \
-            ${ALSO_SNAP}
+            --output backups/
 
       - name: Upload pre-deploy snapshot
         if: steps.snapshot.outcome == 'success'
@@ -540,6 +499,6 @@ jobs:
 
       - name: Dispatch test config for new custom fields
         if: success()
-        run: npx tsx scripts/post-publish-hook.ts Customization/_project
+        run: npx tsx scripts/post-publish-hook.ts Customization/AesthetikERP
         env:
           GH_PAT_DISPATCH: ${{ secrets.GH_PAT_DISPATCH }}
