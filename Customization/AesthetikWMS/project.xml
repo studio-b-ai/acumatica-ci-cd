@@ -143,81 +143,6 @@ namespace Aesthetik.WMS
 }
 ]]></CDATA>
     </Graph>
-    <Graph ClassName="INLotSerialClassExt" Source="#CDATA" IsNew="True" FileType="NewFile">
-        <CDATA name="Source"><![CDATA[using System;
-using PX.Data;
-using PX.Data.BQL;
-using PX.Objects.IN;
-
-namespace Aesthetik.WMS
-{
-    /// <summary>
-    /// DAC extension for INLotSerialClass.
-    /// Adds PIECEGOODS-specific configuration fields to the lot/serial class definition.
-    /// These fields control per-class behavior for the piece goods workflow:
-    /// minimum remnant threshold, auto-print on receiving, default width, and pre-receiving toggle.
-    /// </summary>
-    public sealed class INLotSerialClassExt : PXCacheExtension<INLotSerialClass>
-    {
-        public static bool IsActive() => true;
-
-        #region UsrMinRemnant
-        /// <summary>
-        /// Minimum remnant yardage threshold. If cutting would leave a remnant
-        /// below this value, the system suggests shipping the full roll instead.
-        /// Default: 1.0 yard. Overrides the global INSetup value per-class.
-        /// </summary>
-        [PXDBDecimal(2)]
-        [PXDefault(TypeCode.Decimal, "1.00")]
-        [PXUIField(DisplayName = "Min Remnant (Yards)",
-            FieldClass = PieceGoodsConstants.LotSerialClassID)]
-        public decimal? UsrMinRemnant { get; set; }
-        public abstract class usrMinRemnant : BqlDecimal.Field<usrMinRemnant> { }
-        #endregion
-
-        #region UsrAutoPrint
-        /// <summary>
-        /// When true, the system automatically sends a barcode label to the
-        /// Keyence-compatible printer upon receiving a roll into this class.
-        /// </summary>
-        [PXDBBool]
-        [PXDefault(true)]
-        [PXUIField(DisplayName = "Auto-Print Label on Receiving",
-            FieldClass = PieceGoodsConstants.LotSerialClassID)]
-        public bool? UsrAutoPrint { get; set; }
-        public abstract class usrAutoPrint : BqlBool.Field<usrAutoPrint> { }
-        #endregion
-
-        #region UsrDefaultWidth
-        /// <summary>
-        /// Default fabric width in inches for items in this class.
-        /// Pre-populates the Width attribute on new serials; can be overridden per roll.
-        /// </summary>
-        [PXDBDecimal(1)]
-        [PXDefault(TypeCode.Decimal, "54.0")]
-        [PXUIField(DisplayName = "Default Width (inches)",
-            FieldClass = PieceGoodsConstants.LotSerialClassID)]
-        public decimal? UsrDefaultWidth { get; set; }
-        public abstract class usrDefaultWidth : BqlDecimal.Field<usrDefaultWidth> { }
-        #endregion
-
-        #region UsrPreRecvEnabled
-        /// <summary>
-        /// Enables the pre-receiving workflow for this lot/serial class.
-        /// When true, serial numbers and bin assignments can be created from PO/ASN
-        /// data before goods physically arrive at the warehouse.
-        /// </summary>
-        [PXDBBool]
-        [PXDefault(true)]
-        [PXUIField(DisplayName = "Enable Pre-Receiving",
-            FieldClass = PieceGoodsConstants.LotSerialClassID)]
-        public bool? UsrPreRecvEnabled { get; set; }
-        public abstract class usrPreRecvEnabled : BqlBool.Field<usrPreRecvEnabled> { }
-        #endregion
-    }
-}
-]]></CDATA>
-    </Graph>
     <Graph ClassName="INSetupExt" Source="#CDATA" IsNew="True" FileType="NewFile">
         <CDATA name="Source"><![CDATA[using System;
 using PX.Data;
@@ -1606,15 +1531,10 @@ namespace Aesthetik.WMS
             return location != null ? ((INLocation)location).LocationID : null;
         }
 
-        /// <summary>Gets default width from the PIECEGOODS class.</summary>
+        /// <summary>Gets default fabric width in inches.</summary>
         private decimal GetDefaultWidth()
         {
-            var lotClass = SelectFrom<INLotSerialClass>
-                .Where<INLotSerialClass.lotSerClassID.IsEqual<@P.AsString>>
-                .View.ReadOnly.Select(Base, PieceGoodsConstants.LotSerialClassID);
-
-            var ext = lotClass?.GetItem<INLotSerialClass>()?.GetExtension<INLotSerialClassExt>();
-            return ext?.UsrDefaultWidth ?? 54.0m;
+            return 54.0m;
         }
 
         /// <summary>Gets next sequence number for ad-hoc serial generation.</summary>
@@ -1877,18 +1797,9 @@ namespace Aesthetik.WMS
             var setup = SelectFrom<INSetup>.View.ReadOnly.SelectSingleBound(_graph, null);
             var setupExt = setup?.GetItem<INSetup>()?.GetExtension<INSetupExt>();
 
-            // Check for class-level override
-            var lotClass = SelectFrom<INLotSerialClass>
-                .Where<INLotSerialClass.lotSerClassID
-                    .IsEqual<@P.AsString>>
-                .View.ReadOnly.Select(_graph, PieceGoodsConstants.LotSerialClassID);
-            var classExt = lotClass?.GetItem<INLotSerialClass>()
-                ?.GetExtension<INLotSerialClassExt>();
-
             return new CutConfig
             {
-                MinRemnant = classExt?.UsrMinRemnant
-                    ?? setupExt?.UsrPGMinRemnant
+                MinRemnant = setupExt?.UsrPGMinRemnant
                     ?? PieceGoodsConstants.DefaultMinRemnantYardage,
                 CutSerialSuffix = setupExt?.UsrPGCutSuffix
                     ?? PieceGoodsConstants.DefaultCutSerialSuffix,
@@ -2689,14 +2600,7 @@ namespace Aesthetik.WMS
                 // Determine next sequence number for this SKU today
                 int seq = GetNextSerialSequence(sku, today);
 
-                // Load lot/serial class extension for default width
-                var lotClass = SelectFrom<INLotSerialClass>
-                    .Where<INLotSerialClass.lotSerClassID
-                        .IsEqual<@P.AsString>>
-                    .View.ReadOnly.Select(_graph, PieceGoodsConstants.LotSerialClassID);
-                var classExt = lotClass?.GetItem<INLotSerialClass>()
-                    ?.GetExtension<INLotSerialClassExt>();
-                decimal defaultWidth = classExt?.UsrDefaultWidth ?? 54.0m;
+                decimal defaultWidth = 54.0m;
 
                 foreach (var line in skuGroup)
                 {
@@ -3071,12 +2975,6 @@ namespace Aesthetik.WMS
 
         #region Custom Field Names (DAC extensions)
 
-        // INLotSerialClass extension fields
-        public const string Fld_MinRemnantYardage    = "UsrMinRemnant";
-        public const string Fld_AutoPrintLabel       = "UsrAutoPrint";
-        public const string Fld_DefaultWidth         = "UsrDefaultWidth";
-        public const string Fld_PreReceivingEnabled  = "UsrPreRecvEnabled";
-
         // INLotSerialStatus extension fields
         public const string Fld_ActualYardage        = "UsrActualYardage";
         public const string Fld_DyeLot               = "UsrDyeLot";
@@ -3339,16 +3237,6 @@ namespace Aesthetik.WMS
     </Graph>
     <Sql Name="AesthetikWMS_Columns_v1" Script="#CDATA">
         <CDATA name="Script"><![CDATA[
--- INLotSerialClass extension fields (4 columns) — from AesthetikWMS
-IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('INLotSerialClass') AND name = 'UsrMinRemnant')
-  ALTER TABLE INLotSerialClass ADD UsrMinRemnant decimal(18,2) NULL;
-IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('INLotSerialClass') AND name = 'UsrAutoPrint')
-  ALTER TABLE INLotSerialClass ADD UsrAutoPrint bit NULL;
-IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('INLotSerialClass') AND name = 'UsrDefaultWidth')
-  ALTER TABLE INLotSerialClass ADD UsrDefaultWidth decimal(18,1) NULL;
-IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('INLotSerialClass') AND name = 'UsrPreRecvEnabled')
-  ALTER TABLE INLotSerialClass ADD UsrPreRecvEnabled bit NULL;
-
 -- INLotSerialStatus extension fields (9 columns) — from AesthetikWMS
 IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('INLotSerialStatus') AND name = 'UsrActualYardage')
   ALTER TABLE INLotSerialStatus ADD UsrActualYardage decimal(18,2) NULL;
