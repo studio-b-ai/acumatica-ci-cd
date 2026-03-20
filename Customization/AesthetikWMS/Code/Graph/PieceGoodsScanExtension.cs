@@ -5,6 +5,7 @@ using PX.Data.BQL;
 using PX.Data.BQL.Fluent;
 using PX.Objects.IN;
 using PX.Objects.SO;
+using PX.Objects.SO.WMS;
 using PX.BarcodeProcessing;
 
 namespace Aesthetik.WMS
