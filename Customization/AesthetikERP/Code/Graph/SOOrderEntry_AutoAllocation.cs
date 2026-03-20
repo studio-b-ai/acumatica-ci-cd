@@ -22,16 +22,35 @@ namespace HeritageFabrics.SO
         private readonly HashSet<string> _assignedSerials = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         /// <summary>
-        /// Trigger: user enters/changes the order qty on a line.
-        /// Using FieldUpdated<orderQty> instead of RowUpdated<SOLine> so that when we
-        /// call SetValueExt<orderQty> with the full bolt qty, it fires RowUpdated naturally
-        /// and SOOrderEntry recomputes SOOrder.OrderQty once with the final value.
-        /// Calling SetValueExt<orderQty> from inside RowUpdated causes a double-compute
-        /// of the SOOrder aggregate → "Aggregate Validation: SOOrder+orderQty" corruption.
+        /// Override Persist() to recalculate SOOrder.OrderQty from actual line values
+        /// before Acumatica's aggregate validator runs. This is necessary because
+        /// programmatic qty changes (auto-matching bolt qty to line) can leave the
+        /// in-memory SOOrder aggregate stale, causing "Aggregate Validation: SOOrder+orderQty".
+        /// </summary>
+        [PXOverride]
+        public void Persist(Action base_Persist)
+        {
+            SOOrder order = Base.Document.Current;
+            if (order != null && Base.Document.Cache.GetStatus(order) != PXEntryStatus.Notchanged)
+            {
+                decimal total = 0m;
+                foreach (SOLine line in Base.Transactions.Select())
+                    total += line.OrderQty ?? 0m;
+
+                if (order.OrderQty != total)
+                    Base.Document.Cache.SetValue<SOOrder.orderQty>(order, total);
+            }
+
+            base_Persist();
+        }
+
+        /// <summary>
+        /// Trigger on qty entry: find tightest-fit bolt (FIFO), assign lot serial,
+        /// and update qty to the full bolt quantity.
         /// </summary>
         protected void _(Events.FieldUpdated<SOLine, SOLine.orderQty> e)
         {
-            if (_allocating) return; // prevent recursion from our own SetValueExt call
+            if (_allocating) return;
             if (e.Row == null || e.NewValue == null) return;
 
             // Only for PC and FO order types
@@ -64,24 +83,18 @@ namespace HeritageFabrics.SO
                     .And<INLotSerialStatus.siteID.IsEqual<@P.AsInt>>>
                 .View.ReadOnly.Select(Base, inventoryID, siteID.Value);
 
-            // Filter and score candidates
             var candidates = new List<BoltCandidate>();
 
             foreach (PXResult<INLotSerialStatus> row in allSerials)
             {
                 var status = (INLotSerialStatus)row;
                 if (status.LotSerialNbr == null) continue;
-
-                // Skip already assigned to another line in this order
                 if (_assignedSerials.Contains(status.LotSerialNbr)) continue;
 
                 decimal qtyOnHand = status.QtyOnHand ?? 0;
                 decimal qtyAvail = status.QtyAvail ?? 0;
 
-                // Must have enough quantity to meet minimum
                 if (qtyOnHand < minQty) continue;
-
-                // Must be fully unreserved (entire bolt available)
                 if (qtyAvail != qtyOnHand) continue;
 
                 candidates.Add(new BoltCandidate
@@ -92,9 +105,8 @@ namespace HeritageFabrics.SO
                 });
             }
 
-            if (candidates.Count == 0) return; // No bolt meets minimum — leave unallocated
+            if (candidates.Count == 0) return;
 
-            // Sort: FIFO first (oldest receipt date), then tightest fit (smallest qty >= minimum)
             var best = candidates
                 .OrderBy(c => c.ReceiptDate ?? DateTime.MaxValue)
                 .ThenBy(c => c.QtyOnHand)
@@ -103,13 +115,7 @@ namespace HeritageFabrics.SO
             try
             {
                 _allocating = true;
-
-                // Assign lot serial
                 Base.Transactions.Cache.SetValueExt<SOLine.lotSerialNbr>(e.Row, best.LotSerialNbr);
-
-                // Update qty to full bolt qty. Safe here because we're in FieldUpdated<orderQty>,
-                // not RowUpdated — so RowUpdated fires AFTER both values are set, and
-                // SOOrderEntry computes the SOOrder aggregate once with the final qty.
                 Base.Transactions.Cache.SetValueExt<SOLine.orderQty>(e.Row, best.QtyOnHand);
             }
             finally
@@ -127,10 +133,6 @@ namespace HeritageFabrics.SO
                 _assignedSerials.Remove(e.Row.LotSerialNbr);
         }
 
-        /// <summary>
-        /// Rebuilds the set of serials already assigned to other lines in this order.
-        /// Excludes the current line being processed.
-        /// </summary>
         private void RebuildAssignedSerials(int? excludeLineNbr)
         {
             _assignedSerials.Clear();
@@ -142,7 +144,6 @@ namespace HeritageFabrics.SO
             }
         }
 
-        /// <summary>Checks if an item uses the PIECENBR lot/serial class.</summary>
         private bool IsPieceGoodsItem(int? inventoryID)
         {
             if (inventoryID == null) return false;
