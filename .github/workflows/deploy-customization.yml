@@ -164,13 +164,20 @@ jobs:
           echo "name=${PACKAGE_NAME}" >> "$GITHUB_OUTPUT"
 
       - name: Package extra customization projects
+        env:
+          ALSO_PUBLISH: ${{ vars.ALSO_PUBLISH_PROJECTS || '' }}
         run: |
           TIMESTAMP=$(date +%Y%m%d-%H%M%S)
-          # Package any Customization subdirectory that has a project.xml
-          # and isn't the primary package or _project
+          # Only package directories that appear in ALSO_PUBLISH_PROJECTS
+          # This prevents importing deprecated packages (AesthetikERP, StudioBPORelations)
           for dir in Customization/*/; do
             dirname=$(basename "${dir}")
             if [[ "${dirname}" == "${PROJECT_NAME}" ]] || [[ "${dirname}" == "_project" ]]; then
+              continue
+            fi
+            # Skip if not in ALSO_PUBLISH list
+            if [[ ! ",${ALSO_PUBLISH}," == *",${dirname},"* ]]; then
+              echo "Skipping ${dirname} — not in ALSO_PUBLISH_PROJECTS"
               continue
             fi
             if [ -f "${dir}project.xml" ]; then

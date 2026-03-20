@@ -1,14 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <Customization level="2" description="AesthetikContainers — PO arrival dates, container tracking, vessel tracking. Replaces IIGCONTAINERMGMT + IIGHFContainerMods." product-version="24.208">
-    <!-- DAC Extensions (3 files) -->
     <Graph ClassName="POOrderExt" Source="Code\DAC\POOrderExt.cs" IsNew="True" FileType="NewFile" />
     <Graph ClassName="POLineExt" Source="Code\DAC\POLineExt.cs" IsNew="True" FileType="NewFile" />
     <Graph ClassName="InventoryAllocDetEnqResultExt" Source="Code\DAC\InventoryAllocDetEnqResultExt.cs" IsNew="True" FileType="NewFile" />
-    <!-- Graph Extensions (3 files) -->
     <Graph ClassName="POOrderEntry_Extension" Source="Code\Graph\POOrderEntry_Extension.cs" IsNew="True" FileType="NewFile" />
     <Graph ClassName="InventoryAllocDetEnq_Extension" Source="Code\Graph\InventoryAllocDetEnq_Extension.cs" IsNew="True" FileType="NewFile" />
     <Graph ClassName="ContainerDatePropagation" Source="Code\Graph\ContainerDatePropagation.cs" IsNew="True" FileType="NewFile" />
-    <!-- SQL: POOrder + POLine extension columns (5 columns) -->
     <Sql Name="AesthetikContainers_Columns_v1" Script="#CDATA">
         <CDATA name="Script"><![CDATA[
 -- POOrder extension fields (3 columns) -- container tracking
@@ -25,7 +22,6 @@ IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('POLine') A
   ALTER TABLE POLine ADD UsrActArrivalDate datetime NULL;
 ]]></CDATA>
     </Sql>
-    <!-- ASPX: PO301000 — Container fields on header + arrival date columns on lines grid -->
     <Page path="~/pages/po/po301000.aspx">
         <PXFormView ID="form" ParentId="phF_form" TypeFullName="PX.Web.UI.PXFormView">
             <Children Key="Template">
@@ -70,7 +66,6 @@ IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('POLine') A
             </Children>
         </PXGridLevel>
     </Page>
-    <!-- ASPX: IN402000 — Exp. Arrival Date column on Inventory Allocation Detail inquiry -->
     <Page path="~/pages/in/in402000.aspx">
         <PXGridLevel DataMember="ResultRecords" ParentId="phG_tab_Items#0_grid_Levels#0" TypeFullName="PX.Web.UI.PXGridLevel">
             <Children Key="Columns">
