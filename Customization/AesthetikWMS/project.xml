@@ -3236,14 +3236,14 @@ namespace Aesthetik.WMS
 }
 ]]></CDATA>
     </Graph>
-    <Graph ClassName="AesthetikWMSSchemaInstaller" Source="#CDATA" IsNew="True" FileType="NewFile">
+    <Graph ClassName="AesthetikWMSSchemaInstallerV2" Source="#CDATA" IsNew="True" FileType="NewFile">
         <CDATA name="Source"><![CDATA[using System;
 using System.Configuration;
 using Customization;
 
 namespace Aesthetik.WMS
 {
-    public class AesthetikWMSSchemaInstaller : CustomizationPlugin
+    public class AesthetikWMSSchemaInstallerV2 : CustomizationPlugin
     {
         public override void UpdateDatabase()
         {
