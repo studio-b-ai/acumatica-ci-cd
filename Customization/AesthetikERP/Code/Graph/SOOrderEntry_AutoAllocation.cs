@@ -28,7 +28,7 @@ namespace HeritageFabrics.SO
             string orderType = order.OrderType;
             if (orderType != "PC" && orderType != "FO") return;
 
-            // Guard: skip if lot already assigned (prevents re-trigger from qty update)
+            // Guard: skip if lot already assigned (prevents re-trigger)
             if (!string.IsNullOrEmpty(e.Row.LotSerialNbr)) return;
 
             // Need both item and qty to proceed
@@ -72,9 +72,6 @@ namespace HeritageFabrics.SO
                 // Must be fully unreserved (entire bolt available)
                 if (qtyAvail != qtyOnHand) continue;
 
-                // WMS extension checks removed — INLotSerialStatusExt is in the WMS package.
-                // When WMS is deployed, defect/status filtering will be handled there.
-
                 candidates.Add(new BoltCandidate
                 {
                     LotSerialNbr = status.LotSerialNbr,
@@ -91,15 +88,12 @@ namespace HeritageFabrics.SO
                 .ThenBy(c => c.QtyOnHand)
                 .First();
 
-            // Assign lot serial number first
+            // Assign lot serial number only.
+            // NOTE: Do NOT update orderQty here. Modifying orderQty (an SOOrder aggregate
+            // field) from within RowUpdated<SOLine> — even via SetValue — causes Acumatica's
+            // save-time aggregate validator to throw "Aggregate Validation: SOOrder+orderQty".
+            // The user enters the requested qty; we assign the best-fit bolt. Qty stays as entered.
             Base.Transactions.Cache.SetValueExt<SOLine.lotSerialNbr>(e.Row, best.LotSerialNbr);
-
-            // Update qty to full bolt using SetValue (NOT SetValueExt) to avoid firing
-            // FieldUpdated<orderQty> from within RowUpdated, which causes Acumatica's
-            // aggregate validator (SOOrder+orderQty) to detect an in-memory mismatch.
-            // SetValue sets the cache value directly; the aggregate recalculates correctly
-            // after this handler returns.
-            e.Cache.SetValue<SOLine.orderQty>(e.Row, best.QtyOnHand);
         }
 
         /// <summary>
