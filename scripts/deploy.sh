@@ -266,11 +266,23 @@ log "Step 2/6: Importing customization package..."
 # Base64 encode the package (Linux: base64 -w0, macOS: base64 -i)
 PACKAGE_B64=$(base64 -w0 "${PACKAGE}" 2>/dev/null || base64 -i "${PACKAGE}" | tr -d '\n')
 
+# Extract level from project.xml inside the zip (default to 0 if not found)
+PROJECT_LEVEL=$(python3 -c "
+import zipfile, sys, xml.etree.ElementTree as ET
+try:
+    with zipfile.ZipFile('${PACKAGE}') as z:
+        with z.open('project.xml') as f:
+            root = ET.parse(f).getroot()
+            print(root.get('level', '0'))
+except: print('0')
+" 2>/dev/null || echo "0")
+log "Project level: ${PROJECT_LEVEL}"
+
 IMPORT_BODY=$(cat <<EOF
 {
   "projectName": "${PROJECT}",
   "projectDescription": "Deployed via CI/CD at $(date -u +%Y-%m-%dT%H:%M:%SZ)",
-  "projectLevel": 0,
+  "projectLevel": ${PROJECT_LEVEL},
   "isReplaceIfExists": true,
   "projectContentBase64": "${PACKAGE_B64}"
 }
@@ -313,11 +325,23 @@ for extra in ${EXTRA_IMPORTS[@]+"${EXTRA_IMPORTS[@]}"}; do
 
   EXTRA_B64=$(base64 -w0 "${EXTRA_FILE}" 2>/dev/null || base64 -i "${EXTRA_FILE}" | tr -d '\n')
 
+  # Extract level from extra package's project.xml
+  EXTRA_LEVEL=$(python3 -c "
+import zipfile, sys, xml.etree.ElementTree as ET
+try:
+    with zipfile.ZipFile('${EXTRA_FILE}') as z:
+        with z.open('project.xml') as f:
+            root = ET.parse(f).getroot()
+            print(root.get('level', '0'))
+except: print('0')
+" 2>/dev/null || echo "0")
+  log "  Level: ${EXTRA_LEVEL}"
+
   EXTRA_IMPORT_BODY=$(cat <<EOFEXTRA
 {
   "projectName": "${EXTRA_PROJ}",
   "projectDescription": "Deployed via CI/CD at $(date -u +%Y-%m-%dT%H:%M:%SZ)",
-  "projectLevel": 0,
+  "projectLevel": ${EXTRA_LEVEL},
   "isReplaceIfExists": true,
   "projectContentBase64": "${EXTRA_B64}"
 }
