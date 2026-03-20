@@ -100,11 +100,11 @@ jobs:
 
       - name: Validate project.xml
         run: |
-          python scripts/validate-project.py Customization/AesthetikERP/project.xml
+          python scripts/validate-project.py Customization/${PROJECT_NAME}/project.xml
           # Production deploys run strict mode — unsafe extension patterns become errors
           if [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
             echo "Running strict validation for production..."
-            python scripts/validate-project.py --strict Customization/AesthetikERP/project.xml
+            python scripts/validate-project.py --strict Customization/${PROJECT_NAME}/project.xml
           fi
 
       - name: Check for C# extension library
@@ -141,7 +141,7 @@ jobs:
 
           mkdir -p dist
 
-          cd Customization/AesthetikERP
+          cd Customization/${PROJECT_NAME}
           zip -r "../../${PACKAGE_PATH}" . \
             -x "*.DS_Store" \
             -x "__MACOSX/*" \
@@ -162,6 +162,29 @@ jobs:
 
           echo "path=${PACKAGE_PATH}" >> "$GITHUB_OUTPUT"
           echo "name=${PACKAGE_NAME}" >> "$GITHUB_OUTPUT"
+
+      - name: Package extra customization projects
+        run: |
+          TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+          # Package any Customization subdirectory that has a project.xml
+          # and isn't the primary package or _project
+          for dir in Customization/*/; do
+            dirname=$(basename "${dir}")
+            if [[ "${dirname}" == "${PROJECT_NAME}" ]] || [[ "${dirname}" == "_project" ]]; then
+              continue
+            fi
+            if [ -f "${dir}project.xml" ]; then
+              EXTRA_ZIP="dist/${dirname}_${TIMESTAMP}.zip"
+              cd "${dir}"
+              zip -r "../../${EXTRA_ZIP}" . \
+                -x "*.DS_Store" \
+                -x "__MACOSX/*" \
+                -x "*.user"
+              cd ../..
+              FILESIZE=$(du -h "${EXTRA_ZIP}" | cut -f1)
+              echo "Extra package: ${dirname} (${FILESIZE})"
+            fi
+          done
 
       - name: Upload package artifacts
         uses: actions/upload-artifact@v4
@@ -569,6 +592,6 @@ jobs:
 
       - name: Dispatch test config for new custom fields
         if: success()
-        run: npx tsx scripts/post-publish-hook.ts Customization/AesthetikERP
+        run: npx tsx scripts/post-publish-hook.ts Customization/${PROJECT_NAME}
         env:
           GH_PAT_DISPATCH: ${{ secrets.GH_PAT_DISPATCH }}
