@@ -1,7 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <Customization level="3" description="AesthetikWMS — Consolidated WMS, ERP extensions, PO Relations/Activities" product-version="24.208">
     <Graph ClassName="INLotSerialStatusExt" Source="#CDATA" IsNew="True" FileType="NewFile">
-        <CDATA name="Source"><![CDATA[using PX.Data;
+        <CDATA name="Source"><![CDATA[using System;
+using PX.Data;
 using PX.Data.BQL;
 using PX.Objects.IN;
 
@@ -143,7 +144,8 @@ namespace Aesthetik.WMS
 ]]></CDATA>
     </Graph>
     <Graph ClassName="INLotSerialClassExt" Source="#CDATA" IsNew="True" FileType="NewFile">
-        <CDATA name="Source"><![CDATA[using PX.Data;
+        <CDATA name="Source"><![CDATA[using System;
+using PX.Data;
 using PX.Data.BQL;
 using PX.Objects.IN;
 
@@ -217,7 +219,8 @@ namespace Aesthetik.WMS
 ]]></CDATA>
     </Graph>
     <Graph ClassName="INSetupExt" Source="#CDATA" IsNew="True" FileType="NewFile">
-        <CDATA name="Source"><![CDATA[using PX.Data;
+        <CDATA name="Source"><![CDATA[using System;
+using PX.Data;
 using PX.Data.BQL;
 using PX.Objects.IN;
 
