@@ -3279,7 +3279,12 @@ namespace Aesthetik.WMS
                         "IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('INSetup') AND name = 'UsrPGWtRemnant') ALTER TABLE INSetup ADD UsrPGWtRemnant int NULL",
                         "IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('INSetup') AND name = 'UsrPGWtDyeLot') ALTER TABLE INSetup ADD UsrPGWtDyeLot int NULL",
                         "IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('INSetup') AND name = 'UsrPGWtLocation') ALTER TABLE INSetup ADD UsrPGWtLocation int NULL",
-                        "IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('INSetup') AND name = 'UsrPGWtFIFO') ALTER TABLE INSetup ADD UsrPGWtFIFO int NULL"
+                        "IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('INSetup') AND name = 'UsrPGWtFIFO') ALTER TABLE INSetup ADD UsrPGWtFIFO int NULL",
+                        "IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('SOOrder') AND name = 'UsrHubSpotDealId') ALTER TABLE SOOrder ADD UsrHubSpotDealId nvarchar(50) NULL",
+                        "IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('SOOrder') AND name = 'UsrWMSStatus') ALTER TABLE SOOrder ADD UsrWMSStatus nvarchar(20) NULL",
+                        "IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('SOOrder') AND name = 'UsrComplianceHold') ALTER TABLE SOOrder ADD UsrComplianceHold bit NULL",
+                        "IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('SOOrder') AND name = 'UsrComplianceHoldReason') ALTER TABLE SOOrder ADD UsrComplianceHoldReason nvarchar(500) NULL",
+                        "IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('BAccount') AND name = 'UsrDisablePayLink') ALTER TABLE BAccount ADD UsrDisablePayLink bit NULL"
                     };
                     foreach (string sql in statements)
                     {
