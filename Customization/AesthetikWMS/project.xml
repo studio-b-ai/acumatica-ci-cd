@@ -3236,59 +3236,70 @@ namespace Aesthetik.WMS
 }
 ]]></CDATA>
     </Graph>
-    <Sql Name="AesthetikWMS_Columns_v1" Script="#CDATA">
-        <CDATA name="Script"><![CDATA[
--- INLotSerialStatus extension fields (9 columns) — from AesthetikWMS
-IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('INLotSerialStatus') AND name = 'UsrActualYardage')
-  ALTER TABLE INLotSerialStatus ADD UsrActualYardage decimal(18,2) NULL;
-IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('INLotSerialStatus') AND name = 'UsrDyeLot')
-  ALTER TABLE INLotSerialStatus ADD UsrDyeLot nvarchar(30) NULL;
-IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('INLotSerialStatus') AND name = 'UsrWidth')
-  ALTER TABLE INLotSerialStatus ADD UsrWidth decimal(18,1) NULL;
-IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('INLotSerialStatus') AND name = 'UsrShadeCode')
-  ALTER TABLE INLotSerialStatus ADD UsrShadeCode nvarchar(10) NULL;
-IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('INLotSerialStatus') AND name = 'UsrSourceRoll')
-  ALTER TABLE INLotSerialStatus ADD UsrSourceRoll nvarchar(30) NULL;
-IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('INLotSerialStatus') AND name = 'UsrDefectFlag')
-  ALTER TABLE INLotSerialStatus ADD UsrDefectFlag bit NULL;
-IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('INLotSerialStatus') AND name = 'UsrInventoryStatus')
-  ALTER TABLE INLotSerialStatus ADD UsrInventoryStatus nvarchar(15) NULL;
-IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('INLotSerialStatus') AND name = 'UsrPreAssignedBin')
-  ALTER TABLE INLotSerialStatus ADD UsrPreAssignedBin nvarchar(30) NULL;
-IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('INLotSerialStatus') AND name = 'UsrContainerNo')
-  ALTER TABLE INLotSerialStatus ADD UsrContainerNo nvarchar(30) NULL;
+    <Graph ClassName="AesthetikWMSSchemaInstaller" Source="#CDATA" IsNew="True" FileType="NewFile">
+        <CDATA name="Source"><![CDATA[using System;
+using System.Configuration;
+using Customization;
 
--- INSetup extension fields (15 columns) — from AesthetikWMS
-IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('INSetup') AND name = 'UsrPGMinRemnant')
-  ALTER TABLE INSetup ADD UsrPGMinRemnant decimal(18,2) NULL;
-IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('INSetup') AND name = 'UsrPGAutoQtyMode')
-  ALTER TABLE INSetup ADD UsrPGAutoQtyMode bit NULL;
-IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('INSetup') AND name = 'UsrPGAutoPrint')
-  ALTER TABLE INSetup ADD UsrPGAutoPrint bit NULL;
-IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('INSetup') AND name = 'UsrPGCutSuffix')
-  ALTER TABLE INSetup ADD UsrPGCutSuffix nvarchar(20) NULL;
-IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('INSetup') AND name = 'UsrPGPreRecv')
-  ALTER TABLE INSetup ADD UsrPGPreRecv bit NULL;
-IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('INSetup') AND name = 'UsrPGCrossDock')
-  ALTER TABLE INSetup ADD UsrPGCrossDock bit NULL;
-IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('INSetup') AND name = 'UsrPGXDockAge')
-  ALTER TABLE INSetup ADD UsrPGXDockAge int NULL;
-IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('INSetup') AND name = 'UsrPGInTransitWt')
-  ALTER TABLE INSetup ADD UsrPGInTransitWt int NULL;
-IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('INSetup') AND name = 'UsrPGYardageVar')
-  ALTER TABLE INSetup ADD UsrPGYardageVar decimal(18,4) NULL;
-IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('INSetup') AND name = 'UsrPGWtExact')
-  ALTER TABLE INSetup ADD UsrPGWtExact int NULL;
-IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('INSetup') AND name = 'UsrPGWtRemnant')
-  ALTER TABLE INSetup ADD UsrPGWtRemnant int NULL;
-IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('INSetup') AND name = 'UsrPGWtDyeLot')
-  ALTER TABLE INSetup ADD UsrPGWtDyeLot int NULL;
-IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('INSetup') AND name = 'UsrPGWtLocation')
-  ALTER TABLE INSetup ADD UsrPGWtLocation int NULL;
-IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('INSetup') AND name = 'UsrPGWtFIFO')
-  ALTER TABLE INSetup ADD UsrPGWtFIFO int NULL;
-]]></CDATA>
-    </Sql>
+namespace Aesthetik.WMS
+{
+    public class AesthetikWMSSchemaInstaller : CustomizationPlugin
+    {
+        public override void UpdateDatabase()
+        {
+            try
+            {
+                var cs = ConfigurationManager.ConnectionStrings["ProjectX"];
+                string connStr = cs.ConnectionString + ";TrustServerCertificate=True";
 
-
+                using (var conn = new Microsoft.Data.SqlClient.SqlConnection(connStr))
+                {
+                    conn.Open();
+                    string[] statements = new[]
+                    {
+                        "IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('INLotSerialStatus') AND name = 'UsrActualYardage') ALTER TABLE INLotSerialStatus ADD UsrActualYardage decimal(18,2) NULL",
+                        "IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('INLotSerialStatus') AND name = 'UsrDyeLot') ALTER TABLE INLotSerialStatus ADD UsrDyeLot nvarchar(30) NULL",
+                        "IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('INLotSerialStatus') AND name = 'UsrWidth') ALTER TABLE INLotSerialStatus ADD UsrWidth decimal(18,1) NULL",
+                        "IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('INLotSerialStatus') AND name = 'UsrShadeCode') ALTER TABLE INLotSerialStatus ADD UsrShadeCode nvarchar(10) NULL",
+                        "IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('INLotSerialStatus') AND name = 'UsrSourceRoll') ALTER TABLE INLotSerialStatus ADD UsrSourceRoll nvarchar(30) NULL",
+                        "IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('INLotSerialStatus') AND name = 'UsrDefectFlag') ALTER TABLE INLotSerialStatus ADD UsrDefectFlag bit NULL",
+                        "IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('INLotSerialStatus') AND name = 'UsrInventoryStatus') ALTER TABLE INLotSerialStatus ADD UsrInventoryStatus nvarchar(15) NULL",
+                        "IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('INLotSerialStatus') AND name = 'UsrPreAssignedBin') ALTER TABLE INLotSerialStatus ADD UsrPreAssignedBin nvarchar(30) NULL",
+                        "IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('INLotSerialStatus') AND name = 'UsrContainerNo') ALTER TABLE INLotSerialStatus ADD UsrContainerNo nvarchar(30) NULL",
+                        "IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('INSetup') AND name = 'UsrPGMinRemnant') ALTER TABLE INSetup ADD UsrPGMinRemnant decimal(18,2) NULL",
+                        "IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('INSetup') AND name = 'UsrPGAutoQtyMode') ALTER TABLE INSetup ADD UsrPGAutoQtyMode bit NULL",
+                        "IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('INSetup') AND name = 'UsrPGAutoPrint') ALTER TABLE INSetup ADD UsrPGAutoPrint bit NULL",
+                        "IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('INSetup') AND name = 'UsrPGCutSuffix') ALTER TABLE INSetup ADD UsrPGCutSuffix nvarchar(20) NULL",
+                        "IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('INSetup') AND name = 'UsrPGPreRecv') ALTER TABLE INSetup ADD UsrPGPreRecv bit NULL",
+                        "IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('INSetup') AND name = 'UsrPGCrossDock') ALTER TABLE INSetup ADD UsrPGCrossDock bit NULL",
+                        "IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('INSetup') AND name = 'UsrPGXDockAge') ALTER TABLE INSetup ADD UsrPGXDockAge int NULL",
+                        "IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('INSetup') AND name = 'UsrPGInTransitWt') ALTER TABLE INSetup ADD UsrPGInTransitWt int NULL",
+                        "IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('INSetup') AND name = 'UsrPGYardageVar') ALTER TABLE INSetup ADD UsrPGYardageVar decimal(18,4) NULL",
+                        "IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('INSetup') AND name = 'UsrPGWtExact') ALTER TABLE INSetup ADD UsrPGWtExact int NULL",
+                        "IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('INSetup') AND name = 'UsrPGWtRemnant') ALTER TABLE INSetup ADD UsrPGWtRemnant int NULL",
+                        "IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('INSetup') AND name = 'UsrPGWtDyeLot') ALTER TABLE INSetup ADD UsrPGWtDyeLot int NULL",
+                        "IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('INSetup') AND name = 'UsrPGWtLocation') ALTER TABLE INSetup ADD UsrPGWtLocation int NULL",
+                        "IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('INSetup') AND name = 'UsrPGWtFIFO') ALTER TABLE INSetup ADD UsrPGWtFIFO int NULL"
+                    };
+                    foreach (string sql in statements)
+                    {
+                        using (var cmd = conn.CreateCommand())
+                        {
+                            cmd.CommandText = sql;
+                            cmd.ExecuteNonQuery();
+                        }
+                        WriteLog("[AesthetikWMS] OK: " + sql.Substring(sql.IndexOf("name = '") + 8).TrimEnd('\'').Split('\'')[0]);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                WriteLog("[AesthetikWMS] ERROR: " + ex.GetType().FullName + ": " + ex.Message);
+                if (ex.InnerException != null)
+                    WriteLog("[AesthetikWMS] Inner: " + ex.InnerException.Message);
+            }
+        }
+    }
+}]]></CDATA>
+    </Graph>
 </Customization>
