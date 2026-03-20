@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<Customization level="2" description="AesthetikWMS — Consolidated WMS, ERP extensions, PO Relations/Activities" product-version="24.208">
+<Customization level="3" description="AesthetikWMS — Consolidated WMS, ERP extensions, PO Relations/Activities" product-version="24.208">
     <Graph ClassName="INLotSerialStatusExt" Source="Code\DAC\INLotSerialStatusExt.cs" IsNew="True" FileType="NewFile" />
     <Graph ClassName="INLotSerialClassExt" Source="Code\DAC\INLotSerialClassExt.cs" IsNew="True" FileType="NewFile" />
     <Graph ClassName="INSetupExt" Source="Code\DAC\INSetupExt.cs" IsNew="True" FileType="NewFile" />

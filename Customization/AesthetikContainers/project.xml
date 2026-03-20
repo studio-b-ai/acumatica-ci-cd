@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<Customization level="2" description="AesthetikContainers — PO arrival dates, container tracking, vessel tracking. Replaces IIGCONTAINERMGMT + IIGHFContainerMods." product-version="24.208">
+<Customization level="3" description="AesthetikContainers — PO arrival dates, container tracking, vessel tracking. Replaces IIGCONTAINERMGMT + IIGHFContainerMods." product-version="24.208">
     <Graph ClassName="POOrderExt" Source="Code\DAC\POOrderExt.cs" IsNew="True" FileType="NewFile" />
     <Graph ClassName="POLineExt" Source="Code\DAC\POLineExt.cs" IsNew="True" FileType="NewFile" />
     <Graph ClassName="InventoryAllocDetEnqResultExt" Source="Code\DAC\InventoryAllocDetEnqResultExt.cs" IsNew="True" FileType="NewFile" />
