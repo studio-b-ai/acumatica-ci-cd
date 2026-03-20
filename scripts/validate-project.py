@@ -117,10 +117,15 @@ def validate(path: str, strict: bool = False):
         ok("No <Table> elements (columns auto-created by DAC attributes)")
 
     # Check 6: Validate <Graph> elements
+    # Supports two formats:
+    #   1. Inline CDATA: Source="#CDATA" with <CDATA> child containing C# code
+    #   2. External file: Source="Code\DAC\MyFile.cs" referencing a .cs file in the package
     graphs = root.findall(".//Graph")
     if not graphs:
         warn("No <Graph> elements found (no C# code in this project)")
     else:
+        inline_count = 0
+        external_count = 0
         for graph in graphs:
             class_name = graph.get("ClassName", "(missing)")
             source = graph.get("Source")
@@ -128,32 +133,54 @@ def validate(path: str, strict: bool = False):
 
             if not graph.get("ClassName"):
                 error("<Graph> missing 'ClassName' attribute")
-            if source != "#CDATA":
-                error(f"<Graph ClassName=\"{class_name}\"> Source should be \"#CDATA\", got \"{source}\"")
-            if file_type != "NewFile":
-                warn(f"<Graph ClassName=\"{class_name}\"> FileType should be \"NewFile\", got \"{file_type}\"")
 
-            # Check CDATA content
-            cdata = graph.find("CDATA")
-            if cdata is None:
-                error(f"<Graph ClassName=\"{class_name}\"> missing <CDATA> child element")
-                continue
+            if source == "#CDATA":
+                # Inline CDATA format — validate code content
+                inline_count += 1
+                if file_type != "NewFile":
+                    warn(f"<Graph ClassName=\"{class_name}\"> FileType should be \"NewFile\", got \"{file_type}\"")
 
-            code = cdata.text or ""
-            if not code.strip():
-                error(f"<Graph ClassName=\"{class_name}\"> has empty CDATA (no C# code)")
-                continue
+                cdata = graph.find("CDATA")
+                if cdata is None:
+                    error(f"<Graph ClassName=\"{class_name}\"> missing <CDATA> child element")
+                    continue
 
-            # Basic C# validation
-            validate_csharp(class_name, code, strict)
+                code = cdata.text or ""
+                if not code.strip():
+                    error(f"<Graph ClassName=\"{class_name}\"> has empty CDATA (no C# code)")
+                    continue
 
-            # Runtime safety checks (GetExtension patterns, inquiry guards)
-            validate_extension_safety(class_name, code, strict)
+                # Basic C# validation
+                validate_csharp(class_name, code, strict)
 
-            # CRM DAC compatibility checks
-            validate_crm_dac_safety(class_name, code, strict)
+                # Runtime safety checks (GetExtension patterns, inquiry guards)
+                validate_extension_safety(class_name, code, strict)
 
-        ok(f"Found {len(graphs)} <Graph> element(s)")
+                # CRM DAC compatibility checks
+                validate_crm_dac_safety(class_name, code, strict)
+
+            elif source and source.endswith(".cs"):
+                # External file reference — validate the referenced .cs file exists
+                external_count += 1
+                # Resolve path relative to project.xml directory
+                cs_path = file_path.parent / source.replace("\\", "/")
+                if not cs_path.exists():
+                    error(f"<Graph ClassName=\"{class_name}\"> references missing file: {source}")
+                else:
+                    # Read and validate the external .cs file
+                    code = cs_path.read_text(encoding="utf-8")
+                    validate_csharp(class_name, code, strict)
+                    validate_extension_safety(class_name, code, strict)
+                    validate_crm_dac_safety(class_name, code, strict)
+            else:
+                error(f"<Graph ClassName=\"{class_name}\"> invalid Source: \"{source}\" (expected \"#CDATA\" or a .cs file path)")
+
+        parts = []
+        if inline_count:
+            parts.append(f"{inline_count} inline")
+        if external_count:
+            parts.append(f"{external_count} external")
+        ok(f"Found {len(graphs)} <Graph> element(s) ({', '.join(parts)})")
 
     # Check 7: Validate <SqlScript> elements
     # NOTE: SM204505 IMPORT rejects <SqlScript> ("Unknown tag SqlScript").
