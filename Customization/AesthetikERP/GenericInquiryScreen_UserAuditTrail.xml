@@ -15,8 +15,6 @@
       <link from="GIOn (DesignID,LineNbr)" to="GIRelation (DesignID,LineNbr)" />
       <link from="GIRelation (DesignID)" to="GITable (DesignID,Alias)" />
       <link from="GIResult (DesignID)" to="GITable (DesignID,Alias)" />
-      <link from="SiteMap (linkname)" to="GIDesign (DesignID)" />
-      <link from="MUIScreen (linkname)" to="SiteMap (NodeID)" />
     </relations>
     <layout>
       <group id="1" sorting="Natural" filtering="Natural" />
@@ -25,37 +23,39 @@
       <GIDesign>
         <row DesignID="e1a2b3c4-d5e6-4f7a-8b9c-0d1e2f3a4b5c" Name="UserAuditTrail" ScreenID="GI007002" FilterColCount="3" PageSize="200" ExportTop="0" NewRecordCreationEnabled="0" MassDeleteEnabled="0" AutoConfirmDelete="0" MassRecordsUpdateEnabled="0" MassActionsOnRecordsEnabled="0" ExposeViaOData="1" ExposeViaMobile="0">
 
-          <!-- Table: AUAuditHistory (audit log records) -->
-          <GITable Alias="AUAuditHistory" Name="PX.SM.AUAuditHistory">
-            <GIResult LineNbr="1" SortOrder="1" IsActive="1" Field="UserID" Width="120" IsVisible="1" DefaultNav="1" QuickFilter="0" FastFilter="1" Caption="User Name" RowID="e1a00001-0000-0000-0000-000000000001" />
-            <GIResult LineNbr="2" SortOrder="2" IsActive="1" Field="ScreenID" Width="100" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Screen ID" RowID="e1a00001-0000-0000-0000-000000000002" />
-            <GIResult LineNbr="3" SortOrder="3" IsActive="1" Field="Operation" Width="80" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Operation" RowID="e1a00001-0000-0000-0000-000000000003" />
-            <GIResult LineNbr="4" SortOrder="4" IsActive="1" Field="ChangeDate" Width="140" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Change Date" RowID="e1a00001-0000-0000-0000-000000000004" />
-            <GIResult LineNbr="5" SortOrder="5" IsActive="1" Field="TableName" Width="140" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Table Name" RowID="e1a00001-0000-0000-0000-000000000005" />
-            <GIResult LineNbr="6" SortOrder="6" IsActive="1" Field="FieldList" Width="300" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Changed Fields" RowID="e1a00001-0000-0000-0000-000000000006" />
-            <GIResult LineNbr="7" SortOrder="7" IsActive="1" Field="OldValues" Width="300" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Old Values" RowID="e1a00001-0000-0000-0000-000000000007" />
-            <GIResult LineNbr="8" SortOrder="8" IsActive="1" Field="NewValues" Width="300" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="New Values" RowID="e1a00001-0000-0000-0000-000000000008" />
+          <!-- Table 1: AuditHistory (main/driving table) -->
+          <GITable Alias="AuditHistory" Name="PX.SM.AuditHistory">
+            <GIResult LineNbr="1" SortOrder="1" IsActive="1" Field="ScreenID" Width="100" IsVisible="1" DefaultNav="1" QuickFilter="0" FastFilter="1" Caption="ScreenID" RowID="e1a00001-0000-0000-0000-000000000001" />
+            <GIResult LineNbr="2" SortOrder="2" IsActive="1" Field="Operation" Width="80" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Operation" RowID="e1a00001-0000-0000-0000-000000000002" />
+            <GIResult LineNbr="3" SortOrder="3" IsActive="1" Field="ChangeDate" Width="140" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="ChangeDate" RowID="e1a00001-0000-0000-0000-000000000003" />
+            <GIResult LineNbr="4" SortOrder="4" IsActive="1" Field="TableName" Width="140" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="TableName" RowID="e1a00001-0000-0000-0000-000000000004" />
+            <GIResult LineNbr="5" SortOrder="5" IsActive="1" Field="ModifiedFields" Width="300" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="ModifiedFields" RowID="e1a00001-0000-0000-0000-000000000005" />
+            <GIResult LineNbr="6" SortOrder="6" IsActive="1" Field="CombinedKey" Width="200" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="CombinedKey" RowID="e1a00001-0000-0000-0000-000000000006" />
           </GITable>
 
+          <!-- Table 2: Users (joined to resolve UserID GUID to Username) -->
+          <GITable Alias="Users" Name="PX.SM.Users" />
+
+          <!-- JOIN: AuditHistory.UserID = Users.pKID -->
+          <GIRelation LineNbr="1" ParentTable="AuditHistory" ChildTable="Users" JoinType="L" IsActive="1">
+            <GIOn LineNbr="1" ParentField="UserID" Condition="E " ChildField="pKID" IsActive="1" />
+          </GIRelation>
+
+          <!-- Result column from Users table -->
+          <GIResult LineNbr="7" SortOrder="0" IsActive="1" Field="Users.Username" Width="120" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="UserName" RowID="e1a00001-0000-0000-0000-000000000007" />
+
           <!-- Filter parameters exposed in the GI filter panel -->
-          <GIFilter LineNbr="1" IsActive="1" FieldName="AUAuditHistory.UserID" DisplayName="User Name" ColSpan="1" Required="0" />
-          <GIFilter LineNbr="2" IsActive="1" FieldName="AUAuditHistory.ChangeDate" DisplayName="From Date" ColSpan="1" Required="0" />
-          <GIFilter LineNbr="3" IsActive="1" FieldName="AUAuditHistory.ChangeDate" DisplayName="To Date" ColSpan="1" Required="0" />
+          <GIFilter LineNbr="1" IsActive="1" FieldName="Users.Username" DisplayName="User Name" ColSpan="1" Required="0" />
+          <GIFilter LineNbr="2" IsActive="1" FieldName="AuditHistory.ChangeDate" DisplayName="From Date" ColSpan="1" Required="0" />
+          <GIFilter LineNbr="3" IsActive="1" FieldName="AuditHistory.ChangeDate" DisplayName="To Date" ColSpan="1" Required="0" />
 
           <!-- WHERE conditions: optional parameter filters -->
           <!-- UserName filter (if parameter provided) -->
-          <GIWhere LineNbr="1" OpenBrackets="1" IsActive="1" DataFieldName="AUAuditHistory.UserID" Condition="E " IsExpression="0" Value1="@UserName" Operation="O" />
+          <GIWhere LineNbr="1" OpenBrackets="1" IsActive="1" DataFieldName="Users.Username" Condition="E " IsExpression="0" Value1="@UserName" Operation="O" />
           <GIWhere LineNbr="2" CloseBrackets="1" IsActive="1" DataFieldName="" Condition="" IsExpression="0" Value1="@UserName" Value2="" Operation="A" />
 
           <!-- SORT by ChangeDate DESC (newest first) -->
-          <GISort LineNbr="1" IsActive="1" DataFieldName="AUAuditHistory.ChangeDate" SortOrder="D" />
-
-          <!-- SiteMap entry: place under System/Audit workspace -->
-          <SiteMap linkname="toDesignById">
-            <row Position="1102" Title="User Audit Trail" Url="~/GenericInquiry/GenericInquiry.aspx?id=e1a2b3c4-d5e6-4f7a-8b9c-0d1e2f3a4b5c" Expanded="0" IsFolder="0" ScreenID="GI007002" NodeID="f2b3c4d5-e6f7-4a8b-9c0d-1e2f3a4b5c6d" ParentID="d9e3f4a5-b2c3-4678-9abc-def012345678">
-              <MUIScreen IsPortal="0" WorkspaceID="e0f4a5b6-c3d4-4789-abcd-ef0123456789" Order="2032" SubcategoryID="f1a5b6c7-d4e5-489a-bcde-f01234567890" />
-            </row>
-          </SiteMap>
+          <GISort LineNbr="1" IsActive="1" DataFieldName="AuditHistory.ChangeDate" SortOrder="D" />
 
         </row>
       </GIDesign>
