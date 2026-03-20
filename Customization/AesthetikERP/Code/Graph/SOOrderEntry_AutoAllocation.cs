@@ -91,9 +91,15 @@ namespace HeritageFabrics.SO
                 .ThenBy(c => c.QtyOnHand)
                 .First();
 
-            // Assign lot and update quantity to full bolt
+            // Assign lot serial number first
             Base.Transactions.Cache.SetValueExt<SOLine.lotSerialNbr>(e.Row, best.LotSerialNbr);
-            Base.Transactions.Cache.SetValueExt<SOLine.orderQty>(e.Row, best.QtyOnHand);
+
+            // Update qty to full bolt using SetValue (NOT SetValueExt) to avoid firing
+            // FieldUpdated<orderQty> from within RowUpdated, which causes Acumatica's
+            // aggregate validator (SOOrder+orderQty) to detect an in-memory mismatch.
+            // SetValue sets the cache value directly; the aggregate recalculates correctly
+            // after this handler returns.
+            e.Cache.SetValue<SOLine.orderQty>(e.Row, best.QtyOnHand);
         }
 
         /// <summary>
