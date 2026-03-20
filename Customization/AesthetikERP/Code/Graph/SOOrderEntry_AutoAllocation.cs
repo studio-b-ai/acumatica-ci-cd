@@ -15,12 +15,24 @@ namespace HeritageFabrics.SO
 
         private const string PieceGoodsClassID = "PIECENBR";
 
+        // Prevents recursion when we call SetValueExt<orderQty> ourselves
+        private bool _allocating = false;
+
         // Track assigned serials within the current order to prevent double-assignment
         private readonly HashSet<string> _assignedSerials = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-        protected void _(Events.RowUpdated<SOLine> e)
+        /// <summary>
+        /// Trigger: user enters/changes the order qty on a line.
+        /// Using FieldUpdated<orderQty> instead of RowUpdated<SOLine> so that when we
+        /// call SetValueExt<orderQty> with the full bolt qty, it fires RowUpdated naturally
+        /// and SOOrderEntry recomputes SOOrder.OrderQty once with the final value.
+        /// Calling SetValueExt<orderQty> from inside RowUpdated causes a double-compute
+        /// of the SOOrder aggregate → "Aggregate Validation: SOOrder+orderQty" corruption.
+        /// </summary>
+        protected void _(Events.FieldUpdated<SOLine, SOLine.orderQty> e)
         {
-            if (e.Row == null) return;
+            if (_allocating) return; // prevent recursion from our own SetValueExt call
+            if (e.Row == null || e.NewValue == null) return;
 
             // Only for PC and FO order types
             SOOrder order = Base.Document.Current;
@@ -28,10 +40,10 @@ namespace HeritageFabrics.SO
             string orderType = order.OrderType;
             if (orderType != "PC" && orderType != "FO") return;
 
-            // Guard: skip if lot already assigned (prevents re-trigger)
+            // Guard: skip if lot already assigned
             if (!string.IsNullOrEmpty(e.Row.LotSerialNbr)) return;
 
-            // Need both item and qty to proceed
+            // Need both item and a positive qty
             if (e.Row.InventoryID == null || (e.Row.OrderQty ?? 0) <= 0) return;
 
             // Only process PIECENBR items (Piece Number - Lot Tracked)
@@ -88,12 +100,22 @@ namespace HeritageFabrics.SO
                 .ThenBy(c => c.QtyOnHand)
                 .First();
 
-            // Assign lot serial number only.
-            // NOTE: Do NOT update orderQty here. Modifying orderQty (an SOOrder aggregate
-            // field) from within RowUpdated<SOLine> — even via SetValue — causes Acumatica's
-            // save-time aggregate validator to throw "Aggregate Validation: SOOrder+orderQty".
-            // The user enters the requested qty; we assign the best-fit bolt. Qty stays as entered.
-            Base.Transactions.Cache.SetValueExt<SOLine.lotSerialNbr>(e.Row, best.LotSerialNbr);
+            try
+            {
+                _allocating = true;
+
+                // Assign lot serial
+                Base.Transactions.Cache.SetValueExt<SOLine.lotSerialNbr>(e.Row, best.LotSerialNbr);
+
+                // Update qty to full bolt qty. Safe here because we're in FieldUpdated<orderQty>,
+                // not RowUpdated — so RowUpdated fires AFTER both values are set, and
+                // SOOrderEntry computes the SOOrder aggregate once with the final qty.
+                Base.Transactions.Cache.SetValueExt<SOLine.orderQty>(e.Row, best.QtyOnHand);
+            }
+            finally
+            {
+                _allocating = false;
+            }
         }
 
         /// <summary>
