@@ -11,7 +11,8 @@ namespace HeritageFabrics.SO
 {
     public class SOOrderEntry_AutoAllocation : PXGraphExtension<SOOrderEntry>
     {
-        public static bool IsActive() => true;
+        // Temporarily disabled — aggregate validation fix in progress (2026-03-20)
+        public static bool IsActive() => false;
 
         private const string PieceGoodsClassID = "PIECENBR";
 
