@@ -186,14 +186,11 @@ namespace StudioB.Setup
                 if (rows.Count == 0) return;
 
                 // POST to studiob-api
-                string apiUrl = System.Environment.GetEnvironmentVariable("STUDIOB_AUDIT_WEBHOOK_URL");
-                string apiToken = System.Environment.GetEnvironmentVariable("STUDIOB_AUDIT_WEBHOOK_TOKEN");
+                string apiUrl = "https://webhook-router-production-e161.up.railway.app/webhook/audit-snapshot";
+                // Auth: webhook-router validates via route-level token if configured
+                string apiToken = "";
 
-                if (string.IsNullOrEmpty(apiUrl))
-                {
-                    WriteLog("[AuditGISetup] STUDIOB_AUDIT_WEBHOOK_URL not set — snapshot not posted");
-                    return;
-                }
+                // URL is hardcoded — always attempt POST
 
                 string json = "{"total":" + rows.Count + ","rows":[" + string.Join(",", rows) + "],"source":"publish-snapshot","timestamp":"" + DateTime.UtcNow.ToString("o") + ""}";
 
