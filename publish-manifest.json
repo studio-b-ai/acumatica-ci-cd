@@ -3,11 +3,8 @@
   "entities": {
     "PurchaseOrder": {
       "screen": "PO301000",
-      "custom_fields": [
-        "custom.Document.UsrExpArrivalDate",
-        "custom.Document.UsrActArrivalDate",
-        "custom.Document.UsrContainerRef"
-      ]
+      "custom_fields": [],
+      "_note": "UsrExpArrivalDate, UsrActArrivalDate, UsrContainerRef temporarily removed — HeritageFabricsPOv5 DAC extensions affected by ISV consolidation. Re-add after PO fields restored."
     },
     "SalesOrder": {
       "screen": "SO301000",
