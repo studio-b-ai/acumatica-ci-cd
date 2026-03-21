@@ -421,7 +421,7 @@ namespace HeritageFabrics.SO
             </Children>
         </PXGridLevel>
     </Page>
-        <Graph ClassName="SOOrderEntry_AutoAllocation" Source="#CDATA" IsNew="True" FileType="NewFile">
+            <Graph ClassName="SOOrderEntry_AutoAllocation" Source="#CDATA" IsNew="True" FileType="NewFile">
         <CDATA name="Source"><![CDATA[using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -434,10 +434,10 @@ using PX.Objects.SO;
 namespace HeritageFabrics.SO
 {
     /// <summary>
-    /// Auto-assigns lot serial numbers to PC/FO sales order lines for PIECENBR items.
-    /// Uses SetValueExt for lotSerialNbr (so the value persists) with a guard flag
-    /// to block INLotSerialNbrAttribute from modifying OrderQty (which causes
-    /// aggregate validation errors on SOOrder.orderQty).
+    /// v6: Uses FieldUpdated<SOLine.orderQty> as the trigger instead of RowUpdated.
+    /// FieldUpdated fires BEFORE the row is committed to cache, so SetValueExt
+    /// for lotSerialNbr applies to the row while it's still being built.
+    /// Guard flag blocks INLotSerialNbrAttribute from changing OrderQty back.
     /// </summary>
     public class SOOrderEntry_AutoAllocation : PXGraphExtension<SOOrderEntry>
     {
@@ -445,26 +445,24 @@ namespace HeritageFabrics.SO
 
         private const string PieceGoodsClassID = "PIECENBR";
         private readonly HashSet<string> _assignedSerials = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
-        // Guard flag: when true, suppress any OrderQty changes triggered by
-        // INLotSerialNbrAttribute.FieldUpdated during our lot serial assignment.
         private bool _allocating;
 
         /// <summary>
-        /// Intercept OrderQty changes. When _allocating is true, the qty change
-        /// was triggered by INLotSerialNbrAttribute — revert it to preserve
-        /// the user-entered quantity.
+        /// Block INLotSerialNbrAttribute from changing OrderQty during lot assignment.
         /// </summary>
         protected void _(Events.FieldVerifying<SOLine, SOLine.orderQty> e)
         {
             if (_allocating && e.Row != null)
             {
-                // Keep the original qty — don't let the lot serial attribute change it
                 e.NewValue = e.Row.OrderQty;
             }
         }
 
-        protected void _(Events.RowUpdated<SOLine> e)
+        /// <summary>
+        /// When OrderQty changes on a PIECENBR item in a PC/FO order,
+        /// find the best-fit bolt and assign its lot serial number.
+        /// </summary>
+        protected void _(Events.FieldUpdated<SOLine, SOLine.orderQty> e)
         {
             if (e.Row == null || _allocating) return;
 
@@ -489,7 +487,6 @@ namespace HeritageFabrics.SO
 
             RebuildAssignedSerials(e.Row.LineNbr);
 
-            // Query available bolts
             var allSerials = SelectFrom<INLotSerialStatus>
                 .Where<INLotSerialStatus.inventoryID.IsEqual<@P.AsInt>
                     .And<INLotSerialStatus.siteID.IsEqual<@P.AsInt>>>
@@ -523,18 +520,13 @@ namespace HeritageFabrics.SO
                 .First();
 
             PXTrace.WriteInformation(
-                $"[AutoAlloc] Assigning lot {best.LotSerialNbr} (qty={best.QtyOnHand}) " +
+                $"[AutoAlloc-v6] Assigning lot {best.LotSerialNbr} (qty={best.QtyOnHand}) " +
                 $"to line {e.Row.LineNbr} (item={e.Row.InventoryID}, orderQty={e.Row.OrderQty})");
 
-            // Set guard — block INLotSerialNbrAttribute from changing OrderQty
             _allocating = true;
             try
             {
-                Base.Transactions.Cache.SetValueExt<SOLine.lotSerialNbr>(e.Row, best.LotSerialNbr);
-                // Must explicitly update the row in the cache so the value persists.
-                // Without this, SetValueExt inside RowUpdated modifies the row in memory
-                // but the cache doesn't mark it dirty for save.
-                Base.Transactions.Update(e.Row);
+                e.Cache.SetValueExt<SOLine.lotSerialNbr>(e.Row, best.LotSerialNbr);
             }
             finally
             {
