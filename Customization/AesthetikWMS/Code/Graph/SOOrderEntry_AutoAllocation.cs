@@ -22,27 +22,44 @@ namespace Aesthetik.WMS
         {
             if (e.Row == null) return;
 
-            // Only for PC and FO order types
             SOOrder order = Base.Document.Current;
             if (order == null) return;
             string orderType = order.OrderType;
+
+            // DEBUG: trace every RowUpdated call
+            PXTrace.WriteInformation($"[AUTO-ALLOC] RowUpdated fired. OrderType={orderType}, InvID={e.Row.InventoryID}, Qty={e.Row.OrderQty}, Lot={e.Row.LotSerialNbr}");
+
             // TEST: temporarily include SO for testing (remove after debug)
             if (orderType != "PC" && orderType != "FO" && orderType != "SO") return;
 
-            // Guard: skip if lot already assigned (prevents re-trigger from qty update)
-            if (!string.IsNullOrEmpty(e.Row.LotSerialNbr)) return;
+            // Guard: skip if lot already assigned
+            if (!string.IsNullOrEmpty(e.Row.LotSerialNbr))
+            {
+                PXTrace.WriteInformation("[AUTO-ALLOC] Skipped: lot already assigned");
+                return;
+            }
 
             // Need both item and qty to proceed
-            if (e.Row.InventoryID == null || (e.Row.OrderQty ?? 0) <= 0) return;
+            if (e.Row.InventoryID == null || (e.Row.OrderQty ?? 0) <= 0)
+            {
+                PXTrace.WriteInformation($"[AUTO-ALLOC] Skipped: no item or qty <= 0 (InvID={e.Row.InventoryID}, Qty={e.Row.OrderQty})");
+                return;
+            }
 
-            // Only process PIECENBR items (Piece Number - Lot Tracked)
-            if (!IsPieceGoodsItem(e.Row.InventoryID)) return;
+            // Only process PIECENBR items
+            bool isPiece = IsPieceGoodsItem(e.Row.InventoryID);
+            PXTrace.WriteInformation($"[AUTO-ALLOC] IsPieceGoodsItem={isPiece}");
+            if (!isPiece) return;
 
             decimal minQty = e.Row.OrderQty ?? 0;
             int inventoryID = e.Row.InventoryID.Value;
             int? siteID = e.Row.SiteID ?? order.DefaultSiteID;
 
-            if (siteID == null) return;
+            if (siteID == null)
+            {
+                PXTrace.WriteInformation("[AUTO-ALLOC] Skipped: siteID is null");
+                return;
+            }
 
             // Rebuild assigned serials from other lines in this order
             RebuildAssignedSerials(e.Row.LineNbr);
@@ -53,6 +70,8 @@ namespace Aesthetik.WMS
                     .And<INLotSerialStatus.siteID.IsEqual<@P.AsInt>>>
                 .View.ReadOnly.Select(Base, inventoryID, siteID.Value);
 
+            PXTrace.WriteInformation($"[AUTO-ALLOC] Query returned {allSerials.Count} serial records for InvID={inventoryID}, SiteID={siteID}");
+
             // Filter and score candidates
             var candidates = new List<BoltCandidate>();
 
@@ -60,21 +79,13 @@ namespace Aesthetik.WMS
             {
                 var status = (INLotSerialStatus)row;
                 if (status.LotSerialNbr == null) continue;
-
-                // Skip already assigned to another line in this order
                 if (_assignedSerials.Contains(status.LotSerialNbr)) continue;
 
                 decimal qtyOnHand = status.QtyOnHand ?? 0;
                 decimal qtyAvail = status.QtyAvail ?? 0;
 
-                // Must have enough quantity to meet minimum
                 if (qtyOnHand < minQty) continue;
-
-                // Must be fully unreserved (entire bolt available)
                 if (qtyAvail != qtyOnHand) continue;
-
-                // WMS extension checks removed — INLotSerialStatusExt is in the WMS package.
-                // When WMS is deployed, defect/status filtering will be handled there.
 
                 candidates.Add(new BoltCandidate
                 {
@@ -84,35 +95,31 @@ namespace Aesthetik.WMS
                 });
             }
 
-            if (candidates.Count == 0) return; // No bolt meets minimum — leave unallocated
+            PXTrace.WriteInformation($"[AUTO-ALLOC] {candidates.Count} candidates after filtering (minQty={minQty})");
 
-            // Sort: FIFO first (oldest receipt date), then tightest fit (smallest qty >= minimum)
+            if (candidates.Count == 0) return;
+
+            // Sort: FIFO first (oldest receipt date), then tightest fit
             var best = candidates
                 .OrderBy(c => c.ReceiptDate ?? DateTime.MaxValue)
                 .ThenBy(c => c.QtyOnHand)
                 .First();
 
+            PXTrace.WriteInformation($"[AUTO-ALLOC] Selected bolt {best.LotSerialNbr} (Qty={best.QtyOnHand}, Date={best.ReceiptDate})");
+
             // TEST 1: Assign lot ONLY — no qty change.
-            // Purpose: isolate whether INLotSerialNbrAttribute corrupts SOOrder.orderQty aggregate.
-            // If save succeeds: the qty SetValueExt was the problem.
-            // If save fails: INLotSerialNbrAttribute is internally updating qty.
             Base.Transactions.Cache.SetValueExt<SOLine.lotSerialNbr>(e.Row, best.LotSerialNbr);
             // Base.Transactions.Cache.SetValueExt<SOLine.orderQty>(e.Row, best.QtyOnHand);
+
+            PXTrace.WriteInformation($"[AUTO-ALLOC] Lot assigned: {best.LotSerialNbr}");
         }
 
-        /// <summary>
-        /// When a line is deleted, remove its serial from the tracking set.
-        /// </summary>
         protected void _(Events.RowDeleted<SOLine> e)
         {
             if (e.Row?.LotSerialNbr != null)
                 _assignedSerials.Remove(e.Row.LotSerialNbr);
         }
 
-        /// <summary>
-        /// Rebuilds the set of serials already assigned to other lines in this order.
-        /// Excludes the current line being processed.
-        /// </summary>
         private void RebuildAssignedSerials(int? excludeLineNbr)
         {
             _assignedSerials.Clear();
@@ -124,7 +131,6 @@ namespace Aesthetik.WMS
             }
         }
 
-        /// <summary>Checks if an item uses the PIECENBR lot/serial class.</summary>
         private bool IsPieceGoodsItem(int? inventoryID)
         {
             if (inventoryID == null) return false;
@@ -135,10 +141,10 @@ namespace Aesthetik.WMS
 
             if (item == null) return false;
 
-            return string.Equals(
-                ((InventoryItem)item).LotSerClassID,
-                PieceGoodsClassID,
-                StringComparison.OrdinalIgnoreCase);
+            string lotClass = ((InventoryItem)item).LotSerClassID;
+            PXTrace.WriteInformation($"[AUTO-ALLOC] Item LotSerClassID='{lotClass}' (expected '{PieceGoodsClassID}')");
+
+            return string.Equals(lotClass, PieceGoodsClassID, StringComparison.OrdinalIgnoreCase);
         }
 
         private class BoltCandidate
