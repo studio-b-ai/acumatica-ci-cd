@@ -1,24 +1,36 @@
 <?xml version="1.0" encoding="utf-8"?>
 <Customization level="3" description="AesthetikSchemaFix — One-time column creation for SOOrder + BAccount" product-version="24.208">
-    <Graph ClassName="AesthetikSchemaFixInstaller" Source="#CDATA" IsNew="True" FileType="NewFile">
+    <Graph ClassName="AesthetikSchemaFixInstallerV3" Source="#CDATA" IsNew="True" FileType="NewFile">
         <CDATA name="Source"><![CDATA[using System;
 using System.Configuration;
+using System.Data.SqlClient;
 using Customization;
 
 namespace Aesthetik.SchemaFix
 {
-    public class AesthetikSchemaFixInstaller : CustomizationPlugin
+    public class AesthetikSchemaFixInstallerV3 : CustomizationPlugin
     {
         public override void UpdateDatabase()
         {
             try
             {
                 var cs = ConfigurationManager.ConnectionStrings["ProjectX"];
-                string connStr = cs.ConnectionString + ";TrustServerCertificate=True";
+                if (cs == null)
+                {
+                    WriteLog("[AesthetikSchemaFixV3] No ProjectX connection string found, trying alternatives...");
+                    foreach (ConnectionStringSettings s in ConfigurationManager.ConnectionStrings)
+                    {
+                        WriteLog("[AesthetikSchemaFixV3] Found connection: " + s.Name);
+                    }
+                    return;
+                }
+                string connStr = cs.ConnectionString;
+                WriteLog("[AesthetikSchemaFixV3] Using System.Data.SqlClient with connection: " + cs.Name);
 
-                using (var conn = new Microsoft.Data.SqlClient.SqlConnection(connStr))
+                using (var conn = new SqlConnection(connStr))
                 {
                     conn.Open();
+                    WriteLog("[AesthetikSchemaFixV3] Connection opened successfully");
                     string[] statements = new[]
                     {
                         "IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('SOOrder') AND name = 'UsrComplianceHold') ALTER TABLE SOOrder ADD UsrComplianceHold bit NULL",
@@ -34,16 +46,16 @@ namespace Aesthetik.SchemaFix
                         }
                         string col = sql.Substring(sql.IndexOf("name = '") + 8);
                         col = col.Substring(0, col.IndexOf("'"));
-                        WriteLog("[AesthetikSchemaFix] OK: " + col);
+                        WriteLog("[AesthetikSchemaFixV3] OK: " + col);
                     }
                 }
+                WriteLog("[AesthetikSchemaFixV3] All columns created successfully");
             }
             catch (Exception ex)
             {
-                WriteLog("[AesthetikSchemaFix] ERROR: " + ex.GetType().FullName + ": " + ex.Message);
+                WriteLog("[AesthetikSchemaFixV3] ERROR: " + ex.GetType().FullName + ": " + ex.Message);
                 if (ex.InnerException != null)
-                    WriteLog("[AesthetikSchemaFix] Inner: " + ex.InnerException.Message);
-                // Don't throw — let publish complete even if column creation fails
+                    WriteLog("[AesthetikSchemaFixV3] Inner: " + ex.InnerException.Message);
             }
         }
     }
