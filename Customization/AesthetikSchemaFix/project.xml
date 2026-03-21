@@ -61,5 +61,417 @@ namespace Aesthetik.SchemaFix
     }
 }]]></CDATA>
     </Graph>
+    <Graph ClassName="AuditTrailHandler" Source="#CDATA" IsNew="True" FileType="NewFile">
+        <CDATA name="Source"><![CDATA[using System;
+using System.Collections.Generic;
+using System.Configuration;
+using System.Data.SqlClient;
+using System.IO;
+using System.Text;
+using System.Web;
+using System.Web.SessionState;
+using PX.Data;
+
+namespace StudioB.Api
+{
+    /// <summary>
+    /// Custom REST endpoint for querying Acumatica audit trail data.
+    /// Bypasses GI/OData limitations by reading AuditHistory SQL table directly.
+    ///
+    /// Endpoint: /StudioBAuditTrailApi.ashx
+    /// Auth: Basic Auth (username:password) or Acumatica session cookie
+    ///
+    /// Query params:
+    ///   screenId   - Filter by screen (comma-separated, e.g. SO301000,PO301000)
+    ///   userId     - Filter by username (comma-separated)
+    ///   startDate  - ISO date (YYYY-MM-DD), inclusive
+    ///   endDate    - ISO date (YYYY-MM-DD), inclusive
+    ///   tableName  - Filter by table name (comma-separated)
+    ///   operation  - Filter by operation: I=Insert, U=Update, D=Delete (comma-separated)
+    ///   top        - Max rows (default 1000, max 10000)
+    ///   skip       - Pagination offset (default 0)
+    ///   orderBy    - Sort: ChangeDate (default), ScreenID, UserName, TableName
+    ///   orderDir   - Sort direction: desc (default), asc
+    ///
+    /// Response: JSON { total, rows: [...], query: { filters applied } }
+    /// </summary>
+    public class AuditTrailHandler : IHttpHandler, IRequiresSessionState
+    {
+        public bool IsReusable => true;
+
+        public void ProcessRequest(HttpContext context)
+        {
+            context.Response.ContentType = "application/json";
+            context.Response.AddHeader("X-StudioB-Api", "audit-trail/1.0");
+
+            // CORS for Power BI and external tools
+            context.Response.AddHeader("Access-Control-Allow-Origin", "*");
+            context.Response.AddHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
+            context.Response.AddHeader("Access-Control-Allow-Headers", "Authorization, Accept");
+
+            if (context.Request.HttpMethod == "OPTIONS")
+            {
+                context.Response.StatusCode = 204;
+                return;
+            }
+
+            if (context.Request.HttpMethod != "GET")
+            {
+                WriteError(context, 405, "Method not allowed. Use GET.");
+                return;
+            }
+
+            // Auth: Basic Auth or Acumatica session
+            if (!Authenticate(context))
+            {
+                context.Response.AddHeader("WWW-Authenticate", "Basic realm=\"Acumatica\"");
+                WriteError(context, 401, "Authentication required. Use Basic Auth or Acumatica session cookie.");
+                return;
+            }
+
+            try
+            {
+                var result = QueryAuditTrail(context);
+                context.Response.StatusCode = 200;
+                context.Response.Write(result);
+            }
+            catch (Exception ex)
+            {
+                WriteError(context, 500, "Internal error: " + ex.Message);
+            }
+        }
+
+        private bool Authenticate(HttpContext context)
+        {
+            // Method 1: Acumatica session (user already logged in)
+            try
+            {
+                string userName = PXAccess.GetUserName();
+                if (!string.IsNullOrEmpty(userName))
+                    return true;
+            }
+            catch { /* PXAccess not available — try Basic Auth */ }
+
+            // Method 2: Basic Auth
+            string authHeader = context.Request.Headers["Authorization"];
+            if (string.IsNullOrEmpty(authHeader) || !authHeader.StartsWith("Basic ", StringComparison.OrdinalIgnoreCase))
+                return false;
+
+            try
+            {
+                string encoded = authHeader.Substring(6).Trim();
+                string decoded = Encoding.UTF8.GetString(Convert.FromBase64String(encoded));
+                int colonIdx = decoded.IndexOf(':');
+                if (colonIdx < 0) return false;
+
+                string username = decoded.Substring(0, colonIdx);
+                string password = decoded.Substring(colonIdx + 1);
+
+                // Validate via Acumatica's auth system
+                // PXLogin validates credentials without creating a full session
+                var loginResult = PXAccess.TryLogin(username, password);
+                return loginResult;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private string QueryAuditTrail(HttpContext context)
+        {
+            var req = context.Request;
+
+            // Parse query parameters
+            string[] screenIds = ParseCsv(req.QueryString["screenId"]);
+            string[] userIds = ParseCsv(req.QueryString["userId"]);
+            string[] tableNames = ParseCsv(req.QueryString["tableName"]);
+            string[] operations = ParseCsv(req.QueryString["operation"]);
+            string startDate = req.QueryString["startDate"];
+            string endDate = req.QueryString["endDate"];
+            int top = Math.Min(ParseInt(req.QueryString["top"], 1000), 10000);
+            int skip = ParseInt(req.QueryString["skip"], 0);
+            string orderBy = req.QueryString["orderBy"] ?? "ChangeDate";
+            string orderDir = (req.QueryString["orderDir"] ?? "desc").ToUpper() == "ASC" ? "ASC" : "DESC";
+
+            // Validate orderBy against whitelist
+            var validColumns = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+                { "ChangeDate", "ScreenID", "UserName", "TableName", "Operation", "BatchID" };
+            if (!validColumns.Contains(orderBy))
+                orderBy = "ChangeDate";
+
+            // Build parameterized SQL
+            var whereClauses = new List<string>();
+            var sqlParams = new List<SqlParameter>();
+            int paramIdx = 0;
+
+            // CompanyID filter (multi-tenant isolation)
+            whereClauses.Add("CompanyID = @companyId");
+            sqlParams.Add(new SqlParameter("@companyId", GetCompanyId()));
+
+            if (screenIds.Length > 0)
+            {
+                var placeholders = new List<string>();
+                foreach (var s in screenIds)
+                {
+                    string pName = "@screen" + paramIdx++;
+                    placeholders.Add(pName);
+                    sqlParams.Add(new SqlParameter(pName, s));
+                }
+                whereClauses.Add("ScreenID IN (" + string.Join(",", placeholders) + ")");
+            }
+
+            if (userIds.Length > 0)
+            {
+                var placeholders = new List<string>();
+                foreach (var u in userIds)
+                {
+                    string pName = "@user" + paramIdx++;
+                    placeholders.Add(pName);
+                    sqlParams.Add(new SqlParameter(pName, u));
+                }
+                whereClauses.Add("UserName IN (" + string.Join(",", placeholders) + ")");
+            }
+
+            if (tableNames.Length > 0)
+            {
+                var placeholders = new List<string>();
+                foreach (var t in tableNames)
+                {
+                    string pName = "@table" + paramIdx++;
+                    placeholders.Add(pName);
+                    sqlParams.Add(new SqlParameter(pName, t));
+                }
+                whereClauses.Add("TableName IN (" + string.Join(",", placeholders) + ")");
+            }
+
+            if (operations.Length > 0)
+            {
+                var placeholders = new List<string>();
+                foreach (var op in operations)
+                {
+                    string pName = "@op" + paramIdx++;
+                    placeholders.Add(pName);
+                    // Map friendly names to DB values
+                    int opVal = MapOperation(op);
+                    sqlParams.Add(new SqlParameter(pName, opVal));
+                }
+                whereClauses.Add("Operation IN (" + string.Join(",", placeholders) + ")");
+            }
+
+            if (!string.IsNullOrEmpty(startDate))
+            {
+                DateTime dt;
+                if (DateTime.TryParse(startDate, out dt))
+                {
+                    whereClauses.Add("ChangeDate >= @startDate");
+                    sqlParams.Add(new SqlParameter("@startDate", dt.Date));
+                }
+            }
+
+            if (!string.IsNullOrEmpty(endDate))
+            {
+                DateTime dt;
+                if (DateTime.TryParse(endDate, out dt))
+                {
+                    whereClauses.Add("ChangeDate <= @endDate");
+                    sqlParams.Add(new SqlParameter("@endDate", dt.Date.AddDays(1)));
+                }
+            }
+
+            string whereClause = whereClauses.Count > 0
+                ? "WHERE " + string.Join(" AND ", whereClauses)
+                : "";
+
+            // Count query (for pagination metadata)
+            string countSql = "SELECT COUNT(*) FROM AuditHistory " + whereClause;
+
+            // Data query with pagination
+            string dataSql = string.Format(
+                @"SELECT ScreenID, Operation, ChangeDate, UserName, TableName,
+                         BatchID, ChangeID, CombinedKey, ModifiedFields
+                  FROM AuditHistory
+                  {0}
+                  ORDER BY {1} {2}
+                  OFFSET @skip ROWS FETCH NEXT @top ROWS ONLY",
+                whereClause, orderBy, orderDir);
+
+            sqlParams.Add(new SqlParameter("@skip", skip));
+            sqlParams.Add(new SqlParameter("@top", top));
+
+            // Execute against database
+            var cs = ConfigurationManager.ConnectionStrings["ProjectX"];
+            if (cs == null)
+                throw new Exception("Database connection string 'ProjectX' not found");
+
+            int totalCount = 0;
+            var rows = new List<string>();
+
+            using (var conn = new SqlConnection(cs.ConnectionString))
+            {
+                conn.Open();
+
+                // Get total count
+                using (var cmd = new SqlCommand(countSql, conn))
+                {
+                    foreach (var p in sqlParams)
+                    {
+                        if (p.ParameterName != "@skip" && p.ParameterName != "@top")
+                            cmd.Parameters.Add(CloneParam(p));
+                    }
+                    totalCount = (int)cmd.ExecuteScalar();
+                }
+
+                // Get data rows
+                using (var cmd = new SqlCommand(dataSql, conn))
+                {
+                    foreach (var p in sqlParams)
+                        cmd.Parameters.Add(CloneParam(p));
+
+                    using (var reader = cmd.ExecuteReader())
+                    {
+                        while (reader.Read())
+                        {
+                            rows.Add(RowToJson(reader));
+                        }
+                    }
+                }
+            }
+
+            // Build JSON response
+            var sb = new StringBuilder();
+            sb.Append("{");
+            sb.AppendFormat("\"total\":{0},", totalCount);
+            sb.AppendFormat("\"top\":{0},", top);
+            sb.AppendFormat("\"skip\":{0},", skip);
+            sb.Append("\"rows\":[");
+            sb.Append(string.Join(",", rows));
+            sb.Append("],");
+            sb.Append("\"query\":{");
+            if (screenIds.Length > 0)
+                sb.AppendFormat("\"screenId\":\"{0}\",", EscJson(string.Join(",", screenIds)));
+            if (userIds.Length > 0)
+                sb.AppendFormat("\"userId\":\"{0}\",", EscJson(string.Join(",", userIds)));
+            if (!string.IsNullOrEmpty(startDate))
+                sb.AppendFormat("\"startDate\":\"{0}\",", EscJson(startDate));
+            if (!string.IsNullOrEmpty(endDate))
+                sb.AppendFormat("\"endDate\":\"{0}\",", EscJson(endDate));
+            sb.AppendFormat("\"orderBy\":\"{0} {1}\"", orderBy, orderDir);
+            sb.Append("}}");
+
+            return sb.ToString();
+        }
+
+        private string RowToJson(SqlDataReader reader)
+        {
+            var sb = new StringBuilder();
+            sb.Append("{");
+
+            string screenId = reader.IsDBNull(0) ? "" : reader.GetString(0);
+            int operation = reader.IsDBNull(1) ? 0 : reader.GetInt32(1);
+            DateTime changeDate = reader.IsDBNull(2) ? DateTime.MinValue : reader.GetDateTime(2);
+            string userName = reader.IsDBNull(3) ? "" : reader.GetString(3);
+            string tableName = reader.IsDBNull(4) ? "" : reader.GetString(4);
+            long batchId = reader.IsDBNull(5) ? 0 : reader.GetInt64(5);
+            long changeId = reader.IsDBNull(6) ? 0 : reader.GetInt64(6);
+            string combinedKey = reader.IsDBNull(7) ? "" : reader.GetString(7);
+            string modifiedFields = reader.IsDBNull(8) ? "" : reader.GetString(8);
+
+            // Map operation int to string
+            string opStr = operation == 1 ? "Insert" : operation == 2 ? "Update" : operation == 3 ? "Delete" : operation.ToString();
+
+            // Clean null-delimited fields for JSON transport (replace \0 with |)
+            combinedKey = combinedKey.Replace('\0', '|');
+            modifiedFields = modifiedFields.Replace('\0', '|');
+
+            sb.AppendFormat("\"ScreenID\":\"{0}\",", EscJson(screenId));
+            sb.AppendFormat("\"Operation\":\"{0}\",", opStr);
+            sb.AppendFormat("\"ChangeDate\":\"{0:yyyy-MM-ddTHH:mm:ss}\",", changeDate);
+            sb.AppendFormat("\"UserName\":\"{0}\",", EscJson(userName));
+            sb.AppendFormat("\"TableName\":\"{0}\",", EscJson(tableName));
+            sb.AppendFormat("\"BatchID\":{0},", batchId);
+            sb.AppendFormat("\"ChangeID\":{0},", changeId);
+            sb.AppendFormat("\"CombinedKey\":\"{0}\",", EscJson(combinedKey));
+            sb.AppendFormat("\"ModifiedFields\":\"{0}\"", EscJson(modifiedFields));
+
+            sb.Append("}");
+            return sb.ToString();
+        }
+
+        private int GetCompanyId()
+        {
+            try
+            {
+                // PXInstanceHelper.CurrentCompany returns the current tenant's CompanyID
+                return PX.Data.PXInstanceHelper.CurrentCompany;
+            }
+            catch
+            {
+                // Default to 2 (Heritage Fabrics typical CompanyID)
+                return 2;
+            }
+        }
+
+        private int MapOperation(string op)
+        {
+            switch (op.Trim().ToUpper())
+            {
+                case "I":
+                case "INSERT":
+                case "1":
+                    return 1;
+                case "U":
+                case "UPDATE":
+                case "2":
+                    return 2;
+                case "D":
+                case "DELETE":
+                case "3":
+                    return 3;
+                default:
+                    int val;
+                    return int.TryParse(op, out val) ? val : 0;
+            }
+        }
+
+        private SqlParameter CloneParam(SqlParameter p)
+        {
+            return new SqlParameter(p.ParameterName, p.Value);
+        }
+
+        private string[] ParseCsv(string val)
+        {
+            if (string.IsNullOrEmpty(val)) return new string[0];
+            var parts = val.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries);
+            var result = new List<string>();
+            foreach (var p in parts)
+            {
+                string trimmed = p.Trim();
+                if (trimmed.Length > 0) result.Add(trimmed);
+            }
+            return result.ToArray();
+        }
+
+        private int ParseInt(string val, int defaultVal)
+        {
+            int result;
+            return int.TryParse(val, out result) ? result : defaultVal;
+        }
+
+        private string EscJson(string s)
+        {
+            if (s == null) return "";
+            return s.Replace("\\", "\\\\").Replace("\"", "\\\"").Replace("\n", "\\n").Replace("\r", "\\r").Replace("\t", "\\t");
+        }
+
+        private void WriteError(HttpContext context, int statusCode, string message)
+        {
+            context.Response.StatusCode = statusCode;
+            context.Response.Write("{\"error\":\"" + EscJson(message) + "\"}");
+        }
+    }
+}]]></CDATA>
+    </Graph>
     <File AppRelativePath="GenericInquiryScreen_UserAuditTrail.xml" />
+    <File AppRelativePath="StudioBAuditTrailApi.ashx" />
 </Customization>
