@@ -32,8 +32,9 @@
             <GIResult LineNbr="3" SortOrder="3" IsActive="1" Field="SiteID" Width="80" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Warehouse" RowID="b2000001-0000-0000-0000-000000000003" />
             <GIResult LineNbr="4" SortOrder="4" IsActive="1" Field="LocationID" Width="80" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Location" RowID="b2000001-0000-0000-0000-000000000004" />
             <GIResult LineNbr="5" SortOrder="5" IsActive="1" Field="QtyOnHand" Width="80" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Qty On Hand" RowID="b2000001-0000-0000-0000-000000000005" />
-            <GIResult LineNbr="6" SortOrder="6" IsActive="1" Field="ExpireDate" Width="100" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Expiration Date" RowID="b2000001-0000-0000-0000-000000000006" />
-            <GIResult LineNbr="7" SortOrder="7" IsActive="1" Field="ReceiptDate" Width="100" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Receipt Date" RowID="b2000001-0000-0000-0000-000000000007" />
+            <GIResult LineNbr="6" SortOrder="6" IsActive="1" Field="QtyAvail" Width="80" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Qty Available" RowID="b2000001-0000-0000-0000-000000000008" />
+            <GIResult LineNbr="7" SortOrder="7" IsActive="1" Field="ExpireDate" Width="100" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Expiration Date" RowID="b2000001-0000-0000-0000-000000000006" />
+            <GIResult LineNbr="8" SortOrder="8" IsActive="1" Field="ReceiptDate" Width="100" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Receipt Date" RowID="b2000001-0000-0000-0000-000000000007" />
           </GITable>
 
           <!-- SORT by InventoryID ASC, LotSerialNbr ASC -->
