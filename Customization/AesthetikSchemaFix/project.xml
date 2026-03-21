@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Customization level="3" description="AesthetikSchemaFix — One-time column creation for SOOrder + BAccount" product-version="24.208">
+    <Graph ClassName="AesthetikSchemaFixInstaller" Source="#CDATA" IsNew="True" FileType="NewFile">
+        <CDATA name="Source"><![CDATA[using System;
+using System.Configuration;
+using Customization;
+
+namespace Aesthetik.SchemaFix
+{
+    public class AesthetikSchemaFixInstaller : CustomizationPlugin
+    {
+        public override void UpdateDatabase()
+        {
+            try
+            {
+                var cs = ConfigurationManager.ConnectionStrings["ProjectX"];
+                string connStr = cs.ConnectionString + ";TrustServerCertificate=True";
+
+                using (var conn = new Microsoft.Data.SqlClient.SqlConnection(connStr))
+                {
+                    conn.Open();
+                    string[] statements = new[]
+                    {
+                        "IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('SOOrder') AND name = 'UsrComplianceHold') ALTER TABLE SOOrder ADD UsrComplianceHold bit NULL",
+                        "IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('SOOrder') AND name = 'UsrComplianceHoldReason') ALTER TABLE SOOrder ADD UsrComplianceHoldReason nvarchar(500) NULL",
+                        "IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('BAccount') AND name = 'UsrDisablePayLink') ALTER TABLE BAccount ADD UsrDisablePayLink bit NULL"
+                    };
+                    foreach (string sql in statements)
+                    {
+                        using (var cmd = conn.CreateCommand())
+                        {
+                            cmd.CommandText = sql;
+                            cmd.ExecuteNonQuery();
+                        }
+                        string col = sql.Substring(sql.IndexOf("name = '") + 8);
+                        col = col.Substring(0, col.IndexOf("'"));
+                        WriteLog("[AesthetikSchemaFix] OK: " + col);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                WriteLog("[AesthetikSchemaFix] ERROR: " + ex.GetType().FullName + ": " + ex.Message);
+                if (ex.InnerException != null)
+                    WriteLog("[AesthetikSchemaFix] Inner: " + ex.InnerException.Message);
+                // Don't throw — let publish complete even if column creation fails
+            }
+        }
+    }
+}]]></CDATA>
+    </Graph>
+</Customization>
