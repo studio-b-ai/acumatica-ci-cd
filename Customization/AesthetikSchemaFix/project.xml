@@ -400,14 +400,23 @@ namespace StudioB.Api
         {
             try
             {
-                // PXAccess.GetCompanyID() returns the current tenant's CompanyID
-                return PXAccess.GetCompanyID();
+                // PXAccess.GetBranchID() is available — CompanyID from branch lookup
+                // For single-tenant, query the CompanyID from the database
+                var cs = ConfigurationManager.ConnectionStrings["ProjectX"];
+                if (cs == null) return 2;
+                using (var conn = new SqlConnection(cs.ConnectionString))
+                {
+                    conn.Open();
+                    using (var cmd = new SqlCommand("SELECT TOP 1 CompanyID FROM AuditHistory WHERE CompanyID > 0 ORDER BY CompanyID", conn))
+                    {
+                        var result = cmd.ExecuteScalar();
+                        if (result != null && result != DBNull.Value)
+                            return (int)result;
+                    }
+                }
             }
-            catch
-            {
-                // Default to 2 (Heritage Fabrics typical CompanyID)
-                return 2;
-            }
+            catch { }
+            return 2;
         }
 
         private int MapOperation(string op)
