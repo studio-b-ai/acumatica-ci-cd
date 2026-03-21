@@ -132,47 +132,47 @@ namespace StudioB.Setup
 
                     // Delete old snapshot rows (older than 30 days)
                     using (var cmd = new SqlCommand(
-                        "DELETE FROM UsrAuditSnapshot WHERE CompanyID = @cid AND ChangeDate < @cutoff", conn))
+                        "DELETE FROM UsrAuditSnapshot WHERE ChangeDate < @cutoff", conn))
                     {
-                        cmd.Parameters.AddWithValue("@cid", cid);
                         cmd.Parameters.AddWithValue("@cutoff", DateTime.UtcNow.AddDays(-30));
                         int deleted = cmd.ExecuteNonQuery();
                         if (deleted > 0) WriteLog("[AuditSetup] Pruned " + deleted + " old snapshot rows");
                     }
 
-                    // Get CompanyID from AuditHistory itself (may differ from GIDesign)
-                    int auditCid = cid;
-                    using (var cmd = new SqlCommand("SELECT TOP 1 CompanyID FROM AuditHistory WHERE CompanyID > 0", conn))
-                    {
-                        var r = cmd.ExecuteScalar();
-                        if (r != null) auditCid = (int)r;
-                    }
-
                     DateTime since = DateTime.UtcNow.AddDays(-7);
 
-                    // INSERT new audit rows — use AuditHistory CompanyID for source, our CompanyID for target
+                    // First: count AuditHistory rows to verify data exists
+                    int auditCount = 0;
+                    using (var cmd = new SqlCommand("SELECT COUNT(*) FROM AuditHistory WHERE ChangeDate > @since", conn))
+                    {
+                        cmd.Parameters.AddWithValue("@since", since);
+                        auditCount = (int)cmd.ExecuteScalar();
+                    }
+                    WriteLog("[AuditSetup] AuditHistory has " + auditCount + " rows since " + since.ToString("yyyy-MM-dd"));
+
+                    if (auditCount == 0) return;
+
+                    // INSERT — copy CompanyID from AuditHistory as-is (no remapping)
                     using (var cmd = new SqlCommand(@"
                         INSERT INTO UsrAuditSnapshot
                             (CompanyID, BatchID, ChangeID, ScreenID, UserID, UserName,
                              ChangeDate, Operation, TableName, CombinedKey, ModifiedFields)
                         SELECT TOP 5000
-                            @targetCid, a.BatchID, a.ChangeID, a.ScreenID, a.UserID, u.Username,
+                            a.CompanyID, a.BatchID, a.ChangeID, a.ScreenID, a.UserID, u.Username,
                             a.ChangeDate, a.Operation, a.TableName, a.CombinedKey, a.ModifiedFields
                         FROM AuditHistory a
-                        LEFT JOIN Users u ON a.UserID = u.PKID AND u.CompanyID = a.CompanyID
-                        WHERE a.CompanyID = @auditCid AND a.ChangeDate > @since
+                        LEFT JOIN Users u ON a.UserID = u.PKID
+                        WHERE a.ChangeDate > @since
                         AND NOT EXISTS (
                             SELECT 1 FROM UsrAuditSnapshot s
-                            WHERE s.CompanyID = @targetCid AND s.BatchID = a.BatchID AND s.ChangeID = a.ChangeID
+                            WHERE s.BatchID = a.BatchID AND s.ChangeID = a.ChangeID
                         )
                         ORDER BY a.ChangeDate DESC", conn))
                     {
-                        cmd.Parameters.AddWithValue("@targetCid", cid);
-                        cmd.Parameters.AddWithValue("@auditCid", auditCid);
                         cmd.Parameters.AddWithValue("@since", since);
                         cmd.CommandTimeout = 60;
                         int inserted = cmd.ExecuteNonQuery();
-                        WriteLog("[AuditSetup] Snap " + inserted + " rows, auditCid=" + auditCid + " targetCid=" + cid);
+                        WriteLog("[AuditSetup] Snap " + inserted + " rows inserted");
                     }
                 }
             }
