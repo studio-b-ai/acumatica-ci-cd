@@ -69,8 +69,8 @@ using System.Data.SqlClient;
 using System.IO;
 using System.Text;
 using System.Web;
-using System.Web.SessionState;
 using PX.Data;
+using PX.Web.UI;
 
 namespace StudioB.Api
 {
@@ -78,7 +78,7 @@ namespace StudioB.Api
     /// Custom REST endpoint for querying Acumatica audit trail data.
     /// Bypasses GI/OData limitations by reading AuditHistory SQL table directly.
     ///
-    /// Endpoint: /StudioBAuditTrailApi.ashx
+    /// Deployed as a PXPage at /Frames/StudioBAuditTrail.aspx
     /// Auth: Basic Auth (username:password) or Acumatica session cookie
     ///
     /// Query params:
@@ -95,11 +95,9 @@ namespace StudioB.Api
     ///
     /// Response: JSON { total, rows: [...], query: { filters applied } }
     /// </summary>
-    public class AuditTrailHandler : IHttpHandler, IRequiresSessionState
+    public class AuditTrailHandler
     {
-        public bool IsReusable => true;
-
-        public void ProcessRequest(HttpContext context)
+        public static void ProcessRequest(HttpContext context)
         {
             context.Response.ContentType = "application/json";
             context.Response.AddHeader("X-StudioB-Api", "audit-trail/1.0");
@@ -141,7 +139,7 @@ namespace StudioB.Api
             }
         }
 
-        private bool Authenticate(HttpContext context)
+        private static bool Authenticate(HttpContext context)
         {
             // Method 1: Acumatica session (user already logged in)
             try
@@ -176,7 +174,7 @@ namespace StudioB.Api
             }
         }
 
-        private string QueryAuditTrail(HttpContext context)
+        private static string QueryAuditTrail(HttpContext context)
         {
             var req = context.Request;
 
@@ -360,7 +358,7 @@ namespace StudioB.Api
             return sb.ToString();
         }
 
-        private string RowToJson(SqlDataReader reader)
+        private static string RowToJson(SqlDataReader reader)
         {
             var sb = new StringBuilder();
             sb.Append("{");
@@ -396,7 +394,7 @@ namespace StudioB.Api
             return sb.ToString();
         }
 
-        private int GetCompanyId()
+        private static int GetCompanyId()
         {
             try
             {
@@ -419,7 +417,7 @@ namespace StudioB.Api
             return 2;
         }
 
-        private int MapOperation(string op)
+        private static int MapOperation(string op)
         {
             switch (op.Trim().ToUpper())
             {
@@ -441,12 +439,12 @@ namespace StudioB.Api
             }
         }
 
-        private SqlParameter CloneParam(SqlParameter p)
+        private static SqlParameter CloneParam(SqlParameter p)
         {
             return new SqlParameter(p.ParameterName, p.Value);
         }
 
-        private string[] ParseCsv(string val)
+        private static string[] ParseCsv(string val)
         {
             if (string.IsNullOrEmpty(val)) return new string[0];
             var parts = val.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries);
@@ -459,19 +457,19 @@ namespace StudioB.Api
             return result.ToArray();
         }
 
-        private int ParseInt(string val, int defaultVal)
+        private static int ParseInt(string val, int defaultVal)
         {
             int result;
             return int.TryParse(val, out result) ? result : defaultVal;
         }
 
-        private string EscJson(string s)
+        private static string EscJson(string s)
         {
             if (s == null) return "";
             return s.Replace("\\", "\\\\").Replace("\"", "\\\"").Replace("\n", "\\n").Replace("\r", "\\r").Replace("\t", "\\t");
         }
 
-        private void WriteError(HttpContext context, int statusCode, string message)
+        private static void WriteError(HttpContext context, int statusCode, string message)
         {
             context.Response.StatusCode = statusCode;
             context.Response.Write("{\"error\":\"" + EscJson(message) + "\"}");
@@ -480,4 +478,5 @@ namespace StudioB.Api
 }]]></CDATA>
     </Graph>
     <File AppRelativePath="GenericInquiryScreen_UserAuditTrail.xml" />
+    <File AppRelativePath="StudioBAuditTrail.aspx" />
 </Customization>
