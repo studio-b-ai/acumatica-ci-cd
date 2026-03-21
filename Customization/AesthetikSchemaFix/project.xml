@@ -188,7 +188,7 @@ namespace StudioB.Setup
                                 {
                                     case "DesignID": selectParts.Add("'" + designId + "'"); break;
                                     case "Name": selectParts.Add("'StudioBAuditTrail'"); break;
-                                    case "ExposeViaOData": selectParts.Add("1"); break;
+                                    case "ExposeViaOData": selectParts.Add("0"); // DISABLED until field names verified break;
                                     case "ScreenID": selectParts.Add("'GI000000'"); break;
                                     case "FilterColCount": selectParts.Add("3"); break;
                                     case "PageSize": selectParts.Add("200"); break;
