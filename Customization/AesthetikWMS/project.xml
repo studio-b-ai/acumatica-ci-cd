@@ -3353,7 +3353,8 @@ namespace Aesthetik.WMS
             SOOrder order = Base.Document.Current;
             if (order == null) return;
             string orderType = order.OrderType;
-            if (orderType != "PC" && orderType != "FO") return;
+            // TEST: temporarily include SO for testing (remove after debug)
+            if (orderType != "PC" && orderType != "FO" && orderType != "SO") return;
 
             // Guard: skip if lot already assigned (prevents re-trigger from qty update)
             if (!string.IsNullOrEmpty(e.Row.LotSerialNbr)) return;
