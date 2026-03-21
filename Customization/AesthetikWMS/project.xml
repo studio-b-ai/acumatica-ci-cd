@@ -3324,14 +3324,14 @@ IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('BAccount')
   ALTER TABLE BAccount ADD UsrDisablePayLink bit NULL;
 ]]></CDATA>
     </Sql>
-    <Graph ClassName="SOOrderEntry_AutoAllocation" Source="#CDATA" IsNew="True" FileType="NewFile">
+    <Graph ClassName="SOOrderEntry_PieceGoodsAllocation" Source="#CDATA" IsNew="True" FileType="NewFile">
         <CDATA name="Source"><![CDATA[using System;
 using PX.Data;
 using PX.Objects.SO;
 
 namespace HeritageFabrics.SO
 {
-    public class SOOrderEntry_AutoAllocation : PXGraphExtension<SOOrderEntry>
+    public class SOOrderEntry_PieceGoodsAllocation : PXGraphExtension<SOOrderEntry>
     {
         public static bool IsActive() => true;
 

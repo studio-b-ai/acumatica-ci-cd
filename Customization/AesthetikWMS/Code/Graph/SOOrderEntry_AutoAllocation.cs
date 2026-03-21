@@ -4,7 +4,7 @@ using PX.Objects.SO;
 
 namespace HeritageFabrics.SO
 {
-    public class SOOrderEntry_AutoAllocation : PXGraphExtension<SOOrderEntry>
+    public class SOOrderEntry_PieceGoodsAllocation : PXGraphExtension<SOOrderEntry>
     {
         public static bool IsActive() => true;
 
