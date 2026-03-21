@@ -188,7 +188,7 @@ namespace StudioB.Setup
                                 {
                                     case "DesignID": selectParts.Add("'" + designId + "'"); break;
                                     case "Name": selectParts.Add("'StudioBAuditTrail'"); break;
-                                    case "ExposeViaOData": selectParts.Add("0"); // DISABLED until field names verified break;
+                                    case "ExposeViaOData": selectParts.Add("0"); break; // DISABLED until field names verified
                                     case "ScreenID": selectParts.Add("'GI000000'"); break;
                                     case "FilterColCount": selectParts.Add("3"); break;
                                     case "PageSize": selectParts.Add("200"); break;
@@ -257,8 +257,8 @@ namespace StudioB.Setup
                     else
                     {
                         WriteLog("[AuditGISetup] GI already exists: " + designId);
-                        // Ensure OData is enabled
-                        using (var cmd = new SqlCommand("UPDATE GIDesign SET ExposeViaOData = 1 WHERE DesignID = @did AND CompanyID = @cid", conn))
+                        // DISABLE OData until field names are verified
+                        using (var cmd = new SqlCommand("UPDATE GIDesign SET ExposeViaOData = 0 WHERE DesignID = @did AND CompanyID = @cid", conn))
                         {
                             cmd.Parameters.AddWithValue("@did", designId);
                             cmd.Parameters.AddWithValue("@cid", companyId);
