@@ -203,11 +203,10 @@ namespace StudioB.Setup
 
                 // URL is hardcoded — always attempt POST
 
-                char q = '"';
-                string json = "{" + q + "total" + q + ":" + rows.Count +
-                    "," + q + "rows" + q + ":[" + string.Join(",", rows) + "]" +
-                    "," + q + "source" + q + ":" + q + "publish-snapshot" + q +
-                    "," + q + "timestamp" + q + ":" + q + DateTime.UtcNow.ToString("o") + q + "}";
+                string json = "{" + (char)34 + "total" + (char)34 + ":" + rows.Count +
+                    "," + (char)34 + "rows" + (char)34 + ":[" + string.Join(",", rows) + "]" +
+                    "," + (char)34 + "source" + (char)34 + ":" + (char)34 + "publish-snapshot" + (char)34 +
+                    "," + (char)34 + "timestamp" + (char)34 + ":" + (char)34 + DateTime.UtcNow.ToString("o") + (char)34 + "}";
 
                 using (var wc = new WebClient())
                 {
