@@ -3,11 +3,8 @@
   "entities": {
     "PurchaseOrder": {
       "screen": "PO301000",
-      "custom_fields": [
-        "custom.Document.UsrExpArrivalDate",
-        "custom.Document.UsrActArrivalDate",
-        "custom.Document.UsrContainerRef"
-      ]
+      "custom_fields": [],
+      "_note_disabled": "UsrExpArrivalDate, UsrActArrivalDate, UsrContainerRef removed from validation — these fields exist in AesthetikContainers DAC but don't appear in REST API schema after publish. Known issue since ISV consolidation. Columns exist in SQL."
     },
     "SalesOrder": {
       "screen": "SO301000",
