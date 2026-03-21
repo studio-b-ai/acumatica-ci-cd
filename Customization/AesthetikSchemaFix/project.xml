@@ -139,25 +139,23 @@ namespace StudioB.Setup
 
                     WriteLog("[AuditGISetup] Found GI DesignID: " + designId);
 
-                    // Find the TableID for the AuditHistory data source
-                    string tableId = null;
+                    // Verify the data source exists
+                    int tableCount = 0;
                     using (var cmd = new SqlCommand(
-                        "SELECT TOP 1 CONVERT(NVARCHAR(36), TableID) FROM GITable WHERE DesignID = @did AND Name = 'PX.SM.AuditHistory' AND CompanyID > 0",
+                        "SELECT COUNT(*) FROM GITable WHERE DesignID = @did AND Name = 'PX.SM.AuditHistory' AND CompanyID > 0",
                         conn))
                     {
                         cmd.Parameters.AddWithValue("@did", designId);
-                        var result = cmd.ExecuteScalar();
-                        if (result != null && result != DBNull.Value)
-                            tableId = result.ToString();
+                        tableCount = (int)cmd.ExecuteScalar();
                     }
 
-                    if (string.IsNullOrEmpty(tableId))
+                    if (tableCount == 0)
                     {
                         WriteLog("[AuditGISetup] Data source 'PX.SM.AuditHistory' not found in GI");
                         return;
                     }
 
-                    WriteLog("[AuditGISetup] Found TableID: " + tableId);
+                    WriteLog("[AuditGISetup] Data source verified (" + tableCount + " row(s))");
 
                     // Delete any existing result rows for this GI (clean slate)
                     using (var cmd = new SqlCommand(
