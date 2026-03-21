@@ -61,57 +61,5 @@ namespace Aesthetik.SchemaFix
     }
 }]]></CDATA>
     </Graph>
-    <Graph ClassName="SOOrderSchemaExt" Source="#CDATA" IsNew="True" FileType="NewFile">
-        <CDATA name="Source"><![CDATA[using PX.Data;
-using PX.Data.BQL;
-using PX.Objects.SO;
-
-namespace Aesthetik.SchemaFix
-{
-    public sealed class SOOrderSchemaExt : PXCacheExtension<SOOrder>
-    {
-        public static bool IsActive() => true;
-
-        #region UsrComplianceHold
-        public abstract class usrComplianceHold : BqlBool.Field<usrComplianceHold> { }
-
-        [PXDBBool]
-        [PXDefault(false, PersistingCheck = PXPersistingCheck.Nothing)]
-        [PXUIField(DisplayName = "Compliance Hold", Enabled = false)]
-        public bool? UsrComplianceHold { get; set; }
-        #endregion
-
-        #region UsrComplianceHoldReason
-        public abstract class usrComplianceHoldReason : BqlString.Field<usrComplianceHoldReason> { }
-
-        [PXDBString(500, IsUnicode = true)]
-        [PXUIField(DisplayName = "Compliance Hold Reason", Enabled = false)]
-        public string UsrComplianceHoldReason { get; set; }
-        #endregion
-    }
-}]]></CDATA>
-    </Graph>
-    <Graph ClassName="CustomerSchemaExt" Source="#CDATA" IsNew="True" FileType="NewFile">
-        <CDATA name="Source"><![CDATA[using PX.Data;
-using PX.Data.BQL;
-using PX.Objects.AR;
-
-namespace Aesthetik.SchemaFix
-{
-    public sealed class CustomerSchemaExt : PXCacheExtension<Customer>
-    {
-        public static bool IsActive() => true;
-
-        #region UsrDisablePayLink
-        public abstract class usrDisablePayLink : BqlBool.Field<usrDisablePayLink> { }
-
-        [PXDBBool]
-        [PXDefault(false, PersistingCheck = PXPersistingCheck.Nothing)]
-        [PXUIField(DisplayName = "Exclude from Payment Link Processing")]
-        public bool? UsrDisablePayLink { get; set; }
-        #endregion
-    }
-}]]></CDATA>
-    </Graph>
     <File AppRelativePath="GenericInquiryScreen_UserAuditTrail.xml" />
 </Customization>
