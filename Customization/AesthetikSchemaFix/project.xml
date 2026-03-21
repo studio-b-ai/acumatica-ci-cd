@@ -152,7 +152,7 @@ namespace StudioB.Api
             }
             catch { /* PXAccess not available — try Basic Auth */ }
 
-            // Method 2: Basic Auth
+            // Method 2: Basic Auth — validate via ASP.NET Membership provider
             string authHeader = context.Request.Headers["Authorization"];
             if (string.IsNullOrEmpty(authHeader) || !authHeader.StartsWith("Basic ", StringComparison.OrdinalIgnoreCase))
                 return false;
@@ -167,10 +167,8 @@ namespace StudioB.Api
                 string username = decoded.Substring(0, colonIdx);
                 string password = decoded.Substring(colonIdx + 1);
 
-                // Validate via Acumatica's auth system
-                // PXLogin validates credentials without creating a full session
-                var loginResult = PXAccess.TryLogin(username, password);
-                return loginResult;
+                // Validate via ASP.NET Membership (Acumatica's auth provider)
+                return System.Web.Security.Membership.ValidateUser(username, password);
             }
             catch
             {
@@ -402,8 +400,8 @@ namespace StudioB.Api
         {
             try
             {
-                // PXInstanceHelper.CurrentCompany returns the current tenant's CompanyID
-                return PX.Data.PXInstanceHelper.CurrentCompany;
+                // PXAccess.GetCompanyID() returns the current tenant's CompanyID
+                return PXAccess.GetCompanyID();
             }
             catch
             {
