@@ -10,7 +10,7 @@
         Response.Cache.SetCacheability(HttpCacheability.NoCache);
 
         // Require authenticated Acumatica session
-        if (!PX.Data.PXAccess.IsLoggedIn())
+        if (System.Web.HttpContext.Current?.User?.Identity == null || !System.Web.HttpContext.Current.User.Identity.IsAuthenticated)
         {
             Response.StatusCode = 401;
             Response.Write("{\"error\":\"Not authenticated\"}");

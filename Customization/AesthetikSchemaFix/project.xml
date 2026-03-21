@@ -267,7 +267,7 @@ namespace StudioB.Diagnostics
         Response.ContentType = "application/json";
         Response.Cache.SetCacheability(HttpCacheability.NoCache);
 
-        if (!PX.Data.PXAccess.IsLoggedIn())
+        if (System.Web.HttpContext.Current?.User?.Identity == null || !System.Web.HttpContext.Current.User.Identity.IsAuthenticated)
         {
             Response.StatusCode = 401;
             Response.Write("{\"error\":\"Not authenticated\"}");
