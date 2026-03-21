@@ -534,7 +534,7 @@ namespace StudioB.Diagnostics
                         var giInfo = new System.Collections.Generic.List<string>();
                         using (var cmd = conn2.CreateCommand())
                         {
-                            cmd.CommandText = @"SELECT TOP 5 d.Name, t.Name AS DataSource, t.Alias
+                            cmd.CommandText = @"SELECT TOP 5 d.Name, t.Name AS DataSource, ISNULL(t.Alias,'') AS Alias
                                 FROM GIDesign d JOIN GITable t ON d.DesignID = t.DesignID AND d.CompanyID = t.CompanyID
                                 WHERE d.ExposeViaOData = 1 AND d.CompanyID > 0
                                 ORDER BY d.Name";
@@ -556,7 +556,7 @@ namespace StudioB.Diagnostics
                             using (var reader = cmd.ExecuteReader())
                             {
                                 if (reader.Read())
-                                    WriteLog("[AuditReflector] OUR_GI: " + reader.GetString(0) + " OData=" + reader.GetInt32(1) + " Src=" + (reader.IsDBNull(2) ? "NULL" : reader.GetString(2)) + " Alias=" + (reader.IsDBNull(3) ? "NULL" : reader.GetString(3)) + " Cols=" + reader.GetInt32(4));
+                                    WriteLog("[AuditReflector] OUR_GI: " + reader.GetString(0) + " OData=" + Convert.ToInt32(reader.GetValue(1)) + " Src=" + (reader.IsDBNull(2) ? "NULL" : reader.GetString(2)) + " Alias=" + (reader.IsDBNull(3) ? "NULL" : reader.GetString(3)) + " Cols=" + Convert.ToInt32(reader.GetValue(4)));
                                 else
                                     WriteLog("[AuditReflector] OUR_GI: NOT FOUND");
                             }
