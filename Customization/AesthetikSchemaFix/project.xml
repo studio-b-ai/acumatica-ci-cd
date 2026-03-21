@@ -85,5 +85,147 @@ namespace StudioB.Inquiry
     }
 }]]></CDATA>
     </Graph>
+    <Graph ClassName="StudioBAuditGISetup" Source="#CDATA" IsNew="True" FileType="NewFile">
+        <CDATA name="Source"><![CDATA[using System;
+using System.Configuration;
+using System.Data.SqlClient;
+using Customization;
+
+namespace StudioB.Setup
+{
+    /// <summary>
+    /// One-time setup: populates the StudioBAuditTrail GI with result columns
+    /// and enables OData exposure. The GI data source (PX.SM.AuditHistory) was
+    /// created via the UI; this plugin adds the result grid columns that the
+    /// UI field selector blocks for system DACs.
+    ///
+    /// Safe to re-run: uses IF NOT EXISTS guards on all inserts.
+    /// </summary>
+    public class StudioBAuditGISetup : CustomizationPlugin
+    {
+        public override void UpdateDatabase()
+        {
+            WriteLog("[AuditGISetup] Starting GI result column setup...");
+
+            try
+            {
+                var cs = ConfigurationManager.ConnectionStrings["ProjectX"];
+                if (cs == null)
+                {
+                    WriteLog("[AuditGISetup] No ProjectX connection string");
+                    return;
+                }
+
+                using (var conn = new SqlConnection(cs.ConnectionString))
+                {
+                    conn.Open();
+
+                    // Find the GI DesignID by name
+                    string designId = null;
+                    using (var cmd = new SqlCommand(
+                        "SELECT TOP 1 CONVERT(NVARCHAR(36), DesignID) FROM GIDesign WHERE Name = 'StudioBAuditTrail' AND CompanyID > 0",
+                        conn))
+                    {
+                        var result = cmd.ExecuteScalar();
+                        if (result != null && result != DBNull.Value)
+                            designId = result.ToString();
+                    }
+
+                    if (string.IsNullOrEmpty(designId))
+                    {
+                        WriteLog("[AuditGISetup] GI 'StudioBAuditTrail' not found — create it in SM208000 first");
+                        return;
+                    }
+
+                    WriteLog("[AuditGISetup] Found GI DesignID: " + designId);
+
+                    // Find the TableID for the AuditHistory data source
+                    string tableId = null;
+                    using (var cmd = new SqlCommand(
+                        "SELECT TOP 1 CONVERT(NVARCHAR(36), TableID) FROM GITable WHERE DesignID = @did AND Name = 'PX.SM.AuditHistory' AND CompanyID > 0",
+                        conn))
+                    {
+                        cmd.Parameters.AddWithValue("@did", designId);
+                        var result = cmd.ExecuteScalar();
+                        if (result != null && result != DBNull.Value)
+                            tableId = result.ToString();
+                    }
+
+                    if (string.IsNullOrEmpty(tableId))
+                    {
+                        WriteLog("[AuditGISetup] Data source 'PX.SM.AuditHistory' not found in GI");
+                        return;
+                    }
+
+                    WriteLog("[AuditGISetup] Found TableID: " + tableId);
+
+                    // Delete any existing result rows for this GI (clean slate)
+                    using (var cmd = new SqlCommand(
+                        "DELETE FROM GIResult WHERE DesignID = @did AND CompanyID > 0",
+                        conn))
+                    {
+                        cmd.Parameters.AddWithValue("@did", designId);
+                        int deleted = cmd.ExecuteNonQuery();
+                        WriteLog("[AuditGISetup] Cleared " + deleted + " existing result rows");
+                    }
+
+                    // Insert result columns
+                    string[] fields = new[]
+                    {
+                        "ScreenID",
+                        "Operation",
+                        "ChangeDate",
+                        "UserName",
+                        "TableName",
+                        "BatchID",
+                        "ChangeID",
+                        "CombinedKey",
+                        "ModifiedFields"
+                    };
+
+                    for (int i = 0; i < fields.Length; i++)
+                    {
+                        using (var cmd = new SqlCommand(@"
+                            INSERT INTO GIResult (CompanyID, DesignID, LineNbr, IsActive, ObjectName, Field, SchemaField,
+                                                  SortOrder, IsVisible, Width, QuickFilter, FastFilter, DefaultNav, Caption)
+                            VALUES (
+                                (SELECT TOP 1 CompanyID FROM GIDesign WHERE DesignID = @did AND CompanyID > 0),
+                                @did, @lineNbr, 1, 'AuditHistory', @field, @field,
+                                @sortOrder, 1, 120, 0, 0, 0, @caption
+                            )", conn))
+                        {
+                            cmd.Parameters.AddWithValue("@did", designId);
+                            cmd.Parameters.AddWithValue("@lineNbr", i + 1);
+                            cmd.Parameters.AddWithValue("@field", fields[i]);
+                            cmd.Parameters.AddWithValue("@sortOrder", i + 1);
+                            cmd.Parameters.AddWithValue("@caption", fields[i]);
+                            cmd.ExecuteNonQuery();
+                        }
+                        WriteLog("[AuditGISetup] Added result column: " + fields[i]);
+                    }
+
+                    // Enable OData exposure
+                    using (var cmd = new SqlCommand(
+                        "UPDATE GIDesign SET ExposeViaOData = 1 WHERE DesignID = @did AND CompanyID > 0",
+                        conn))
+                    {
+                        cmd.Parameters.AddWithValue("@did", designId);
+                        int updated = cmd.ExecuteNonQuery();
+                        WriteLog("[AuditGISetup] OData enabled: " + updated + " row(s) updated");
+                    }
+
+                    WriteLog("[AuditGISetup] Complete — " + fields.Length + " columns + OData enabled");
+                }
+            }
+            catch (Exception ex)
+            {
+                WriteLog("[AuditGISetup] ERROR: " + ex.GetType().FullName + ": " + ex.Message);
+                if (ex.InnerException != null)
+                    WriteLog("[AuditGISetup] Inner: " + ex.InnerException.Message);
+            }
+        }
+    }
+}]]></CDATA>
+    </Graph>
     <File AppRelativePath="GenericInquiryScreen_UserAuditTrail.xml" />
 </Customization>
