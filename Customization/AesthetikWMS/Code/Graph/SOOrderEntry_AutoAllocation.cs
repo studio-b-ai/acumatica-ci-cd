@@ -2,7 +2,7 @@ using System;
 using PX.Data;
 using PX.Objects.SO;
 
-namespace Aesthetik.WMS
+namespace HeritageFabrics.SO
 {
     public class SOOrderEntry_AutoAllocation : PXGraphExtension<SOOrderEntry>
     {

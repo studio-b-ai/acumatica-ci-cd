@@ -3329,7 +3329,7 @@ IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('BAccount')
 using PX.Data;
 using PX.Objects.SO;
 
-namespace Aesthetik.WMS
+namespace HeritageFabrics.SO
 {
     public class SOOrderEntry_AutoAllocation : PXGraphExtension<SOOrderEntry>
     {
