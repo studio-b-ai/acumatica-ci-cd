@@ -353,5 +353,97 @@ namespace StudioB.Setup
     }
 }]]></CDATA>
     </Graph>
+    <Graph ClassName="AuditHistoryReflector" Source="#CDATA" IsNew="True" FileType="NewFile">
+        <CDATA name="Source"><![CDATA[using System;
+using System.Reflection;
+using Customization;
+
+namespace StudioB.Diagnostics
+{
+    /// <summary>
+    /// One-time diagnostic plugin: enumerates all properties and nested BQL field
+    /// classes on PX.SM.AuditHistory via reflection. Output appears in publish log
+    /// as [information] entries. Remove after field names are discovered.
+    /// </summary>
+    public class AuditHistoryReflector : CustomizationPlugin
+    {
+        public override void UpdateDatabase()
+        {
+            WriteLog("[AuditReflector] === START: Enumerating PX.SM.AuditHistory ===");
+
+            try
+            {
+                var dacType = typeof(PX.SM.AuditHistory);
+                WriteLog("[AuditReflector] FullName: " + dacType.FullName);
+                WriteLog("[AuditReflector] Assembly: " + dacType.Assembly.GetName().Name);
+
+                // 1. Public properties (the actual DAC field accessors)
+                WriteLog("[AuditReflector] --- PUBLIC PROPERTIES ---");
+                var props = dacType.GetProperties(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly);
+                WriteLog("[AuditReflector] Property count: " + props.Length);
+                foreach (var prop in props)
+                {
+                    string attrs = "";
+                    try
+                    {
+                        var customAttrs = prop.GetCustomAttributes(false);
+                        foreach (var a in customAttrs)
+                        {
+                            var aName = a.GetType().Name;
+                            if (aName.StartsWith("PXDB") || aName.StartsWith("PXUIField") || aName.StartsWith("PXString") || aName.StartsWith("PXInt") || aName.StartsWith("PXDate") || aName.StartsWith("PXBool") || aName.StartsWith("PXDecimal") || aName.StartsWith("PXGuid") || aName.StartsWith("PXLong") || aName.StartsWith("PXDBTimestamp"))
+                                attrs += " [" + aName + "]";
+                        }
+                    }
+                    catch { }
+                    WriteLog("[AuditReflector] PROP: " + prop.Name + " : " + prop.PropertyType.Name + attrs);
+                }
+
+                // 2. Nested types (BQL field classes like "screenID", "changeDate", etc.)
+                WriteLog("[AuditReflector] --- NESTED TYPES (BQL fields) ---");
+                var nested = dacType.GetNestedTypes(BindingFlags.Public | BindingFlags.NonPublic);
+                WriteLog("[AuditReflector] Nested type count: " + nested.Length);
+                foreach (var nt in nested)
+                {
+                    string interfaces = "";
+                    foreach (var iface in nt.GetInterfaces())
+                    {
+                        if (iface.Name.Contains("Field") || iface.Name.Contains("IBql"))
+                            interfaces += " :" + iface.Name;
+                    }
+                    WriteLog("[AuditReflector] NESTED: " + nt.Name + interfaces);
+                }
+
+                // 3. Also check inherited properties (from base classes)
+                WriteLog("[AuditReflector] --- ALL PROPERTIES (incl inherited) ---");
+                var allProps = dacType.GetProperties(BindingFlags.Public | BindingFlags.Instance);
+                WriteLog("[AuditReflector] Total property count (incl inherited): " + allProps.Length);
+                foreach (var prop in allProps)
+                {
+                    if (prop.DeclaringType != dacType)
+                        WriteLog("[AuditReflector] INHERITED: " + prop.Name + " : " + prop.PropertyType.Name + " (from " + prop.DeclaringType.Name + ")");
+                }
+
+                // 4. Check base type chain
+                WriteLog("[AuditReflector] --- BASE TYPE CHAIN ---");
+                var bt = dacType.BaseType;
+                while (bt != null)
+                {
+                    WriteLog("[AuditReflector] BASE: " + bt.FullName);
+                    bt = bt.BaseType;
+                }
+
+                WriteLog("[AuditReflector] === END: Enumeration complete ===");
+            }
+            catch (Exception ex)
+            {
+                WriteLog("[AuditReflector] ERROR: " + ex.GetType().FullName + ": " + ex.Message);
+                if (ex.InnerException != null)
+                    WriteLog("[AuditReflector] Inner: " + ex.InnerException.Message);
+                WriteLog("[AuditReflector] Stack: " + ex.StackTrace);
+            }
+        }
+    }
+}]]></CDATA>
+    </Graph>
     <File AppRelativePath="GenericInquiryScreen_UserAuditTrail.xml" />
 </Customization>
