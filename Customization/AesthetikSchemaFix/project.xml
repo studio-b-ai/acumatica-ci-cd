@@ -61,7 +61,7 @@ namespace Aesthetik.SchemaFix
     }
 }</CDATA>
     </Graph>
-    <Graph ClassName="UsrAuditHistoryView" Source="#CDATA" IsNew="True" FileType="NewFile">
+    <Graph ClassName="StudioBAuditHistoryDAC" Source="#CDATA" IsNew="True" FileType="NewFile">
         <CDATA name="Source"><![CDATA[using System;
 using PX.Data;
 using PX.Data.BQL;
@@ -76,8 +76,7 @@ namespace StudioB.DAC
     /// </summary>
     [Serializable]
     [PXCacheName("Audit History View")]
-    [PXTable("AuditHistory")]
-    public class UsrAuditHistoryView : PXBqlTable, IBqlTable
+    public class AuditHistory : PXBqlTable, IBqlTable
     {
         #region BatchID
         public abstract class batchID : BqlLong.Field<batchID> { }
@@ -299,8 +298,8 @@ namespace StudioB.Setup
                             switch (col)
                             {
                                 case "DesignID": selectParts.Add("'" + designId + "'"); break;
-                                case "Name": selectParts.Add("'StudioB.DAC.UsrAuditHistoryView'"); break;
-                                case "Alias": selectParts.Add("'UsrAuditHistoryView'"); break;
+                                case "Name": selectParts.Add("'StudioB.DAC.AuditHistory'"); break;
+                                case "Alias": selectParts.Add("'AuditHistory'"); break;
                                 case "NoteID": case "RowID": selectParts.Add("NEWID()"); break;
                                 case "CreatedDateTime": case "LastModifiedDateTime": selectParts.Add("GETUTCDATE()"); break;
                                 default: selectParts.Add("[" + col + "]"); break;
@@ -359,7 +358,7 @@ namespace StudioB.Setup
                                 case "DesignID": selectParts.Add("'" + designId + "'"); break;
                                 case "LineNbr": selectParts.Add((i + 1).ToString()); break;
                                 case "IsActive": selectParts.Add("1"); break;
-                                case "ObjectName": selectParts.Add("'UsrAuditHistoryView'"); break;
+                                case "ObjectName": selectParts.Add("'AuditHistory'"); break;
                                 case "Field": selectParts.Add("'" + fields[i] + "'"); break;
                                 case "SchemaField": selectParts.Add("NULL"); break;
                                 case "SortOrder": selectParts.Add((i + 1).ToString()); break;

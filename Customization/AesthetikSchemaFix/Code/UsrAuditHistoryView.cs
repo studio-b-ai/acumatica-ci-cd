@@ -12,8 +12,7 @@ namespace StudioB.DAC
     /// </summary>
     [Serializable]
     [PXCacheName("Audit History View")]
-    [PXTable("AuditHistory")]
-    public class UsrAuditHistoryView : PXBqlTable, IBqlTable
+    public class AuditHistory : PXBqlTable, IBqlTable
     {
         #region BatchID
         public abstract class batchID : BqlLong.Field<batchID> { }
