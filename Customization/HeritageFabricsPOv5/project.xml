@@ -531,6 +531,10 @@ namespace HeritageFabrics.SO
             try
             {
                 Base.Transactions.Cache.SetValueExt<SOLine.lotSerialNbr>(e.Row, best.LotSerialNbr);
+                // Must explicitly update the row in the cache so the value persists.
+                // Without this, SetValueExt inside RowUpdated modifies the row in memory
+                // but the cache doesn't mark it dirty for save.
+                Base.Transactions.Update(e.Row);
             }
             finally
             {
