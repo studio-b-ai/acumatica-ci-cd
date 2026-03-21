@@ -421,7 +421,7 @@ namespace HeritageFabrics.SO
             </Children>
         </PXGridLevel>
     </Page>
-                <Graph ClassName="SOOrderEntry_AutoAllocation" Source="#CDATA" IsNew="True" FileType="NewFile">
+                    <Graph ClassName="SOOrderEntry_AutoAllocation" Source="#CDATA" IsNew="True" FileType="NewFile">
         <CDATA name="Source"><![CDATA[using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -434,10 +434,9 @@ using PX.Objects.SO;
 namespace HeritageFabrics.SO
 {
     /// <summary>
-    /// v7: Auto-assigns lot serial AND adjusts qty to full bolt size.
-    /// Sequence: (1) assign lot serial with guard, (2) update qty without guard.
-    /// The guard blocks INLotSerialNbrAttribute from corrupting the aggregate
-    /// during step 1. Step 2 lets the aggregate recalculate normally.
+    /// v6-stable: FieldUpdated trigger, SetValueExt for lot serial with guard.
+    /// Does NOT modify OrderQty — that causes recursive FieldUpdated crash.
+    /// Lot serial assignment + qty adjustment needs a different approach (deferred/RowPersisting).
     /// </summary>
     public class SOOrderEntry_AutoAllocation : PXGraphExtension<SOOrderEntry>
     {
@@ -464,9 +463,7 @@ namespace HeritageFabrics.SO
             string orderType = order.OrderType;
             if (orderType != "PC" && orderType != "FO") return;
 
-            // Skip if lot already assigned (prevents re-trigger after qty update in step 2)
             if (!string.IsNullOrEmpty(e.Row.LotSerialNbr)) return;
-
             if (e.Row.InventoryID == null || (e.Row.OrderQty ?? 0) <= 0) return;
             if (!IsPieceGoodsItem(e.Row.InventoryID)) return;
 
@@ -504,17 +501,15 @@ namespace HeritageFabrics.SO
 
             if (candidates.Count == 0) return;
 
-            // Best fit: FIFO (oldest first), then tightest fit (smallest bolt >= minimum)
             var best = candidates
                 .OrderBy(c => c.ReceiptDate ?? DateTime.MaxValue)
                 .ThenBy(c => c.QtyOnHand)
                 .First();
 
             PXTrace.WriteInformation(
-                $"[AutoAlloc-v7] Line {e.Row.LineNbr}: item={e.Row.InventoryID}, " +
+                $"[AutoAlloc-v6] Line {e.Row.LineNbr}: item={e.Row.InventoryID}, " +
                 $"minQty={minQty}, bolt={best.LotSerialNbr} ({best.QtyOnHand})");
 
-            // STEP 1: Assign lot serial WITH guard (blocks INLotSerialNbrAttribute qty change)
             _allocating = true;
             try
             {
@@ -524,10 +519,6 @@ namespace HeritageFabrics.SO
             {
                 _allocating = false;
             }
-
-            // STEP 2: Update qty to full bolt size WITHOUT guard (aggregate recalculates normally)
-            // This re-triggers FieldUpdated<orderQty> but the lotSerialNbr guard above skips it.
-            e.Cache.SetValueExt<SOLine.orderQty>(e.Row, best.QtyOnHand);
         }
 
         protected void _(Events.RowDeleted<SOLine> e)
