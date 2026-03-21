@@ -3340,6 +3340,12 @@ namespace Aesthetik.WMS
     {
         public static bool IsActive() => true;
 
+        public override void Initialize()
+        {
+            base.Initialize();
+            PXTrace.WriteInformation("[AUTO-ALLOC] Extension initialized — SOOrderEntry_AutoAllocation is ACTIVE");
+        }
+
         private const string PieceGoodsClassID = "PIECENBR";
 
         // Track assigned serials within the current order to prevent double-assignment
