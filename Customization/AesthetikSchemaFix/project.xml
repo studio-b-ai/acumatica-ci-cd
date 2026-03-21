@@ -255,6 +255,7 @@ namespace StudioB.Diagnostics
 }]]></CDATA>
     </Graph>
     <File AppRelativePath="GenericInquiryScreen_UserAuditTrail.xml" />
+    <SiteMapNode NodeID="SB205530" ScreenID="SB205530" Title="Audit Query API" Url="~/Pages/StudioBAuditQuery.aspx" ParentID="Hidden" Visible="False" />
     <File AppRelativePath="Pages\StudioBAuditQuery.aspx" Content="#CDATA">
         <CDATA name="Content"><![CDATA[<%@ Page Language="C#" AutoEventWireup="true" %>
 <%@ Import Namespace="System.Configuration" %>
