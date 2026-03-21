@@ -257,6 +257,121 @@ namespace HeritageFabrics.SO
     }
 }]]></CDATA>
     </Graph>
+    <Graph ClassName="CustomerExt" Source="#CDATA" IsNew="True" FileType="NewFile">
+        <CDATA name="Source"><![CDATA[using PX.Data;
+using PX.Data.BQL;
+using PX.Objects.AR;
+
+namespace HeritageFabrics.AR
+{
+    public sealed class CustomerExt : PXCacheExtension<Customer>
+    {
+        public static bool IsActive() => true;
+
+        #region UsrDisablePayLink
+        public abstract class usrDisablePayLink : BqlBool.Field<usrDisablePayLink> { }
+
+        [PXDBBool]
+        [PXDefault(false, PersistingCheck = PXPersistingCheck.Nothing)]
+        [PXUIField(DisplayName = "Exclude from Payment Link Processing")]
+        public bool? UsrDisablePayLink { get; set; }
+        #endregion
+    }
+}]]></CDATA>
+    </Graph>
+    <Graph ClassName="ARInvoiceEntry_PayLink_Extension" Source="#CDATA" IsNew="True" FileType="NewFile">
+        <CDATA name="Source"><![CDATA[using System;
+using PX.Data;
+using PX.Objects.AR;
+using PX.Objects.CS;
+
+namespace HeritageFabrics.AR
+{
+    public class ARInvoiceEntry_PayLink_Extension : PXGraphExtension<ARInvoiceEntry>
+    {
+        public static bool IsActive() => true;
+
+        protected void _(Events.RowSelected<ARInvoice> e)
+        {
+            if (e.Row == null) return;
+
+            bool disablePayLink = IsPayLinkDisabledForCustomer(e.Row.CustomerID);
+
+            if (Base.Actions.Contains("SendPaymentLink"))
+            {
+                Base.Actions["SendPaymentLink"].SetEnabled(!disablePayLink);
+            }
+
+            if (Base.Actions.Contains("sendPayLink"))
+            {
+                Base.Actions["sendPayLink"].SetEnabled(!disablePayLink);
+            }
+        }
+
+        private bool IsPayLinkDisabledForCustomer(int? customerID)
+        {
+            if (customerID == null) return false;
+
+            Customer customer = PXSelect<Customer,
+                Where<Customer.bAccountID, Equal<Required<Customer.bAccountID>>>>
+                .Select(Base, customerID);
+
+            if (customer == null) return false;
+
+            // Check 1: Explicit per-customer flag
+            CustomerExt ext = customer.GetExtension<CustomerExt>();
+            if (ext?.UsrDisablePayLink == true) return true;
+
+            // Check 2: Terms description contains "factor"
+            if (!string.IsNullOrEmpty(customer.TermsID))
+            {
+                Terms terms = PXSelect<Terms,
+                    Where<Terms.termsID, Equal<Required<Terms.termsID>>>>
+                    .Select(Base, customer.TermsID);
+                if (terms?.Descr != null &&
+                    terms.Descr.IndexOf("factor", StringComparison.OrdinalIgnoreCase) >= 0)
+                    return true;
+            }
+
+            return false;
+        }
+    }
+}]]></CDATA>
+    </Graph>
+    <Graph ClassName="POReceiptEntry_Extension" Source="#CDATA" IsNew="True" FileType="NewFile">
+        <CDATA name="Source"><![CDATA[using System;
+using System.Collections;
+using System.Collections.Generic;
+using PX.Data;
+using PX.Data.BQL;
+using PX.Objects.PO;
+
+namespace HeritageFabrics.PO
+{
+    public class POReceiptEntry_Extension : PXGraphExtension<POReceiptEntry>
+    {
+        public static bool IsActive() => true;
+
+        public PXAction<POReceipt> PrintPurchaseReceiptLabels;
+        [PXButton(CommitChanges = true)]
+        [PXUIField(DisplayName = "Print Purchase Receipt Labels", MapEnableRights = PXCacheRights.Select)]
+        protected virtual IEnumerable printPurchaseReceiptLabels(PXAdapter adapter)
+        {
+            PXReportRequiredException ex = null;
+            var row = Base.Caches[typeof(POReceipt)].Current as POReceipt;
+            if (row != null)
+            {
+                var parameters = new Dictionary<string, string>();
+                parameters["ReceiptType"] = row.ReceiptType?.ToString();
+                parameters["ReceiptNbr"] = row.ReceiptNbr?.ToString();
+                ex = new PXReportRequiredException(parameters, "PO646901");
+            }
+            if (ex != null) throw ex;
+            return adapter.Get();
+        }
+    }
+}]]></CDATA>
+    </Graph>
     <Page path="~/pages/so/so301000.aspx">
         <PXFormView ID="form" ParentId="phF_form" TypeFullName="PX.Web.UI.PXFormView">
             <Children Key="Template">
