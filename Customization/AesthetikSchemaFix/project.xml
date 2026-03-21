@@ -140,42 +140,39 @@ namespace StudioB.Setup
                         if (deleted > 0) WriteLog("[AuditSetup] Pruned " + deleted + " old snapshot rows");
                     }
 
-                    // Find the most recent ChangeDate in snapshot to avoid duplicates
-                    DateTime since = DateTime.UtcNow.AddDays(-7);
-                    using (var cmd = new SqlCommand(
-                        "SELECT MAX(ChangeDate) FROM UsrAuditSnapshot WHERE CompanyID = @cid", conn))
+                    // Get CompanyID from AuditHistory itself (may differ from GIDesign)
+                    int auditCid = cid;
+                    using (var cmd = new SqlCommand("SELECT TOP 1 CompanyID FROM AuditHistory WHERE CompanyID > 0", conn))
                     {
-                        cmd.Parameters.AddWithValue("@cid", cid);
                         var r = cmd.ExecuteScalar();
-                        if (r != null && r != DBNull.Value)
-                        {
-                            DateTime lastDate = (DateTime)r;
-                            if (lastDate > since) since = lastDate;
-                        }
+                        if (r != null) auditCid = (int)r;
                     }
 
-                    // INSERT new audit rows from AuditHistory via the VIEW
+                    DateTime since = DateTime.UtcNow.AddDays(-7);
+
+                    // INSERT new audit rows — use AuditHistory CompanyID for source, our CompanyID for target
                     using (var cmd = new SqlCommand(@"
                         INSERT INTO UsrAuditSnapshot
                             (CompanyID, BatchID, ChangeID, ScreenID, UserID, UserName,
                              ChangeDate, Operation, TableName, CombinedKey, ModifiedFields)
-                        SELECT
-                            @cid, a.BatchID, a.ChangeID, a.ScreenID, a.UserID, u.Username,
+                        SELECT TOP 5000
+                            @targetCid, a.BatchID, a.ChangeID, a.ScreenID, a.UserID, u.Username,
                             a.ChangeDate, a.Operation, a.TableName, a.CombinedKey, a.ModifiedFields
-                        FROM UsrAuditTrailView a
-                        LEFT JOIN Users u ON a.UserID = u.PKID
-                        WHERE a.ChangeDate > @since
+                        FROM AuditHistory a
+                        LEFT JOIN Users u ON a.UserID = u.PKID AND u.CompanyID = a.CompanyID
+                        WHERE a.CompanyID = @auditCid AND a.ChangeDate > @since
                         AND NOT EXISTS (
                             SELECT 1 FROM UsrAuditSnapshot s
-                            WHERE s.CompanyID = @cid AND s.BatchID = a.BatchID AND s.ChangeID = a.ChangeID
+                            WHERE s.CompanyID = @targetCid AND s.BatchID = a.BatchID AND s.ChangeID = a.ChangeID
                         )
                         ORDER BY a.ChangeDate DESC", conn))
                     {
-                        cmd.Parameters.AddWithValue("@cid", cid);
+                        cmd.Parameters.AddWithValue("@targetCid", cid);
+                        cmd.Parameters.AddWithValue("@auditCid", auditCid);
                         cmd.Parameters.AddWithValue("@since", since);
                         cmd.CommandTimeout = 60;
                         int inserted = cmd.ExecuteNonQuery();
-                        WriteLog("[AuditSetup] Snapshot: " + inserted + " new rows (since " + since.ToString("yyyy-MM-dd HH:mm") + ")");
+                        WriteLog("[AuditSetup] Snap " + inserted + " rows, auditCid=" + auditCid + " targetCid=" + cid);
                     }
                 }
             }
