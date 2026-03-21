@@ -162,19 +162,30 @@ namespace StudioB.Setup
                         {
                             while (reader.Read())
                             {
+                                char q = '"';
                                 var sb = new StringBuilder();
-                                sb.Append("{");
-                                sb.AppendFormat(""BatchID":{0}", reader.IsDBNull(0) ? "null" : reader.GetInt64(0).ToString());
-                                sb.AppendFormat(","ChangeID":{0}", reader.IsDBNull(1) ? "null" : reader.GetInt64(1).ToString());
-                                sb.AppendFormat(","ScreenID":"{0}"", reader.IsDBNull(2) ? "" : reader.GetString(2).Trim());
-                                sb.AppendFormat(","UserID":"{0}"", reader.IsDBNull(3) ? "" : reader.GetGuid(3).ToString());
-                                sb.AppendFormat(","ChangeDate":"{0}"", reader.IsDBNull(4) ? "" : reader.GetDateTime(4).ToString("o"));
-                                sb.AppendFormat(","Operation":"{0}"", reader.IsDBNull(5) ? "" : reader.GetString(5).Trim());
-                                sb.AppendFormat(","TableName":"{0}"", reader.IsDBNull(6) ? "" : EscapeJson(reader.GetString(6)));
-                                sb.AppendFormat(","CombinedKey":"{0}"", reader.IsDBNull(7) ? "" : EscapeJson(reader.GetString(7)));
-                                sb.AppendFormat(","ModifiedFields":"{0}"", reader.IsDBNull(8) ? "" : EscapeJson(reader.GetString(8)));
-                                sb.AppendFormat(","UserName":"{0}"", reader.IsDBNull(9) ? "" : EscapeJson(reader.GetString(9)));
-                                sb.Append("}");
+                                sb.Append('{');
+                                sb.Append(q).Append("BatchID").Append(q).Append(':');
+                                sb.Append(reader.IsDBNull(0) ? "null" : reader.GetInt64(0).ToString());
+                                sb.Append(',').Append(q).Append("ChangeID").Append(q).Append(':');
+                                sb.Append(reader.IsDBNull(1) ? "null" : reader.GetInt64(1).ToString());
+                                sb.Append(',').Append(q).Append("ScreenID").Append(q).Append(':').Append(q);
+                                sb.Append(reader.IsDBNull(2) ? "" : reader.GetString(2).Trim()).Append(q);
+                                sb.Append(',').Append(q).Append("UserID").Append(q).Append(':').Append(q);
+                                sb.Append(reader.IsDBNull(3) ? "" : reader.GetGuid(3).ToString()).Append(q);
+                                sb.Append(',').Append(q).Append("ChangeDate").Append(q).Append(':').Append(q);
+                                sb.Append(reader.IsDBNull(4) ? "" : reader.GetDateTime(4).ToString("o")).Append(q);
+                                sb.Append(',').Append(q).Append("Operation").Append(q).Append(':').Append(q);
+                                sb.Append(reader.IsDBNull(5) ? "" : reader.GetString(5).Trim()).Append(q);
+                                sb.Append(',').Append(q).Append("TableName").Append(q).Append(':').Append(q);
+                                sb.Append(reader.IsDBNull(6) ? "" : EscapeJson(reader.GetString(6))).Append(q);
+                                sb.Append(',').Append(q).Append("CombinedKey").Append(q).Append(':').Append(q);
+                                sb.Append(reader.IsDBNull(7) ? "" : EscapeJson(reader.GetString(7))).Append(q);
+                                sb.Append(',').Append(q).Append("ModifiedFields").Append(q).Append(':').Append(q);
+                                sb.Append(reader.IsDBNull(8) ? "" : EscapeJson(reader.GetString(8))).Append(q);
+                                sb.Append(',').Append(q).Append("UserName").Append(q).Append(':').Append(q);
+                                sb.Append(reader.IsDBNull(9) ? "" : EscapeJson(reader.GetString(9))).Append(q);
+                                sb.Append('}');
                                 rows.Add(sb.ToString());
                             }
                         }
@@ -192,7 +203,11 @@ namespace StudioB.Setup
 
                 // URL is hardcoded — always attempt POST
 
-                string json = "{"total":" + rows.Count + ","rows":[" + string.Join(",", rows) + "],"source":"publish-snapshot","timestamp":"" + DateTime.UtcNow.ToString("o") + ""}";
+                char q = '"';
+                string json = "{" + q + "total" + q + ":" + rows.Count +
+                    "," + q + "rows" + q + ":[" + string.Join(",", rows) + "]" +
+                    "," + q + "source" + q + ":" + q + "publish-snapshot" + q +
+                    "," + q + "timestamp" + q + ":" + q + DateTime.UtcNow.ToString("o") + q + "}";
 
                 using (var wc = new WebClient())
                 {
@@ -213,7 +228,20 @@ namespace StudioB.Setup
         private static string EscapeJson(string s)
         {
             if (s == null) return "";
-            return s.Replace("\\", "\\\\").Replace(""", "\\"").Replace("\n", "\\n").Replace("\r", "\\r").Replace("\t", "\\t");
+            var sb = new StringBuilder(s.Length);
+            foreach (char c in s)
+            {
+                switch (c)
+                {
+                    case '"': sb.Append("\\\""); break;
+                    case '\\': sb.Append("\\\\"); break;
+                    case '\n': sb.Append("\\n"); break;
+                    case '\r': sb.Append("\\r"); break;
+                    case '\t': sb.Append("\\t"); break;
+                    default: sb.Append(c); break;
+                }
+            }
+            return sb.ToString();
         }
     }
 }]]></CDATA>
