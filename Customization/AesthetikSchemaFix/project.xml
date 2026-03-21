@@ -480,5 +480,4 @@ namespace StudioB.Api
 }]]></CDATA>
     </Graph>
     <File AppRelativePath="GenericInquiryScreen_UserAuditTrail.xml" />
-    <File AppRelativePath="StudioBAuditTrailApi.ashx" />
 </Customization>
