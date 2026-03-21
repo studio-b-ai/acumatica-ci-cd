@@ -18,42 +18,43 @@ namespace Aesthetik.WMS
         // Track assigned serials within the current order to prevent double-assignment
         private readonly HashSet<string> _assignedSerials = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-        protected void _(Events.RowUpdated<SOLine> e)
+        protected virtual void SOLine_RowUpdated(PXCache cache, PXRowUpdatedEventArgs e)
         {
-            if (e.Row == null) return;
+            SOLine row = (SOLine)e.Row;
+            if (row == null) return;
 
             SOOrder order = Base.Document.Current;
             if (order == null) return;
             string orderType = order.OrderType;
 
             // DEBUG: trace every RowUpdated call
-            PXTrace.WriteInformation($"[AUTO-ALLOC] RowUpdated fired. OrderType={orderType}, InvID={e.Row.InventoryID}, Qty={e.Row.OrderQty}, Lot={e.Row.LotSerialNbr}");
+            PXTrace.WriteInformation($"[AUTO-ALLOC] RowUpdated fired. OrderType={orderType}, InvID={row.InventoryID}, Qty={row.OrderQty}, Lot={row.LotSerialNbr}");
 
             // TEST: temporarily include SO for testing (remove after debug)
             if (orderType != "PC" && orderType != "FO" && orderType != "SO") return;
 
             // Guard: skip if lot already assigned
-            if (!string.IsNullOrEmpty(e.Row.LotSerialNbr))
+            if (!string.IsNullOrEmpty(row.LotSerialNbr))
             {
                 PXTrace.WriteInformation("[AUTO-ALLOC] Skipped: lot already assigned");
                 return;
             }
 
             // Need both item and qty to proceed
-            if (e.Row.InventoryID == null || (e.Row.OrderQty ?? 0) <= 0)
+            if (row.InventoryID == null || (row.OrderQty ?? 0) <= 0)
             {
-                PXTrace.WriteInformation($"[AUTO-ALLOC] Skipped: no item or qty <= 0 (InvID={e.Row.InventoryID}, Qty={e.Row.OrderQty})");
+                PXTrace.WriteInformation($"[AUTO-ALLOC] Skipped: no item or qty <= 0 (InvID={row.InventoryID}, Qty={row.OrderQty})");
                 return;
             }
 
             // Only process PIECENBR items
-            bool isPiece = IsPieceGoodsItem(e.Row.InventoryID);
+            bool isPiece = IsPieceGoodsItem(row.InventoryID);
             PXTrace.WriteInformation($"[AUTO-ALLOC] IsPieceGoodsItem={isPiece}");
             if (!isPiece) return;
 
-            decimal minQty = e.Row.OrderQty ?? 0;
-            int inventoryID = e.Row.InventoryID.Value;
-            int? siteID = e.Row.SiteID ?? order.DefaultSiteID;
+            decimal minQty = row.OrderQty ?? 0;
+            int inventoryID = row.InventoryID.Value;
+            int? siteID = row.SiteID ?? order.DefaultSiteID;
 
             if (siteID == null)
             {
@@ -62,7 +63,7 @@ namespace Aesthetik.WMS
             }
 
             // Rebuild assigned serials from other lines in this order
-            RebuildAssignedSerials(e.Row.LineNbr);
+            RebuildAssignedSerials(row.LineNbr);
 
             // Query INLotSerialStatus for available bolts
             var allSerials = SelectFrom<INLotSerialStatus>
@@ -108,7 +109,7 @@ namespace Aesthetik.WMS
             PXTrace.WriteInformation($"[AUTO-ALLOC] Selected bolt {best.LotSerialNbr} (Qty={best.QtyOnHand}, Date={best.ReceiptDate})");
 
             // TEST 1: Assign lot ONLY — no qty change.
-            Base.Transactions.Cache.SetValueExt<SOLine.lotSerialNbr>(e.Row, best.LotSerialNbr);
+            Base.Transactions.Cache.SetValueExt<SOLine.lotSerialNbr>(row, best.LotSerialNbr);
             // Base.Transactions.Cache.SetValueExt<SOLine.orderQty>(e.Row, best.QtyOnHand);
 
             PXTrace.WriteInformation($"[AUTO-ALLOC] Lot assigned: {best.LotSerialNbr}");
