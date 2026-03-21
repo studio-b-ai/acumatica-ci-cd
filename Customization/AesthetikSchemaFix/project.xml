@@ -61,5 +61,29 @@ namespace Aesthetik.SchemaFix
     }
 }</CDATA>
     </Graph>
+    <Graph ClassName="StudioBAuditInquiry" Source="#CDATA" IsNew="True" FileType="NewFile">
+        <CDATA name="Source"><![CDATA[using System;
+using PX.Data;
+using PX.Data.BQL;
+using PX.Data.BQL.Fluent;
+using PX.SM;
+
+namespace StudioB.Inquiry
+{
+    /// <summary>
+    /// Read-only inquiry graph that exposes PX.SM.AuditHistory via BQL.
+    /// Accessible via SOAP screen-based API at /Soap/SB205530.asmx
+    /// or via Contract-Based API if registered as an endpoint entity.
+    /// </summary>
+    public class StudioBAuditInquiry : PXGraph<StudioBAuditInquiry>
+    {
+        public PXSelect<
+            AuditHistory,
+            Where<AuditHistory.screenID, IsNotNull>,
+            OrderBy<Desc<AuditHistory.changeDate>>
+        > AuditRecords;
+    }
+}]]></CDATA>
+    </Graph>
     <File AppRelativePath="GenericInquiryScreen_UserAuditTrail.xml" />
 </Customization>
