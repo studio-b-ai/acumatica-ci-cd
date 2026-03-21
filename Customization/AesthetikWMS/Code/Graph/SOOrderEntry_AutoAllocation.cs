@@ -13,28 +13,21 @@ namespace Aesthetik.WMS
     {
         public static bool IsActive() => true;
 
-        public override void Initialize()
-        {
-            base.Initialize();
-            PXTrace.WriteInformation("[AUTO-ALLOC] Extension initialized — SOOrderEntry_AutoAllocation is ACTIVE");
-        }
-
         private const string PieceGoodsClassID = "PIECENBR";
 
-        // Track assigned serials within the current order to prevent double-assignment
         private readonly HashSet<string> _assignedSerials = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-        protected virtual void SOLine_RowUpdated(PXCache cache, PXRowUpdatedEventArgs e)
+        // Use FieldUpdated on OrderQty — fires when qty is changed on a detail line
+        protected void _(Events.FieldUpdated<SOLine, SOLine.orderQty> e)
         {
-            SOLine row = (SOLine)e.Row;
+            SOLine row = e.Row;
             if (row == null) return;
+
+            PXTrace.WriteInformation($"[AUTO-ALLOC] FieldUpdated<orderQty> fired. Qty={row.OrderQty}, InvID={row.InventoryID}, Lot={row.LotSerialNbr}");
 
             SOOrder order = Base.Document.Current;
             if (order == null) return;
             string orderType = order.OrderType;
-
-            // DEBUG: trace every RowUpdated call
-            PXTrace.WriteInformation($"[AUTO-ALLOC] RowUpdated fired. OrderType={orderType}, InvID={row.InventoryID}, Qty={row.OrderQty}, Lot={row.LotSerialNbr}");
 
             // TEST: temporarily include SO for testing (remove after debug)
             if (orderType != "PC" && orderType != "FO" && orderType != "SO") return;
@@ -46,17 +39,13 @@ namespace Aesthetik.WMS
                 return;
             }
 
-            // Need both item and qty to proceed
             if (row.InventoryID == null || (row.OrderQty ?? 0) <= 0)
             {
-                PXTrace.WriteInformation($"[AUTO-ALLOC] Skipped: no item or qty <= 0 (InvID={row.InventoryID}, Qty={row.OrderQty})");
+                PXTrace.WriteInformation($"[AUTO-ALLOC] Skipped: no item or qty <= 0");
                 return;
             }
 
-            // Only process PIECENBR items
-            bool isPiece = IsPieceGoodsItem(row.InventoryID);
-            PXTrace.WriteInformation($"[AUTO-ALLOC] IsPieceGoodsItem={isPiece}");
-            if (!isPiece) return;
+            if (!IsPieceGoodsItem(row.InventoryID)) return;
 
             decimal minQty = row.OrderQty ?? 0;
             int inventoryID = row.InventoryID.Value;
@@ -68,18 +57,15 @@ namespace Aesthetik.WMS
                 return;
             }
 
-            // Rebuild assigned serials from other lines in this order
             RebuildAssignedSerials(row.LineNbr);
 
-            // Query INLotSerialStatus for available bolts
             var allSerials = SelectFrom<INLotSerialStatus>
                 .Where<INLotSerialStatus.inventoryID.IsEqual<@P.AsInt>
                     .And<INLotSerialStatus.siteID.IsEqual<@P.AsInt>>>
                 .View.ReadOnly.Select(Base, inventoryID, siteID.Value);
 
-            PXTrace.WriteInformation($"[AUTO-ALLOC] Query returned {allSerials.Count} serial records for InvID={inventoryID}, SiteID={siteID}");
+            PXTrace.WriteInformation($"[AUTO-ALLOC] Found {allSerials.Count} serial records");
 
-            // Filter and score candidates
             var candidates = new List<BoltCandidate>();
 
             foreach (PXResult<INLotSerialStatus> result in allSerials)
@@ -102,23 +88,19 @@ namespace Aesthetik.WMS
                 });
             }
 
-            PXTrace.WriteInformation($"[AUTO-ALLOC] {candidates.Count} candidates after filtering (minQty={minQty})");
+            PXTrace.WriteInformation($"[AUTO-ALLOC] {candidates.Count} candidates (minQty={minQty})");
 
             if (candidates.Count == 0) return;
 
-            // Sort: FIFO first (oldest receipt date), then tightest fit
             var best = candidates
                 .OrderBy(c => c.ReceiptDate ?? DateTime.MaxValue)
                 .ThenBy(c => c.QtyOnHand)
                 .First();
 
-            PXTrace.WriteInformation($"[AUTO-ALLOC] Selected bolt {best.LotSerialNbr} (Qty={best.QtyOnHand}, Date={best.ReceiptDate})");
+            PXTrace.WriteInformation($"[AUTO-ALLOC] Assigning bolt {best.LotSerialNbr} (Qty={best.QtyOnHand})");
 
-            // TEST 1: Assign lot ONLY — no qty change.
+            // TEST 1: Assign lot ONLY — no qty change
             Base.Transactions.Cache.SetValueExt<SOLine.lotSerialNbr>(row, best.LotSerialNbr);
-            // Base.Transactions.Cache.SetValueExt<SOLine.orderQty>(e.Row, best.QtyOnHand);
-
-            PXTrace.WriteInformation($"[AUTO-ALLOC] Lot assigned: {best.LotSerialNbr}");
         }
 
         protected void _(Events.RowDeleted<SOLine> e)
@@ -149,7 +131,7 @@ namespace Aesthetik.WMS
             if (item == null) return false;
 
             string lotClass = ((InventoryItem)item).LotSerClassID;
-            PXTrace.WriteInformation($"[AUTO-ALLOC] Item LotSerClassID='{lotClass}' (expected '{PieceGoodsClassID}')");
+            PXTrace.WriteInformation($"[AUTO-ALLOC] LotSerClassID='{lotClass}'");
 
             return string.Equals(lotClass, PieceGoodsClassID, StringComparison.OrdinalIgnoreCase);
         }
