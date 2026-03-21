@@ -184,9 +184,101 @@ namespace StudioB.Setup
 
         private void CreateOrUpdateGI()
         {
-            // GI creation on UsrAuditSnapshot is safe for OData (normal custom table)
-            // Skipping GI creation for now — query via entity API or add GI manually
-            WriteLog("[AuditSetup] Snapshot table ready for OData GI");
+            try
+            {
+                var cs = ConfigurationManager.ConnectionStrings["ProjectX"];
+                if (cs == null) return;
+                using (var conn = new SqlConnection(cs.ConnectionString))
+                {
+                    conn.Open();
+                    int cid = GetCompanyId(conn);
+                    if (cid == 0) return;
+
+                    // Check if GI already exists
+                    using (var cmd = new SqlCommand("SELECT COUNT(*) FROM GIDesign WHERE Name = 'StudioBAuditSnapshot' AND CompanyID = @cid", conn))
+                    {
+                        cmd.Parameters.AddWithValue("@cid", cid);
+                        if ((int)cmd.ExecuteScalar() > 0) { WriteLog("[AuditSetup] GI exists"); return; }
+                    }
+
+                    // Get template
+                    string tid = null;
+                    using (var cmd = new SqlCommand("SELECT TOP 1 CONVERT(NVARCHAR(36), DesignID) FROM GIDesign WHERE CompanyID = @cid", conn))
+                    {
+                        cmd.Parameters.AddWithValue("@cid", cid);
+                        var r = cmd.ExecuteScalar();
+                        if (r != null && r != DBNull.Value) tid = r.ToString();
+                    }
+                    if (tid == null) return;
+
+                    string newId = Guid.NewGuid().ToString();
+
+                    // GIDesign
+                    InsertFromTemplate(conn, "GIDesign", tid, newId, cid,
+                        new[] { "Name", "ExposeViaOData", "ScreenID", "PageSize" },
+                        new[] { "'StudioBAuditSnapshot'", "1", "'GI000000'", "200" });
+
+                    // GITable
+                    InsertFromTemplate(conn, "GITable", tid, newId, cid,
+                        new[] { "Name", "Alias" },
+                        new[] { "'StudioB.DAC.UsrAuditSnapshot'", "'UsrAuditSnapshot'" });
+
+                    // GIResult — one row per field
+                    string tplR = null;
+                    using (var cmd = new SqlCommand("SELECT TOP 1 CONVERT(NVARCHAR(36), DesignID) FROM GIResult WHERE CompanyID = @cid", conn))
+                    {
+                        cmd.Parameters.AddWithValue("@cid", cid);
+                        var r = cmd.ExecuteScalar();
+                        if (r != null && r != DBNull.Value) tplR = r.ToString();
+                    }
+                    if (tplR == null) return;
+
+                    string[] fields = { "SnapshotID", "ScreenID", "UserName", "ChangeDate", "Operation", "TableName", "CombinedKey", "ModifiedFields" };
+                    for (int i = 0; i < fields.Length; i++)
+                    {
+                        InsertFromTemplate(conn, "GIResult", tplR, newId, cid,
+                            new[] { "LineNbr", "IsActive", "ObjectName", "Field", "SchemaField", "SortOrder", "IsVisible", "Width", "Caption", "QuickFilter", "FastFilter", "DefaultNav" },
+                            new[] { (i+1).ToString(), "1", "'UsrAuditSnapshot'", "'" + fields[i] + "'", "NULL", (i+1).ToString(), "1", "120", "'" + fields[i] + "'", "0", "0", "0" });
+                    }
+
+                    WriteLog("[AuditSetup] GI StudioBAuditSnapshot created, OData=1");
+                }
+            }
+            catch (Exception ex) { WriteLog("[AuditSetup] GI: " + ex.Message); }
+        }
+
+        private void InsertFromTemplate(SqlConnection conn, string table, string templateId, string newId, int cid,
+            string[] overrideNames, string[] overrideValues)
+        {
+            var cols = new System.Collections.Generic.List<string>();
+            using (var cmd = new SqlCommand(@"SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS
+                WHERE TABLE_NAME = @t AND COLUMN_NAME NOT IN ('DeletedDatabaseRecord','Tstamp')
+                AND DATA_TYPE NOT IN ('timestamp') ORDER BY ORDINAL_POSITION", conn))
+            {
+                cmd.Parameters.AddWithValue("@t", table);
+                using (var reader = cmd.ExecuteReader()) { while (reader.Read()) cols.Add(reader.GetString(0)); }
+            }
+
+            var overrides = new System.Collections.Generic.Dictionary<string, string>();
+            for (int i = 0; i < overrideNames.Length; i++) overrides[overrideNames[i]] = overrideValues[i];
+            overrides["DesignID"] = "'" + newId + "'";
+            overrides["NoteID"] = "NEWID()";
+            overrides["RowID"] = "NEWID()";
+            overrides["CreatedDateTime"] = "GETUTCDATE()";
+            overrides["LastModifiedDateTime"] = "GETUTCDATE()";
+
+            var selectParts = new System.Collections.Generic.List<string>();
+            foreach (var col in cols)
+                selectParts.Add(overrides.ContainsKey(col) ? overrides[col] : "[" + col + "]");
+
+            using (var cmd = new SqlCommand(
+                "INSERT INTO " + table + " ([" + string.Join("],[", cols) + "]) SELECT TOP 1 " +
+                string.Join(",", selectParts) + " FROM " + table + " WHERE DesignID = @tid AND CompanyID = @cid", conn))
+            {
+                cmd.Parameters.AddWithValue("@tid", templateId);
+                cmd.Parameters.AddWithValue("@cid", cid);
+                cmd.ExecuteNonQuery();
+            }
         }
 
         private int GetCompanyId(SqlConnection conn)
