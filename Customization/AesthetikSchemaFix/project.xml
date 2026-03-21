@@ -511,6 +511,58 @@ namespace StudioB.Diagnostics
 
                 // 4. Base type
                 WriteLog("[AuditReflector] BASE: " + dacType.BaseType?.FullName + " ASM: " + dacType.Assembly.GetName().Name);
+
+                // 5. GI diagnostics — check StudioBAuditSnapshot GI + data source names of working OData GIs
+                if (cs != null)
+                {
+                    using (var conn2 = new System.Data.SqlClient.SqlConnection(cs.ConnectionString))
+                    {
+                        conn2.Open();
+                        // Check UsrAuditSnapshot table exists + row count
+                        try
+                        {
+                            using (var cmd = conn2.CreateCommand())
+                            {
+                                cmd.CommandText = "SELECT COUNT(*) FROM UsrAuditSnapshot";
+                                var cnt = cmd.ExecuteScalar();
+                                WriteLog("[AuditReflector] UsrAuditSnapshot rows: " + cnt);
+                            }
+                        }
+                        catch (Exception ex3) { WriteLog("[AuditReflector] UsrAuditSnapshot: " + ex3.Message); }
+
+                        // Check GI data source names for OData-enabled GIs
+                        var giInfo = new System.Collections.Generic.List<string>();
+                        using (var cmd = conn2.CreateCommand())
+                        {
+                            cmd.CommandText = @"SELECT TOP 5 d.Name, t.Name AS DataSource, t.Alias
+                                FROM GIDesign d JOIN GITable t ON d.DesignID = t.DesignID AND d.CompanyID = t.CompanyID
+                                WHERE d.ExposeViaOData = 1 AND d.CompanyID > 0
+                                ORDER BY d.Name";
+                            using (var reader = cmd.ExecuteReader())
+                            {
+                                while (reader.Read())
+                                    giInfo.Add(reader.GetString(0) + "=" + reader.GetString(1) + "/" + reader.GetString(2));
+                            }
+                        }
+                        WriteLog("[AuditReflector] ODATA_GIS: " + string.Join(" | ", giInfo));
+
+                        // Check our GI specifically
+                        using (var cmd = conn2.CreateCommand())
+                        {
+                            cmd.CommandText = @"SELECT d.Name, d.ExposeViaOData, t.Name AS DataSource, t.Alias,
+                                (SELECT COUNT(*) FROM GIResult r WHERE r.DesignID = d.DesignID AND r.CompanyID = d.CompanyID) AS ResultCols
+                                FROM GIDesign d LEFT JOIN GITable t ON d.DesignID = t.DesignID AND d.CompanyID = t.CompanyID
+                                WHERE d.Name = 'StudioBAuditSnapshot' AND d.CompanyID > 0";
+                            using (var reader = cmd.ExecuteReader())
+                            {
+                                if (reader.Read())
+                                    WriteLog("[AuditReflector] OUR_GI: " + reader.GetString(0) + " OData=" + reader.GetInt32(1) + " Src=" + (reader.IsDBNull(2) ? "NULL" : reader.GetString(2)) + " Alias=" + (reader.IsDBNull(3) ? "NULL" : reader.GetString(3)) + " Cols=" + reader.GetInt32(4));
+                                else
+                                    WriteLog("[AuditReflector] OUR_GI: NOT FOUND");
+                            }
+                        }
+                    }
+                }
             }
             catch (Exception ex)
             {
