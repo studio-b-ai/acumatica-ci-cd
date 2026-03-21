@@ -369,77 +369,110 @@ namespace StudioB.Diagnostics
     {
         public override void UpdateDatabase()
         {
-            WriteLog("[AuditReflector] === START: Enumerating PX.SM.AuditHistory ===");
-
+            // Publish log truncates per-plugin entries. Concat everything into minimal WriteLog calls.
             try
             {
                 var dacType = typeof(PX.SM.AuditHistory);
-                WriteLog("[AuditReflector] FullName: " + dacType.FullName);
-                WriteLog("[AuditReflector] Assembly: " + dacType.Assembly.GetName().Name);
 
-                // 1. Public properties (the actual DAC field accessors)
-                WriteLog("[AuditReflector] --- PUBLIC PROPERTIES ---");
+                // 1. ALL declared properties in ONE log entry
                 var props = dacType.GetProperties(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly);
-                WriteLog("[AuditReflector] Property count: " + props.Length);
+                var propList = new System.Collections.Generic.List<string>();
                 foreach (var prop in props)
                 {
-                    string attrs = "";
+                    string pxAttr = "";
                     try
                     {
-                        var customAttrs = prop.GetCustomAttributes(false);
-                        foreach (var a in customAttrs)
+                        foreach (var a in prop.GetCustomAttributes(false))
                         {
-                            var aName = a.GetType().Name;
-                            if (aName.StartsWith("PXDB") || aName.StartsWith("PXUIField") || aName.StartsWith("PXString") || aName.StartsWith("PXInt") || aName.StartsWith("PXDate") || aName.StartsWith("PXBool") || aName.StartsWith("PXDecimal") || aName.StartsWith("PXGuid") || aName.StartsWith("PXLong") || aName.StartsWith("PXDBTimestamp"))
-                                attrs += " [" + aName + "]";
+                            var n = a.GetType().Name;
+                            if (n.StartsWith("PXDB") || n.StartsWith("PXString") || n.StartsWith("PXInt") || n.StartsWith("PXDate") || n.StartsWith("PXBool") || n.StartsWith("PXDecimal") || n.StartsWith("PXGuid") || n.StartsWith("PXLong"))
+                                pxAttr = "[" + n + "]";
                         }
                     }
                     catch { }
-                    WriteLog("[AuditReflector] PROP: " + prop.Name + " : " + prop.PropertyType.Name + attrs);
+                    propList.Add(prop.Name + "(" + prop.PropertyType.Name + ")" + pxAttr);
                 }
+                WriteLog("[AuditReflector] PROPS(" + props.Length + "): " + string.Join(" | ", propList));
 
-                // 2. Nested types (BQL field classes like "screenID", "changeDate", etc.)
-                WriteLog("[AuditReflector] --- NESTED TYPES (BQL fields) ---");
+                // 2. ALL nested BQL field classes in ONE log entry
                 var nested = dacType.GetNestedTypes(BindingFlags.Public | BindingFlags.NonPublic);
-                WriteLog("[AuditReflector] Nested type count: " + nested.Length);
-                foreach (var nt in nested)
+                var nestedList = new System.Collections.Generic.List<string>();
+                foreach (var nt in nested) nestedList.Add(nt.Name);
+                WriteLog("[AuditReflector] NESTED(" + nested.Length + "): " + string.Join(" | ", nestedList));
+
+                // 3. Also check the actual DB table by querying sys.columns
+                var cs = System.Configuration.ConfigurationManager.ConnectionStrings["ProjectX"];
+                if (cs != null)
                 {
-                    string interfaces = "";
-                    foreach (var iface in nt.GetInterfaces())
+                    using (var conn = new System.Data.SqlClient.SqlConnection(cs.ConnectionString))
                     {
-                        if (iface.Name.Contains("Field") || iface.Name.Contains("IBql"))
-                            interfaces += " :" + iface.Name;
+                        conn.Open();
+                        // Try common audit table names
+                        foreach (var tbl in new[] { "AuditHistory", "SMHistory", "ARAuditHistory", "AuditTrail", "SM205530" })
+                        {
+                            using (var cmd = conn.CreateCommand())
+                            {
+                                cmd.CommandText = "SELECT COUNT(*) FROM sys.tables WHERE name = @t";
+                                cmd.Parameters.AddWithValue("@t", tbl);
+                                var cnt = (int)cmd.ExecuteScalar();
+                                if (cnt > 0)
+                                {
+                                    // Get all columns
+                                    var colList = new System.Collections.Generic.List<string>();
+                                    using (var cmd2 = conn.CreateCommand())
+                                    {
+                                        cmd2.CommandText = "SELECT c.name + '(' + t.name + ',' + CAST(c.max_length AS VARCHAR) + ')' FROM sys.columns c JOIN sys.types t ON c.user_type_id = t.user_type_id WHERE c.object_id = OBJECT_ID(@t) ORDER BY c.column_id";
+                                        cmd2.Parameters.AddWithValue("@t", tbl);
+                                        using (var reader = cmd2.ExecuteReader())
+                                        {
+                                            while (reader.Read()) colList.Add(reader.GetString(0));
+                                        }
+                                    }
+                                    WriteLog("[AuditReflector] TABLE " + tbl + "(" + colList.Count + "): " + string.Join(" | ", colList));
+                                }
+                            }
+                        }
+
+                        // Also try: find tables with "Audit" in the name
+                        var auditTables = new System.Collections.Generic.List<string>();
+                        using (var cmd = conn.CreateCommand())
+                        {
+                            cmd.CommandText = "SELECT name FROM sys.tables WHERE name LIKE '%Audit%' OR name LIKE '%audit%' ORDER BY name";
+                            using (var reader = cmd.ExecuteReader())
+                            {
+                                while (reader.Read()) auditTables.Add(reader.GetString(0));
+                            }
+                        }
+                        WriteLog("[AuditReflector] AUDIT_TABLES: " + string.Join(" | ", auditTables));
+
+                        // Check AuditHistory table row count
+                        try
+                        {
+                            using (var cmd = conn.CreateCommand())
+                            {
+                                cmd.CommandText = "SELECT TOP 1 * FROM AuditHistory";
+                                using (var reader = cmd.ExecuteReader())
+                                {
+                                    var colNames = new System.Collections.Generic.List<string>();
+                                    for (int i = 0; i < reader.FieldCount; i++)
+                                        colNames.Add(reader.GetName(i) + "(" + reader.GetFieldType(i).Name + ")");
+                                    WriteLog("[AuditReflector] AuditHistory_READER_COLS: " + string.Join(" | ", colNames));
+                                }
+                            }
+                        }
+                        catch (Exception ex2)
+                        {
+                            WriteLog("[AuditReflector] AuditHistory_QUERY_ERR: " + ex2.Message);
+                        }
                     }
-                    WriteLog("[AuditReflector] NESTED: " + nt.Name + interfaces);
                 }
 
-                // 3. Also check inherited properties (from base classes)
-                WriteLog("[AuditReflector] --- ALL PROPERTIES (incl inherited) ---");
-                var allProps = dacType.GetProperties(BindingFlags.Public | BindingFlags.Instance);
-                WriteLog("[AuditReflector] Total property count (incl inherited): " + allProps.Length);
-                foreach (var prop in allProps)
-                {
-                    if (prop.DeclaringType != dacType)
-                        WriteLog("[AuditReflector] INHERITED: " + prop.Name + " : " + prop.PropertyType.Name + " (from " + prop.DeclaringType.Name + ")");
-                }
-
-                // 4. Check base type chain
-                WriteLog("[AuditReflector] --- BASE TYPE CHAIN ---");
-                var bt = dacType.BaseType;
-                while (bt != null)
-                {
-                    WriteLog("[AuditReflector] BASE: " + bt.FullName);
-                    bt = bt.BaseType;
-                }
-
-                WriteLog("[AuditReflector] === END: Enumeration complete ===");
+                // 4. Base type
+                WriteLog("[AuditReflector] BASE: " + dacType.BaseType?.FullName + " ASM: " + dacType.Assembly.GetName().Name);
             }
             catch (Exception ex)
             {
-                WriteLog("[AuditReflector] ERROR: " + ex.GetType().FullName + ": " + ex.Message);
-                if (ex.InnerException != null)
-                    WriteLog("[AuditReflector] Inner: " + ex.InnerException.Message);
-                WriteLog("[AuditReflector] Stack: " + ex.StackTrace);
+                WriteLog("[AuditReflector] FATAL: " + ex.GetType().FullName + ": " + ex.Message);
             }
         }
     }
