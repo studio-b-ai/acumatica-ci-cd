@@ -126,153 +126,138 @@ namespace StudioB.Setup
                     if (companyId == 0) { WriteLog("[AuditGISetup] No CompanyID found"); return; }
                     WriteLog("[AuditGISetup] CompanyID: " + companyId);
 
-                    // Check if GI already exists
-                    string designId = null;
+                    // ALWAYS delete existing GI first (idempotent recreate)
+                    string existingId = null;
                     using (var cmd = new SqlCommand(
                         "SELECT TOP 1 CONVERT(NVARCHAR(36), DesignID) FROM GIDesign WHERE Name = 'StudioBAuditTrail' AND CompanyID = @cid", conn))
                     {
                         cmd.Parameters.AddWithValue("@cid", companyId);
                         var r = cmd.ExecuteScalar();
-                        if (r != null && r != DBNull.Value) designId = r.ToString();
+                        if (r != null && r != DBNull.Value) existingId = r.ToString();
                     }
-
-                    if (designId == null)
+                    if (existingId != null)
                     {
-                        // CREATE the GI — copy structure from any existing GIDesign row
-                        designId = Guid.NewGuid().ToString();
-                        WriteLog("[AuditGISetup] Creating GI with DesignID: " + designId);
-
-                        // Get a template DesignID to copy column structure
-                        string templateId = null;
-                        using (var cmd = new SqlCommand(
-                            "SELECT TOP 1 CONVERT(NVARCHAR(36), DesignID) FROM GIDesign WHERE CompanyID = @cid AND ExposeViaOData = 1", conn))
-                        {
-                            cmd.Parameters.AddWithValue("@cid", companyId);
-                            var r = cmd.ExecuteScalar();
-                            if (r != null && r != DBNull.Value) templateId = r.ToString();
-                        }
-                        if (templateId == null)
-                        {
-                            using (var cmd2 = new SqlCommand(
-                                "SELECT TOP 1 CONVERT(NVARCHAR(36), DesignID) FROM GIDesign WHERE CompanyID = @cid", conn))
-                            {
-                                cmd2.Parameters.AddWithValue("@cid", companyId);
-                                var r2 = cmd2.ExecuteScalar();
-                                if (r2 != null && r2 != DBNull.Value) templateId = r2.ToString();
-                            }
-                        }
-                        if (templateId == null) { WriteLog("[AuditGISetup] No template GI found"); return; }
-
-                        // Copy the template row and override key fields
-                        using (var cmd = conn.CreateCommand())
-                        {
-                            // Get column names dynamically (exclude identity/computed cols)
-                            cmd.CommandText = @"
-                                SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS
-                                WHERE TABLE_NAME = 'GIDesign'
-                                AND COLUMN_NAME NOT IN ('DeletedDatabaseRecord','Tstamp')
-                                AND DATA_TYPE NOT IN ('timestamp')
-                                ORDER BY ORDINAL_POSITION";
-                            var cols = new System.Collections.Generic.List<string>();
-                            using (var reader = cmd.ExecuteReader())
-                            {
-                                while (reader.Read()) cols.Add(reader.GetString(0));
-                            }
-                            WriteLog("[AuditGISetup] GIDesign has " + cols.Count + " columns");
-
-                            // Build INSERT...SELECT with overrides
-                            var selectParts = new System.Collections.Generic.List<string>();
-                            foreach (var col in cols)
-                            {
-                                switch (col)
-                                {
-                                    case "DesignID": selectParts.Add("'" + designId + "'"); break;
-                                    case "Name": selectParts.Add("'StudioBAuditTrail'"); break;
-                                    case "ExposeViaOData": selectParts.Add("0"); break; // DISABLED until field names verified
-                                    case "ScreenID": selectParts.Add("'GI000000'"); break;
-                                    case "FilterColCount": selectParts.Add("3"); break;
-                                    case "PageSize": selectParts.Add("200"); break;
-                                    case "NoteID": selectParts.Add("NEWID()"); break;
-                                    case "RowID": selectParts.Add("NEWID()"); break;
-                                    case "CreatedDateTime": case "LastModifiedDateTime": selectParts.Add("GETUTCDATE()"); break;
-                                    default: selectParts.Add("[" + col + "]"); break;
-                                }
-                            }
-
-                            cmd.CommandText = "INSERT INTO GIDesign ([" + string.Join("],[", cols) + "]) SELECT " +
-                                string.Join(",", selectParts) + " FROM GIDesign WHERE DesignID = @tid AND CompanyID = @cid";
-                            cmd.Parameters.AddWithValue("@tid", templateId);
-                            cmd.Parameters.AddWithValue("@cid", companyId);
-                            cmd.ExecuteNonQuery();
-                            WriteLog("[AuditGISetup] GIDesign row created");
-                        }
-
-                        // Create GITable (data source) row — same pattern
-                        using (var cmd = conn.CreateCommand())
-                        {
-                            cmd.CommandText = @"
-                                SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS
-                                WHERE TABLE_NAME = 'GITable'
-                                AND COLUMN_NAME NOT IN ('DeletedDatabaseRecord','Tstamp')
-                                AND DATA_TYPE NOT IN ('timestamp')
-                                ORDER BY ORDINAL_POSITION";
-                            var cols = new System.Collections.Generic.List<string>();
-                            using (var reader = cmd.ExecuteReader()) { while (reader.Read()) cols.Add(reader.GetString(0)); }
-
-                            // Get a template GITable row
-                            string templateTableId = null;
-                            using (var cmd2 = new SqlCommand(
-                                "SELECT TOP 1 CONVERT(NVARCHAR(36), DesignID) FROM GITable WHERE DesignID = @tid AND CompanyID = @cid", conn))
-                            {
-                                cmd2.Parameters.AddWithValue("@tid", templateId);
-                                cmd2.Parameters.AddWithValue("@cid", companyId);
-                                var r = cmd2.ExecuteScalar();
-                                if (r != null && r != DBNull.Value) templateTableId = r.ToString();
-                            }
-                            if (templateTableId == null) { WriteLog("[AuditGISetup] No template GITable"); return; }
-
-                            var selectParts = new System.Collections.Generic.List<string>();
-                            foreach (var col in cols)
-                            {
-                                switch (col)
-                                {
-                                    case "DesignID": selectParts.Add("'" + designId + "'"); break;
-                                    case "Name": selectParts.Add("'PX.SM.AuditHistory'"); break;
-                                    case "Alias": selectParts.Add("'AuditHistory'"); break;
-                                    case "NoteID": case "RowID": selectParts.Add("NEWID()"); break;
-                                    case "CreatedDateTime": case "LastModifiedDateTime": selectParts.Add("GETUTCDATE()"); break;
-                                    default: selectParts.Add("[" + col + "]"); break;
-                                }
-                            }
-
-                            cmd.CommandText = "INSERT INTO GITable ([" + string.Join("],[", cols) + "]) SELECT TOP 1 " +
-                                string.Join(",", selectParts) + " FROM GITable WHERE DesignID = @tid AND CompanyID = @cid";
-                            cmd.Parameters.Clear();
-                            cmd.Parameters.AddWithValue("@tid", templateId);
-                            cmd.Parameters.AddWithValue("@cid", companyId);
-                            cmd.ExecuteNonQuery();
-                            WriteLog("[AuditGISetup] GITable row created (PX.SM.AuditHistory)");
-                        }
-                    }
-                    else
-                    {
-                        WriteLog("[AuditGISetup] GI already exists — DELETING to fix OData 500: " + designId);
-                        // DELETE the entire GI to fix OData crash
                         foreach (var tbl in new[] { "GIResult", "GISort", "GIGroupBy", "GIWhere", "GIOn", "GIFilter", "GITable", "GIDesign" })
                         {
                             using (var cmd = new SqlCommand("DELETE FROM " + tbl + " WHERE DesignID = @did AND CompanyID = @cid", conn))
                             {
-                                cmd.Parameters.AddWithValue("@did", designId);
+                                cmd.Parameters.AddWithValue("@did", existingId);
                                 cmd.Parameters.AddWithValue("@cid", companyId);
-                                int d2 = cmd.ExecuteNonQuery();
-                                if (d2 > 0) WriteLog("[AuditGISetup] Deleted " + d2 + " rows from " + tbl);
+                                cmd.ExecuteNonQuery();
                             }
                         }
-                        WriteLog("[AuditGISetup] GI fully deleted — OData should recover after app pool restart");
-                        return; // Don't recreate yet — need correct field names first
+                        WriteLog("[AuditGISetup] Deleted existing GI");
                     }
 
-                    // Delete existing result rows (clean slate)
+                    // CREATE the GI with correct field names
+                    string designId = Guid.NewGuid().ToString();
+
+                    // Get a template DesignID to copy column structure
+                    string templateId = null;
+                    using (var cmd = new SqlCommand(
+                        "SELECT TOP 1 CONVERT(NVARCHAR(36), DesignID) FROM GIDesign WHERE CompanyID = @cid AND ExposeViaOData = 1", conn))
+                    {
+                        cmd.Parameters.AddWithValue("@cid", companyId);
+                        var r = cmd.ExecuteScalar();
+                        if (r != null && r != DBNull.Value) templateId = r.ToString();
+                    }
+                    if (templateId == null)
+                    {
+                        using (var cmd2 = new SqlCommand(
+                            "SELECT TOP 1 CONVERT(NVARCHAR(36), DesignID) FROM GIDesign WHERE CompanyID = @cid", conn))
+                        {
+                            cmd2.Parameters.AddWithValue("@cid", companyId);
+                            var r2 = cmd2.ExecuteScalar();
+                            if (r2 != null && r2 != DBNull.Value) templateId = r2.ToString();
+                        }
+                    }
+                    if (templateId == null) { WriteLog("[AuditGISetup] No template GI found"); return; }
+
+                    // Copy the template GIDesign row and override key fields
+                    using (var cmd = conn.CreateCommand())
+                    {
+                        cmd.CommandText = @"
+                            SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS
+                            WHERE TABLE_NAME = 'GIDesign'
+                            AND COLUMN_NAME NOT IN ('DeletedDatabaseRecord','Tstamp')
+                            AND DATA_TYPE NOT IN ('timestamp')
+                            ORDER BY ORDINAL_POSITION";
+                        var cols = new System.Collections.Generic.List<string>();
+                        using (var reader = cmd.ExecuteReader()) { while (reader.Read()) cols.Add(reader.GetString(0)); }
+
+                        var selectParts = new System.Collections.Generic.List<string>();
+                        foreach (var col in cols)
+                        {
+                            switch (col)
+                            {
+                                case "DesignID": selectParts.Add("'" + designId + "'"); break;
+                                case "Name": selectParts.Add("'StudioBAuditTrail'"); break;
+                                case "ExposeViaOData": selectParts.Add("1"); break;
+                                case "ScreenID": selectParts.Add("'GI000000'"); break;
+                                case "FilterColCount": selectParts.Add("3"); break;
+                                case "PageSize": selectParts.Add("200"); break;
+                                case "NoteID": selectParts.Add("NEWID()"); break;
+                                case "RowID": selectParts.Add("NEWID()"); break;
+                                case "CreatedDateTime": case "LastModifiedDateTime": selectParts.Add("GETUTCDATE()"); break;
+                                default: selectParts.Add("[" + col + "]"); break;
+                            }
+                        }
+
+                        cmd.CommandText = "INSERT INTO GIDesign ([" + string.Join("],[", cols) + "]) SELECT " +
+                            string.Join(",", selectParts) + " FROM GIDesign WHERE DesignID = @tid AND CompanyID = @cid";
+                        cmd.Parameters.AddWithValue("@tid", templateId);
+                        cmd.Parameters.AddWithValue("@cid", companyId);
+                        cmd.ExecuteNonQuery();
+                        WriteLog("[AuditGISetup] GIDesign created, OData=1");
+                    }
+
+                    // Create GITable (data source) row
+                    using (var cmd = conn.CreateCommand())
+                    {
+                        cmd.CommandText = @"
+                            SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS
+                            WHERE TABLE_NAME = 'GITable'
+                            AND COLUMN_NAME NOT IN ('DeletedDatabaseRecord','Tstamp')
+                            AND DATA_TYPE NOT IN ('timestamp')
+                            ORDER BY ORDINAL_POSITION";
+                        var cols = new System.Collections.Generic.List<string>();
+                        using (var reader = cmd.ExecuteReader()) { while (reader.Read()) cols.Add(reader.GetString(0)); }
+
+                        string templateTableId = null;
+                        using (var cmd2 = new SqlCommand(
+                            "SELECT TOP 1 CONVERT(NVARCHAR(36), DesignID) FROM GITable WHERE DesignID = @tid AND CompanyID = @cid", conn))
+                        {
+                            cmd2.Parameters.AddWithValue("@tid", templateId);
+                            cmd2.Parameters.AddWithValue("@cid", companyId);
+                            var r = cmd2.ExecuteScalar();
+                            if (r != null && r != DBNull.Value) templateTableId = r.ToString();
+                        }
+                        if (templateTableId == null) { WriteLog("[AuditGISetup] No template GITable"); return; }
+
+                        var selectParts = new System.Collections.Generic.List<string>();
+                        foreach (var col in cols)
+                        {
+                            switch (col)
+                            {
+                                case "DesignID": selectParts.Add("'" + designId + "'"); break;
+                                case "Name": selectParts.Add("'PX.SM.AuditHistory'"); break;
+                                case "Alias": selectParts.Add("'AuditHistory'"); break;
+                                case "NoteID": case "RowID": selectParts.Add("NEWID()"); break;
+                                case "CreatedDateTime": case "LastModifiedDateTime": selectParts.Add("GETUTCDATE()"); break;
+                                default: selectParts.Add("[" + col + "]"); break;
+                            }
+                        }
+
+                        cmd.CommandText = "INSERT INTO GITable ([" + string.Join("],[", cols) + "]) SELECT TOP 1 " +
+                            string.Join(",", selectParts) + " FROM GITable WHERE DesignID = @tid AND CompanyID = @cid";
+                        cmd.Parameters.Clear();
+                        cmd.Parameters.AddWithValue("@tid", templateId);
+                        cmd.Parameters.AddWithValue("@cid", companyId);
+                        cmd.ExecuteNonQuery();
+                        WriteLog("[AuditGISetup] GITable created (PX.SM.AuditHistory)");
+                    }
+
+                    // Insert result columns (clean slate)
                     using (var cmd = new SqlCommand("DELETE FROM GIResult WHERE DesignID = @did AND CompanyID = @cid", conn))
                     {
                         cmd.Parameters.AddWithValue("@did", designId);
@@ -282,7 +267,7 @@ namespace StudioB.Setup
                     }
 
                     // Insert result columns using INSERT...SELECT from template
-                    string[] fields = { "ScreenID", "Operation", "ChangeDate", "UserName", "TableName", "BatchID", "ChangeID", "CombinedKey", "ModifiedFields" };
+                    string[] fields = { "BatchID", "ChangeID", "ScreenID", "UserID", "ChangeDate", "Operation", "TableName", "CombinedKey", "ModifiedFields" };
 
                     // Get GIResult column names
                     var resultCols = new System.Collections.Generic.List<string>();
@@ -337,10 +322,9 @@ namespace StudioB.Setup
                             cmd.Parameters.AddWithValue("@cid", companyId);
                             cmd.ExecuteNonQuery();
                         }
-                        WriteLog("[AuditGISetup] Added: " + fields[i]);
                     }
 
-                    WriteLog("[AuditGISetup] Complete — " + fields.Length + " columns, OData enabled");
+                    WriteLog("[AuditGISetup] Complete — " + fields.Length + " result cols, OData=1, DesignID=" + designId);
                 }
             }
             catch (Exception ex)
