@@ -256,14 +256,20 @@ namespace StudioB.Setup
                     }
                     else
                     {
-                        WriteLog("[AuditGISetup] GI already exists: " + designId);
-                        // DISABLE OData until field names are verified
-                        using (var cmd = new SqlCommand("UPDATE GIDesign SET ExposeViaOData = 0 WHERE DesignID = @did AND CompanyID = @cid", conn))
+                        WriteLog("[AuditGISetup] GI already exists — DELETING to fix OData 500: " + designId);
+                        // DELETE the entire GI to fix OData crash
+                        foreach (var tbl in new[] { "GIResult", "GISort", "GIGroupBy", "GIWhere", "GIOn", "GIFilter", "GITable", "GIDesign" })
                         {
-                            cmd.Parameters.AddWithValue("@did", designId);
-                            cmd.Parameters.AddWithValue("@cid", companyId);
-                            cmd.ExecuteNonQuery();
+                            using (var cmd = new SqlCommand("DELETE FROM " + tbl + " WHERE DesignID = @did AND CompanyID = @cid", conn))
+                            {
+                                cmd.Parameters.AddWithValue("@did", designId);
+                                cmd.Parameters.AddWithValue("@cid", companyId);
+                                int d2 = cmd.ExecuteNonQuery();
+                                if (d2 > 0) WriteLog("[AuditGISetup] Deleted " + d2 + " rows from " + tbl);
+                            }
                         }
+                        WriteLog("[AuditGISetup] GI fully deleted — OData should recover after app pool restart");
+                        return; // Don't recreate yet — need correct field names first
                     }
 
                     // Delete existing result rows (clean slate)
