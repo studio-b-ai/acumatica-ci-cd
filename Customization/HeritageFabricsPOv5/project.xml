@@ -1,18 +1,17 @@
-<?xml version='1.0' encoding='utf-8'?>
 <Customization level="1" description="SO + AR custom fields, Compliance Hold, AutoAlloc webhook, Pay Link, PO Receipt Labels, GIs" product-version="24.208">
     <Graph ClassName="CustomerExt" Source="#CDATA" IsNew="True" FileType="NewFile">
-        <CDATA name="Source">using PX.Data;
+        <CDATA name="Source"><![CDATA[using PX.Data;
 using PX.Data.BQL;
 using PX.Objects.AR;
 
 namespace HeritageFabrics.AR
 {
-    public sealed class CustomerExt : PXCacheExtension&lt;Customer&gt;
+    public sealed class CustomerExt : PXCacheExtension<Customer>
     {
-        public static bool IsActive() =&gt; true;
+        public static bool IsActive() => true;
 
         #region UsrDisablePayLink
-        public abstract class usrDisablePayLink : BqlBool.Field&lt;usrDisablePayLink&gt; { }
+        public abstract class usrDisablePayLink : BqlBool.Field<usrDisablePayLink> { }
 
         [PXDBBool]
         [PXDefault(false, PersistingCheck = PXPersistingCheck.Nothing)]
@@ -20,21 +19,21 @@ namespace HeritageFabrics.AR
         public bool? UsrDisablePayLink { get; set; }
         #endregion
     }
-}</CDATA>
+}]]></CDATA>
     </Graph>
     <Graph ClassName="ARInvoiceEntry_PayLink_Extension" Source="#CDATA" IsNew="True" FileType="NewFile">
-        <CDATA name="Source">using System;
+        <CDATA name="Source"><![CDATA[using System;
 using PX.Data;
 using PX.Objects.AR;
 using PX.Objects.CS;
 
 namespace HeritageFabrics.AR
 {
-    public class ARInvoiceEntry_PayLink_Extension : PXGraphExtension&lt;ARInvoiceEntry&gt;
+    public class ARInvoiceEntry_PayLink_Extension : PXGraphExtension<ARInvoiceEntry>
     {
-        public static bool IsActive() =&gt; true;
+        public static bool IsActive() => true;
 
-        protected void _(Events.RowSelected&lt;ARInvoice&gt; e)
+        protected void _(Events.RowSelected<ARInvoice> e)
         {
             if (e.Row == null) return;
 
@@ -55,45 +54,45 @@ namespace HeritageFabrics.AR
         {
             if (customerID == null) return false;
 
-            Customer customer = PXSelect&lt;Customer,
-                Where&lt;Customer.bAccountID, Equal&lt;Required&lt;Customer.bAccountID&gt;&gt;&gt;&gt;
+            Customer customer = PXSelect<Customer,
+                Where<Customer.bAccountID, Equal<Required<Customer.bAccountID>>>>
                 .Select(Base, customerID);
 
             if (customer == null) return false;
 
             // Check 1: Explicit per-customer flag
-            CustomerExt ext = customer.GetExtension&lt;CustomerExt&gt;();
+            CustomerExt ext = customer.GetExtension<CustomerExt>();
             if (ext?.UsrDisablePayLink == true) return true;
 
             // Check 2: Terms description contains "factor"
             if (!string.IsNullOrEmpty(customer.TermsID))
             {
-                Terms terms = PXSelect&lt;Terms,
-                    Where&lt;Terms.termsID, Equal&lt;Required&lt;Terms.termsID&gt;&gt;&gt;&gt;
+                Terms terms = PXSelect<Terms,
+                    Where<Terms.termsID, Equal<Required<Terms.termsID>>>>
                     .Select(Base, customer.TermsID);
-                if (terms?.Descr != null &amp;&amp;
-                    terms.Descr.IndexOf("factor", StringComparison.OrdinalIgnoreCase) &gt;= 0)
+                if (terms?.Descr != null &&
+                    terms.Descr.IndexOf("factor", StringComparison.OrdinalIgnoreCase) >= 0)
                     return true;
             }
 
             return false;
         }
     }
-}</CDATA>
+}]]></CDATA>
     </Graph>
     <Graph ClassName="SOOrderExt" Source="#CDATA" IsNew="True" FileType="NewFile">
-        <CDATA name="Source">using PX.Data;
+        <CDATA name="Source"><![CDATA[using PX.Data;
 using PX.Data.BQL;
 using PX.Objects.SO;
 
 namespace HeritageFabrics.SO
 {
-    public sealed class SOOrderExt : PXCacheExtension&lt;SOOrder&gt;
+    public sealed class SOOrderExt : PXCacheExtension<SOOrder>
     {
-        public static bool IsActive() =&gt; true;
+        public static bool IsActive() => true;
 
         #region UsrHubSpotDealId
-        public abstract class usrHubSpotDealId : BqlString.Field&lt;usrHubSpotDealId&gt; { }
+        public abstract class usrHubSpotDealId : BqlString.Field<usrHubSpotDealId> { }
 
         [PXDBString(50, IsUnicode = true)]
         [PXUIField(DisplayName = "HubSpot Order ID", Visibility = PXUIVisibility.SelectorVisible)]
@@ -101,7 +100,7 @@ namespace HeritageFabrics.SO
         #endregion
 
         #region UsrWMSStatus
-        public abstract class usrWMSStatus : BqlString.Field&lt;usrWMSStatus&gt; { }
+        public abstract class usrWMSStatus : BqlString.Field<usrWMSStatus> { }
 
         [PXDBString(20, IsUnicode = true)]
         [PXDefault(PersistingCheck = PXPersistingCheck.Nothing)]
@@ -114,7 +113,7 @@ namespace HeritageFabrics.SO
         #endregion
 
         #region UsrComplianceHold
-        public abstract class usrComplianceHold : BqlBool.Field&lt;usrComplianceHold&gt; { }
+        public abstract class usrComplianceHold : BqlBool.Field<usrComplianceHold> { }
 
         [PXDBBool]
         [PXDefault(false, PersistingCheck = PXPersistingCheck.Nothing)]
@@ -123,29 +122,29 @@ namespace HeritageFabrics.SO
         #endregion
 
         #region UsrComplianceHoldReason
-        public abstract class usrComplianceHoldReason : BqlString.Field&lt;usrComplianceHoldReason&gt; { }
+        public abstract class usrComplianceHoldReason : BqlString.Field<usrComplianceHoldReason> { }
 
         [PXDBString(500, IsUnicode = true)]
         [PXUIField(DisplayName = "Compliance Hold Reason", Enabled = false)]
         public string UsrComplianceHoldReason { get; set; }
         #endregion
     }
-}</CDATA>
+}]]></CDATA>
     </Graph>
     <Graph ClassName="SOOrderEntry_ComplianceHold" Source="#CDATA" IsNew="True" FileType="NewFile">
-        <CDATA name="Source">using PX.Data;
+        <CDATA name="Source"><![CDATA[using PX.Data;
 using PX.Objects.SO;
 
 namespace HeritageFabrics.SO
 {
-    public class SOOrderEntry_ComplianceHold : PXGraphExtension&lt;SOOrderEntry&gt;
+    public class SOOrderEntry_ComplianceHold : PXGraphExtension<SOOrderEntry>
     {
-        public static bool IsActive() =&gt; true;
+        public static bool IsActive() => true;
 
-        protected void _(Events.RowSelected&lt;SOOrder&gt; e)
+        protected void _(Events.RowSelected<SOOrder> e)
         {
             if (e.Row == null) return;
-            SOOrderExt ext = e.Row.GetExtension&lt;SOOrderExt&gt;();
+            SOOrderExt ext = e.Row.GetExtension<SOOrderExt>();
             bool held = ext?.UsrComplianceHold == true;
 
             Base.Actions["CreateShipmentIssue"]?.SetEnabled(!held);
@@ -154,7 +153,7 @@ namespace HeritageFabrics.SO
 
             if (held)
             {
-                e.Cache.RaiseExceptionHandling&lt;SOOrderExt.usrComplianceHold&gt;(
+                e.Cache.RaiseExceptionHandling<SOOrderExt.usrComplianceHold>(
                     e.Row, true,
                     new PXSetPropertyException(
                         "This order is on compliance hold. Review and acknowledge requirements before shipping.",
@@ -162,7 +161,7 @@ namespace HeritageFabrics.SO
             }
         }
 
-        public PXAction&lt;SOOrder&gt; AcknowledgeComplianceHold;
+        public PXAction<SOOrder> AcknowledgeComplianceHold;
 
         [PXButton(CommitChanges = true)]
         [PXUIField(DisplayName = "Acknowledge Compliance", MapEnableRights = PXCacheRights.Update)]
@@ -171,19 +170,19 @@ namespace HeritageFabrics.SO
             SOOrder order = Base.Document.Current;
             if (order == null) return;
 
-            SOOrderExt ext = order.GetExtension&lt;SOOrderExt&gt;();
+            SOOrderExt ext = order.GetExtension<SOOrderExt>();
             if (ext?.UsrComplianceHold != true) return;
 
-            Base.Document.Cache.SetValueExt&lt;SOOrderExt.usrComplianceHold&gt;(order, false);
-            Base.Document.Cache.SetValueExt&lt;SOOrderExt.usrComplianceHoldReason&gt;(order, null);
+            Base.Document.Cache.SetValueExt<SOOrderExt.usrComplianceHold>(order, false);
+            Base.Document.Cache.SetValueExt<SOOrderExt.usrComplianceHoldReason>(order, null);
             Base.Document.Update(order);
             Base.Actions.PressSave();
         }
     }
-}</CDATA>
+}]]></CDATA>
     </Graph>
     <Graph ClassName="POReceiptEntry_Extension" Source="#CDATA" IsNew="True" FileType="NewFile">
-        <CDATA name="Source">using System;
+        <CDATA name="Source"><![CDATA[using System;
 using System.Collections;
 using System.Collections.Generic;
 using PX.Data;
@@ -192,11 +191,11 @@ using PX.Objects.PO;
 
 namespace HeritageFabrics.PO
 {
-    public class POReceiptEntry_Extension : PXGraphExtension&lt;POReceiptEntry&gt;
+    public class POReceiptEntry_Extension : PXGraphExtension<POReceiptEntry>
     {
-        public static bool IsActive() =&gt; true;
+        public static bool IsActive() => true;
 
-        public PXAction&lt;POReceipt&gt; PrintPurchaseReceiptLabels;
+        public PXAction<POReceipt> PrintPurchaseReceiptLabels;
         [PXButton(CommitChanges = true)]
         [PXUIField(DisplayName = "Print Purchase Receipt Labels", MapEnableRights = PXCacheRights.Select)]
         protected virtual IEnumerable printPurchaseReceiptLabels(PXAdapter adapter)
@@ -205,7 +204,7 @@ namespace HeritageFabrics.PO
             var row = Base.Caches[typeof(POReceipt)].Current as POReceipt;
             if (row != null)
             {
-                var parameters = new Dictionary&lt;string, string&gt;();
+                var parameters = new Dictionary<string, string>();
                 parameters["ReceiptType"] = row.ReceiptType?.ToString();
                 parameters["ReceiptNbr"] = row.ReceiptNbr?.ToString();
                 ex = new PXReportRequiredException(parameters, "PO646901");
@@ -214,10 +213,10 @@ namespace HeritageFabrics.PO
             return adapter.Get();
         }
     }
-}</CDATA>
+}]]></CDATA>
     </Graph>
     <Graph ClassName="SOOrderEntry_AutoAlloc_Extension" Source="#CDATA" IsNew="True" FileType="NewFile">
-        <CDATA name="Source">using System;
+        <CDATA name="Source"><![CDATA[using System;
 using System.IO;
 using System.Net;
 using System.Text;
@@ -227,7 +226,7 @@ using PX.Objects.SO;
 
 namespace HeritageFabrics.SO
 {
-    /// &lt;summary&gt;
+    /// <summary>
     /// Fires a webhook when PC/CO sales orders are created, taken off hold,
     /// or have their backorder flag cleared. The webhook triggers lot-level
     /// inventory auto-allocation in the external allocation service.
@@ -235,10 +234,10 @@ namespace HeritageFabrics.SO
     /// Uses RowPersisted (post-commit) + ThreadPool for fire-and-forget HTTP.
     /// Failures are silently swallowed — the allocation service has its own
     /// retry/cron mechanism.
-    /// &lt;/summary&gt;
-    public class SOOrderEntry_AutoAlloc_Extension : PXGraphExtension&lt;SOOrderEntry&gt;
+    /// </summary>
+    public class SOOrderEntry_AutoAlloc_Extension : PXGraphExtension<SOOrderEntry>
     {
-        public static bool IsActive() =&gt; true;
+        public static bool IsActive() => true;
 
         private const string WebhookUrl =
             "https://webhook-router-production-e161.up.railway.app/webhook/acumatica/allocate-inventory";
@@ -247,10 +246,10 @@ namespace HeritageFabrics.SO
 
         #region Event Handlers
 
-        /// &lt;summary&gt;
+        /// <summary>
         /// After a new order is persisted (inserted), fire trigger=entry.
-        /// &lt;/summary&gt;
-        protected void _(Events.RowPersisted&lt;SOOrder&gt; e)
+        /// </summary>
+        protected void _(Events.RowPersisted<SOOrder> e)
         {
             if (e.TranStatus != PXTranStatus.Completed) return;
             if (e.Row == null) return;
@@ -260,22 +259,22 @@ namespace HeritageFabrics.SO
             FireWebhook(e.Row.OrderType, e.Row.OrderNbr, "entry");
         }
 
-        /// &lt;summary&gt;
+        /// <summary>
         /// When Hold changes to false, fire trigger=remove-hold.
-        /// &lt;/summary&gt;
-        protected void _(Events.FieldUpdated&lt;SOOrder, SOOrder.hold&gt; e)
+        /// </summary>
+        protected void _(Events.FieldUpdated<SOOrder, SOOrder.hold> e)
         {
             if (e.Row == null) return;
             bool? oldVal = (bool?)e.OldValue;
             bool? newVal = e.Row.Hold;
 
             // Only fire when transitioning from held (true) to not-held (false)
-            if (oldVal == true &amp;&amp; newVal == false &amp;&amp; IsAllocOrderType(e.Row.OrderType))
+            if (oldVal == true && newVal == false && IsAllocOrderType(e.Row.OrderType))
             {
                 // Defer until after persist completes
-                Base.RowPersisted.AddHandler&lt;SOOrder&gt;((cache, args) =&gt;
+                Base.RowPersisted.AddHandler<SOOrder>((cache, args) =>
                 {
-                    if (args.TranStatus == PXTranStatus.Completed &amp;&amp;
+                    if (args.TranStatus == PXTranStatus.Completed &&
                         args.Operation == PXDBOperation.Update)
                     {
                         FireWebhook(e.Row.OrderType, e.Row.OrderNbr, "remove-hold");
@@ -284,22 +283,22 @@ namespace HeritageFabrics.SO
             }
         }
 
-        /// &lt;summary&gt;
+        /// <summary>
         /// When BackOrder (IsBackOrder? or similar) changes to false,
         /// fire trigger=remove-backorder.
         /// SOOrder.backOrdered is the standard field for back-order status.
-        /// &lt;/summary&gt;
-        protected void _(Events.FieldUpdated&lt;SOOrder, SOOrder.backOrdered&gt; e)
+        /// </summary>
+        protected void _(Events.FieldUpdated<SOOrder, SOOrder.backOrdered> e)
         {
             if (e.Row == null) return;
             bool? oldVal = (bool?)e.OldValue;
             bool? newVal = e.Row.BackOrdered;
 
-            if (oldVal == true &amp;&amp; newVal == false &amp;&amp; IsAllocOrderType(e.Row.OrderType))
+            if (oldVal == true && newVal == false && IsAllocOrderType(e.Row.OrderType))
             {
-                Base.RowPersisted.AddHandler&lt;SOOrder&gt;((cache, args) =&gt;
+                Base.RowPersisted.AddHandler<SOOrder>((cache, args) =>
                 {
-                    if (args.TranStatus == PXTranStatus.Completed &amp;&amp;
+                    if (args.TranStatus == PXTranStatus.Completed &&
                         args.Operation == PXDBOperation.Update)
                     {
                         FireWebhook(e.Row.OrderType, e.Row.OrderNbr, "remove-backorder");
@@ -323,18 +322,18 @@ namespace HeritageFabrics.SO
             return false;
         }
 
-        /// &lt;summary&gt;
+        /// <summary>
         /// Fire-and-forget HTTP POST to the allocation webhook.
         /// Runs on a ThreadPool thread so it never blocks the Acumatica transaction.
         /// Failures are logged via PXTrace but never thrown.
-        /// &lt;/summary&gt;
+        /// </summary>
         private static void FireWebhook(string orderType, string orderNbr, string trigger)
         {
             string json = string.Format(
                 "{{\"OrderType\":\"{0}\",\"OrderNbr\":\"{1}\",\"Trigger\":\"{2}\"}}",
                 EscapeJson(orderType), EscapeJson(orderNbr), EscapeJson(trigger));
 
-            ThreadPool.QueueUserWorkItem((_) =&gt;
+            ThreadPool.QueueUserWorkItem((_) =>
             {
                 try
                 {
@@ -371,52 +370,8 @@ namespace HeritageFabrics.SO
 
         #endregion
     }
-}</CDATA>
+}]]></CDATA>
     </Graph>
-    <Page path="~/pages/po/po301000.aspx">
-        <PXFormView ID="form" ParentId="phF_form" TypeFullName="PX.Web.UI.PXFormView">
-            <Children Key="Template">
-                <AddItem>
-                    <PXTextEdit TypeFullName="PX.Web.UI.PXTextEdit">
-                        <Prop Key="Virtual:ApplyStylesheetSkin" />
-                        <Prop Key="ID" Value="edUsrContainerRef" />
-                        <Prop Key="DataField" Value="UsrContainerRef" />
-                    </PXTextEdit>
-                </AddItem>
-                <AddItem>
-                    <PXDateTimeEdit TypeFullName="PX.Web.UI.PXDateTimeEdit">
-                        <Prop Key="Virtual:ApplyStylesheetSkin" />
-                        <Prop Key="ID" Value="edUsrExpArrivalDate" />
-                        <Prop Key="DataField" Value="UsrExpArrivalDate" />
-                        <Prop Key="CommitChanges" Value="True" />
-                    </PXDateTimeEdit>
-                </AddItem>
-                <AddItem>
-                    <PXDateTimeEdit TypeFullName="PX.Web.UI.PXDateTimeEdit">
-                        <Prop Key="Virtual:ApplyStylesheetSkin" />
-                        <Prop Key="ID" Value="edUsrActArrivalDate" />
-                        <Prop Key="DataField" Value="UsrActArrivalDate" />
-                    </PXDateTimeEdit>
-                </AddItem>
-            </Children>
-        </PXFormView>
-        <PXGridLevel DataMember="Transactions" ParentId="phG_tab_Items#0_grid_Levels#0" TypeFullName="PX.Web.UI.PXGridLevel">
-            <Children Key="Columns">
-                <AddItem>
-                    <PXGridColumn TypeFullName="PX.Web.UI.PXGridColumn">
-                        <Prop Key="DataField" Value="UsrExpArrivalDate" />
-                        <Prop Key="Width" Value="120px" />
-                    </PXGridColumn>
-                </AddItem>
-                <AddItem>
-                    <PXGridColumn TypeFullName="PX.Web.UI.PXGridColumn">
-                        <Prop Key="DataField" Value="UsrActArrivalDate" />
-                        <Prop Key="Width" Value="120px" />
-                    </PXGridColumn>
-                </AddItem>
-            </Children>
-        </PXGridLevel>
-    </Page>
     <Page path="~/pages/so/so301000.aspx">
         <PXFormView ID="form" ParentId="phF_form" TypeFullName="PX.Web.UI.PXFormView">
             <Children Key="Template">
