@@ -189,11 +189,11 @@ namespace StudioB.Setup
                             -- Get a template row from any existing GI to discover required columns
                             -- Then insert our row with the same structure but our field values
                             DECLARE @cid INT = (SELECT TOP 1 CompanyID FROM GIDesign WHERE DesignID = @did AND CompanyID > 0);
-                            INSERT INTO GIResult (CompanyID, DesignID, RowID, LineNbr, IsActive, ObjectName, Field, SchemaField,
+                            INSERT INTO GIResult (CompanyID, DesignID, RowID, NoteID, LineNbr, IsActive, ObjectName, Field, SchemaField,
                                                   SortOrder, IsVisible, Width, QuickFilter, FastFilter, DefaultNav, Caption,
                                                   CreatedByID, CreatedByScreenID, CreatedDateTime,
                                                   LastModifiedByID, LastModifiedByScreenID, LastModifiedDateTime)
-                            VALUES (@cid, @did, NEWID(), @lineNbr, 1, 'AuditHistory', @field, NULL,
+                            VALUES (@cid, @did, NEWID(), NEWID(), @lineNbr, 1, 'AuditHistory', @field, NULL,
                                     @sortOrder, 1, 120, 0, 0, 0, @caption,
                                     '00000000-0000-0000-0000-000000000000', 'SM208000', GETUTCDATE(),
                                     '00000000-0000-0000-0000-000000000000', 'SM208000', GETUTCDATE()
