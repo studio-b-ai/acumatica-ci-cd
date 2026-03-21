@@ -185,11 +185,14 @@ namespace StudioB.Setup
                     {
                         using (var cmd = new SqlCommand(@"
                             INSERT INTO GIResult (CompanyID, DesignID, RowID, LineNbr, IsActive, ObjectName, Field, SchemaField,
-                                                  SortOrder, IsVisible, Width, QuickFilter, FastFilter, DefaultNav, Caption)
+                                                  SortOrder, IsVisible, Width, QuickFilter, FastFilter, DefaultNav, Caption,
+                                                  CreatedByID, CreatedDateTime, LastModifiedByID, LastModifiedDateTime)
                             VALUES (
                                 (SELECT TOP 1 CompanyID FROM GIDesign WHERE DesignID = @did AND CompanyID > 0),
                                 @did, NEWID(), @lineNbr, 1, 'AuditHistory', @field, @field,
-                                @sortOrder, 1, 120, 0, 0, 0, @caption
+                                @sortOrder, 1, 120, 0, 0, 0, @caption,
+                                '00000000-0000-0000-0000-000000000000', GETUTCDATE(),
+                                '00000000-0000-0000-0000-000000000000', GETUTCDATE()
                             )", conn))
                         {
                             cmd.Parameters.AddWithValue("@did", designId);
