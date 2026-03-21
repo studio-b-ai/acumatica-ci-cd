@@ -36,7 +36,9 @@ namespace Aesthetik.SchemaFix
                         "IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('SOOrder') AND name = 'UsrComplianceHold') ALTER TABLE SOOrder ADD UsrComplianceHold bit NULL",
                         "IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('SOOrder') AND name = 'UsrComplianceHoldReason') ALTER TABLE SOOrder ADD UsrComplianceHoldReason nvarchar(500) NULL",
                         "IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('BAccount') AND name = 'UsrDisablePayLink') ALTER TABLE BAccount ADD UsrDisablePayLink bit NULL",
-                        "IF NOT EXISTS (SELECT 1 FROM sys.views WHERE name = 'UsrAuditTrailView') EXEC('CREATE VIEW UsrAuditTrailView AS SELECT CompanyID, BatchID, ChangeID, ScreenID, UserID, ChangeDate, Operation, TableName, CombinedKey, ModifiedFields FROM AuditHistory')"
+                        "IF NOT EXISTS (SELECT 1 FROM sys.views WHERE name = 'UsrAuditTrailView') EXEC('CREATE VIEW UsrAuditTrailView AS SELECT CompanyID, BatchID, ChangeID, ScreenID, UserID, ChangeDate, Operation, TableName, CombinedKey, ModifiedFields FROM AuditHistory')",
+                        "IF NOT EXISTS (SELECT 1 FROM sys.tables WHERE name = 'UsrAuditSnapshot') EXEC('CREATE TABLE UsrAuditSnapshot (CompanyID INT NOT NULL DEFAULT 2, SnapshotID INT IDENTITY(1,1) NOT NULL, BatchID BIGINT NULL, ChangeID BIGINT NULL, ScreenID CHAR(8) NULL, UserID UNIQUEIDENTIFIER NULL, UserName NVARCHAR(256) NULL, ChangeDate DATETIME NULL, Operation CHAR(1) NULL, TableName VARCHAR(100) NULL, CombinedKey NVARCHAR(796) NULL, ModifiedFields NVARCHAR(MAX) NULL, SnapshotDate DATETIME NOT NULL DEFAULT GETUTCDATE(), tstamp TIMESTAMP NOT NULL, CONSTRAINT PK_UsrAuditSnapshot PRIMARY KEY (CompanyID, SnapshotID))')",
+                        "IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_UsrAuditSnapshot_ChangeDate') EXEC('CREATE INDEX IX_UsrAuditSnapshot_ChangeDate ON UsrAuditSnapshot (CompanyID, ChangeDate DESC)')"
                     };
                     foreach (string sql in statements)
                     {
@@ -66,24 +68,17 @@ namespace Aesthetik.SchemaFix
         <CDATA name="Source"><![CDATA[using System;
 using System.Configuration;
 using System.Data.SqlClient;
-using System.Net;
-using System.Text;
-using System.Collections.Generic;
 using Customization;
 
 namespace StudioB.Setup
 {
-    /// <summary>
-    /// Dual-purpose plugin:
-    /// 1. Cleanup: deletes broken StudioBAuditTrail GI (OData incompatible)
-    /// 2. Snapshot: queries AuditHistory via SQL, POSTs last 7 days to studiob-api
-    /// </summary>
     public class StudioBAuditGISetup : CustomizationPlugin
     {
         public override void UpdateDatabase()
         {
             CleanupBrokenGI();
-            PostAuditSnapshot();
+            RefreshAuditSnapshot();
+            CreateOrUpdateGI();
         }
 
         private void CleanupBrokenGI()
@@ -95,22 +90,17 @@ namespace StudioB.Setup
                 using (var conn = new SqlConnection(cs.ConnectionString))
                 {
                     conn.Open();
-                    int companyId = 0;
-                    using (var cmd = new SqlCommand("SELECT TOP 1 CompanyID FROM GIDesign WHERE CompanyID > 0", conn))
-                    {
-                        var r = cmd.ExecuteScalar();
-                        if (r != null) companyId = (int)r;
-                    }
-                    if (companyId == 0) return;
+                    int cid = GetCompanyId(conn);
+                    if (cid == 0) return;
 
                     string designId = null;
-                    using (var cmd = new SqlCommand("SELECT TOP 1 CONVERT(NVARCHAR(36), DesignID) FROM GIDesign WHERE Name = 'StudioBAuditTrail' AND CompanyID = @cid", conn))
+                    using (var cmd = new SqlCommand(
+                        "SELECT TOP 1 CONVERT(NVARCHAR(36), DesignID) FROM GIDesign WHERE Name = 'StudioBAuditTrail' AND CompanyID = @cid", conn))
                     {
-                        cmd.Parameters.AddWithValue("@cid", companyId);
+                        cmd.Parameters.AddWithValue("@cid", cid);
                         var r = cmd.ExecuteScalar();
                         if (r != null && r != DBNull.Value) designId = r.ToString();
                     }
-
                     if (designId != null)
                     {
                         foreach (var tbl in new[] { "GIResult", "GISort", "GIGroupBy", "GIWhere", "GIOn", "GIFilter", "GITable", "GIDesign" })
@@ -118,130 +108,198 @@ namespace StudioB.Setup
                             using (var cmd = new SqlCommand("DELETE FROM " + tbl + " WHERE DesignID = @did AND CompanyID = @cid", conn))
                             {
                                 cmd.Parameters.AddWithValue("@did", designId);
-                                cmd.Parameters.AddWithValue("@cid", companyId);
+                                cmd.Parameters.AddWithValue("@cid", cid);
                                 cmd.ExecuteNonQuery();
                             }
                         }
-                        WriteLog("[AuditGISetup] Deleted broken GI");
+                        WriteLog("[AuditSetup] Deleted old GI");
                     }
                 }
             }
-            catch (Exception ex)
-            {
-                WriteLog("[AuditGISetup] GI cleanup error: " + ex.Message);
-            }
+            catch (Exception ex) { WriteLog("[AuditSetup] GI cleanup: " + ex.Message); }
         }
 
-        private void PostAuditSnapshot()
+        private void RefreshAuditSnapshot()
         {
             try
             {
                 var cs = ConfigurationManager.ConnectionStrings["ProjectX"];
                 if (cs == null) return;
-
-                var rows = new List<string>();
                 using (var conn = new SqlConnection(cs.ConnectionString))
                 {
                     conn.Open();
+                    int cid = GetCompanyId(conn);
 
-                    // Get last 7 days of audit history
-                    using (var cmd = new SqlCommand(@"
-                        SELECT TOP 5000
-                            a.BatchID, a.ChangeID, a.ScreenID, a.UserID,
-                            a.ChangeDate, a.Operation, a.TableName,
-                            a.CombinedKey, a.ModifiedFields,
-                            u.Username
-                        FROM UsrAuditTrailView a
-                        LEFT JOIN Users u ON a.UserID = u.PKID
-                        WHERE a.ChangeDate >= @since
-                        ORDER BY a.ChangeDate DESC", conn))
+                    // Delete old snapshot rows (older than 30 days)
+                    using (var cmd = new SqlCommand(
+                        "DELETE FROM UsrAuditSnapshot WHERE CompanyID = @cid AND ChangeDate < @cutoff", conn))
                     {
-                        cmd.Parameters.AddWithValue("@since", DateTime.UtcNow.AddDays(-7));
-                        cmd.CommandTimeout = 30;
-                        using (var reader = cmd.ExecuteReader())
+                        cmd.Parameters.AddWithValue("@cid", cid);
+                        cmd.Parameters.AddWithValue("@cutoff", DateTime.UtcNow.AddDays(-30));
+                        int deleted = cmd.ExecuteNonQuery();
+                        if (deleted > 0) WriteLog("[AuditSetup] Pruned " + deleted + " old snapshot rows");
+                    }
+
+                    // Find the most recent ChangeDate in snapshot to avoid duplicates
+                    DateTime since = DateTime.UtcNow.AddDays(-7);
+                    using (var cmd = new SqlCommand(
+                        "SELECT MAX(ChangeDate) FROM UsrAuditSnapshot WHERE CompanyID = @cid", conn))
+                    {
+                        cmd.Parameters.AddWithValue("@cid", cid);
+                        var r = cmd.ExecuteScalar();
+                        if (r != null && r != DBNull.Value)
                         {
-                            while (reader.Read())
-                            {
-                                char q = '"';
-                                var sb = new StringBuilder();
-                                sb.Append('{');
-                                sb.Append(q).Append("BatchID").Append(q).Append(':');
-                                sb.Append(reader.IsDBNull(0) ? "null" : reader.GetInt64(0).ToString());
-                                sb.Append(',').Append(q).Append("ChangeID").Append(q).Append(':');
-                                sb.Append(reader.IsDBNull(1) ? "null" : reader.GetInt64(1).ToString());
-                                sb.Append(',').Append(q).Append("ScreenID").Append(q).Append(':').Append(q);
-                                sb.Append(reader.IsDBNull(2) ? "" : reader.GetString(2).Trim()).Append(q);
-                                sb.Append(',').Append(q).Append("UserID").Append(q).Append(':').Append(q);
-                                sb.Append(reader.IsDBNull(3) ? "" : reader.GetGuid(3).ToString()).Append(q);
-                                sb.Append(',').Append(q).Append("ChangeDate").Append(q).Append(':').Append(q);
-                                sb.Append(reader.IsDBNull(4) ? "" : reader.GetDateTime(4).ToString("o")).Append(q);
-                                sb.Append(',').Append(q).Append("Operation").Append(q).Append(':').Append(q);
-                                sb.Append(reader.IsDBNull(5) ? "" : reader.GetString(5).Trim()).Append(q);
-                                sb.Append(',').Append(q).Append("TableName").Append(q).Append(':').Append(q);
-                                sb.Append(reader.IsDBNull(6) ? "" : EscapeJson(reader.GetString(6))).Append(q);
-                                sb.Append(',').Append(q).Append("CombinedKey").Append(q).Append(':').Append(q);
-                                sb.Append(reader.IsDBNull(7) ? "" : EscapeJson(reader.GetString(7))).Append(q);
-                                sb.Append(',').Append(q).Append("ModifiedFields").Append(q).Append(':').Append(q);
-                                sb.Append(reader.IsDBNull(8) ? "" : EscapeJson(reader.GetString(8))).Append(q);
-                                sb.Append(',').Append(q).Append("UserName").Append(q).Append(':').Append(q);
-                                sb.Append(reader.IsDBNull(9) ? "" : EscapeJson(reader.GetString(9))).Append(q);
-                                sb.Append('}');
-                                rows.Add(sb.ToString());
-                            }
+                            DateTime lastDate = (DateTime)r;
+                            if (lastDate > since) since = lastDate;
                         }
                     }
+
+                    // INSERT new audit rows from AuditHistory via the VIEW
+                    using (var cmd = new SqlCommand(@"
+                        INSERT INTO UsrAuditSnapshot
+                            (CompanyID, BatchID, ChangeID, ScreenID, UserID, UserName,
+                             ChangeDate, Operation, TableName, CombinedKey, ModifiedFields)
+                        SELECT
+                            @cid, a.BatchID, a.ChangeID, a.ScreenID, a.UserID, u.Username,
+                            a.ChangeDate, a.Operation, a.TableName, a.CombinedKey, a.ModifiedFields
+                        FROM UsrAuditTrailView a
+                        LEFT JOIN Users u ON a.UserID = u.PKID
+                        WHERE a.ChangeDate > @since
+                        AND NOT EXISTS (
+                            SELECT 1 FROM UsrAuditSnapshot s
+                            WHERE s.CompanyID = @cid AND s.BatchID = a.BatchID AND s.ChangeID = a.ChangeID
+                        )
+                        ORDER BY a.ChangeDate DESC", conn))
+                    {
+                        cmd.Parameters.AddWithValue("@cid", cid);
+                        cmd.Parameters.AddWithValue("@since", since);
+                        cmd.CommandTimeout = 60;
+                        int inserted = cmd.ExecuteNonQuery();
+                        WriteLog("[AuditSetup] Snapshot: " + inserted + " new rows (since " + since.ToString("yyyy-MM-dd HH:mm") + ")");
+                    }
                 }
-
-                WriteLog("[AuditGISetup] Queried " + rows.Count + " audit rows (7 days)");
-
-                if (rows.Count == 0) return;
-
-                // POST to studiob-api
-                string apiUrl = "https://webhook-router-production-e161.up.railway.app/webhook/audit-snapshot";
-                // Auth: webhook-router validates via route-level token if configured
-                string apiToken = "";
-
-                // URL is hardcoded — always attempt POST
-
-                string json = "{" + (char)34 + "total" + (char)34 + ":" + rows.Count +
-                    "," + (char)34 + "rows" + (char)34 + ":[" + string.Join(",", rows) + "]" +
-                    "," + (char)34 + "source" + (char)34 + ":" + (char)34 + "publish-snapshot" + (char)34 +
-                    "," + (char)34 + "timestamp" + (char)34 + ":" + (char)34 + DateTime.UtcNow.ToString("o") + (char)34 + "}";
-
-                using (var wc = new WebClient())
-                {
-                    wc.Headers.Add("Content-Type", "application/json");
-                    if (!string.IsNullOrEmpty(apiToken))
-                        wc.Headers.Add("Authorization", "Bearer " + apiToken);
-                    wc.UploadString(apiUrl, "POST", json);
-                }
-
-                WriteLog("[AuditGISetup] Posted " + rows.Count + " rows to studiob-api");
             }
-            catch (Exception ex)
-            {
-                WriteLog("[AuditGISetup] Snapshot error: " + ex.Message);
-            }
+            catch (Exception ex) { WriteLog("[AuditSetup] Snapshot: " + ex.Message); }
         }
 
-        private static string EscapeJson(string s)
+        private void CreateOrUpdateGI()
         {
-            if (s == null) return "";
-            var sb = new StringBuilder(s.Length);
-            foreach (char c in s)
-            {
-                switch (c)
-                {
-                    case '"': sb.Append("\\\""); break;
-                    case '\\': sb.Append("\\\\"); break;
-                    case '\n': sb.Append("\\n"); break;
-                    case '\r': sb.Append("\\r"); break;
-                    case '\t': sb.Append("\\t"); break;
-                    default: sb.Append(c); break;
-                }
-            }
-            return sb.ToString();
+            // GI creation on UsrAuditSnapshot is safe for OData (normal custom table)
+            // Skipping GI creation for now — query via entity API or add GI manually
+            WriteLog("[AuditSetup] Snapshot table ready for OData GI");
         }
+
+        private int GetCompanyId(SqlConnection conn)
+        {
+            using (var cmd = new SqlCommand("SELECT TOP 1 CompanyID FROM GIDesign WHERE CompanyID > 0", conn))
+            {
+                var r = cmd.ExecuteScalar();
+                return r != null ? (int)r : 0;
+            }
+        }
+    }
+}]]></CDATA>
+    </Graph>
+    <Graph ClassName="UsrAuditSnapshotDAC" Source="#CDATA" IsNew="True" FileType="NewFile">
+        <CDATA name="Source"><![CDATA[using System;
+using PX.Data;
+using PX.Data.BQL;
+
+namespace StudioB.DAC
+{
+    [Serializable]
+    [PXCacheName("Audit Snapshot")]
+    public class UsrAuditSnapshot : PXBqlTable, IBqlTable
+    {
+        #region SnapshotID
+        public abstract class snapshotID : BqlInt.Field<snapshotID> { }
+        [PXDBIdentity(IsKey = true)]
+        [PXUIField(DisplayName = "Snapshot ID")]
+        public virtual int? SnapshotID { get; set; }
+        #endregion
+
+        #region BatchID
+        public abstract class batchID : BqlLong.Field<batchID> { }
+        [PXDBLong]
+        [PXUIField(DisplayName = "Batch ID")]
+        public virtual long? BatchID { get; set; }
+        #endregion
+
+        #region ChangeID
+        public abstract class changeID : BqlLong.Field<changeID> { }
+        [PXDBLong]
+        [PXUIField(DisplayName = "Change ID")]
+        public virtual long? ChangeID { get; set; }
+        #endregion
+
+        #region ScreenID
+        public abstract class screenID : BqlString.Field<screenID> { }
+        [PXDBString(8, IsFixed = true)]
+        [PXUIField(DisplayName = "Screen ID")]
+        public virtual string ScreenID { get; set; }
+        #endregion
+
+        #region UserID
+        public abstract class userID : BqlGuid.Field<userID> { }
+        [PXDBGuid]
+        [PXUIField(DisplayName = "User ID")]
+        public virtual Guid? UserID { get; set; }
+        #endregion
+
+        #region UserName
+        public abstract class userName : BqlString.Field<userName> { }
+        [PXDBString(256)]
+        [PXUIField(DisplayName = "User Name")]
+        public virtual string UserName { get; set; }
+        #endregion
+
+        #region ChangeDate
+        public abstract class changeDate : BqlDateTime.Field<changeDate> { }
+        [PXDBDate(PreserveTime = true)]
+        [PXUIField(DisplayName = "Change Date")]
+        public virtual DateTime? ChangeDate { get; set; }
+        #endregion
+
+        #region Operation
+        public abstract class operation : BqlString.Field<operation> { }
+        [PXDBString(1, IsFixed = true)]
+        [PXUIField(DisplayName = "Operation")]
+        public virtual string Operation { get; set; }
+        #endregion
+
+        #region TableName
+        public abstract class tableName : BqlString.Field<tableName> { }
+        [PXDBString(100)]
+        [PXUIField(DisplayName = "Table Name")]
+        public virtual string TableName { get; set; }
+        #endregion
+
+        #region CombinedKey
+        public abstract class combinedKey : BqlString.Field<combinedKey> { }
+        [PXDBString(796)]
+        [PXUIField(DisplayName = "Combined Key")]
+        public virtual string CombinedKey { get; set; }
+        #endregion
+
+        #region ModifiedFields
+        public abstract class modifiedFields : BqlString.Field<modifiedFields> { }
+        [PXDBString(IsUnicode = true)]
+        [PXUIField(DisplayName = "Modified Fields")]
+        public virtual string ModifiedFields { get; set; }
+        #endregion
+
+        #region SnapshotDate
+        public abstract class snapshotDate : BqlDateTime.Field<snapshotDate> { }
+        [PXDBDate(PreserveTime = true)]
+        [PXUIField(DisplayName = "Snapshot Date")]
+        public virtual DateTime? SnapshotDate { get; set; }
+        #endregion
+
+        #region Tstamp
+        public abstract class tstamp : IBqlField { }
+        [PXDBTimestamp]
+        public virtual byte[] Tstamp { get; set; }
+        #endregion
     }
 }]]></CDATA>
     </Graph>
