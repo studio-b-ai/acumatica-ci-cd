@@ -3307,4 +3307,21 @@ namespace Aesthetik.WMS
     }
 }]]></CDATA>
     </Graph>
+    <Sql Name="AesthetikWMS_SOOrder_BAccount_Columns_v1" Script="#CDATA">
+        <CDATA name="Script"><![CDATA[
+-- SOOrder compliance hold fields (from AesthetikERP consolidation)
+IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('SOOrder') AND name = 'UsrComplianceHold')
+  ALTER TABLE SOOrder ADD UsrComplianceHold bit NULL;
+IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('SOOrder') AND name = 'UsrComplianceHoldReason')
+  ALTER TABLE SOOrder ADD UsrComplianceHoldReason nvarchar(500) NULL;
+-- SOOrder HubSpot + WMS fields
+IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('SOOrder') AND name = 'UsrHubSpotDealId')
+  ALTER TABLE SOOrder ADD UsrHubSpotDealId nvarchar(50) NULL;
+IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('SOOrder') AND name = 'UsrWMSStatus')
+  ALTER TABLE SOOrder ADD UsrWMSStatus nvarchar(20) NULL;
+-- BAccount pay link disable field
+IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('BAccount') AND name = 'UsrDisablePayLink')
+  ALTER TABLE BAccount ADD UsrDisablePayLink bit NULL;
+]]></CDATA>
+    </Sql>
 </Customization>
