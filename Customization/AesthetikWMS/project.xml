@@ -3403,9 +3403,9 @@ namespace Aesthetik.WMS
             // Filter and score candidates
             var candidates = new List<BoltCandidate>();
 
-            foreach (PXResult<INLotSerialStatus> row in allSerials)
+            foreach (PXResult<INLotSerialStatus> result in allSerials)
             {
-                var status = (INLotSerialStatus)row;
+                var status = (INLotSerialStatus)result;
                 if (status.LotSerialNbr == null) continue;
                 if (_assignedSerials.Contains(status.LotSerialNbr)) continue;
 
