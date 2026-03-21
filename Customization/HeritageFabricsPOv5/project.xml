@@ -1,0 +1,469 @@
+<?xml version='1.0' encoding='utf-8'?>
+<Customization level="1" description="SO + AR custom fields, Compliance Hold, AutoAlloc webhook, Pay Link, PO Receipt Labels, GIs" product-version="24.208">
+    <Graph ClassName="CustomerExt" Source="#CDATA" IsNew="True" FileType="NewFile">
+        <CDATA name="Source">using PX.Data;
+using PX.Data.BQL;
+using PX.Objects.AR;
+
+namespace HeritageFabrics.AR
+{
+    public sealed class CustomerExt : PXCacheExtension&lt;Customer&gt;
+    {
+        public static bool IsActive() =&gt; true;
+
+        #region UsrDisablePayLink
+        public abstract class usrDisablePayLink : BqlBool.Field&lt;usrDisablePayLink&gt; { }
+
+        [PXDBBool]
+        [PXDefault(false, PersistingCheck = PXPersistingCheck.Nothing)]
+        [PXUIField(DisplayName = "Exclude from Payment Link Processing")]
+        public bool? UsrDisablePayLink { get; set; }
+        #endregion
+    }
+}</CDATA>
+    </Graph>
+    <Graph ClassName="ARInvoiceEntry_PayLink_Extension" Source="#CDATA" IsNew="True" FileType="NewFile">
+        <CDATA name="Source">using System;
+using PX.Data;
+using PX.Objects.AR;
+using PX.Objects.CS;
+
+namespace HeritageFabrics.AR
+{
+    public class ARInvoiceEntry_PayLink_Extension : PXGraphExtension&lt;ARInvoiceEntry&gt;
+    {
+        public static bool IsActive() =&gt; true;
+
+        protected void _(Events.RowSelected&lt;ARInvoice&gt; e)
+        {
+            if (e.Row == null) return;
+
+            bool disablePayLink = IsPayLinkDisabledForCustomer(e.Row.CustomerID);
+
+            if (Base.Actions.Contains("SendPaymentLink"))
+            {
+                Base.Actions["SendPaymentLink"].SetEnabled(!disablePayLink);
+            }
+
+            if (Base.Actions.Contains("sendPayLink"))
+            {
+                Base.Actions["sendPayLink"].SetEnabled(!disablePayLink);
+            }
+        }
+
+        private bool IsPayLinkDisabledForCustomer(int? customerID)
+        {
+            if (customerID == null) return false;
+
+            Customer customer = PXSelect&lt;Customer,
+                Where&lt;Customer.bAccountID, Equal&lt;Required&lt;Customer.bAccountID&gt;&gt;&gt;&gt;
+                .Select(Base, customerID);
+
+            if (customer == null) return false;
+
+            // Check 1: Explicit per-customer flag
+            CustomerExt ext = customer.GetExtension&lt;CustomerExt&gt;();
+            if (ext?.UsrDisablePayLink == true) return true;
+
+            // Check 2: Terms description contains "factor"
+            if (!string.IsNullOrEmpty(customer.TermsID))
+            {
+                Terms terms = PXSelect&lt;Terms,
+                    Where&lt;Terms.termsID, Equal&lt;Required&lt;Terms.termsID&gt;&gt;&gt;&gt;
+                    .Select(Base, customer.TermsID);
+                if (terms?.Descr != null &amp;&amp;
+                    terms.Descr.IndexOf("factor", StringComparison.OrdinalIgnoreCase) &gt;= 0)
+                    return true;
+            }
+
+            return false;
+        }
+    }
+}</CDATA>
+    </Graph>
+    <Graph ClassName="SOOrderExt" Source="#CDATA" IsNew="True" FileType="NewFile">
+        <CDATA name="Source">using PX.Data;
+using PX.Data.BQL;
+using PX.Objects.SO;
+
+namespace HeritageFabrics.SO
+{
+    public sealed class SOOrderExt : PXCacheExtension&lt;SOOrder&gt;
+    {
+        public static bool IsActive() =&gt; true;
+
+        #region UsrHubSpotDealId
+        public abstract class usrHubSpotDealId : BqlString.Field&lt;usrHubSpotDealId&gt; { }
+
+        [PXDBString(50, IsUnicode = true)]
+        [PXUIField(DisplayName = "HubSpot Order ID", Visibility = PXUIVisibility.SelectorVisible)]
+        public string UsrHubSpotDealId { get; set; }
+        #endregion
+
+        #region UsrWMSStatus
+        public abstract class usrWMSStatus : BqlString.Field&lt;usrWMSStatus&gt; { }
+
+        [PXDBString(20, IsUnicode = true)]
+        [PXDefault(PersistingCheck = PXPersistingCheck.Nothing)]
+        [PXUIField(DisplayName = "WMS Status")]
+        [PXStringList(
+            new[] { "N", "A", "P", "F", "K", "S" },
+            new[] { "Not Started", "Allocated", "Picking", "Finishing", "Packed", "Shipped" }
+        )]
+        public string UsrWMSStatus { get; set; }
+        #endregion
+
+        #region UsrComplianceHold
+        public abstract class usrComplianceHold : BqlBool.Field&lt;usrComplianceHold&gt; { }
+
+        [PXDBBool]
+        [PXDefault(false, PersistingCheck = PXPersistingCheck.Nothing)]
+        [PXUIField(DisplayName = "Compliance Hold", Enabled = false)]
+        public bool? UsrComplianceHold { get; set; }
+        #endregion
+
+        #region UsrComplianceHoldReason
+        public abstract class usrComplianceHoldReason : BqlString.Field&lt;usrComplianceHoldReason&gt; { }
+
+        [PXDBString(500, IsUnicode = true)]
+        [PXUIField(DisplayName = "Compliance Hold Reason", Enabled = false)]
+        public string UsrComplianceHoldReason { get; set; }
+        #endregion
+    }
+}</CDATA>
+    </Graph>
+    <Graph ClassName="SOOrderEntry_ComplianceHold" Source="#CDATA" IsNew="True" FileType="NewFile">
+        <CDATA name="Source">using PX.Data;
+using PX.Objects.SO;
+
+namespace HeritageFabrics.SO
+{
+    public class SOOrderEntry_ComplianceHold : PXGraphExtension&lt;SOOrderEntry&gt;
+    {
+        public static bool IsActive() =&gt; true;
+
+        protected void _(Events.RowSelected&lt;SOOrder&gt; e)
+        {
+            if (e.Row == null) return;
+            SOOrderExt ext = e.Row.GetExtension&lt;SOOrderExt&gt;();
+            bool held = ext?.UsrComplianceHold == true;
+
+            Base.Actions["CreateShipmentIssue"]?.SetEnabled(!held);
+            AcknowledgeComplianceHold.SetVisible(held);
+            AcknowledgeComplianceHold.SetEnabled(held);
+
+            if (held)
+            {
+                e.Cache.RaiseExceptionHandling&lt;SOOrderExt.usrComplianceHold&gt;(
+                    e.Row, true,
+                    new PXSetPropertyException(
+                        "This order is on compliance hold. Review and acknowledge requirements before shipping.",
+                        PXErrorLevel.Warning));
+            }
+        }
+
+        public PXAction&lt;SOOrder&gt; AcknowledgeComplianceHold;
+
+        [PXButton(CommitChanges = true)]
+        [PXUIField(DisplayName = "Acknowledge Compliance", MapEnableRights = PXCacheRights.Update)]
+        protected void acknowledgeComplianceHold()
+        {
+            SOOrder order = Base.Document.Current;
+            if (order == null) return;
+
+            SOOrderExt ext = order.GetExtension&lt;SOOrderExt&gt;();
+            if (ext?.UsrComplianceHold != true) return;
+
+            Base.Document.Cache.SetValueExt&lt;SOOrderExt.usrComplianceHold&gt;(order, false);
+            Base.Document.Cache.SetValueExt&lt;SOOrderExt.usrComplianceHoldReason&gt;(order, null);
+            Base.Document.Update(order);
+            Base.Actions.PressSave();
+        }
+    }
+}</CDATA>
+    </Graph>
+    <Graph ClassName="POReceiptEntry_Extension" Source="#CDATA" IsNew="True" FileType="NewFile">
+        <CDATA name="Source">using System;
+using System.Collections;
+using System.Collections.Generic;
+using PX.Data;
+using PX.Data.BQL;
+using PX.Objects.PO;
+
+namespace HeritageFabrics.PO
+{
+    public class POReceiptEntry_Extension : PXGraphExtension&lt;POReceiptEntry&gt;
+    {
+        public static bool IsActive() =&gt; true;
+
+        public PXAction&lt;POReceipt&gt; PrintPurchaseReceiptLabels;
+        [PXButton(CommitChanges = true)]
+        [PXUIField(DisplayName = "Print Purchase Receipt Labels", MapEnableRights = PXCacheRights.Select)]
+        protected virtual IEnumerable printPurchaseReceiptLabels(PXAdapter adapter)
+        {
+            PXReportRequiredException ex = null;
+            var row = Base.Caches[typeof(POReceipt)].Current as POReceipt;
+            if (row != null)
+            {
+                var parameters = new Dictionary&lt;string, string&gt;();
+                parameters["ReceiptType"] = row.ReceiptType?.ToString();
+                parameters["ReceiptNbr"] = row.ReceiptNbr?.ToString();
+                ex = new PXReportRequiredException(parameters, "PO646901");
+            }
+            if (ex != null) throw ex;
+            return adapter.Get();
+        }
+    }
+}</CDATA>
+    </Graph>
+    <Graph ClassName="SOOrderEntry_AutoAlloc_Extension" Source="#CDATA" IsNew="True" FileType="NewFile">
+        <CDATA name="Source">using System;
+using System.IO;
+using System.Net;
+using System.Text;
+using System.Threading;
+using PX.Data;
+using PX.Objects.SO;
+
+namespace HeritageFabrics.SO
+{
+    /// &lt;summary&gt;
+    /// Fires a webhook when PC/CO sales orders are created, taken off hold,
+    /// or have their backorder flag cleared. The webhook triggers lot-level
+    /// inventory auto-allocation in the external allocation service.
+    ///
+    /// Uses RowPersisted (post-commit) + ThreadPool for fire-and-forget HTTP.
+    /// Failures are silently swallowed — the allocation service has its own
+    /// retry/cron mechanism.
+    /// &lt;/summary&gt;
+    public class SOOrderEntry_AutoAlloc_Extension : PXGraphExtension&lt;SOOrderEntry&gt;
+    {
+        public static bool IsActive() =&gt; true;
+
+        private const string WebhookUrl =
+            "https://webhook-router-production-e161.up.railway.app/webhook/acumatica/allocate-inventory";
+
+        private static readonly string[] AllocOrderTypes = new[] { "PC", "CO" };
+
+        #region Event Handlers
+
+        /// &lt;summary&gt;
+        /// After a new order is persisted (inserted), fire trigger=entry.
+        /// &lt;/summary&gt;
+        protected void _(Events.RowPersisted&lt;SOOrder&gt; e)
+        {
+            if (e.TranStatus != PXTranStatus.Completed) return;
+            if (e.Row == null) return;
+            if (e.Operation != PXDBOperation.Insert) return;
+            if (!IsAllocOrderType(e.Row.OrderType)) return;
+
+            FireWebhook(e.Row.OrderType, e.Row.OrderNbr, "entry");
+        }
+
+        /// &lt;summary&gt;
+        /// When Hold changes to false, fire trigger=remove-hold.
+        /// &lt;/summary&gt;
+        protected void _(Events.FieldUpdated&lt;SOOrder, SOOrder.hold&gt; e)
+        {
+            if (e.Row == null) return;
+            bool? oldVal = (bool?)e.OldValue;
+            bool? newVal = e.Row.Hold;
+
+            // Only fire when transitioning from held (true) to not-held (false)
+            if (oldVal == true &amp;&amp; newVal == false &amp;&amp; IsAllocOrderType(e.Row.OrderType))
+            {
+                // Defer until after persist completes
+                Base.RowPersisted.AddHandler&lt;SOOrder&gt;((cache, args) =&gt;
+                {
+                    if (args.TranStatus == PXTranStatus.Completed &amp;&amp;
+                        args.Operation == PXDBOperation.Update)
+                    {
+                        FireWebhook(e.Row.OrderType, e.Row.OrderNbr, "remove-hold");
+                    }
+                });
+            }
+        }
+
+        /// &lt;summary&gt;
+        /// When BackOrder (IsBackOrder? or similar) changes to false,
+        /// fire trigger=remove-backorder.
+        /// SOOrder.backOrdered is the standard field for back-order status.
+        /// &lt;/summary&gt;
+        protected void _(Events.FieldUpdated&lt;SOOrder, SOOrder.backOrdered&gt; e)
+        {
+            if (e.Row == null) return;
+            bool? oldVal = (bool?)e.OldValue;
+            bool? newVal = e.Row.BackOrdered;
+
+            if (oldVal == true &amp;&amp; newVal == false &amp;&amp; IsAllocOrderType(e.Row.OrderType))
+            {
+                Base.RowPersisted.AddHandler&lt;SOOrder&gt;((cache, args) =&gt;
+                {
+                    if (args.TranStatus == PXTranStatus.Completed &amp;&amp;
+                        args.Operation == PXDBOperation.Update)
+                    {
+                        FireWebhook(e.Row.OrderType, e.Row.OrderNbr, "remove-backorder");
+                    }
+                });
+            }
+        }
+
+        #endregion
+
+        #region Helpers
+
+        private static bool IsAllocOrderType(string orderType)
+        {
+            if (string.IsNullOrEmpty(orderType)) return false;
+            foreach (string t in AllocOrderTypes)
+            {
+                if (string.Equals(t, orderType, StringComparison.OrdinalIgnoreCase))
+                    return true;
+            }
+            return false;
+        }
+
+        /// &lt;summary&gt;
+        /// Fire-and-forget HTTP POST to the allocation webhook.
+        /// Runs on a ThreadPool thread so it never blocks the Acumatica transaction.
+        /// Failures are logged via PXTrace but never thrown.
+        /// &lt;/summary&gt;
+        private static void FireWebhook(string orderType, string orderNbr, string trigger)
+        {
+            string json = string.Format(
+                "{{\"OrderType\":\"{0}\",\"OrderNbr\":\"{1}\",\"Trigger\":\"{2}\"}}",
+                EscapeJson(orderType), EscapeJson(orderNbr), EscapeJson(trigger));
+
+            ThreadPool.QueueUserWorkItem((_) =&gt;
+            {
+                try
+                {
+                    HttpWebRequest req = (HttpWebRequest)WebRequest.Create(WebhookUrl);
+                    req.Method = "POST";
+                    req.ContentType = "application/json";
+                    req.Timeout = 10000; // 10s timeout
+
+                    byte[] data = Encoding.UTF8.GetBytes(json);
+                    req.ContentLength = data.Length;
+                    using (Stream stream = req.GetRequestStream())
+                    {
+                        stream.Write(data, 0, data.Length);
+                    }
+                    using (HttpWebResponse resp = (HttpWebResponse)req.GetResponse())
+                    {
+                        PXTrace.WriteInformation(
+                            $"[AutoAlloc] Webhook fired: {trigger} {orderType}-{orderNbr} → HTTP {(int)resp.StatusCode}");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    PXTrace.WriteError(
+                        $"[AutoAlloc] Webhook failed: {trigger} {orderType}-{orderNbr} → {ex.Message}");
+                }
+            });
+        }
+
+        private static string EscapeJson(string s)
+        {
+            if (s == null) return "";
+            return s.Replace("\\", "\\\\").Replace("\"", "\\\"");
+        }
+
+        #endregion
+    }
+}</CDATA>
+    </Graph>
+    <Page path="~/pages/po/po301000.aspx">
+        <PXFormView ID="form" ParentId="phF_form" TypeFullName="PX.Web.UI.PXFormView">
+            <Children Key="Template">
+                <AddItem>
+                    <PXTextEdit TypeFullName="PX.Web.UI.PXTextEdit">
+                        <Prop Key="Virtual:ApplyStylesheetSkin" />
+                        <Prop Key="ID" Value="edUsrContainerRef" />
+                        <Prop Key="DataField" Value="UsrContainerRef" />
+                    </PXTextEdit>
+                </AddItem>
+                <AddItem>
+                    <PXDateTimeEdit TypeFullName="PX.Web.UI.PXDateTimeEdit">
+                        <Prop Key="Virtual:ApplyStylesheetSkin" />
+                        <Prop Key="ID" Value="edUsrExpArrivalDate" />
+                        <Prop Key="DataField" Value="UsrExpArrivalDate" />
+                        <Prop Key="CommitChanges" Value="True" />
+                    </PXDateTimeEdit>
+                </AddItem>
+                <AddItem>
+                    <PXDateTimeEdit TypeFullName="PX.Web.UI.PXDateTimeEdit">
+                        <Prop Key="Virtual:ApplyStylesheetSkin" />
+                        <Prop Key="ID" Value="edUsrActArrivalDate" />
+                        <Prop Key="DataField" Value="UsrActArrivalDate" />
+                    </PXDateTimeEdit>
+                </AddItem>
+            </Children>
+        </PXFormView>
+        <PXGridLevel DataMember="Transactions" ParentId="phG_tab_Items#0_grid_Levels#0" TypeFullName="PX.Web.UI.PXGridLevel">
+            <Children Key="Columns">
+                <AddItem>
+                    <PXGridColumn TypeFullName="PX.Web.UI.PXGridColumn">
+                        <Prop Key="DataField" Value="UsrExpArrivalDate" />
+                        <Prop Key="Width" Value="120px" />
+                    </PXGridColumn>
+                </AddItem>
+                <AddItem>
+                    <PXGridColumn TypeFullName="PX.Web.UI.PXGridColumn">
+                        <Prop Key="DataField" Value="UsrActArrivalDate" />
+                        <Prop Key="Width" Value="120px" />
+                    </PXGridColumn>
+                </AddItem>
+            </Children>
+        </PXGridLevel>
+    </Page>
+    <Page path="~/pages/so/so301000.aspx">
+        <PXFormView ID="form" ParentId="phF_form" TypeFullName="PX.Web.UI.PXFormView">
+            <Children Key="Template">
+                <AddItem>
+                    <PXTextEdit TypeFullName="PX.Web.UI.PXTextEdit">
+                        <Prop Key="Virtual:ApplyStylesheetSkin" />
+                        <Prop Key="ID" Value="edUsrHubSpotDealId" />
+                        <Prop Key="DataField" Value="UsrHubSpotDealId" />
+                    </PXTextEdit>
+                </AddItem>
+                <AddItem>
+                    <PXDropDown TypeFullName="PX.Web.UI.PXDropDown">
+                        <Prop Key="Virtual:ApplyStylesheetSkin" />
+                        <Prop Key="ID" Value="edUsrWMSStatus" />
+                        <Prop Key="DataField" Value="UsrWMSStatus" />
+                        <Prop Key="Enabled" Value="False" />
+                    </PXDropDown>
+                </AddItem>
+                <AddItem>
+                    <PXCheckBox TypeFullName="PX.Web.UI.PXCheckBox">
+                        <Prop Key="ID" Value="chkUsrComplianceHold" />
+                        <Prop Key="DataField" Value="UsrComplianceHold" />
+                        <Prop Key="Enabled" Value="False" />
+                    </PXCheckBox>
+                </AddItem>
+                <AddItem>
+                    <PXTextEdit TypeFullName="PX.Web.UI.PXTextEdit">
+                        <Prop Key="ID" Value="edUsrComplianceHoldReason" />
+                        <Prop Key="DataField" Value="UsrComplianceHoldReason" />
+                        <Prop Key="TextMode" Value="MultiLine" />
+                        <Prop Key="Height" Value="60px" />
+                        <Prop Key="Enabled" Value="False" />
+                    </PXTextEdit>
+                </AddItem>
+            </Children>
+        </PXFormView>
+    </Page>
+    <Page path="~/pages/in/in402000.aspx">
+        <PXGridLevel DataMember="ResultRecords" ParentId="phG_tab_Items#0_grid_Levels#0" TypeFullName="PX.Web.UI.PXGridLevel">
+            <Children Key="Columns">
+                <AddItem>
+                    <PXGridColumn TypeFullName="PX.Web.UI.PXGridColumn">
+                        <Prop Key="DataField" Value="UsrExpArrivalDate" />
+                        <Prop Key="Width" Value="120px" />
+                    </PXGridColumn>
+                </AddItem>
+            </Children>
+        </PXGridLevel>
+    </Page>
+</Customization>
