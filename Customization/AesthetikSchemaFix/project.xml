@@ -35,7 +35,8 @@ namespace Aesthetik.SchemaFix
                     {
                         "IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('SOOrder') AND name = 'UsrComplianceHold') ALTER TABLE SOOrder ADD UsrComplianceHold bit NULL",
                         "IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('SOOrder') AND name = 'UsrComplianceHoldReason') ALTER TABLE SOOrder ADD UsrComplianceHoldReason nvarchar(500) NULL",
-                        "IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('BAccount') AND name = 'UsrDisablePayLink') ALTER TABLE BAccount ADD UsrDisablePayLink bit NULL"
+                        "IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('BAccount') AND name = 'UsrDisablePayLink') ALTER TABLE BAccount ADD UsrDisablePayLink bit NULL",
+                        "IF NOT EXISTS (SELECT 1 FROM sys.views WHERE name = 'UsrAuditTrailView') EXEC('CREATE VIEW UsrAuditTrailView AS SELECT CompanyID, BatchID, ChangeID, ScreenID, UserID, ChangeDate, Operation, TableName, CombinedKey, ModifiedFields FROM AuditHistory')"
                     };
                     foreach (string sql in statements)
                     {
@@ -61,7 +62,7 @@ namespace Aesthetik.SchemaFix
     }
 }</CDATA>
     </Graph>
-    <Graph ClassName="StudioBAuditHistoryDAC" Source="#CDATA" IsNew="True" FileType="NewFile">
+    <Graph ClassName="UsrAuditTrailViewDAC" Source="#CDATA" IsNew="True" FileType="NewFile">
         <CDATA name="Source"><![CDATA[using System;
 using PX.Data;
 using PX.Data.BQL;
@@ -75,8 +76,8 @@ namespace StudioB.DAC
     /// This custom DAC is a simple read-only mirror of the same table.
     /// </summary>
     [Serializable]
-    [PXCacheName("Audit History View")]
-    public class AuditHistory : PXBqlTable, IBqlTable
+    [PXCacheName("Usr Audit Trail View")]
+    public class UsrAuditTrailView : PXBqlTable, IBqlTable
     {
         #region BatchID
         public abstract class batchID : BqlLong.Field<batchID> { }
@@ -250,7 +251,7 @@ namespace StudioB.Setup
                             {
                                 case "DesignID": selectParts.Add("'" + designId + "'"); break;
                                 case "Name": selectParts.Add("'StudioBAuditTrail'"); break;
-                                case "ExposeViaOData": selectParts.Add("1"); break; // ENABLED — using custom DAC
+                                case "ExposeViaOData": selectParts.Add("0"); break; // DISABLED — AuditHistory table crashes OData
                                 case "ScreenID": selectParts.Add("'GI000000'"); break;
                                 case "FilterColCount": selectParts.Add("3"); break;
                                 case "PageSize": selectParts.Add("200"); break;
@@ -298,8 +299,8 @@ namespace StudioB.Setup
                             switch (col)
                             {
                                 case "DesignID": selectParts.Add("'" + designId + "'"); break;
-                                case "Name": selectParts.Add("'StudioB.DAC.AuditHistory'"); break;
-                                case "Alias": selectParts.Add("'AuditHistory'"); break;
+                                case "Name": selectParts.Add("'StudioB.DAC.UsrAuditTrailView'"); break;
+                                case "Alias": selectParts.Add("'UsrAuditTrailView'"); break;
                                 case "NoteID": case "RowID": selectParts.Add("NEWID()"); break;
                                 case "CreatedDateTime": case "LastModifiedDateTime": selectParts.Add("GETUTCDATE()"); break;
                                 default: selectParts.Add("[" + col + "]"); break;
@@ -358,7 +359,7 @@ namespace StudioB.Setup
                                 case "DesignID": selectParts.Add("'" + designId + "'"); break;
                                 case "LineNbr": selectParts.Add((i + 1).ToString()); break;
                                 case "IsActive": selectParts.Add("1"); break;
-                                case "ObjectName": selectParts.Add("'AuditHistory'"); break;
+                                case "ObjectName": selectParts.Add("'UsrAuditTrailView'"); break;
                                 case "Field": selectParts.Add("'" + fields[i] + "'"); break;
                                 case "SchemaField": selectParts.Add("NULL"); break;
                                 case "SortOrder": selectParts.Add((i + 1).ToString()); break;

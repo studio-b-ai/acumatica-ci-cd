@@ -11,8 +11,8 @@ namespace StudioB.DAC
     /// This custom DAC is a simple read-only mirror of the same table.
     /// </summary>
     [Serializable]
-    [PXCacheName("Audit History View")]
-    public class AuditHistory : PXBqlTable, IBqlTable
+    [PXCacheName("Usr Audit Trail View")]
+    public class UsrAuditTrailView : PXBqlTable, IBqlTable
     {
         #region BatchID
         public abstract class batchID : BqlLong.Field<batchID> { }
