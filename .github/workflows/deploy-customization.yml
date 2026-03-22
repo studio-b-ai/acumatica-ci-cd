@@ -43,7 +43,7 @@ on:
     branches: [main, staging]
     paths:
       - 'Customization/**'
-      - 'scripts/deploy.sh'
+      - 'scripts/deploy.sh.deprecated'
       - 'scripts/deploy.py'
       - 'scripts/validate-project.py'
       - 'scripts/validate-publish.py'
@@ -386,13 +386,11 @@ jobs:
             fi
           done
 
-          chmod +x scripts/deploy.sh
-          scripts/deploy.sh \
+          python scripts/deploy.py \
             --project "${PROJECT_NAME}" \
             --package "${PACKAGE_FILE}" \
             --also-publish "${ALSO_PUBLISH}" \
-            --backup \
-            --manifest publish-manifest.json \
+            --download \
             ${EXTRA_FLAGS} \
             $( [[ "${DRY_RUN}" == "true" ]] && echo "--validate-only" )
 
@@ -555,8 +553,7 @@ jobs:
             fi
           done
 
-          chmod +x scripts/deploy.sh
-          scripts/deploy.sh \
+          python scripts/deploy.py \
             --project "${PROJECT_NAME}" \
             --package "${PACKAGE_FILE}" \
             --also-publish "${ALSO_PUBLISH}" \
