@@ -39,6 +39,8 @@ concurrency:
   cancel-in-progress: true
 
 on:
+  repository_dispatch:
+    types: [scheduled-deploy]
   push:
     branches: [main, staging]
     paths:
@@ -75,6 +77,11 @@ on:
         default: false
       force_qualify:
         description: 'Skip qualification checks (emergency override)'
+        required: false
+        type: boolean
+        default: false
+      countdown_complete:
+        description: 'Set by scheduled deploy — skip countdown'
         required: false
         type: boolean
         default: false
@@ -251,13 +258,90 @@ jobs:
         run: python scripts/qualify.py
 
   # ──────────────────────────────────────────────
-  # Job 3: Deploy — Push to Acumatica instance
+  # Job 3: Countdown — offloaded to webhook-router
+  # ──────────────────────────────────────────────
+  countdown-notify:
+    name: Send Maintenance Warnings
+    needs: [build, qualify]
+    runs-on: ubuntu-latest
+    if: |
+      needs.qualify.outputs.needs_countdown == 'true' &&
+      github.event.inputs.countdown_complete != 'true' &&
+      github.event_name != 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Python dependencies
+        run: pip install -r scripts/requirements.txt
+      - name: Send 20-minute warning and schedule deploy
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.STUDIOB_SLACK_WEBHOOK_URL }}
+          WEBHOOK_ROUTER_URL: ${{ secrets.WEBHOOK_ROUTER_URL }}
+          PROVISION_API_KEY: ${{ secrets.PROVISION_API_KEY }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          NOTIFY_RECIPIENTS: ${{ vars.MAINTENANCE_NOTIFY_RECIPIENTS }}
+          NOTIFY_SENDER: ${{ vars.MAINTENANCE_NOTIFY_SENDER || 'kevin@heritagefabrics.com' }}
+        run: |
+          # Send 20-min warning immediately
+          python scripts/notify.py --type countdown --minutes 20 \
+            --recipients "${NOTIFY_RECIPIENTS}" --sender "${NOTIFY_SENDER}" \
+            --project "${PROJECT_NAME}" --environment production \
+            --slack-webhook "${SLACK_WEBHOOK_URL}" || true
+
+          # Schedule delayed deploy via webhook-router
+          HTTP_CODE=$(curl -s -o /tmp/schedule-response.json -w "%{http_code}" \
+            -X POST "${WEBHOOK_ROUTER_URL}/deploy/schedule" \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer ${PROVISION_API_KEY}" \
+            -d '{
+              "repo": "studio-b-ai/acumatica-ci-cd",
+              "workflow": "deploy-customization.yml",
+              "delay_minutes": 20,
+              "inputs": {
+                "environment": "production",
+                "countdown_complete": "true",
+                "skip_countdown": "true",
+                "project_name": "'"${PROJECT_NAME}"'"
+              },
+              "notifications": [
+                {"minutes_remaining": 5, "channel": "slack"},
+                {"minutes_remaining": 1, "channel": "slack"}
+              ]
+            }')
+
+          if [ "${HTTP_CODE}" = "200" ]; then
+            echo "Deploy scheduled via webhook-router"
+            cat /tmp/schedule-response.json
+          else
+            echo "::warning::webhook-router unavailable (HTTP ${HTTP_CODE}) — falling back to inline countdown"
+            sleep 900
+            python scripts/notify.py --type countdown --minutes 5 \
+              --recipients "${NOTIFY_RECIPIENTS}" --sender "${NOTIFY_SENDER}" \
+              --project "${PROJECT_NAME}" --environment production \
+              --slack-webhook "${SLACK_WEBHOOK_URL}" || true
+            sleep 240
+            python scripts/notify.py --type countdown --minutes 1 \
+              --recipients "${NOTIFY_RECIPIENTS}" --sender "${NOTIFY_SENDER}" \
+              --project "${PROJECT_NAME}" --environment production \
+              --slack-webhook "${SLACK_WEBHOOK_URL}" || true
+            sleep 60
+          fi
+
+  # ──────────────────────────────────────────────
+  # Job 4: Deploy — Push to Acumatica instance
   # ──────────────────────────────────────────────
   deploy:
     name: Deploy to ${{ github.event.inputs.environment || (github.ref == 'refs/heads/main' && 'production' || 'staging') }}
     needs: [build, qualify]
     runs-on: ubuntu-latest
-    if: github.event_name != 'pull_request' && (needs.qualify.result == 'success' || github.event.inputs.force_qualify == 'true')
+    if: |
+      github.event_name != 'pull_request' && (
+        needs.qualify.result == 'success' || github.event.inputs.force_qualify == 'true'
+      ) && (
+        needs.qualify.outputs.needs_countdown != 'true' ||
+        github.event.inputs.countdown_complete == 'true'
+      )
     environment:
       name: ${{ github.event.inputs.environment || (github.ref == 'refs/heads/main' && 'production' || 'staging') }}
 
@@ -318,61 +402,6 @@ jobs:
             echo "after_hours=false" >> "$GITHUB_OUTPUT"
             echo "Business-hours deploy (${CT_HOUR}:00 CT) — employee emails will be sent"
           fi
-
-      # ── Maintenance countdown (production only, business hours only) ─
-      - name: Maintenance countdown notifications
-        if: |
-          steps.env.outputs.target == 'production' &&
-          github.event.inputs.skip_countdown != 'true' &&
-          github.event.inputs.dry_run != 'true' &&
-          steps.hours.outputs.after_hours != 'true'
-        env:
-          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
-          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
-          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
-          SLACK_WEBHOOK_URL: ${{ secrets.STUDIOB_SLACK_WEBHOOK_URL }}
-          NOTIFY_RECIPIENTS: ${{ vars.MAINTENANCE_NOTIFY_RECIPIENTS }}
-          NOTIFY_SENDER: ${{ vars.MAINTENANCE_NOTIFY_SENDER || 'kevin@heritagefabrics.com' }}
-        run: |
-          # 20-minute warning
-          echo "::group::Sending 20-minute warning"
-          python scripts/notify.py --type countdown --minutes 20 \
-            --recipients "${NOTIFY_RECIPIENTS}" \
-            --sender "${NOTIFY_SENDER}" \
-            --project "${PROJECT_NAME}" \
-            --environment "${{ steps.env.outputs.target }}" \
-            --slack-webhook "${SLACK_WEBHOOK_URL}" || true
-          echo "::endgroup::"
-
-          echo "Waiting 15 minutes..."
-          sleep 900
-
-          # 5-minute warning
-          echo "::group::Sending 5-minute warning"
-          python scripts/notify.py --type countdown --minutes 5 \
-            --recipients "${NOTIFY_RECIPIENTS}" \
-            --sender "${NOTIFY_SENDER}" \
-            --project "${PROJECT_NAME}" \
-            --environment "${{ steps.env.outputs.target }}" \
-            --slack-webhook "${SLACK_WEBHOOK_URL}" || true
-          echo "::endgroup::"
-
-          echo "Waiting 4 minutes..."
-          sleep 240
-
-          # 1-minute warning
-          echo "::group::Sending 1-minute warning"
-          python scripts/notify.py --type countdown --minutes 1 \
-            --recipients "${NOTIFY_RECIPIENTS}" \
-            --sender "${NOTIFY_SENDER}" \
-            --project "${PROJECT_NAME}" \
-            --environment "${{ steps.env.outputs.target }}" \
-            --slack-webhook "${SLACK_WEBHOOK_URL}" || true
-          echo "::endgroup::"
-
-          echo "Final wait — 60 seconds..."
-          sleep 60
-          echo "Countdown complete — proceeding to deploy"
 
       # ── Maintenance Mode — pause all Acumatica workers before publish ─
       - name: Enter maintenance mode
