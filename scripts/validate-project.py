@@ -56,6 +56,24 @@ def validate(path: str, strict: bool = False):
 
     ok("XML is well-formed")
 
+    # Check 0: REJECT XML COMMENTS — Acumatica import crashes with
+    # InvalidCastException: XmlComment to XmlElement. This caused
+    # database corruption on 2026-03-22. Comments must be stripped
+    # BEFORE the package reaches the import API.
+    raw_xml = file_path.read_text(encoding="utf-8")
+    comment_pattern = re.compile(r"<!--.*?-->", re.DOTALL)
+    comments_found = comment_pattern.findall(raw_xml)
+    if comments_found:
+        error(f"project.xml contains {len(comments_found)} XML comment(s)")
+        error("Acumatica import CRASHES on XML comments (InvalidCastException).")
+        error("Strip comments with: python scripts/inline-project.py <file>")
+        for i, c in enumerate(comments_found[:3]):
+            error(f"  Comment {i+1}: {c[:80]}...")
+        if not strict:
+            error("This is a HARD FAILURE even in non-strict mode.")
+        return False
+    ok("No XML comments (import-safe)")
+
     # Check 1: Root element must be <Customization>
     if root.tag != "Customization":
         error(f"Root element is <{root.tag}>, must be <Customization>")

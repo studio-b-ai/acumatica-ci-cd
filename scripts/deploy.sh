@@ -261,28 +261,15 @@ else:
 fi
 
 # ─── Step 2: Import Package ─────────────────────────────────────────────────
-log "Step 2/6: Importing customization package..."
 
 # Base64 encode the package (Linux: base64 -w0, macOS: base64 -i)
 PACKAGE_B64=$(base64 -w0 "${PACKAGE}" 2>/dev/null || base64 -i "${PACKAGE}" | tr -d '\n')
-
-# Extract level from project.xml inside the zip (default to 0 if not found)
-PROJECT_LEVEL=$(python3 -c "
-import zipfile, sys, xml.etree.ElementTree as ET
-try:
-    with zipfile.ZipFile('${PACKAGE}') as z:
-        with z.open('project.xml') as f:
-            root = ET.parse(f).getroot()
-            print(root.get('level', '0'))
-except: print('0')
-" 2>/dev/null || echo "0")
-log "Project level: ${PROJECT_LEVEL}"
 
 IMPORT_BODY=$(cat <<EOF
 {
   "projectName": "${PROJECT}",
   "projectDescription": "Deployed via CI/CD at $(date -u +%Y-%m-%dT%H:%M:%SZ)",
-  "projectLevel": ${PROJECT_LEVEL},
+  "projectLevel": 0,
   "isReplaceIfExists": true,
   "projectContentBase64": "${PACKAGE_B64}"
 }
@@ -292,12 +279,93 @@ EOF
 RESPONSE_FILE=$(mktemp)
 CLEANUP_FILES+=("${RESPONSE_FILE}")
 
+# ─── SAFEGUARD: Validate-only pre-flight ─────────────────────────────────
+# Always do a dry-run import first to catch XML/format/compile errors
+# BEFORE committing changes to the database. A failed real import can
+# corrupt the UserRecords table and block ALL future imports.
+log "Step 2a/6: Pre-flight validation (validate-only import)..."
+
+PREFLIGHT_CODE=$(curl -s -o "${RESPONSE_FILE}" -w "%{http_code}" \
+  -X POST \
+  -H "Content-Type: application/json" \
+  -b "${COOKIE_JAR}" \
+  -d "${IMPORT_BODY}" \
+  "${URL}/CustomizationApi/Import?validateOnly=true" 2>/dev/null)
+
+# If the validate endpoint isn't supported (404), fall back to direct import
+if [[ "${PREFLIGHT_CODE}" == "404" || "${PREFLIGHT_CODE}" == "405" ]]; then
+  warn "Validate-only endpoint not available — proceeding with direct import"
+else
+  PREFLIGHT_RESPONSE=$(cat "${RESPONSE_FILE}" 2>/dev/null)
+
+  # ─── CIRCUIT BREAKER: NullReferenceException = HALT ─────────────────
+  # A NullReferenceException in the customization subsystem means the
+  # database is corrupted. Retrying will make it WORSE. Stop immediately.
+  if echo "${PREFLIGHT_RESPONSE}" | grep -q "NullReferenceException"; then
+    err "═══════════════════════════════════════════════════════════════"
+    err "CIRCUIT BREAKER: NullReferenceException detected in pre-flight"
+    err "═══════════════════════════════════════════════════════════════"
+    err ""
+    err "The Acumatica customization subsystem has corrupted database state."
+    err "DO NOT RETRY — each attempt makes the corruption worse."
+    err ""
+    err "Action required:"
+    err "  1. Open an Acumatica support ticket"
+    err "  2. Include the stack trace below"
+    err "  3. Ask them to clean up the UserRecords table"
+    err ""
+    err "Stack trace:"
+    echo "${PREFLIGHT_RESPONSE}" | python3 -c "
+import sys, json
+try:
+    data = json.load(sys.stdin)
+    for entry in data.get('log', []):
+        if entry.get('logType') in ('error', 'trace'):
+            print('  ' + entry.get('message', '')[:500])
+except: pass
+" 2>/dev/null >&2
+    die "HALTED — database corruption detected. File Acumatica support ticket."
+  fi
+
+  if [[ "${PREFLIGHT_CODE}" != "200" && "${PREFLIGHT_CODE}" != "204" ]]; then
+    err "Pre-flight validation failed (HTTP ${PREFLIGHT_CODE})"
+    echo "${PREFLIGHT_RESPONSE}" | python3 -c "
+import sys, json
+try:
+    data = json.load(sys.stdin)
+    for entry in data.get('log', []):
+        if entry.get('logType') in ('error', 'trace'):
+            print('  ' + entry.get('message', '')[:500])
+except: pass
+" 2>/dev/null >&2
+    die "Pre-flight failed — fix errors above before deploying"
+  fi
+  ok "Pre-flight validation passed"
+fi
+
+# ─── Step 2b: Real import ────────────────────────────────────────────────
+log "Step 2b/6: Importing customization package..."
+
 HTTP_CODE=$(curl -s -o "${RESPONSE_FILE}" -w "%{http_code}" \
   -X POST \
   -H "Content-Type: application/json" \
   -b "${COOKIE_JAR}" \
   -d "${IMPORT_BODY}" \
   "${URL}/CustomizationApi/Import")
+
+# ─── CIRCUIT BREAKER: Check real import response too ─────────────────────
+IMPORT_RESPONSE=$(cat "${RESPONSE_FILE}" 2>/dev/null)
+if echo "${IMPORT_RESPONSE}" | grep -q "NullReferenceException"; then
+  err "═══════════════════════════════════════════════════════════════"
+  err "CIRCUIT BREAKER: NullReferenceException on import"
+  err "═══════════════════════════════════════════════════════════════"
+  err ""
+  err "Database corruption detected. DO NOT RETRY."
+  err "File an Acumatica support ticket immediately."
+  err ""
+  echo "${IMPORT_RESPONSE}" >&2
+  die "HALTED — database corruption. See acumatica-support-request.md"
+fi
 
 if [[ "${HTTP_CODE}" == "404" || "${HTTP_CODE}" == "405" ]]; then
   err "Customization API not available (HTTP ${HTTP_CODE})"
@@ -312,7 +380,7 @@ if [[ "${HTTP_CODE}" == "404" || "${HTTP_CODE}" == "405" ]]; then
   die "Customization API unavailable — manual import required"
 elif [[ "${HTTP_CODE}" != "200" && "${HTTP_CODE}" != "204" ]]; then
   err "Import failed (HTTP ${HTTP_CODE})"
-  cat "${RESPONSE_FILE}" >&2
+  echo "${IMPORT_RESPONSE}" >&2
   die "Package import failed"
 fi
 ok "Package imported: ${PROJECT}"
@@ -325,23 +393,11 @@ for extra in ${EXTRA_IMPORTS[@]+"${EXTRA_IMPORTS[@]}"}; do
 
   EXTRA_B64=$(base64 -w0 "${EXTRA_FILE}" 2>/dev/null || base64 -i "${EXTRA_FILE}" | tr -d '\n')
 
-  # Extract level from extra package's project.xml
-  EXTRA_LEVEL=$(python3 -c "
-import zipfile, sys, xml.etree.ElementTree as ET
-try:
-    with zipfile.ZipFile('${EXTRA_FILE}') as z:
-        with z.open('project.xml') as f:
-            root = ET.parse(f).getroot()
-            print(root.get('level', '0'))
-except: print('0')
-" 2>/dev/null || echo "0")
-  log "  Level: ${EXTRA_LEVEL}"
-
   EXTRA_IMPORT_BODY=$(cat <<EOFEXTRA
 {
   "projectName": "${EXTRA_PROJ}",
   "projectDescription": "Deployed via CI/CD at $(date -u +%Y-%m-%dT%H:%M:%SZ)",
-  "projectLevel": ${EXTRA_LEVEL},
+  "projectLevel": 0,
   "isReplaceIfExists": true,
   "projectContentBase64": "${EXTRA_B64}"
 }
