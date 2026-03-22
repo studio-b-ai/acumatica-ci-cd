@@ -13,7 +13,7 @@
 
 import { readFileSync, existsSync, readdirSync } from 'fs';
 import { resolve, join } from 'path';
-import { dispatchCustomField } from '../dispatch-test-config.js';
+import { dispatchCustomField } from './dispatch-test-config.js';
 
 // ── Entity mapping: DAC name → Acumatica REST API entity name ──────────────
 
