@@ -73,6 +73,11 @@ on:
         required: false
         type: boolean
         default: false
+      force_qualify:
+        description: 'Skip qualification checks (emergency override)'
+        required: false
+        type: boolean
+        default: false
 
 env:
   # HARDCODED — never use a mutable GitHub variable for the project name.
@@ -80,6 +85,8 @@ env:
   # See: 2026-03-22 incident — AesthetikWMSv2/v3 orphans blocked all deploys.
   PROJECT_NAME: AesthetikWMS
   ALSO_PUBLISH: ${{ vars.ALSO_PUBLISH_PROJECTS || '' }}
+  KNOWN_PROJECTS: "AesthetikWMS,StudioBPORelations"
+  ISV_PACKAGES: "IIGHFContainerMods,IIGGlobalContainerMgmt"
 
 jobs:
   # ──────────────────────────────────────────────
@@ -214,13 +221,43 @@ jobs:
           retention-days: 30
 
   # ──────────────────────────────────────────────
-  # Job 2: Deploy — Push to Acumatica instance
+  # Job 2: Qualify — Agentic pre-deploy checks
+  # ──────────────────────────────────────────────
+  qualify:
+    name: Pre-Deploy Qualification
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request' && github.event.inputs.force_qualify != 'true'
+    outputs:
+      decision: ${{ steps.qualify.outputs.decision }}
+      needs_countdown: ${{ steps.qualify.outputs.needs_countdown }}
+      summary: ${{ steps.qualify.outputs.summary }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+      - name: Run qualification checks
+        id: qualify
+        env:
+          ACUMATICA_URL: ${{ secrets.ACUMATICA_PROD_URL }}
+          ACUMATICA_USERNAME: ${{ secrets.ACUMATICA_PROD_USERNAME }}
+          ACUMATICA_PASSWORD: ${{ secrets.ACUMATICA_PROD_PASSWORD }}
+          ACUMATICA_TENANT: ${{ secrets.ACUMATICA_PROD_TENANT }}
+          SLACK_WEBHOOK_URL: ${{ secrets.STUDIOB_SLACK_WEBHOOK_URL }}
+          KNOWN_PROJECTS: ${{ env.KNOWN_PROJECTS }}
+          ISV_PACKAGES: ${{ env.ISV_PACKAGES }}
+          PROJECT_NAME: ${{ env.PROJECT_NAME }}
+        run: python scripts/qualify.py
+
+  # ──────────────────────────────────────────────
+  # Job 3: Deploy — Push to Acumatica instance
   # ──────────────────────────────────────────────
   deploy:
     name: Deploy to ${{ github.event.inputs.environment || (github.ref == 'refs/heads/main' && 'production' || 'staging') }}
-    needs: build
+    needs: [build, qualify]
     runs-on: ubuntu-latest
-    if: github.event_name != 'pull_request'
+    if: github.event_name != 'pull_request' && (needs.qualify.result == 'success' || github.event.inputs.force_qualify == 'true')
     environment:
       name: ${{ github.event.inputs.environment || (github.ref == 'refs/heads/main' && 'production' || 'staging') }}
 
@@ -511,8 +548,16 @@ jobs:
             echo "| Countdown | Skipped |" >> "$GITHUB_STEP_SUMMARY"
           fi
 
+      - name: Tag successful deploy
+        if: success() && steps.env.outputs.target == 'production'
+        run: |
+          TAG="deploy/prod/$(date +%Y%m%d-%H%M%S)"
+          git tag "${TAG}"
+          git push origin "${TAG}"
+          echo "Tagged: ${TAG}"
+
   # ──────────────────────────────────────────────
-  # Job 3: Validate — PR check (no publish)
+  # Job 4: Validate — PR check (no publish)
   # ──────────────────────────────────────────────
   validate:
     name: Validate Against Staging
