@@ -49,6 +49,16 @@ from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
 
+class CustomizationCorruptionError(RuntimeError):
+    """Raised when NullReferenceException indicates database corruption.
+
+    The Acumatica customization subsystem has corrupted CustProject records.
+    DO NOT RETRY — each attempt makes corruption worse.
+    See: 2026-03-22 incident (AesthetikWMSv2/v3 orphans).
+    """
+    pass
+
+
 class AcumaticaCustomizationClient:
     """Client for the Acumatica Customization API."""
 
@@ -77,6 +87,22 @@ class AcumaticaCustomizationClient:
         session.headers.update({"Content-Type": "application/json"})
         return session
 
+    def _check_circuit_breaker(self, response_text: str, context: str) -> None:
+        """Halt immediately if NullReferenceException detected."""
+        if "NullReferenceException" not in response_text:
+            return
+        _log(
+            f"CIRCUIT BREAKER: NullReferenceException in {context}\n"
+            "The Acumatica customization subsystem is corrupted.\n"
+            "DO NOT RETRY — each attempt makes it worse.\n"
+            "Action: File Acumatica support ticket to clean CustProject table.\n"
+            "See: 2026-03-22 incident",
+            style="err",
+        )
+        raise CustomizationCorruptionError(
+            f"Database corruption detected in {context}. HALTED."
+        )
+
     def login(self) -> None:
         """Authenticate and establish a session cookie."""
         payload = {"name": self.username, "password": self.password}
@@ -90,6 +116,7 @@ class AcumaticaCustomizationClient:
         )
 
         if resp.status_code != 204:
+            self._check_circuit_breaker(resp.text, "login")
             raise RuntimeError(
                 f"Login failed (HTTP {resp.status_code}): {resp.text[:500]}"
             )
@@ -144,11 +171,62 @@ class AcumaticaCustomizationClient:
         )
 
         if resp.status_code not in (200, 204):
+            self._check_circuit_breaker(resp.text, "import")
             raise RuntimeError(
                 f"Import failed (HTTP {resp.status_code}): {resp.text[:500]}"
             )
 
         _log(f"Package imported: {project_name}", style="ok")
+
+    def preflight_validate(self, project_name: str, package_path: str) -> None:
+        """Dry-run import to catch XML/format errors before real import."""
+        path = Path(package_path)
+        content_b64 = base64.b64encode(path.read_bytes()).decode("ascii")
+
+        payload = {
+            "projectName": project_name,
+            "projectDescription": "Pre-flight validation",
+            "projectLevel": 0,
+            "isReplaceIfExists": True,
+            "projectContentBase64": content_b64,
+        }
+
+        _log("Pre-flight validation...")
+        resp = self.session.post(
+            f"{self.base_url}/CustomizationApi/Import?validateOnly=true",
+            json=payload,
+            timeout=self.timeout,
+        )
+
+        # 404/405 = endpoint not supported, skip gracefully
+        if resp.status_code in (404, 405):
+            _log("Pre-flight endpoint not available — skipping", style="warn")
+            return
+
+        self._check_circuit_breaker(resp.text, "pre-flight")
+
+        if resp.status_code not in (200, 204):
+            raise RuntimeError(
+                f"Pre-flight failed (HTTP {resp.status_code}): {resp.text[:500]}"
+            )
+        _log("Pre-flight passed", style="ok")
+
+    def cleanup_orphan(self, project_name: str) -> bool:
+        """Attempt to delete an orphaned project after failed import."""
+        _log(f"Cleaning up potentially orphaned project '{project_name}'...", style="warn")
+        try:
+            resp = self.session.post(
+                f"{self.base_url}/CustomizationApi/delete",
+                json={"projectName": project_name},
+                timeout=30,
+            )
+            if resp.status_code in (200, 204):
+                _log(f"Cleaned up orphan '{project_name}'", style="ok")
+                return True
+        except Exception:
+            pass
+        _log(f"Could not clean up orphan '{project_name}' — may need manual cleanup", style="warn")
+        return False
 
     def publish(
         self,
@@ -415,6 +493,12 @@ def main():
         default=600,
         help="Max seconds to wait for publish (default: 600)",
     )
+    parser.add_argument(
+        "--extra-import",
+        action="append",
+        default=[],
+        help="Additional package NAME:FILE to import (repeatable)",
+    )
 
     args = parser.parse_args()
 
@@ -460,8 +544,25 @@ def main():
 
             # Import new package
             if args.package:
+                # Pre-flight validation
+                client.preflight_validate(args.project, args.package)
+
+                # Real import (with orphan cleanup on failure)
                 _log("Importing package...")
-                client.import_package(args.project, args.package)
+                try:
+                    client.import_package(args.project, args.package)
+                except RuntimeError as exc:
+                    client.cleanup_orphan(args.project)
+                    raise
+
+                # Import extra packages
+                for extra in args.extra_import:
+                    if ":" not in extra:
+                        _log(f"Invalid --extra-import format: {extra} (expected NAME:FILE)", style="err")
+                        sys.exit(1)
+                    extra_name, extra_file = extra.split(":", 1)
+                    _log(f"Importing extra package: {extra_name}...")
+                    client.import_package(extra_name, extra_file)
 
                 if not args.validate_only:
                     # Build full project list for publish

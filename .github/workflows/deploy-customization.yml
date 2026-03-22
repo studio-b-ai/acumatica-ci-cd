@@ -39,11 +39,13 @@ concurrency:
   cancel-in-progress: true
 
 on:
+  repository_dispatch:
+    types: [scheduled-deploy]
   push:
     branches: [main, staging]
     paths:
       - 'Customization/**'
-      - 'scripts/deploy.sh'
+      - 'scripts/deploy.sh.deprecated'
       - 'scripts/deploy.py'
       - 'scripts/validate-project.py'
       - 'scripts/validate-publish.py'
@@ -73,6 +75,16 @@ on:
         required: false
         type: boolean
         default: false
+      force_qualify:
+        description: 'Skip qualification checks (emergency override)'
+        required: false
+        type: boolean
+        default: false
+      countdown_complete:
+        description: 'Set by scheduled deploy — skip countdown'
+        required: false
+        type: boolean
+        default: false
 
 env:
   # HARDCODED — never use a mutable GitHub variable for the project name.
@@ -80,6 +92,8 @@ env:
   # See: 2026-03-22 incident — AesthetikWMSv2/v3 orphans blocked all deploys.
   PROJECT_NAME: AesthetikWMS
   ALSO_PUBLISH: ${{ vars.ALSO_PUBLISH_PROJECTS || '' }}
+  KNOWN_PROJECTS: "AesthetikWMS,StudioBPORelations"
+  ISV_PACKAGES: "IIGHFContainerMods,IIGGlobalContainerMgmt"
 
 jobs:
   # ──────────────────────────────────────────────
@@ -214,13 +228,120 @@ jobs:
           retention-days: 30
 
   # ──────────────────────────────────────────────
-  # Job 2: Deploy — Push to Acumatica instance
+  # Job 2: Qualify — Agentic pre-deploy checks
+  # ──────────────────────────────────────────────
+  qualify:
+    name: Pre-Deploy Qualification
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request' && github.event.inputs.force_qualify != 'true'
+    outputs:
+      decision: ${{ steps.qualify.outputs.decision }}
+      needs_countdown: ${{ steps.qualify.outputs.needs_countdown }}
+      summary: ${{ steps.qualify.outputs.summary }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+      - name: Run qualification checks
+        id: qualify
+        env:
+          ACUMATICA_URL: ${{ secrets.ACUMATICA_PROD_URL }}
+          ACUMATICA_USERNAME: ${{ secrets.ACUMATICA_PROD_USERNAME }}
+          ACUMATICA_PASSWORD: ${{ secrets.ACUMATICA_PROD_PASSWORD }}
+          ACUMATICA_TENANT: ${{ secrets.ACUMATICA_PROD_TENANT }}
+          SLACK_WEBHOOK_URL: ${{ secrets.STUDIOB_SLACK_WEBHOOK_URL }}
+          KNOWN_PROJECTS: ${{ env.KNOWN_PROJECTS }}
+          ISV_PACKAGES: ${{ env.ISV_PACKAGES }}
+          PROJECT_NAME: ${{ env.PROJECT_NAME }}
+        run: python scripts/qualify.py
+
+  # ──────────────────────────────────────────────
+  # Job 3: Countdown — offloaded to webhook-router
+  # ──────────────────────────────────────────────
+  countdown-notify:
+    name: Send Maintenance Warnings
+    needs: [build, qualify]
+    runs-on: ubuntu-latest
+    if: |
+      needs.qualify.outputs.needs_countdown == 'true' &&
+      github.event.inputs.countdown_complete != 'true' &&
+      github.event_name != 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Python dependencies
+        run: pip install -r scripts/requirements.txt
+      - name: Send 20-minute warning and schedule deploy
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.STUDIOB_SLACK_WEBHOOK_URL }}
+          WEBHOOK_ROUTER_URL: ${{ secrets.WEBHOOK_ROUTER_URL }}
+          PROVISION_API_KEY: ${{ secrets.PROVISION_API_KEY }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          NOTIFY_RECIPIENTS: ${{ vars.MAINTENANCE_NOTIFY_RECIPIENTS }}
+          NOTIFY_SENDER: ${{ vars.MAINTENANCE_NOTIFY_SENDER || 'kevin@heritagefabrics.com' }}
+        run: |
+          # Send 20-min warning immediately
+          python scripts/notify.py --type countdown --minutes 20 \
+            --recipients "${NOTIFY_RECIPIENTS}" --sender "${NOTIFY_SENDER}" \
+            --project "${PROJECT_NAME}" --environment production \
+            --slack-webhook "${SLACK_WEBHOOK_URL}" || true
+
+          # Schedule delayed deploy via webhook-router
+          HTTP_CODE=$(curl -s -o /tmp/schedule-response.json -w "%{http_code}" \
+            -X POST "${WEBHOOK_ROUTER_URL}/deploy/schedule" \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer ${PROVISION_API_KEY}" \
+            -d '{
+              "repo": "studio-b-ai/acumatica-ci-cd",
+              "workflow": "deploy-customization.yml",
+              "delay_minutes": 20,
+              "inputs": {
+                "environment": "production",
+                "countdown_complete": "true",
+                "skip_countdown": "true",
+                "project_name": "'"${PROJECT_NAME}"'"
+              },
+              "notifications": [
+                {"minutes_remaining": 5, "channel": "slack"},
+                {"minutes_remaining": 1, "channel": "slack"}
+              ]
+            }')
+
+          if [ "${HTTP_CODE}" = "200" ]; then
+            echo "Deploy scheduled via webhook-router"
+            cat /tmp/schedule-response.json
+          else
+            echo "::warning::webhook-router unavailable (HTTP ${HTTP_CODE}) — falling back to inline countdown"
+            sleep 900
+            python scripts/notify.py --type countdown --minutes 5 \
+              --recipients "${NOTIFY_RECIPIENTS}" --sender "${NOTIFY_SENDER}" \
+              --project "${PROJECT_NAME}" --environment production \
+              --slack-webhook "${SLACK_WEBHOOK_URL}" || true
+            sleep 240
+            python scripts/notify.py --type countdown --minutes 1 \
+              --recipients "${NOTIFY_RECIPIENTS}" --sender "${NOTIFY_SENDER}" \
+              --project "${PROJECT_NAME}" --environment production \
+              --slack-webhook "${SLACK_WEBHOOK_URL}" || true
+            sleep 60
+          fi
+
+  # ──────────────────────────────────────────────
+  # Job 4: Deploy — Push to Acumatica instance
   # ──────────────────────────────────────────────
   deploy:
     name: Deploy to ${{ github.event.inputs.environment || (github.ref == 'refs/heads/main' && 'production' || 'staging') }}
-    needs: build
+    needs: [build, qualify]
     runs-on: ubuntu-latest
-    if: github.event_name != 'pull_request'
+    if: |
+      github.event_name != 'pull_request' && (
+        needs.qualify.result == 'success' || github.event.inputs.force_qualify == 'true'
+      ) && (
+        needs.qualify.outputs.needs_countdown != 'true' ||
+        github.event.inputs.countdown_complete == 'true'
+      )
     environment:
       name: ${{ github.event.inputs.environment || (github.ref == 'refs/heads/main' && 'production' || 'staging') }}
 
@@ -267,7 +388,7 @@ jobs:
         with:
           name: pre-deploy-snapshot-${{ github.run_number }}
           path: backups/*.zip
-          retention-days: 90
+          retention-days: 365
 
       # ── After-hours detection (6pm–6am CT → skip employee emails) ────
       - name: Check if after-hours (6pm-6am CT)
@@ -281,61 +402,6 @@ jobs:
             echo "after_hours=false" >> "$GITHUB_OUTPUT"
             echo "Business-hours deploy (${CT_HOUR}:00 CT) — employee emails will be sent"
           fi
-
-      # ── Maintenance countdown (production only, business hours only) ─
-      - name: Maintenance countdown notifications
-        if: |
-          steps.env.outputs.target == 'production' &&
-          github.event.inputs.skip_countdown != 'true' &&
-          github.event.inputs.dry_run != 'true' &&
-          steps.hours.outputs.after_hours != 'true'
-        env:
-          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
-          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
-          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
-          SLACK_WEBHOOK_URL: ${{ secrets.STUDIOB_SLACK_WEBHOOK_URL }}
-          NOTIFY_RECIPIENTS: ${{ vars.MAINTENANCE_NOTIFY_RECIPIENTS }}
-          NOTIFY_SENDER: ${{ vars.MAINTENANCE_NOTIFY_SENDER || 'kevin@heritagefabrics.com' }}
-        run: |
-          # 20-minute warning
-          echo "::group::Sending 20-minute warning"
-          python scripts/notify.py --type countdown --minutes 20 \
-            --recipients "${NOTIFY_RECIPIENTS}" \
-            --sender "${NOTIFY_SENDER}" \
-            --project "${PROJECT_NAME}" \
-            --environment "${{ steps.env.outputs.target }}" \
-            --slack-webhook "${SLACK_WEBHOOK_URL}" || true
-          echo "::endgroup::"
-
-          echo "Waiting 15 minutes..."
-          sleep 900
-
-          # 5-minute warning
-          echo "::group::Sending 5-minute warning"
-          python scripts/notify.py --type countdown --minutes 5 \
-            --recipients "${NOTIFY_RECIPIENTS}" \
-            --sender "${NOTIFY_SENDER}" \
-            --project "${PROJECT_NAME}" \
-            --environment "${{ steps.env.outputs.target }}" \
-            --slack-webhook "${SLACK_WEBHOOK_URL}" || true
-          echo "::endgroup::"
-
-          echo "Waiting 4 minutes..."
-          sleep 240
-
-          # 1-minute warning
-          echo "::group::Sending 1-minute warning"
-          python scripts/notify.py --type countdown --minutes 1 \
-            --recipients "${NOTIFY_RECIPIENTS}" \
-            --sender "${NOTIFY_SENDER}" \
-            --project "${PROJECT_NAME}" \
-            --environment "${{ steps.env.outputs.target }}" \
-            --slack-webhook "${SLACK_WEBHOOK_URL}" || true
-          echo "::endgroup::"
-
-          echo "Final wait — 60 seconds..."
-          sleep 60
-          echo "Countdown complete — proceeding to deploy"
 
       # ── Maintenance Mode — pause all Acumatica workers before publish ─
       - name: Enter maintenance mode
@@ -386,13 +452,11 @@ jobs:
             fi
           done
 
-          chmod +x scripts/deploy.sh
-          scripts/deploy.sh \
+          python scripts/deploy.py \
             --project "${PROJECT_NAME}" \
             --package "${PACKAGE_FILE}" \
             --also-publish "${ALSO_PUBLISH}" \
-            --backup \
-            --manifest publish-manifest.json \
+            --download \
             ${EXTRA_FLAGS} \
             $( [[ "${DRY_RUN}" == "true" ]] && echo "--validate-only" )
 
@@ -404,6 +468,93 @@ jobs:
           path: dist/backup/*.zip
           retention-days: 30
           if-no-files-found: ignore
+
+      # ── Post-publish verification ────────────────────────────────────
+      - name: Post-publish smoke test
+        id: smoke
+        if: success() && github.event.inputs.dry_run != 'true'
+        continue-on-error: true
+        env:
+          ACUMATICA_URL: ${{ (steps.env.outputs.target == 'production') && secrets.ACUMATICA_PROD_URL || (secrets.ACUMATICA_STG_URL || secrets.ACUMATICA_PROD_URL) }}
+          ACUMATICA_USERNAME: ${{ (steps.env.outputs.target == 'production') && secrets.ACUMATICA_PROD_USERNAME || (secrets.ACUMATICA_STG_USERNAME || secrets.ACUMATICA_PROD_USERNAME) }}
+          ACUMATICA_PASSWORD: ${{ (steps.env.outputs.target == 'production') && secrets.ACUMATICA_PROD_PASSWORD || (secrets.ACUMATICA_STG_PASSWORD || secrets.ACUMATICA_PROD_PASSWORD) }}
+          ACUMATICA_TENANT: ${{ (steps.env.outputs.target == 'production') && secrets.ACUMATICA_PROD_TENANT || (secrets.ACUMATICA_STG_TENANT || secrets.ACUMATICA_PROD_TENANT) }}
+        run: |
+          python -c "
+          import sys; sys.path.insert(0, '.')
+          from scripts.deploy import AcumaticaCustomizationClient
+          import os
+          client = AcumaticaCustomizationClient(
+              os.environ['ACUMATICA_URL'], os.environ['ACUMATICA_USERNAME'],
+              os.environ['ACUMATICA_PASSWORD'], os.environ['ACUMATICA_TENANT'],
+          )
+          client.login()
+          ok = client.smoke_test()
+          client.logout()
+          sys.exit(0 if ok else 1)
+          "
+
+      - name: Post-publish field validation
+        id: verify
+        if: success() && github.event.inputs.dry_run != 'true'
+        continue-on-error: true
+        env:
+          ACUMATICA_URL: ${{ (steps.env.outputs.target == 'production') && secrets.ACUMATICA_PROD_URL || (secrets.ACUMATICA_STG_URL || secrets.ACUMATICA_PROD_URL) }}
+          ACUMATICA_USERNAME: ${{ (steps.env.outputs.target == 'production') && secrets.ACUMATICA_PROD_USERNAME || (secrets.ACUMATICA_STG_USERNAME || secrets.ACUMATICA_PROD_USERNAME) }}
+          ACUMATICA_PASSWORD: ${{ (steps.env.outputs.target == 'production') && secrets.ACUMATICA_PROD_PASSWORD || (secrets.ACUMATICA_STG_PASSWORD || secrets.ACUMATICA_PROD_PASSWORD) }}
+          ACUMATICA_TENANT: ${{ (steps.env.outputs.target == 'production') && secrets.ACUMATICA_PROD_TENANT || (secrets.ACUMATICA_STG_TENANT || secrets.ACUMATICA_PROD_TENANT) }}
+        run: python scripts/validate-publish.py --manifest publish-manifest.json
+
+      # ── Auto-rollback on verification failure ─────────────────────────
+      - name: Auto-rollback on verification failure
+        id: rollback
+        if: |
+          (steps.verify.outcome == 'failure' || steps.smoke.outcome == 'failure') &&
+          steps.env.outputs.target == 'production' &&
+          github.event.inputs.dry_run != 'true'
+        env:
+          ACUMATICA_URL: ${{ secrets.ACUMATICA_PROD_URL }}
+          ACUMATICA_USERNAME: ${{ secrets.ACUMATICA_PROD_USERNAME }}
+          ACUMATICA_PASSWORD: ${{ secrets.ACUMATICA_PROD_PASSWORD }}
+          ACUMATICA_TENANT: ${{ secrets.ACUMATICA_PROD_TENANT }}
+          SLACK_WEBHOOK_URL: ${{ secrets.STUDIOB_SLACK_WEBHOOK_URL }}
+        run: |
+          SNAPSHOT=$(ls backups/${PROJECT_NAME}_backup_*.zip 2>/dev/null | head -1)
+          if [ -z "${SNAPSHOT}" ]; then
+            echo "::error::No snapshot available — cannot rollback"
+            curl -sf -X POST "${SLACK_WEBHOOK_URL}" \
+              -H "Content-Type: application/json" \
+              -d '{"text":"ROLLBACK FAILED — no snapshot available\nDeploy: '"${PROJECT_NAME}"' @ '"${GITHUB_SHA::8}"'\nManual restore required via SM204505"}'
+            exit 1
+          fi
+
+          echo "Rolling back to snapshot: ${SNAPSHOT}"
+          python scripts/deploy.py \
+            --project "${PROJECT_NAME}" \
+            --package "${SNAPSHOT}" \
+            --also-publish "${ALSO_PUBLISH}"
+
+          # Post-rollback verification
+          python scripts/validate-publish.py --manifest publish-manifest.json
+          ROLLBACK_VERIFY=$?
+
+          if [ ${ROLLBACK_VERIFY} -eq 0 ]; then
+            curl -sf -X POST "${SLACK_WEBHOOK_URL}" \
+              -H "Content-Type: application/json" \
+              -d '{"text":"Deploy ROLLED BACK — '"${PROJECT_NAME}"' -> production\n  Deploy: '"${GITHUB_SHA::8}"'\n  Rollback: snapshot restored + verified\n  Note: two app pool restarts occurred"}'
+          else
+            curl -sf -X POST "${SLACK_WEBHOOK_URL}" \
+              -H "Content-Type: application/json" \
+              -d '{"text":"ROLLBACK FAILED — verification did not pass\nDeploy: '"${PROJECT_NAME}"' @ '"${GITHUB_SHA::8}"'\nArtifact: '"${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"'\nManual restore: download artifact -> SM204505 Import -> Publish"}'
+            exit 1
+          fi
+
+      - name: Tag rolled-back deploy
+        if: steps.rollback.outcome == 'success'
+        run: |
+          TAG="deploy/prod/$(date +%Y%m%d-%H%M%S)-ROLLED-BACK"
+          git tag "${TAG}"
+          git push origin "${TAG}"
 
       # ── Exit maintenance mode — resume all Acumatica workers ──────────
       - name: Exit maintenance mode
@@ -513,14 +664,25 @@ jobs:
             echo "| Countdown | Skipped |" >> "$GITHUB_STEP_SUMMARY"
           fi
 
+      - name: Tag successful deploy
+        if: success() && steps.env.outputs.target == 'production'
+        run: |
+          TAG="deploy/prod/$(date +%Y%m%d-%H%M%S)"
+          git tag "${TAG}"
+          git push origin "${TAG}"
+          echo "Tagged: ${TAG}"
+
   # ──────────────────────────────────────────────
-  # Job 3: Validate — PR check (no publish)
+  # Job 4: Sandbox Validate — full publish + verify on sandbox (PR only)
   # ──────────────────────────────────────────────
-  validate:
-    name: Validate Against Staging
+  sandbox-validate:
+    name: Validate on Sandbox
     needs: build
     runs-on: ubuntu-latest
     if: github.event_name == 'pull_request'
+    concurrency:
+      group: sandbox-publish
+      cancel-in-progress: true
 
     steps:
       - name: Checkout repository
@@ -532,50 +694,84 @@ jobs:
           name: customization-package
           path: dist/
 
-      - name: Validate customization package via REST API
+      - name: Install Python dependencies
+        run: pip install -r scripts/requirements.txt
+
+      - name: Import and publish on sandbox
         env:
-          ACUMATICA_URL: ${{ secrets.ACUMATICA_STG_URL || secrets.ACUMATICA_PROD_URL }}
-          ACUMATICA_USERNAME: ${{ secrets.ACUMATICA_STG_USERNAME || secrets.ACUMATICA_PROD_USERNAME }}
-          ACUMATICA_PASSWORD: ${{ secrets.ACUMATICA_STG_PASSWORD || secrets.ACUMATICA_PROD_PASSWORD }}
-          ACUMATICA_TENANT: ${{ secrets.ACUMATICA_STG_TENANT || secrets.ACUMATICA_PROD_TENANT }}
+          ACUMATICA_URL: ${{ secrets.ACUMATICA_STG_URL }}
+          ACUMATICA_USERNAME: ${{ secrets.ACUMATICA_STG_USERNAME }}
+          ACUMATICA_PASSWORD: ${{ secrets.ACUMATICA_STG_PASSWORD }}
+          ACUMATICA_TENANT: ${{ secrets.ACUMATICA_STG_TENANT }}
         run: |
           PACKAGE_FILE=$(ls dist/${PROJECT_NAME}_*.zip 2>/dev/null | head -1)
           if [ -z "${PACKAGE_FILE}" ]; then
             PACKAGE_FILE=$(ls dist/*.zip | head -1)
           fi
 
-          # Build extra-import flags for any additional packages (name:path format)
           EXTRA_FLAGS=""
           for pkg in dist/*.zip; do
             if [ "${pkg}" != "${PACKAGE_FILE}" ]; then
-              # Extract project name by removing timestamp suffix (_YYYYMMDD-HHMMSS.zip)
               PKG_BASE=$(basename "${pkg}" .zip)
               PKG_NAME=$(echo "${PKG_BASE}" | sed 's/_[0-9]\{8\}-[0-9]\{6\}$//')
               EXTRA_FLAGS+=" --extra-import ${PKG_NAME}:${pkg}"
             fi
           done
 
-          chmod +x scripts/deploy.sh
-          scripts/deploy.sh \
+          python scripts/deploy.py \
             --project "${PROJECT_NAME}" \
             --package "${PACKAGE_FILE}" \
             --also-publish "${ALSO_PUBLISH}" \
-            ${EXTRA_FLAGS} \
-            --validate-only
+            ${EXTRA_FLAGS}
 
-      - name: Post validation result
+      - name: Validate custom fields on sandbox
+        id: verify
+        env:
+          ACUMATICA_URL: ${{ secrets.ACUMATICA_STG_URL }}
+          ACUMATICA_USERNAME: ${{ secrets.ACUMATICA_STG_USERNAME }}
+          ACUMATICA_PASSWORD: ${{ secrets.ACUMATICA_STG_PASSWORD }}
+          ACUMATICA_TENANT: ${{ secrets.ACUMATICA_STG_TENANT }}
+        run: |
+          python scripts/validate-publish.py \
+            --manifest publish-manifest.json \
+            2>&1 | tee validation-output.txt
+
+      - name: Comment on PR with results
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          RESULT="Passed"
+          if [ "${{ steps.verify.outcome }}" = "failure" ]; then
+            RESULT="Failed"
+          fi
+
+          BODY=""
+          if [ -f validation-output.txt ]; then
+            BODY=$(cat validation-output.txt | head -50)
+          fi
+
+          gh pr comment ${{ github.event.pull_request.number }} --body "### Sandbox Validation ${RESULT}
+
+          \`\`\`
+          ${BODY}
+          \`\`\`
+
+          [Full run log](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})"
+
+      - name: Post validation summary
         if: always()
         run: |
-          echo "## Validation Result" >> "$GITHUB_STEP_SUMMARY"
+          echo "## Sandbox Validation" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
-          if [ $? -eq 0 ]; then
-            echo "Customization package validated against staging." >> "$GITHUB_STEP_SUMMARY"
-          else
-            echo "Validation failed — check logs above." >> "$GITHUB_STEP_SUMMARY"
+          if [ -f validation-output.txt ]; then
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+            head -50 validation-output.txt >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
           fi
 
   # ──────────────────────────────────────────────
-  # Job 4: Post-Deploy Validation — trigger ui-test-suite
+  # Job 5: Post-Deploy Validation — trigger ui-test-suite
   # ──────────────────────────────────────────────
   post-deploy-validation:
     name: Trigger Runtime Tests
