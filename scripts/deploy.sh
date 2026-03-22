@@ -602,6 +602,7 @@ log "Step 5b: Entity smoke tests (customized entities)..."
 declare -A ENTITY_MAP=(
   ["PO301000"]="PurchaseOrder"
   ["SO301000"]="SalesOrder"
+  ["SO302000"]="Shipment"   # SOShipmentEntry_LabelAutoPrint + SOShipmentLabelExt live here
   ["AR301000"]="Invoice"
   ["IN402000"]="StockItem"  # InventoryAllocationDetail is inquiry-only; StockItem validates the DAC
 )

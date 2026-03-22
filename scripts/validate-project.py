@@ -153,6 +153,9 @@ def validate(path: str, strict: bool = False):
             # CRM DAC compatibility checks
             validate_crm_dac_safety(class_name, code, strict)
 
+            # Device Hub prerequisite checklist (SMPrintJobMaint usage)
+            validate_device_hub_usage(class_name, code, strict)
+
         ok(f"Found {len(graphs)} <Graph> element(s)")
 
     # Check 7: Validate <SqlScript> elements
@@ -320,6 +323,67 @@ def validate_extension_safety(class_name: str, code: str, strict: bool):
             error(msg)
         else:
             warn(msg)
+
+
+def validate_device_hub_usage(class_name: str, code: str, strict: bool):
+    """Detect Device Hub (SMPrintJobMaint) usage and emit a prerequisite checklist.
+
+    When a graph extension queues Device Hub print jobs via SMPrintJobMaint, three
+    infrastructure items must be configured in Acumatica before labels will print:
+
+      1. The BoxLabel4x6 report published to Acumatica Report Designer (SM208000).
+         Report ID in the designer must match the string constant in C# exactly
+         (case-sensitive). Mismatch → Device Hub receives the job but cannot
+         find the report, silently queuing jobs that never print.
+
+      2. The thermal printer mapped to the BoxLabel4x6 report in Device Hub
+         Printers (SM206530). Without the report-to-printer mapping, Device Hub
+         does not know which physical printer to dispatch the job to.
+         Steps:
+           a. Open SM206530 and open the thermal printer record.
+           b. On the Reports tab, add a row: Report ID = BoxLabel4x6.
+           c. Set Paper Size = 4×6, Status = Active. Save.
+
+      3. A printer name set in User Preferences (SM202010) for every user who
+         may trigger label printing — both auto-print (WMS pick status change)
+         and manual (Print Box Labels button). If the field is blank, the code
+         logs a warning and skips queuing silently; no labels are printed and
+         no error surfaces unless the user clicks the manual button.
+
+    These are runtime configuration requirements — they cannot be detected at
+    compile time or by the Acumatica import/publish flow. Emit a warning so the
+    deployer knows to verify these items after every publish to a new instance.
+    """
+
+    # Strip comments to avoid false positives from inline documentation
+    clean = re.sub(r"///.*$", "", code, flags=re.MULTILINE)
+    clean = re.sub(r"//.*$", "", clean, flags=re.MULTILINE)
+    clean = re.sub(r"/\*.*?\*/", "", clean, flags=re.DOTALL)
+
+    if "SMPrintJobMaint" not in clean:
+        return  # No Device Hub usage in this class — nothing to check
+
+    # Try to extract the report ID constant so the checklist message is precise.
+    # Handles: private const string BOX_LABEL_REPORT_ID = "BoxLabel4x6";
+    report_id_match = re.search(r'BOX_LABEL_REPORT[^=]*=\s*"([A-Za-z0-9_]+)"', clean)
+    if not report_id_match:
+        # Fallback: look for ReportID = "..." assignment near SMPrintJobMaint
+        report_id_match = re.search(r'ReportID\s*=\s*"([A-Za-z0-9_]+)"', clean)
+    report_id = report_id_match.group(1) if report_id_match else "BoxLabel4x6"
+
+    warn(
+        f"{class_name}: Uses SMPrintJobMaint (Device Hub) — verify post-publish prerequisites:\n"
+        f"         1. Report '{report_id}' published in Acumatica Report Designer (SM208000).\n"
+        f"            Report ID must match the C# constant exactly (case-sensitive).\n"
+        f"         2. Thermal printer mapped to '{report_id}' in Device Hub Printers (SM206530):\n"
+        f"            a. Open the thermal printer record in SM206530.\n"
+        f"            b. Reports tab → add row: Report ID = '{report_id}', Paper Size = 4×6,\n"
+        f"               Status = Active. Save.\n"
+        f"         3. Printer name set in User Preferences (SM202010) for every user who\n"
+        f"            may trigger label printing (auto or manual). Without this the labels\n"
+        f"            are silently skipped — no error is shown on auto-print path.\n"
+        f"         These are runtime configuration items — publishing alone is not sufficient."
+    )
 
 
 def validate_crm_dac_safety(class_name: str, code: str, strict: bool):
