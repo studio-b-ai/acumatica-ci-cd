@@ -181,10 +181,13 @@ LOGIN_RETRY_DELAY=15
 LOGIN_ATTEMPT=0
 LOGIN_SUCCESS=false
 
+LOGIN_RESPONSE_FILE=$(mktemp)
+CLEANUP_FILES+=("${LOGIN_RESPONSE_FILE}")
+
 while [[ ${LOGIN_ATTEMPT} -lt ${LOGIN_MAX_RETRIES} ]]; do
   LOGIN_ATTEMPT=$((LOGIN_ATTEMPT + 1))
 
-  HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+  HTTP_CODE=$(curl -s -o "${LOGIN_RESPONSE_FILE}" -w "%{http_code}" \
     -X POST \
     -H "Content-Type: application/json" \
     -c "${COOKIE_JAR}" \
@@ -196,8 +199,28 @@ while [[ ${LOGIN_ATTEMPT} -lt ${LOGIN_MAX_RETRIES} ]]; do
     break
   fi
 
+  # ─── CIRCUIT BREAKER: NullReferenceException on login = HALT ──────────
+  # If login itself returns NullRef, the customization subsystem is corrupted.
+  # Retrying won't help — it will just burn through session slots.
+  LOGIN_RESPONSE=$(cat "${LOGIN_RESPONSE_FILE}" 2>/dev/null || echo "")
+  if echo "${LOGIN_RESPONSE}" | grep -q "NullReferenceException"; then
+    err "═══════════════════════════════════════════════════════════════"
+    err "CIRCUIT BREAKER: NullReferenceException on API login"
+    err "═══════════════════════════════════════════════════════════════"
+    err ""
+    err "The Acumatica customization subsystem is corrupted."
+    err "This is NOT a session limit issue — DO NOT RETRY."
+    err ""
+    err "Action required:"
+    err "  1. Check SM204505 for orphaned customization projects"
+    err "  2. File an Acumatica support ticket to clean CustProject table"
+    err "  3. See: 2026-03-22 incident (AesthetikWMSv2/v3 orphans)"
+    err ""
+    die "HALTED — login NullReferenceException indicates database corruption."
+  fi
+
   if [[ "${HTTP_CODE}" == "500" && ${LOGIN_ATTEMPT} -lt ${LOGIN_MAX_RETRIES} ]]; then
-    # HTTP 500 is often the API Login Limit — all session slots consumed
+    # HTTP 500 without NullRef is often the API Login Limit — all session slots consumed
     # by MCP server, sync workers, etc. Wait and retry.
     WAIT=$((LOGIN_RETRY_DELAY * LOGIN_ATTEMPT))
     warn "Login returned HTTP 500 (likely API Login Limit). Retry ${LOGIN_ATTEMPT}/${LOGIN_MAX_RETRIES} in ${WAIT}s..."
@@ -381,6 +404,24 @@ if [[ "${HTTP_CODE}" == "404" || "${HTTP_CODE}" == "405" ]]; then
 elif [[ "${HTTP_CODE}" != "200" && "${HTTP_CODE}" != "204" ]]; then
   err "Import failed (HTTP ${HTTP_CODE})"
   echo "${IMPORT_RESPONSE}" >&2
+
+  # ─── CLEANUP: Delete orphaned project from failed import ─────────────
+  # A failed import can leave a half-created project in CustProject table.
+  # If not cleaned up, orphaned projects corrupt the customization subsystem.
+  # See: 2026-03-22 incident — orphaned AesthetikWMSv2/v3 blocked all operations.
+  warn "Attempting cleanup of potentially orphaned project '${PROJECT}'..."
+  CLEANUP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+    -X POST \
+    -H "Content-Type: application/json" \
+    -b "${COOKIE_JAR}" \
+    -d "{\"projectName\": \"${PROJECT}\"}" \
+    "${URL}/CustomizationApi/delete" 2>/dev/null)
+  if [[ "${CLEANUP_CODE}" == "200" || "${CLEANUP_CODE}" == "204" ]]; then
+    ok "Cleaned up orphaned project '${PROJECT}' after failed import"
+  else
+    warn "Could not clean up orphaned project (HTTP ${CLEANUP_CODE}) — may need manual cleanup on SM204505"
+  fi
+
   die "Package import failed"
 fi
 ok "Package imported: ${PROJECT}"

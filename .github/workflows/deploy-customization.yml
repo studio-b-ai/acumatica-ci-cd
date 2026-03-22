@@ -75,7 +75,10 @@ on:
         default: false
 
 env:
-  PROJECT_NAME: ${{ vars.CUSTOMIZATION_PROJECT_NAME || 'AesthetikERP' }}
+  # HARDCODED — never use a mutable GitHub variable for the project name.
+  # Changing this creates orphaned projects that corrupt the customization subsystem.
+  # See: 2026-03-22 incident — AesthetikWMSv2/v3 orphans blocked all deploys.
+  PROJECT_NAME: AesthetikWMS
   ALSO_PUBLISH: ${{ vars.ALSO_PUBLISH_PROJECTS || '' }}
 
 jobs:
@@ -97,6 +100,16 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+
+      - name: Verify project folder exists
+        run: |
+          if [ ! -d "Customization/${PROJECT_NAME}" ]; then
+            echo "::error::FATAL: Customization/${PROJECT_NAME}/ does not exist."
+            echo "The PROJECT_NAME env var must match an existing folder under Customization/."
+            echo "Available folders:"
+            ls -d Customization/*/ 2>/dev/null || echo "  (none)"
+            exit 1
+          fi
 
       - name: Validate project.xml
         run: |
