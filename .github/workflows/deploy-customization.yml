@@ -644,13 +644,16 @@ jobs:
           echo "Tagged: ${TAG}"
 
   # ──────────────────────────────────────────────
-  # Job 4: Validate — PR check (no publish)
+  # Job 4: Sandbox Validate — full publish + verify on sandbox (PR only)
   # ──────────────────────────────────────────────
-  validate:
-    name: Validate Against Staging
+  sandbox-validate:
+    name: Validate on Sandbox
     needs: build
     runs-on: ubuntu-latest
     if: github.event_name == 'pull_request'
+    concurrency:
+      group: sandbox-publish
+      cancel-in-progress: true
 
     steps:
       - name: Checkout repository
@@ -662,23 +665,24 @@ jobs:
           name: customization-package
           path: dist/
 
-      - name: Validate customization package via REST API
+      - name: Install Python dependencies
+        run: pip install -r scripts/requirements.txt
+
+      - name: Import and publish on sandbox
         env:
-          ACUMATICA_URL: ${{ secrets.ACUMATICA_STG_URL || secrets.ACUMATICA_PROD_URL }}
-          ACUMATICA_USERNAME: ${{ secrets.ACUMATICA_STG_USERNAME || secrets.ACUMATICA_PROD_USERNAME }}
-          ACUMATICA_PASSWORD: ${{ secrets.ACUMATICA_STG_PASSWORD || secrets.ACUMATICA_PROD_PASSWORD }}
-          ACUMATICA_TENANT: ${{ secrets.ACUMATICA_STG_TENANT || secrets.ACUMATICA_PROD_TENANT }}
+          ACUMATICA_URL: ${{ secrets.ACUMATICA_STG_URL }}
+          ACUMATICA_USERNAME: ${{ secrets.ACUMATICA_STG_USERNAME }}
+          ACUMATICA_PASSWORD: ${{ secrets.ACUMATICA_STG_PASSWORD }}
+          ACUMATICA_TENANT: ${{ secrets.ACUMATICA_STG_TENANT }}
         run: |
           PACKAGE_FILE=$(ls dist/${PROJECT_NAME}_*.zip 2>/dev/null | head -1)
           if [ -z "${PACKAGE_FILE}" ]; then
             PACKAGE_FILE=$(ls dist/*.zip | head -1)
           fi
 
-          # Build extra-import flags for any additional packages (name:path format)
           EXTRA_FLAGS=""
           for pkg in dist/*.zip; do
             if [ "${pkg}" != "${PACKAGE_FILE}" ]; then
-              # Extract project name by removing timestamp suffix (_YYYYMMDD-HHMMSS.zip)
               PKG_BASE=$(basename "${pkg}" .zip)
               PKG_NAME=$(echo "${PKG_BASE}" | sed 's/_[0-9]\{8\}-[0-9]\{6\}$//')
               EXTRA_FLAGS+=" --extra-import ${PKG_NAME}:${pkg}"
@@ -689,22 +693,56 @@ jobs:
             --project "${PROJECT_NAME}" \
             --package "${PACKAGE_FILE}" \
             --also-publish "${ALSO_PUBLISH}" \
-            ${EXTRA_FLAGS} \
-            --validate-only
+            ${EXTRA_FLAGS}
 
-      - name: Post validation result
+      - name: Validate custom fields on sandbox
+        id: verify
+        env:
+          ACUMATICA_URL: ${{ secrets.ACUMATICA_STG_URL }}
+          ACUMATICA_USERNAME: ${{ secrets.ACUMATICA_STG_USERNAME }}
+          ACUMATICA_PASSWORD: ${{ secrets.ACUMATICA_STG_PASSWORD }}
+          ACUMATICA_TENANT: ${{ secrets.ACUMATICA_STG_TENANT }}
+        run: |
+          python scripts/validate-publish.py \
+            --manifest publish-manifest.json \
+            2>&1 | tee validation-output.txt
+
+      - name: Comment on PR with results
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          RESULT="Passed"
+          if [ "${{ steps.verify.outcome }}" = "failure" ]; then
+            RESULT="Failed"
+          fi
+
+          BODY=""
+          if [ -f validation-output.txt ]; then
+            BODY=$(cat validation-output.txt | head -50)
+          fi
+
+          gh pr comment ${{ github.event.pull_request.number }} --body "### Sandbox Validation ${RESULT}
+
+          \`\`\`
+          ${BODY}
+          \`\`\`
+
+          [Full run log](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})"
+
+      - name: Post validation summary
         if: always()
         run: |
-          echo "## Validation Result" >> "$GITHUB_STEP_SUMMARY"
+          echo "## Sandbox Validation" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
-          if [ $? -eq 0 ]; then
-            echo "Customization package validated against staging." >> "$GITHUB_STEP_SUMMARY"
-          else
-            echo "Validation failed — check logs above." >> "$GITHUB_STEP_SUMMARY"
+          if [ -f validation-output.txt ]; then
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+            head -50 validation-output.txt >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
           fi
 
   # ──────────────────────────────────────────────
-  # Job 4: Post-Deploy Validation — trigger ui-test-suite
+  # Job 5: Post-Deploy Validation — trigger ui-test-suite
   # ──────────────────────────────────────────────
   post-deploy-validation:
     name: Trigger Runtime Tests
