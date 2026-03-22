@@ -304,7 +304,7 @@ jobs:
         with:
           name: pre-deploy-snapshot-${{ github.run_number }}
           path: backups/*.zip
-          retention-days: 90
+          retention-days: 365
 
       # ── After-hours detection (6pm–6am CT → skip employee emails) ────
       - name: Check if after-hours (6pm-6am CT)
@@ -439,6 +439,93 @@ jobs:
           path: dist/backup/*.zip
           retention-days: 30
           if-no-files-found: ignore
+
+      # ── Post-publish verification ────────────────────────────────────
+      - name: Post-publish smoke test
+        id: smoke
+        if: success() && github.event.inputs.dry_run != 'true'
+        continue-on-error: true
+        env:
+          ACUMATICA_URL: ${{ (steps.env.outputs.target == 'production') && secrets.ACUMATICA_PROD_URL || (secrets.ACUMATICA_STG_URL || secrets.ACUMATICA_PROD_URL) }}
+          ACUMATICA_USERNAME: ${{ (steps.env.outputs.target == 'production') && secrets.ACUMATICA_PROD_USERNAME || (secrets.ACUMATICA_STG_USERNAME || secrets.ACUMATICA_PROD_USERNAME) }}
+          ACUMATICA_PASSWORD: ${{ (steps.env.outputs.target == 'production') && secrets.ACUMATICA_PROD_PASSWORD || (secrets.ACUMATICA_STG_PASSWORD || secrets.ACUMATICA_PROD_PASSWORD) }}
+          ACUMATICA_TENANT: ${{ (steps.env.outputs.target == 'production') && secrets.ACUMATICA_PROD_TENANT || (secrets.ACUMATICA_STG_TENANT || secrets.ACUMATICA_PROD_TENANT) }}
+        run: |
+          python -c "
+          import sys; sys.path.insert(0, '.')
+          from scripts.deploy import AcumaticaCustomizationClient
+          import os
+          client = AcumaticaCustomizationClient(
+              os.environ['ACUMATICA_URL'], os.environ['ACUMATICA_USERNAME'],
+              os.environ['ACUMATICA_PASSWORD'], os.environ['ACUMATICA_TENANT'],
+          )
+          client.login()
+          ok = client.smoke_test()
+          client.logout()
+          sys.exit(0 if ok else 1)
+          "
+
+      - name: Post-publish field validation
+        id: verify
+        if: success() && github.event.inputs.dry_run != 'true'
+        continue-on-error: true
+        env:
+          ACUMATICA_URL: ${{ (steps.env.outputs.target == 'production') && secrets.ACUMATICA_PROD_URL || (secrets.ACUMATICA_STG_URL || secrets.ACUMATICA_PROD_URL) }}
+          ACUMATICA_USERNAME: ${{ (steps.env.outputs.target == 'production') && secrets.ACUMATICA_PROD_USERNAME || (secrets.ACUMATICA_STG_USERNAME || secrets.ACUMATICA_PROD_USERNAME) }}
+          ACUMATICA_PASSWORD: ${{ (steps.env.outputs.target == 'production') && secrets.ACUMATICA_PROD_PASSWORD || (secrets.ACUMATICA_STG_PASSWORD || secrets.ACUMATICA_PROD_PASSWORD) }}
+          ACUMATICA_TENANT: ${{ (steps.env.outputs.target == 'production') && secrets.ACUMATICA_PROD_TENANT || (secrets.ACUMATICA_STG_TENANT || secrets.ACUMATICA_PROD_TENANT) }}
+        run: python scripts/validate-publish.py --manifest publish-manifest.json
+
+      # ── Auto-rollback on verification failure ─────────────────────────
+      - name: Auto-rollback on verification failure
+        id: rollback
+        if: |
+          (steps.verify.outcome == 'failure' || steps.smoke.outcome == 'failure') &&
+          steps.env.outputs.target == 'production' &&
+          github.event.inputs.dry_run != 'true'
+        env:
+          ACUMATICA_URL: ${{ secrets.ACUMATICA_PROD_URL }}
+          ACUMATICA_USERNAME: ${{ secrets.ACUMATICA_PROD_USERNAME }}
+          ACUMATICA_PASSWORD: ${{ secrets.ACUMATICA_PROD_PASSWORD }}
+          ACUMATICA_TENANT: ${{ secrets.ACUMATICA_PROD_TENANT }}
+          SLACK_WEBHOOK_URL: ${{ secrets.STUDIOB_SLACK_WEBHOOK_URL }}
+        run: |
+          SNAPSHOT=$(ls backups/${PROJECT_NAME}_backup_*.zip 2>/dev/null | head -1)
+          if [ -z "${SNAPSHOT}" ]; then
+            echo "::error::No snapshot available — cannot rollback"
+            curl -sf -X POST "${SLACK_WEBHOOK_URL}" \
+              -H "Content-Type: application/json" \
+              -d '{"text":"ROLLBACK FAILED — no snapshot available\nDeploy: '"${PROJECT_NAME}"' @ '"${GITHUB_SHA::8}"'\nManual restore required via SM204505"}'
+            exit 1
+          fi
+
+          echo "Rolling back to snapshot: ${SNAPSHOT}"
+          python scripts/deploy.py \
+            --project "${PROJECT_NAME}" \
+            --package "${SNAPSHOT}" \
+            --also-publish "${ALSO_PUBLISH}"
+
+          # Post-rollback verification
+          python scripts/validate-publish.py --manifest publish-manifest.json
+          ROLLBACK_VERIFY=$?
+
+          if [ ${ROLLBACK_VERIFY} -eq 0 ]; then
+            curl -sf -X POST "${SLACK_WEBHOOK_URL}" \
+              -H "Content-Type: application/json" \
+              -d '{"text":"Deploy ROLLED BACK — '"${PROJECT_NAME}"' -> production\n  Deploy: '"${GITHUB_SHA::8}"'\n  Rollback: snapshot restored + verified\n  Note: two app pool restarts occurred"}'
+          else
+            curl -sf -X POST "${SLACK_WEBHOOK_URL}" \
+              -H "Content-Type: application/json" \
+              -d '{"text":"ROLLBACK FAILED — verification did not pass\nDeploy: '"${PROJECT_NAME}"' @ '"${GITHUB_SHA::8}"'\nArtifact: '"${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"'\nManual restore: download artifact -> SM204505 Import -> Publish"}'
+            exit 1
+          fi
+
+      - name: Tag rolled-back deploy
+        if: steps.rollback.outcome == 'success'
+        run: |
+          TAG="deploy/prod/$(date +%Y%m%d-%H%M%S)-ROLLED-BACK"
+          git tag "${TAG}"
+          git push origin "${TAG}"
 
       # ── Exit maintenance mode — resume all Acumatica workers ──────────
       - name: Exit maintenance mode
