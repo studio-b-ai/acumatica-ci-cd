@@ -748,7 +748,111 @@ IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('SOOrder') 
             </Children>
         </PXGridLevel>
     </Page>
+    <Graph ClassName="UserRecordsCacheCleanup" Source="#CDATA" IsNew="True" FileType="NewFile">
+        <CDATA name="Source"><![CDATA[using System;
+using System.Collections.Generic;
+using System.Configuration;
+using System.Text;
+using Customization;
 
+namespace HeritageFabrics
+{
+    /// <summary>
+    /// ONE-TIME FIX: Clears corrupted UserRecords/Favorites cache that blocks
+    /// all save operations across the instance.
+    ///
+    /// Symptom: "Unhandled exception in MoveNext" on any screen save.
+    /// Root cause: PX.Data.UserRecords.UserRecordsDBUpdater
+    ///   .UpdateFavoriteRecordsCachedContentForAllUsers crashes in
+    ///   SelectOriginalValues during PXTransactionScope.Complete().
+    ///
+    /// REMOVE THIS CLASS AFTER CONFIRMING FIX.
+    /// </summary>
+    public class UserRecordsCacheCleanup : CustomizationPlugin
+    {
+        public override void UpdateDatabase()
+        {
+            var log = new StringBuilder();
+            log.AppendLine("[CacheCleanup] Starting UserRecords corruption fix...");
+
+            try
+            {
+                var cs = ConfigurationManager.ConnectionStrings["ProjectX"];
+                string connStr = cs.ConnectionString;
+
+                using (var conn = new System.Data.SqlClient.SqlConnection(connStr))
+                {
+                    conn.Open();
+                    log.AppendLine("[CacheCleanup] DB connected.");
+
+                    // Step 1: Discover tables related to UserRecords/Favorites
+                    var tables = new List<string>();
+                    using (var cmd = conn.CreateCommand())
+                    {
+                        cmd.CommandText = "SELECT name FROM sys.tables WHERE name LIKE '%Favorite%' OR name LIKE '%UserRecord%' OR name LIKE '%RecentRecord%' OR name LIKE '%RecentItem%' ORDER BY name";
+                        using (var reader = cmd.ExecuteReader())
+                        {
+                            while (reader.Read())
+                            {
+                                tables.Add(reader.GetString(0));
+                            }
+                        }
+                    }
+
+                    if (tables.Count == 0)
+                    {
+                        log.AppendLine("[CacheCleanup] No matching tables found.");
+                        WriteLog(log.ToString());
+                        return;
+                    }
+
+                    log.AppendLine(string.Format("[CacheCleanup] Found {0} table(s):", tables.Count));
+
+                    // Step 2: Count and clear each table
+                    foreach (var table in tables)
+                    {
+                        try
+                        {
+                            int countBefore = 0;
+                            using (var cmd = conn.CreateCommand())
+                            {
+                                cmd.CommandText = string.Format("SELECT COUNT(*) FROM [{0}]", table);
+                                countBefore = (int)cmd.ExecuteScalar();
+                            }
+
+                            log.AppendLine(string.Format("  {0}: {1} rows before", table, countBefore));
+
+                            if (countBefore > 0)
+                            {
+                                using (var cmd = conn.CreateCommand())
+                                {
+                                    cmd.CommandText = string.Format("DELETE FROM [{0}]", table);
+                                    int deleted = cmd.ExecuteNonQuery();
+                                    log.AppendLine(string.Format("  {0}: DELETED {1} rows", table, deleted));
+                                }
+                            }
+                        }
+                        catch (Exception tableEx)
+                        {
+                            log.AppendLine(string.Format("  {0}: ERROR - {1}", table, tableEx.Message));
+                        }
+                    }
+
+                    log.AppendLine("[CacheCleanup] Corruption fix complete.");
+                }
+            }
+            catch (Exception ex)
+            {
+                log.AppendLine(string.Format("[CacheCleanup] FATAL: {0}: {1}", ex.GetType().FullName, ex.Message));
+                if (ex.InnerException != null)
+                    log.AppendLine(string.Format("[CacheCleanup] Inner: {0}", ex.InnerException.Message));
+            }
+
+            WriteLog(log.ToString());
+        }
+    }
+}]]></CDATA>
+    </Graph>
 
 </Customization>
 
