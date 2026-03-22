@@ -1,0 +1,40 @@
+{
+  "production": {
+    "url": "heritagefabrics.acumatica.com",
+    "tenant": "Heritage Fabrics",
+    "primary_project": "AesthetikWMS",
+    "packages": {
+      "custom": [
+        "AesthetikWMS",
+        "AesthetikContainers",
+        "AesthetikSchemaFix",
+        "AesthetikERP",
+        "HeritageFabricsPOv5"
+      ],
+      "isv": [
+        "AcumaticaPacejetCustomFields24.1001",
+        "KNCentralizedLicense[24.200.0118][19NOV2024][V03]3",
+        "FusionWMSBasic[9.4.11][24.201.0052]",
+        "FusionWMSAdvanced[9.4.11][24.201.0052]",
+        "IIGCONTAINERMGMT[24.204.0004][R19]1",
+        "IIGHFContainerMods[24.204.0004][R04]",
+        "WMSynergy.DefaultQty",
+        "WMSynergy.HF.POReceiptLabel",
+        "WMSynergy.HF.CutHangTagLabel",
+        "WMSynergy.HF.FusionLPUpdates",
+        "WMsynergy.HF.CustomerPriceList",
+        "WMSynergy.ForceLotSalesOrder",
+        "WMSynergy.ExpirationDateAtStockItems"
+      ]
+    }
+  },
+  "sandbox": {
+    "url": "heritagefabrics-sandbox.acumatica.com",
+    "tenant": "Heritage Fabrics",
+    "primary_project": "AesthetikWMS",
+    "packages": {
+      "custom": [],
+      "isv": []
+    }
+  }
+}

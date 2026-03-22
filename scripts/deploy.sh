@@ -38,6 +38,8 @@ PROJECT=""
 PACKAGE=""
 ALSO_PUBLISH=""
 EXTRA_IMPORTS=()
+UNIMPORT_PROJECTS=()
+ENVIRONMENT="production"
 VALIDATE_ONLY=false
 BACKUP=false
 MANIFEST=""
@@ -92,6 +94,8 @@ Options:
   --package FILE         Path to .zip package to deploy
   --also-publish NAMES   Comma-separated project names to co-publish for conflict check
   --extra-import NAME:FILE  Additional package to import (NAME=project name, FILE=zip path; repeatable)
+  --unimport NAME        Delete a project before import (repeatable; best-effort)
+  --environment ENV      Environment: sandbox|test|production (default: production)
   --validate-only        Upload and validate but do not publish
   --backup               Download existing package before deploying (enables rollback)
   --manifest FILE        Post-publish validation manifest (publish-manifest.json)
@@ -128,6 +132,8 @@ while [[ $# -gt 0 ]]; do
     --package)        PACKAGE="$2";        shift 2 ;;
     --also-publish)   ALSO_PUBLISH="$2";   shift 2 ;;
     --extra-import)   EXTRA_IMPORTS+=("$2"); shift 2 ;;
+    --unimport)       UNIMPORT_PROJECTS+=("$2"); shift 2 ;;
+    --environment)    ENVIRONMENT="$2";    shift 2 ;;
     --validate-only)  VALIDATE_ONLY=true;  shift ;;
     --backup)         BACKUP=true;         shift ;;
     --manifest)       MANIFEST="$2";       shift 2 ;;
@@ -149,6 +155,7 @@ done
 # Strip trailing slash from URL
 URL="${URL%/}"
 
+log "Environment: ${ENVIRONMENT}"
 log "Target:  ${URL}"
 log "Project: ${PROJECT}"
 log "Package: ${PACKAGE} ($(du -h "${PACKAGE}" | cut -f1))"
@@ -236,6 +243,23 @@ if [[ "${LOGIN_SUCCESS}" != true ]]; then
   die "Login failed after ${LOGIN_MAX_RETRIES} attempts (last HTTP ${HTTP_CODE}). Check credentials, URL, or API Login Limit."
 fi
 ok "Authenticated to ${URL} (attempt ${LOGIN_ATTEMPT}/${LOGIN_MAX_RETRIES})"
+
+# ─── Step 1a: Unimport projects (if --unimport) ─────────────────────────────
+for UNIMPORT_PROJ in ${UNIMPORT_PROJECTS[@]+"${UNIMPORT_PROJECTS[@]}"}; do
+  log "Unimporting project: ${UNIMPORT_PROJ}..."
+  UNIMPORT_CODE=$(curl -s -o "${RESPONSE_FILE:-/dev/null}" -w "%{http_code}" \
+    -X POST \
+    -H "Content-Type: application/json" \
+    -b "${COOKIE_JAR}" \
+    -d "{\"projectName\": \"${UNIMPORT_PROJ}\"}" \
+    "${URL}/CustomizationApi/delete" 2>/dev/null)
+
+  if [[ "${UNIMPORT_CODE}" == "200" || "${UNIMPORT_CODE}" == "204" ]]; then
+    ok "Unimported project: ${UNIMPORT_PROJ}"
+  else
+    warn "Unimport of '${UNIMPORT_PROJ}' returned HTTP ${UNIMPORT_CODE} — continuing (best-effort)"
+  fi
+done
 
 # ─── Step 1b: Backup existing package (if --backup) ─────────────────────────
 if [[ "${BACKUP}" == true ]]; then
