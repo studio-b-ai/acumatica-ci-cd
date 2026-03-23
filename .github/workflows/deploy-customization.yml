@@ -714,20 +714,22 @@ jobs:
           fi
 
           EXTRA_FLAGS=""
+          SANDBOX_COPUBLISH="${PROJECT_NAME}"
           for pkg in dist/*.zip; do
             if [ "${pkg}" != "${PACKAGE_FILE}" ]; then
               PKG_BASE=$(basename "${pkg}" .zip)
               PKG_NAME=$(echo "${PKG_BASE}" | sed 's/_[0-9]\{8\}-[0-9]\{6\}$//')
               EXTRA_FLAGS+=" --extra-import ${PKG_NAME}:${pkg}"
+              SANDBOX_COPUBLISH+=",${PKG_NAME}"
             fi
           done
 
-          # Sandbox only co-publishes projects we own (KNOWN_PROJECTS),
-          # not ISV/vendor packages that may not exist in test company.
+          # Sandbox only co-publishes projects we just imported —
+          # no ISV/vendor packages, no projects not in test company.
           python scripts/deploy.py \
             --project "${PROJECT_NAME}" \
             --package "${PACKAGE_FILE}" \
-            --also-publish "${KNOWN_PROJECTS}" \
+            --also-publish "${SANDBOX_COPUBLISH}" \
             ${EXTRA_FLAGS}
 
       - name: Validate custom fields on sandbox
