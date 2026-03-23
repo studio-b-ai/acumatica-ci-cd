@@ -1,22 +1,14 @@
 #!/usr/bin/env python3
 """
-Nightly Test Environment Sync — Acumatica Company Snapshot + Restore
+Nightly Test Environment Sync — Acumatica Company Copy
 
-Creates a snapshot of the production company and restores it to the test
-company on the same instance, keeping test in sync with production data.
+Copies production company data to the test company on the same instance,
+keeping test in sync with production.
 
-Uses the SOAP Screen API (SM203520 — Company Maintenance) which exposes
-CreateSnapshot and RestoreSnapshot dialogs.
+Uses the SOAP Screen API (SM203520 — Company Maintenance) CopyCompanyCommand
+action, which copies all data from one company to another directly.
 
-SOAP Submit sequence:
-  1. Login to SM203520
-  2. Navigate to production company (TenantID)
-  3. Open CreateSnapshot dialog → set Description → trigger PrepareAdbSnapshotCommand
-  4. Poll GetProcessStatus until snapshot completes
-  5. Select the new snapshot → open RestoreSnapshot dialog
-  6. Set target Company to test → trigger restore
-  7. Poll GetProcessStatus until restore completes
-  8. Logout
+No intermediate snapshot needed — no storage to manage.
 
 Environment variables (or --flag equivalents):
   ACUMATICA_URL         Instance URL
@@ -27,7 +19,7 @@ Environment variables (or --flag equivalents):
 
 Usage:
   python sync-test-env.py
-  python sync-test-env.py --dry-run          # Schema discovery + login only
+  python sync-test-env.py --dry-run          # Login + schema discovery only
   python sync-test-env.py --schema-only      # Print SM203520 field map
 """
 
@@ -79,7 +71,7 @@ class SoapClient:
             urllib.request.HTTPCookieProcessor(self.cookie_jar)
         )
 
-    def _soap_call(self, action: str, body: str, timeout: int = 120) -> str:
+    def _soap_call(self, action: str, body: str, timeout: int = 300) -> str:
         """Execute a SOAP call and return the response body."""
         envelope = f"""<?xml version="1.0" encoding="utf-8"?>
 <soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/"
@@ -102,7 +94,6 @@ class SoapClient:
             return resp.read().decode("utf-8")
         except urllib.error.HTTPError as e:
             body_text = e.read().decode("utf-8", errors="replace")
-            # Extract faultstring from SOAP fault for cleaner error messages
             fault_msg = ""
             try:
                 fault_root = ET.fromstring(body_text)
@@ -134,8 +125,7 @@ class SoapClient:
 
     def get_schema(self) -> str:
         """Get SM203520 field schema."""
-        resp = self._soap_call("GetSchema", "<tns:GetSchema/>")
-        return resp
+        return self._soap_call("GetSchema", "<tns:GetSchema/>")
 
     def get_process_status(self) -> tuple[str, str]:
         """Poll process status. Returns (status, message)."""
@@ -148,10 +138,7 @@ class SoapClient:
         return status, message or ""
 
     def submit(self, commands: list[dict]) -> str:
-        """Submit commands to SM203520.
-
-        Each command is a dict with keys: FieldName, ObjectName, Value (optional), Commit (optional).
-        """
+        """Submit commands to SM203520."""
         cmd_xml = []
         for cmd in commands:
             parts = [
@@ -169,54 +156,20 @@ class SoapClient:
         {''.join(cmd_xml)}
       </tns:commands>
     </tns:Submit>"""
-        return self._soap_call("Submit", body, timeout=300)
+        return self._soap_call("Submit", body, timeout=600)
 
     def clear(self) -> None:
         """Clear screen state."""
         self._soap_call("Clear", "<tns:Clear/>")
 
-    def export(self, commands: list[dict], top_count: int = 10) -> list[list[str]]:
-        """Export rows from a grid view. Returns list of rows (each row is list of field values).
-
-        Commands should include Value-less fields to read, in the order you want columns.
-        """
-        cmd_xml = []
-        for cmd in commands:
-            parts = [
-                f"<tns:FieldName>{cmd['FieldName']}</tns:FieldName>",
-                f"<tns:ObjectName>{cmd['ObjectName']}</tns:ObjectName>",
-            ]
-            if "Value" in cmd:
-                parts.append(f"<tns:Value>{cmd['Value']}</tns:Value>")
-            if cmd.get("Commit"):
-                parts.append("<tns:Commit>true</tns:Commit>")
-            cmd_xml.append(f"<tns:Command>{''.join(cmd_xml)}</tns:Command>" if False else f"<tns:Command>{''.join(parts)}</tns:Command>")
-
-        body = f"""<tns:Export>
-      <tns:commands>
-        {''.join(cmd_xml)}
-      </tns:commands>
-      <tns:topCount>{top_count}</tns:topCount>
-      <tns:includeHeaders>true</tns:includeHeaders>
-    </tns:Export>"""
-
-        resp = self._soap_call("Export", body)
-        root = ET.fromstring(resp)
-        rows = []
-        for array_el in root.iter(f"{{{NS}}}ArrayOfString"):
-            row = [s.text or "" for s in array_el.findall(f"{{{NS}}}Value")]
-            if row:
-                rows.append(row)
-        return rows
-
-    def poll_process(self, operation: str, timeout_seconds: int = 1200, poll_interval: int = 15) -> bool:
+    def poll_process(self, operation: str, timeout_seconds: int = 1800, poll_interval: int = 15) -> bool:
         """Poll GetProcessStatus until completed or timeout."""
         elapsed = 0
         while elapsed < timeout_seconds:
             time.sleep(poll_interval)
             elapsed += poll_interval
             status, message = self.get_process_status()
-            log(f"  {operation}: {status} ({elapsed}s) {message[:100] if message else ''}")
+            log(f"  {operation}: {status} ({elapsed}s) {message[:200] if message else ''}")
             if status == "Completed":
                 ok(f"{operation} completed ({elapsed}s)")
                 return True
@@ -224,74 +177,13 @@ class SoapClient:
                 err(f"{operation} aborted: {message[:500]}")
                 return False
             if status == "NotExists":
-                # Process hasn't started yet or already finished
-                if elapsed > 30:
+                if elapsed > 60:
                     warn(f"{operation}: NotExists after {elapsed}s — may have completed instantly")
                     return True
         err(f"{operation} timed out after {timeout_seconds}s")
         return False
 
 # ─── Sync Logic ─────────────────────────────────────────────────────────────
-
-def delete_old_snapshots(client: SoapClient, keep_description: str | None = None) -> int:
-    """Delete all prod-mirror-* snapshots except the one matching keep_description.
-
-    Returns count of deleted snapshots.
-    """
-    log("Cleaning up old prod-mirror snapshots...")
-    try:
-        rows = client.export([
-            {"FieldName": "Name", "ObjectName": "Snapshots"},
-            {"FieldName": "Description", "ObjectName": "Snapshots"},
-            {"FieldName": "CreationDate", "ObjectName": "Snapshots"},
-        ], top_count=50)
-    except RuntimeError as e:
-        warn(f"  Could not read Snapshots grid: {str(e)[:200]}")
-        return 0
-
-    if not rows or len(rows) <= 1:
-        log("  No snapshots found")
-        return 0
-
-    # First row is headers
-    deleted = 0
-    for row in rows[1:]:
-        if len(row) < 2:
-            continue
-        name, desc = row[0], row[1] or ""
-        if not desc.startswith("prod-mirror-"):
-            continue
-        if keep_description and desc == keep_description:
-            log(f"  Keeping: {name} ({desc})")
-            continue
-
-        log(f"  Deleting: {name} ({desc})")
-        try:
-            # Select the snapshot row, then trigger delete
-            client.submit([
-                {"FieldName": "Name", "ObjectName": "Snapshots", "Value": name, "Commit": True},
-            ])
-            client.submit([
-                {"FieldName": "DeleteSnapshotCommand", "ObjectName": "Actions"},
-            ])
-            # Confirm deletion dialog if one appears
-            try:
-                client.submit([
-                    {"FieldName": "DialogAnswer", "ObjectName": "Snapshots", "Value": "Yes"},
-                ])
-            except RuntimeError:
-                pass  # Dialog may not appear
-            deleted += 1
-            ok(f"  Deleted snapshot: {name}")
-        except RuntimeError as e:
-            warn(f"  Failed to delete {name}: {str(e)[:200]}")
-
-    if deleted:
-        ok(f"Cleaned up {deleted} old snapshot(s)")
-    else:
-        log("  No old prod-mirror snapshots to clean up")
-    return deleted
-
 
 def print_schema(client: SoapClient) -> None:
     """Print SM203520 schema for debugging."""
@@ -304,138 +196,55 @@ def print_schema(client: SoapClient) -> None:
             print(f"  {obj.text}: {field.text}")
 
 
-def create_snapshot(client: SoapClient, source_company: str, description: str) -> str | None:
-    """Create a snapshot of the source company. Returns the snapshot Name (ID) or None on failure.
+def copy_company(client: SoapClient, source_company: str, target_company: str) -> bool:
+    """Copy source company data to target company using CopyCompanyCommand.
 
-    SM203520 dialog flow:
-    1. Set snapshot description in CreateSnapshot dialog
-    2. Trigger PrepareAdbSnapshotCommand action
-    3. Poll GetProcessStatus until complete
-    4. Export Snapshots grid to find the new snapshot's Name (auto-generated ID)
+    SM203520 flow:
+    1. Navigate to source company (should already be in context from login)
+    2. Set CopyCompany.CompanyID to target company
+    3. Trigger CopyCompanyCommand action
+    4. Poll GetProcessStatus until complete
     """
-    log(f"Step 1: Creating snapshot of '{source_company}'...")
-    log(f"  Description: {description}")
+    log(f"Copying '{source_company}' → '{target_company}'...")
 
-    # Set snapshot parameters and trigger creation in one Submit.
+    # Step 1: Set target company in CopyCompany dialog and trigger the action
+    log("  Setting target company and triggering copy...")
     try:
         client.submit([
-            {"FieldName": "Description", "ObjectName": "CreateSnapshot", "Value": description},
-            {"FieldName": "PrepareAdbSnapshotCommand", "ObjectName": "Actions"},
+            {"FieldName": "CompanyID", "ObjectName": "CopyCompany", "Value": target_company, "Commit": True},
+            {"FieldName": "CopyCompanyCommand", "ObjectName": "Actions"},
         ])
+        ok("  Copy command accepted")
     except RuntimeError as e:
-        if "InProcess" in str(e) or "process" in str(e).lower():
-            log("  Submit returned error but process may have started — polling...")
+        error_str = str(e)
+        if "InProcess" in error_str:
+            log("  Copy process started (HTTP error expected during long-running ops)...")
         else:
-            err(f"  Submit failed: {e}")
-            log("  Retrying with dialog answer pattern...")
+            # Try alternative: action first, then dialog
+            warn(f"  First attempt: {error_str[:300]}")
+            log("  Retrying: action first, then dialog answer...")
             try:
+                client.clear()
                 client.submit([
-                    {"FieldName": "Description", "ObjectName": "CreateSnapshot", "Value": description},
-                    {"FieldName": "ExportMode", "ObjectName": "CreateSnapshot", "Value": "All"},
-                    {"FieldName": "DialogAnswer", "ObjectName": "CreateSnapshot", "Value": "OK"},
+                    {"FieldName": "CopyCompanyCommand", "ObjectName": "Actions"},
                 ])
-            except RuntimeError as e2:
-                err(f"  Retry also failed: {e2}")
-                return None
+            except RuntimeError:
+                pass  # Action opens dialog
 
-    # Poll until snapshot completes
-    snapshot_ok = client.poll_process("CreateSnapshot", timeout_seconds=1200, poll_interval=15)
-    if not snapshot_ok:
-        return None
-
-    # Read the Snapshots grid to find the new snapshot's Name
-    log("  Reading Snapshots grid to find snapshot name...")
-    try:
-        rows = client.export([
-            {"FieldName": "Name", "ObjectName": "Snapshots"},
-            {"FieldName": "Description", "ObjectName": "Snapshots"},
-            {"FieldName": "CreationDate", "ObjectName": "Snapshots"},
-        ], top_count=20)
-
-        if rows:
-            # First row is headers
-            log(f"  Found {len(rows) - 1} snapshots")
-            for row in rows[1:]:
-                log(f"    {row}")
-            # Find the one matching our description
-            for row in rows[1:]:
-                if len(row) >= 2 and description in (row[1] or ""):
-                    snapshot_name = row[0]
-                    ok(f"  Snapshot created: Name={snapshot_name}, Description={row[1]}")
-                    return snapshot_name
-            # If no match by description, return the most recent (first data row)
-            if len(rows) > 1:
-                snapshot_name = rows[1][0]
-                warn(f"  No exact description match — using most recent: {snapshot_name}")
-                return snapshot_name
-        warn("  Could not read Snapshots grid — will try using description as name")
-        return description
-    except RuntimeError as e:
-        warn(f"  Export failed: {str(e)[:200]} — will try using description as name")
-        return description
-
-
-def restore_snapshot(client: SoapClient, target_company: str, snapshot_name: str) -> bool:
-    """Restore a snapshot to the target company.
-
-    SM203520 restore flow:
-    1. Select snapshot row in Snapshots grid
-    2. Trigger ImportSnapshotCommand action (opens RestoreSnapshot dialog)
-    3. Set Company on RestoreSnapshot dialog
-    4. Confirm with DialogAnswer
-    """
-    log(f"Step 2: Restoring snapshot '{snapshot_name}' to '{target_company}'...")
-
-    # Step 2a: Select the snapshot row by name
-    log("  Selecting snapshot row...")
-    try:
-        client.submit([
-            {"FieldName": "Name", "ObjectName": "Snapshots", "Value": snapshot_name, "Commit": True},
-        ])
-        ok("  Snapshot row selected")
-    except RuntimeError as e:
-        err(f"  Failed to select snapshot: {e}")
-        return False
-
-    # Step 2b: Trigger ImportSnapshotCommand to open the restore dialog
-    log("  Triggering ImportSnapshotCommand (restore dialog)...")
-    try:
-        client.submit([
-            {"FieldName": "ImportSnapshotCommand", "ObjectName": "Actions"},
-        ])
-        ok("  Restore dialog opened")
-    except RuntimeError as e:
-        # The action may open a dialog that expects fields — this error is expected
-        warn(f"  ImportSnapshotCommand response: {str(e)[:200]}")
-
-    # Step 2c: Set target company and confirm
-    log(f"  Setting restore target to '{target_company}' and confirming...")
-    try:
-        client.submit([
-            {"FieldName": "Company", "ObjectName": "RestoreSnapshot", "Value": target_company, "Commit": True},
-            {"FieldName": "DialogAnswer", "ObjectName": "RestoreSnapshot", "Value": "OK"},
-        ])
-    except RuntimeError as e:
-        if "InProcess" in str(e) or "process" in str(e).lower():
-            log("  Restore process started — polling...")
-        else:
-            # Try alternative: just the dialog answer without setting Company
-            # (Company may auto-populate from current company context)
-            warn(f"  First attempt failed: {str(e)[:200]}")
-            log("  Retrying with just DialogAnswer...")
             try:
                 client.submit([
-                    {"FieldName": "DialogAnswer", "ObjectName": "RestoreSnapshot", "Value": "OK"},
+                    {"FieldName": "CompanyID", "ObjectName": "CopyCompany", "Value": target_company, "Commit": True},
+                    {"FieldName": "DialogAnswer", "ObjectName": "CopyCompany", "Value": "OK"},
                 ])
             except RuntimeError as e2:
                 if "InProcess" in str(e2):
-                    log("  Restore process started — polling...")
+                    log("  Copy process started...")
                 else:
-                    err(f"  Restore failed: {e2}")
+                    err(f"  Copy failed: {e2}")
                     return False
 
-    # Poll until restore completes
-    return client.poll_process("RestoreSnapshot", timeout_seconds=1200, poll_interval=15)
+    # Poll until copy completes (company copy can take 10-30 minutes for large datasets)
+    return client.poll_process("CopyCompany", timeout_seconds=1800, poll_interval=20)
 
 
 def send_slack(webhook_url: str, text: str) -> None:
@@ -457,7 +266,7 @@ def send_slack(webhook_url: str, text: str) -> None:
 # ─── Main ───────────────────────────────────────────────────────────────────
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Sync test environment from production via snapshot")
+    parser = argparse.ArgumentParser(description="Sync test environment from production via company copy")
     parser.add_argument("--url", default=os.environ.get("ACUMATICA_URL", ""))
     parser.add_argument("--username", default=os.environ.get("ACUMATICA_USERNAME", ""))
     parser.add_argument("--password", default=os.environ.get("ACUMATICA_PASSWORD", ""))
@@ -465,7 +274,7 @@ def main() -> None:
                         help="Production company name")
     parser.add_argument("--target", default=os.environ.get("TARGET_COMPANY", "Heritage Test"),
                         help="Test company name")
-    parser.add_argument("--dry-run", action="store_true", help="Login + schema only, no snapshot")
+    parser.add_argument("--dry-run", action="store_true", help="Login + schema only, no copy")
     parser.add_argument("--schema-only", action="store_true", help="Print field schema and exit")
     args = parser.parse_args()
 
@@ -477,7 +286,7 @@ def main() -> None:
     client = SoapClient(args.url, args.username, args.password)
 
     try:
-        # Login to source company for schema/dry-run
+        # Login to source company
         client.login(args.source)
 
         if args.schema_only:
@@ -487,62 +296,36 @@ def main() -> None:
             return
 
         if args.dry_run:
-            log("Dry run — checking connectivity and schema")
+            log("Dry run — checking connectivity")
             status, msg = client.get_process_status()
             log(f"Process status: {status} — {msg}")
             ok("Dry run passed — SOAP connectivity confirmed")
             client.logout()
             return
 
-        # Step 0: Delete old prod-mirror snapshots to prevent storage bloat
-        delete_old_snapshots(client)
-
-        # Step 1: Create snapshot (logged into source company)
-        timestamp = time.strftime("%Y-%m-%d-%H%M%S")
-        description = f"prod-mirror-{timestamp}"
-
-        snapshot_name = create_snapshot(client, args.source, description)
-        if not snapshot_name:
-            err("Snapshot creation failed — aborting")
+        # Copy source → target
+        copy_ok = copy_company(client, args.source, args.target)
+        if not copy_ok:
+            err("Company copy failed")
             send_slack(slack_url,
-                       f":x: *Test Env Sync FAILED*\nSnapshot creation failed for `{args.source}`\nManual intervention required")
+                       f":x: *Test Env Sync FAILED*\nCopy `{args.source}` → `{args.target}` failed\nManual copy required via SM203520")
             client.logout()
             sys.exit(1)
 
-        log(f"Snapshot name for restore: {snapshot_name}")
-
-        # Logout source session
-        client.logout()
-        log("Source session closed")
-
-        # Step 2: Login to target company for restore
-        target_client = SoapClient(args.url, args.username, args.password)
-        try:
-            target_client.login(args.target)
-
-            restore_ok = restore_snapshot(target_client, args.target, snapshot_name)
-            if not restore_ok:
-                err("Snapshot restore failed")
-                send_slack(slack_url,
-                           f":x: *Test Env Sync FAILED*\nSnapshot `{snapshot_name}` created but restore to `{args.target}` failed\nSnapshot available for manual restore in SM203520")
-                target_client.logout()
-                sys.exit(1)
-
-            ok(f"Test environment synced: {args.source} → {args.target}")
-            send_slack(slack_url,
-                       f":white_check_mark: *Test Env Sync Complete*\n`{args.source}` → `{args.target}`\nSnapshot: `{snapshot_name}`")
-        finally:
-            target_client.logout()
+        ok(f"Test environment synced: {args.source} → {args.target}")
+        send_slack(slack_url,
+                   f":white_check_mark: *Test Env Sync Complete*\n`{args.source}` → `{args.target}` via CopyCompanyCommand")
 
     except Exception as e:
         err(f"Sync failed: {e}")
         send_slack(slack_url,
                    f":x: *Test Env Sync FAILED*\n{str(e)[:200]}")
+        sys.exit(1)
+    finally:
         try:
             client.logout()
         except Exception:
             pass
-        sys.exit(1)
 
 
 if __name__ == "__main__":
