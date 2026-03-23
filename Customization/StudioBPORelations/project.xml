@@ -1,4 +1,4 @@
-<Customization level="0" description="PO Relations and Activities — custom tabs on PO301000 for tracking contacts, notes, and tasks per purchase order. Standalone package, no CRM dependencies." product-version="24.208">
+<Customization level="0" description="PO Relations and Activities — custom tabs on PO301000 for tracking contacts, notes, and tasks per purchase order. Standalone package, no CRM dependencies. CI/CD PR validation test." product-version="24.208">
     <Graph ClassName="UsrPORelation" Source="#CDATA" IsNew="True" FileType="NewFile">
         <CDATA name="Source"><![CDATA[using System;
 using PX.Data;
