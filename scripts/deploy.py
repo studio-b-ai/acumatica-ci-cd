@@ -324,10 +324,21 @@ class AcumaticaCustomizationClient:
                 data = json.loads(body)
                 if isinstance(data, dict):
                     if data.get("isFailed"):
-                        log_text = data.get("log", "No details")
-                        if isinstance(log_text, list):
-                            log_text = "\n".join(str(x) for x in log_text)
-                        raise RuntimeError(f"Publish failed: {log_text[:1000]}")
+                        log_entries = data.get("log", "No details")
+                        # Extract only error/warning entries — info messages (file patching) bury the real errors
+                        if isinstance(log_entries, list):
+                            error_entries = [
+                                e for e in log_entries
+                                if isinstance(e, dict) and e.get("logType") in ("error", "warning")
+                            ]
+                            if error_entries:
+                                log_text = "\n".join(str(x) for x in error_entries)
+                            else:
+                                # No error entries found — dump last 5 entries for context
+                                log_text = "\n".join(str(x) for x in log_entries[-5:])
+                        else:
+                            log_text = str(log_entries)
+                        raise RuntimeError(f"Publish failed: {log_text[:2000]}")
                     if data.get("isCompleted"):
                         action = "Validation" if validation_only else "Publish"
                         _log(
