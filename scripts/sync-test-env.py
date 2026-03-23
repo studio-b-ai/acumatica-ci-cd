@@ -254,30 +254,61 @@ def create_snapshot(client: SoapClient, source_company: str, description: str) -
 def restore_snapshot(client: SoapClient, target_company: str, snapshot_name: str) -> bool:
     """Restore a snapshot to the target company.
 
-    This requires a separate SOAP session logged into the TARGET company,
-    since snapshot restore operates on the current company context.
+    SM203520 restore flow:
+    1. Select snapshot row in Snapshots grid
+    2. Trigger ImportSnapshotCommand action (opens RestoreSnapshot dialog)
+    3. Set Company on RestoreSnapshot dialog
+    4. Confirm with DialogAnswer
     """
     log(f"Step 2: Restoring snapshot '{snapshot_name}' to '{target_company}'...")
 
-    # Select the snapshot and trigger restore
+    # Step 2a: Select the snapshot row by name
+    log("  Selecting snapshot row...")
     try:
         client.submit([
             {"FieldName": "Name", "ObjectName": "Snapshots", "Value": snapshot_name, "Commit": True},
         ])
+        ok("  Snapshot row selected")
     except RuntimeError as e:
-        warn(f"  Snapshot selection: {str(e)[:200]}")
+        err(f"  Failed to select snapshot: {e}")
+        return False
 
+    # Step 2b: Trigger ImportSnapshotCommand to open the restore dialog
+    log("  Triggering ImportSnapshotCommand (restore dialog)...")
     try:
         client.submit([
-            {"FieldName": "Company", "ObjectName": "RestoreSnapshot", "Value": target_company},
+            {"FieldName": "ImportSnapshotCommand", "ObjectName": "Actions"},
+        ])
+        ok("  Restore dialog opened")
+    except RuntimeError as e:
+        # The action may open a dialog that expects fields — this error is expected
+        warn(f"  ImportSnapshotCommand response: {str(e)[:200]}")
+
+    # Step 2c: Set target company and confirm
+    log(f"  Setting restore target to '{target_company}' and confirming...")
+    try:
+        client.submit([
+            {"FieldName": "Company", "ObjectName": "RestoreSnapshot", "Value": target_company, "Commit": True},
             {"FieldName": "DialogAnswer", "ObjectName": "RestoreSnapshot", "Value": "OK"},
         ])
     except RuntimeError as e:
         if "InProcess" in str(e) or "process" in str(e).lower():
-            log("  Restore may have started — polling...")
+            log("  Restore process started — polling...")
         else:
-            err(f"  Restore submit failed: {e}")
-            return False
+            # Try alternative: just the dialog answer without setting Company
+            # (Company may auto-populate from current company context)
+            warn(f"  First attempt failed: {str(e)[:200]}")
+            log("  Retrying with just DialogAnswer...")
+            try:
+                client.submit([
+                    {"FieldName": "DialogAnswer", "ObjectName": "RestoreSnapshot", "Value": "OK"},
+                ])
+            except RuntimeError as e2:
+                if "InProcess" in str(e2):
+                    log("  Restore process started — polling...")
+                else:
+                    err(f"  Restore failed: {e2}")
+                    return False
 
     # Poll until restore completes
     return client.poll_process("RestoreSnapshot", timeout_seconds=1200, poll_interval=15)
