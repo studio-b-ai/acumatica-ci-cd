@@ -628,7 +628,9 @@ def main():
             _log("Deployment complete!", style="ok")
 
     except Exception as exc:
+        import traceback
         _log(str(exc), style="err")
+        traceback.print_exc()
         sys.exit(1)
 
 
