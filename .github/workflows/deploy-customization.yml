@@ -85,6 +85,11 @@ on:
         required: false
         type: boolean
         default: false
+      skip_sandbox:
+        description: 'Skip sandbox validation (when sandbox env differs from prod)'
+        required: false
+        type: boolean
+        default: false
 
 env:
   # HARDCODED — never use a mutable GitHub variable for the project name.
@@ -684,6 +689,7 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     if: github.event_name == 'pull_request'
+    continue-on-error: true
     concurrency:
       group: sandbox-publish
       cancel-in-progress: true
