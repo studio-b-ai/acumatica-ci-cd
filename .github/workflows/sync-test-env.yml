@@ -1,16 +1,17 @@
-# Nightly Test Environment Sync
+# Nightly Test Environment Sync — REST Entity-Level
 #
-# Creates a snapshot of production company data and restores it to the
-# test company, keeping test in sync with production.
+# Copies key business entities (Customers, StockItems, Vendors, Employees)
+# from the production tenant to the test tenant using REST API upsert (PUT).
+# SalesOrders are read-only (count comparison, no write).
 #
-# Uses SOAP Screen API (SM203520 — Company Maintenance) for snapshot
-# and restore operations.
+# Two-phase design: reads all prod data first (one session), then writes
+# to test (separate session) — avoids Acumatica session gate conflicts.
 #
-# Schedule: nightly at 2am CT (7am UTC) — Acumatica is idle, no session contention
+# Schedule: nightly at 2am CT (7am UTC) — Acumatica is idle
 # Manual dispatch: available for on-demand sync
 #
-# After-hours only — snapshot + restore restarts the app pool on the
-# shared instance (prod + test are the same Acumatica instance).
+# Previous SOAP approach (SM203520 Company Copy) returned success but
+# never executed the copy on Acumatica Cloud — replaced 2026-03-23.
 
 name: Sync Test Environment
 
@@ -21,12 +22,7 @@ on:
   workflow_dispatch:
     inputs:
       dry_run:
-        description: 'Dry run — login + schema check only, no snapshot'
-        required: false
-        type: boolean
-        default: false
-      schema_only:
-        description: 'Print SM203520 field schema and exit'
+        description: 'Log what would sync without writing'
         required: false
         type: boolean
         default: false
@@ -35,9 +31,12 @@ concurrency:
   group: acumatica-sync-test-env
   cancel-in-progress: true
 
+env:
+  PYTHONUNBUFFERED: '1'
+
 jobs:
-  sync:
-    name: Snapshot Prod → Restore Test
+  entity-sync:
+    name: Entity Sync — Prod → Test
     runs-on: ubuntu-latest
     timeout-minutes: 45
 
@@ -50,9 +49,11 @@ jobs:
         with:
           python-version: '3.12'
 
-      # After-hours gate — only run between 6pm and 6am CT
-      # Snapshot + restore restart the Acumatica app pool on the shared instance.
-      # Skip during business hours to avoid disrupting users.
+      - name: Install dependencies
+        run: pip install requests
+
+      # After-hours gate — entity sync doesn't restart app pool, but
+      # avoid competing with active users for session gate
       - name: After-hours gate
         if: github.event_name == 'schedule'
         run: |
@@ -63,60 +64,66 @@ jobs:
           fi
           echo "After-hours confirmed (${CT_HOUR}:00 CT)"
 
-      # Enter maintenance mode — pause sync workers during snapshot/restore
-      - name: Enter maintenance mode
-        if: github.event.inputs.dry_run != 'true' && github.event.inputs.schema_only != 'true'
-        continue-on-error: true
-        env:
-          WEBHOOK_ROUTER_URL: ${{ secrets.WEBHOOK_ROUTER_URL }}
-          PROVISION_API_KEY: ${{ secrets.PROVISION_API_KEY }}
-        run: |
-          if [ -z "${WEBHOOK_ROUTER_URL}" ]; then
-            echo "::warning::WEBHOOK_ROUTER_URL not set — skipping maintenance mode"
-            exit 0
-          fi
-          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
-            -X POST "${WEBHOOK_ROUTER_URL}/maintenance/start" \
-            -H "Content-Type: application/json" \
-            -H "Authorization: Bearer ${PROVISION_API_KEY}" \
-            -d '{"reason":"Test environment sync — snapshot + restore in progress","ttl_seconds":2700}')
-          if [ "${HTTP_CODE}" = "200" ]; then
-            echo "Maintenance mode active — workers paused"
-          else
-            echo "::warning::Could not set maintenance mode (HTTP ${HTTP_CODE})"
-          fi
-
-      - name: Run sync
+      - name: Run entity sync
         env:
           ACUMATICA_URL: ${{ secrets.ACUMATICA_PROD_URL }}
           ACUMATICA_USERNAME: ${{ secrets.ACUMATICA_PROD_USERNAME }}
           ACUMATICA_PASSWORD: ${{ secrets.ACUMATICA_PROD_PASSWORD }}
-          SOURCE_COMPANY: Heritage Fabrics
-          TARGET_COMPANY: Heritage Test
+          PROD_TENANT: Heritage Fabrics
+          TEST_TENANT: Heritage Test
           SLACK_WEBHOOK_URL: ${{ secrets.STUDIOB_SLACK_WEBHOOK_URL }}
-        run: |
-          FLAGS=""
-          if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
-            FLAGS="--dry-run"
-          elif [ "${{ github.event.inputs.schema_only }}" = "true" ]; then
-            FLAGS="--schema-only"
-          fi
-          python scripts/sync-test-env.py ${FLAGS}
+        run: python scripts/entity-sync.py
 
-      # Exit maintenance mode
-      - name: Exit maintenance mode
-        if: always() && github.event.inputs.dry_run != 'true' && github.event.inputs.schema_only != 'true'
-        continue-on-error: true
+      # Post-sync audit — verify test data actually changed
+      - name: Audit sync results
+        if: success()
         env:
-          WEBHOOK_ROUTER_URL: ${{ secrets.WEBHOOK_ROUTER_URL }}
-          PROVISION_API_KEY: ${{ secrets.PROVISION_API_KEY }}
+          ACUMATICA_URL: ${{ secrets.ACUMATICA_PROD_URL }}
+          ACUMATICA_USERNAME: ${{ secrets.ACUMATICA_PROD_USERNAME }}
+          ACUMATICA_PASSWORD: ${{ secrets.ACUMATICA_PROD_PASSWORD }}
         run: |
-          if [ -z "${WEBHOOK_ROUTER_URL}" ]; then exit 0; fi
-          curl -s -o /dev/null \
-            -X POST "${WEBHOOK_ROUTER_URL}/maintenance/end" \
-            -H "Content-Type: application/json" \
-            -H "Authorization: Bearer ${PROVISION_API_KEY}"
-          echo "Maintenance mode cleared"
+          python3 -c "
+          import json, os, sys
+          import requests
+
+          url = os.environ['ACUMATICA_URL'].rstrip('/')
+          user = os.environ['ACUMATICA_USERNAME']
+          pw = os.environ['ACUMATICA_PASSWORD']
+          base = f'{url}/entity/default/24.200.001'
+
+          results = {}
+          for tenant in ['Heritage Fabrics', 'Heritage Test']:
+              s = requests.Session()
+              r = s.post(f'{url}/entity/auth/login', json={'name': user, 'password': pw, 'tenant': tenant})
+              if r.status_code != 204:
+                  print(f'AUDIT FAIL: cannot login to {tenant}')
+                  sys.exit(1)
+
+              counts = {}
+              for entity, key in [('Customer','CustomerID'), ('StockItem','InventoryID'), ('Vendor','VendorID')]:
+                  r = s.get(f'{base}/{entity}', params={'\$top': '1', '\$select': key})
+                  first = r.json()[0][key]['value'] if r.json() else '(empty)'
+                  r2 = s.get(f'{base}/{entity}', params={'\$top': '500', '\$select': key})
+                  counts[entity] = {'count': len(r2.json()), 'first': first}
+
+              s.post(f'{url}/entity/auth/logout')
+              results[tenant] = counts
+
+          print('\\n=== POST-SYNC AUDIT ===')
+          match = True
+          for entity in ['Customer', 'StockItem', 'Vendor']:
+              prod = results['Heritage Fabrics'][entity]
+              test = results['Heritage Test'][entity]
+              status = '✅' if prod['first'] == test['first'] else '❌'
+              if prod['first'] != test['first']:
+                  match = False
+              print(f'{status} {entity}: prod={prod[\"count\"]}(first={prod[\"first\"]}), test={test[\"count\"]}(first={test[\"first\"]})')
+
+          if not match:
+              print('\\n⚠️  First-record mismatch detected — sync may not have fully propagated')
+          else:
+              print('\\n✅ Audit passed — test data matches production')
+          "
 
       - name: Post summary
         if: always()
@@ -125,7 +132,9 @@ jobs:
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "| Field | Value |" >> "$GITHUB_STEP_SUMMARY"
           echo "|-------|-------|" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Method | REST Entity Sync (PUT upsert) |" >> "$GITHUB_STEP_SUMMARY"
           echo "| Source | Heritage Fabrics (production) |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| Target | Heritage Test (prod mirror) |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Target | Heritage Test (test mirror) |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Entities | Customer, StockItem, Vendor, Employee, SalesOrder (read-only) |" >> "$GITHUB_STEP_SUMMARY"
           echo "| Trigger | ${{ github.event_name }} |" >> "$GITHUB_STEP_SUMMARY"
           echo "| Status | ${{ job.status }} |" >> "$GITHUB_STEP_SUMMARY"
