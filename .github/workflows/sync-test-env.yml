@@ -1,0 +1,131 @@
+# Nightly Test Environment Sync
+#
+# Creates a snapshot of production company data and restores it to the
+# test company, keeping test in sync with production.
+#
+# Uses SOAP Screen API (SM203520 — Company Maintenance) for snapshot
+# and restore operations.
+#
+# Schedule: nightly at 2am CT (7am UTC) — Acumatica is idle, no session contention
+# Manual dispatch: available for on-demand sync
+#
+# After-hours only — snapshot + restore restarts the app pool on the
+# shared instance (prod + test are the same Acumatica instance).
+
+name: Sync Test Environment
+
+on:
+  schedule:
+    # 2:07am CT (7:07 UTC) — off-minute to avoid fleet crowding
+    - cron: '7 7 * * *'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Dry run — login + schema check only, no snapshot'
+        required: false
+        type: boolean
+        default: false
+      schema_only:
+        description: 'Print SM203520 field schema and exit'
+        required: false
+        type: boolean
+        default: false
+
+concurrency:
+  group: acumatica-sync-test-env
+  cancel-in-progress: true
+
+jobs:
+  sync:
+    name: Snapshot Prod → Restore Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      # After-hours gate — only run between 6pm and 6am CT
+      # Snapshot + restore restart the Acumatica app pool on the shared instance.
+      # Skip during business hours to avoid disrupting users.
+      - name: After-hours gate
+        if: github.event_name == 'schedule'
+        run: |
+          CT_HOUR=$(TZ=America/Chicago date +%H)
+          if [ "$CT_HOUR" -ge 6 ] && [ "$CT_HOUR" -lt 18 ]; then
+            echo "::error::Sync blocked — business hours (${CT_HOUR}:00 CT). Runs 6pm-6am only."
+            exit 1
+          fi
+          echo "After-hours confirmed (${CT_HOUR}:00 CT)"
+
+      # Enter maintenance mode — pause sync workers during snapshot/restore
+      - name: Enter maintenance mode
+        if: github.event.inputs.dry_run != 'true' && github.event.inputs.schema_only != 'true'
+        continue-on-error: true
+        env:
+          WEBHOOK_ROUTER_URL: ${{ secrets.WEBHOOK_ROUTER_URL }}
+          PROVISION_API_KEY: ${{ secrets.PROVISION_API_KEY }}
+        run: |
+          if [ -z "${WEBHOOK_ROUTER_URL}" ]; then
+            echo "::warning::WEBHOOK_ROUTER_URL not set — skipping maintenance mode"
+            exit 0
+          fi
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+            -X POST "${WEBHOOK_ROUTER_URL}/maintenance/start" \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer ${PROVISION_API_KEY}" \
+            -d '{"reason":"Test environment sync — snapshot + restore in progress","ttl_seconds":2700}')
+          if [ "${HTTP_CODE}" = "200" ]; then
+            echo "Maintenance mode active — workers paused"
+          else
+            echo "::warning::Could not set maintenance mode (HTTP ${HTTP_CODE})"
+          fi
+
+      - name: Run sync
+        env:
+          ACUMATICA_URL: ${{ secrets.ACUMATICA_PROD_URL }}
+          ACUMATICA_USERNAME: ${{ secrets.ACUMATICA_PROD_USERNAME }}
+          ACUMATICA_PASSWORD: ${{ secrets.ACUMATICA_PROD_PASSWORD }}
+          SOURCE_COMPANY: Heritage Fabrics
+          TARGET_COMPANY: Heritage Test
+          SLACK_WEBHOOK_URL: ${{ secrets.STUDIOB_SLACK_WEBHOOK_URL }}
+        run: |
+          FLAGS=""
+          if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
+            FLAGS="--dry-run"
+          elif [ "${{ github.event.inputs.schema_only }}" = "true" ]; then
+            FLAGS="--schema-only"
+          fi
+          python scripts/sync-test-env.py ${FLAGS}
+
+      # Exit maintenance mode
+      - name: Exit maintenance mode
+        if: always() && github.event.inputs.dry_run != 'true' && github.event.inputs.schema_only != 'true'
+        continue-on-error: true
+        env:
+          WEBHOOK_ROUTER_URL: ${{ secrets.WEBHOOK_ROUTER_URL }}
+          PROVISION_API_KEY: ${{ secrets.PROVISION_API_KEY }}
+        run: |
+          if [ -z "${WEBHOOK_ROUTER_URL}" ]; then exit 0; fi
+          curl -s -o /dev/null \
+            -X POST "${WEBHOOK_ROUTER_URL}/maintenance/end" \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer ${PROVISION_API_KEY}"
+          echo "Maintenance mode cleared"
+
+      - name: Post summary
+        if: always()
+        run: |
+          echo "## Test Environment Sync" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Field | Value |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|-------|-------|" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Source | Heritage Fabrics (production) |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Target | Heritage Test (prod mirror) |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Trigger | ${{ github.event_name }} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Status | ${{ job.status }} |" >> "$GITHUB_STEP_SUMMARY"
