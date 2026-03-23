@@ -1,0 +1,12 @@
+{
+  "_comment": "Manifest for rollback failure injection test. References a field that SHOULD NOT exist after rollback.",
+  "entities": {
+    "StockItem": {
+      "screen": "IN202500",
+      "custom_fields": [
+        "custom.Document.UsrBrokenField"
+      ]
+    }
+  },
+  "sql_columns": []
+}

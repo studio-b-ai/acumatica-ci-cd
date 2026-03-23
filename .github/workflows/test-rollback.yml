@@ -1,0 +1,288 @@
+# Failure Injection Test — Rollback Verification
+#
+# Imports an intentionally broken customization project (CICDRollbackTest)
+# into SANDBOX, expects publish to FAIL, then verifies the real project
+# still works (entity smoke tests). Cleans up the test project at the end.
+#
+# Manual dispatch only. NEVER targets production.
+# Credentials passed exclusively via env vars on each step.
+
+name: Test Rollback (Failure Injection)
+
+concurrency:
+  group: acumatica-deploy-test-rollback
+  cancel-in-progress: true
+
+on:
+  workflow_dispatch:
+    inputs:
+      skip_cleanup:
+        description: 'Skip cleanup step (leave test project on sandbox for debugging)'
+        required: false
+        type: boolean
+        default: false
+
+env:
+  TEST_PROJECT: CICDRollbackTest
+  REAL_PROJECT: ${{ vars.CUSTOMIZATION_PROJECT_NAME || 'AesthetikERP' }}
+
+jobs:
+  rollback-test:
+    name: Failure Injection + Rollback Smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      # ── Setup ─────────────────────────────────────────────────────────
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install -r scripts/requirements.txt
+
+      # ── Step 1: Snapshot current state ────────────────────────────────
+      - name: Snapshot current sandbox state
+        id: snapshot
+        continue-on-error: true
+        env:
+          ACUMATICA_URL: ${{ secrets.ACUMATICA_STG_URL }}
+          ACUMATICA_USERNAME: ${{ secrets.ACUMATICA_STG_USERNAME }}
+          ACUMATICA_PASSWORD: ${{ secrets.ACUMATICA_STG_PASSWORD }}
+          ACUMATICA_TENANT: ${{ secrets.ACUMATICA_STG_TENANT }}
+        run: |
+          mkdir -p backups
+          python scripts/snapshot.py \
+            --project "${REAL_PROJECT}" \
+            --output backups/ || echo "Snapshot failed — continuing (non-blocking)"
+
+      - name: Upload pre-test snapshot
+        if: steps.snapshot.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: pre-rollback-test-snapshot
+          path: backups/*.zip
+          retention-days: 7
+
+      # ── Step 2: Package the broken test project ───────────────────────
+      - name: Package broken test project
+        id: package
+        run: |
+          mkdir -p dist
+          TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+          PACKAGE="dist/${TEST_PROJECT}_${TIMESTAMP}.zip"
+
+          cd "Customization/${TEST_PROJECT}"
+          zip -r "../../${PACKAGE}" . \
+            -x "*.DS_Store" \
+            -x "__MACOSX/*"
+          cd ../..
+
+          FILESIZE=$(du -h "${PACKAGE}" | cut -f1)
+          echo "Packaged broken project: ${PACKAGE} (${FILESIZE})"
+          echo "path=${PACKAGE}" >> "$GITHUB_STEP_SUMMARY"
+          # Store path for later steps
+          echo "BROKEN_PACKAGE=${PACKAGE}" >> "$GITHUB_ENV"
+
+      # ── Step 3: Deploy broken project (EXPECT FAILURE) ────────────────
+      - name: Deploy broken project to sandbox
+        id: deploy_broken
+        continue-on-error: true
+        env:
+          ACUMATICA_URL: ${{ secrets.ACUMATICA_STG_URL }}
+          ACUMATICA_USERNAME: ${{ secrets.ACUMATICA_STG_USERNAME }}
+          ACUMATICA_PASSWORD: ${{ secrets.ACUMATICA_STG_PASSWORD }}
+          ACUMATICA_TENANT: ${{ secrets.ACUMATICA_STG_TENANT }}
+        run: |
+          chmod +x scripts/deploy.sh
+          scripts/deploy.sh \
+            --project "${TEST_PROJECT}" \
+            --package "${BROKEN_PACKAGE}" \
+            --also-publish "${REAL_PROJECT}" \
+            --backup \
+            --manifest publish-manifest-rollback-test.json
+
+      # ── Step 4: Verify deploy FAILED as expected ──────────────────────
+      - name: Verify deploy failed as expected
+        id: verify_failure
+        run: |
+          OUTCOME="${{ steps.deploy_broken.outcome }}"
+          echo "Deploy outcome: ${OUTCOME}"
+
+          if [[ "${OUTCOME}" == "failure" ]]; then
+            echo "PASS — broken project correctly failed to publish"
+            echo "verify_result=pass" >> "$GITHUB_ENV"
+          else
+            echo "FAIL — broken project should have failed but got: ${OUTCOME}"
+            echo "verify_result=fail" >> "$GITHUB_ENV"
+            exit 1
+          fi
+
+      # ── Step 5: Post-rollback entity smoke tests ──────────────────────
+      - name: Post-rollback entity smoke tests
+        id: smoke
+        env:
+          ACUMATICA_URL: ${{ secrets.ACUMATICA_STG_URL }}
+          ACUMATICA_USERNAME: ${{ secrets.ACUMATICA_STG_USERNAME }}
+          ACUMATICA_PASSWORD: ${{ secrets.ACUMATICA_STG_PASSWORD }}
+          ACUMATICA_TENANT: ${{ secrets.ACUMATICA_STG_TENANT }}
+        run: |
+          set +e
+          PASS=0
+          FAIL=0
+          RESULTS=""
+
+          # Login and get session cookie
+          COOKIE_JAR=$(mktemp)
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+            -X POST \
+            -c "${COOKIE_JAR}" \
+            -H "Content-Type: application/json" \
+            -d "{\"name\":\"${ACUMATICA_USERNAME}\",\"password\":\"${ACUMATICA_PASSWORD}\",\"tenant\":\"${ACUMATICA_TENANT}\"}" \
+            "${ACUMATICA_URL}/entity/auth/login")
+
+          if [[ "${HTTP_CODE}" != "204" ]]; then
+            echo "Login failed (HTTP ${HTTP_CODE}) — cannot run smoke tests"
+            echo "smoke_result=fail" >> "$GITHUB_ENV"
+            echo "smoke_details=Login failed HTTP ${HTTP_CODE}" >> "$GITHUB_ENV"
+            rm -f "${COOKIE_JAR}"
+            exit 1
+          fi
+          echo "Login OK"
+
+          # Smoke test each entity
+          for ENTITY in StockItem SalesOrder PurchaseOrder Invoice; do
+            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+              -b "${COOKIE_JAR}" \
+              "${ACUMATICA_URL}/entity/Default/24.200.001/${ENTITY}?\$top=1")
+
+            if [[ "${HTTP_CODE}" == "200" ]]; then
+              echo "${ENTITY}: OK (200)"
+              RESULTS="${RESULTS}${ENTITY}=pass,"
+              ((PASS++))
+            else
+              echo "${ENTITY}: FAIL (${HTTP_CODE})"
+              RESULTS="${RESULTS}${ENTITY}=fail(${HTTP_CODE}),"
+              ((FAIL++))
+            fi
+          done
+
+          # Logout
+          curl -s -o /dev/null -X POST -b "${COOKIE_JAR}" "${ACUMATICA_URL}/entity/auth/logout" || true
+          rm -f "${COOKIE_JAR}"
+
+          echo "Smoke results: ${PASS} pass, ${FAIL} fail"
+          echo "smoke_details=${RESULTS}" >> "$GITHUB_ENV"
+
+          if [[ "${FAIL}" -gt 0 ]]; then
+            echo "smoke_result=fail" >> "$GITHUB_ENV"
+            exit 1
+          else
+            echo "smoke_result=pass" >> "$GITHUB_ENV"
+          fi
+
+      # ── Step 6: Cleanup — remove test project from sandbox ────────────
+      - name: Cleanup test project
+        if: always() && inputs.skip_cleanup != true
+        continue-on-error: true
+        env:
+          ACUMATICA_URL: ${{ secrets.ACUMATICA_STG_URL }}
+          ACUMATICA_USERNAME: ${{ secrets.ACUMATICA_STG_USERNAME }}
+          ACUMATICA_PASSWORD: ${{ secrets.ACUMATICA_STG_PASSWORD }}
+          ACUMATICA_TENANT: ${{ secrets.ACUMATICA_STG_TENANT }}
+        run: |
+          # Create an empty project zip to overwrite the broken one
+          EMPTY_DIR=$(mktemp -d)
+          cat > "${EMPTY_DIR}/project.xml" << 'XMLEOF'
+          <Customization level="0" product-version="24.210.0016">
+          </Customization>
+          XMLEOF
+
+          EMPTY_ZIP=$(mktemp --suffix=.zip)
+          cd "${EMPTY_DIR}"
+          zip -r "${EMPTY_ZIP}" project.xml
+          cd -
+
+          # Import the empty project over the test project
+          COOKIE_JAR=$(mktemp)
+          curl -s -o /dev/null \
+            -X POST \
+            -c "${COOKIE_JAR}" \
+            -H "Content-Type: application/json" \
+            -d "{\"name\":\"${ACUMATICA_USERNAME}\",\"password\":\"${ACUMATICA_PASSWORD}\",\"tenant\":\"${ACUMATICA_TENANT}\"}" \
+            "${ACUMATICA_URL}/entity/auth/login"
+
+          CONTENT_B64=$(base64 -w0 "${EMPTY_ZIP}" 2>/dev/null || base64 "${EMPTY_ZIP}")
+          HTTP_CODE=$(curl -s -o /tmp/cleanup-response.json -w "%{http_code}" \
+            -X POST \
+            -b "${COOKIE_JAR}" \
+            -H "Content-Type: application/json" \
+            -d "{\"projectName\":\"${TEST_PROJECT}\",\"projectDescription\":\"CI/CD cleanup\",\"projectContentBase64\":\"${CONTENT_B64}\"}" \
+            "${ACUMATICA_URL}/CustomizationApi/Import")
+
+          if [[ "${HTTP_CODE}" == "200" || "${HTTP_CODE}" == "204" ]]; then
+            echo "Cleanup: imported empty project over ${TEST_PROJECT}"
+          else
+            echo "Cleanup: import returned HTTP ${HTTP_CODE} (non-blocking)"
+            cat /tmp/cleanup-response.json 2>/dev/null || true
+          fi
+
+          # Logout
+          curl -s -o /dev/null -X POST -b "${COOKIE_JAR}" "${ACUMATICA_URL}/entity/auth/logout" || true
+          rm -f "${COOKIE_JAR}" "${EMPTY_ZIP}"
+          rm -rf "${EMPTY_DIR}"
+
+      # ── Summary ───────────────────────────────────────────────────────
+      - name: Post summary
+        if: always()
+        run: |
+          echo "## Rollback Test Results" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Step | Expected | Actual | Result |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|------|----------|--------|--------|" >> "$GITHUB_STEP_SUMMARY"
+
+          # Snapshot
+          SNAP_OUTCOME="${{ steps.snapshot.outcome }}"
+          if [[ "${SNAP_OUTCOME}" == "success" ]]; then
+            echo "| Pre-test snapshot | success | ${SNAP_OUTCOME} | :white_check_mark: |" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "| Pre-test snapshot | success | ${SNAP_OUTCOME} | :warning: (non-blocking) |" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+          # Deploy broken
+          DEPLOY_OUTCOME="${{ steps.deploy_broken.outcome }}"
+          if [[ "${DEPLOY_OUTCOME}" == "failure" ]]; then
+            echo "| Deploy broken project | failure | ${DEPLOY_OUTCOME} | :white_check_mark: |" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "| Deploy broken project | failure | ${DEPLOY_OUTCOME} | :x: UNEXPECTED |" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+          # Verify failure
+          VERIFY="${{ env.verify_result }}"
+          if [[ "${VERIFY}" == "pass" ]]; then
+            echo "| Verify deploy failed | pass | ${VERIFY} | :white_check_mark: |" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "| Verify deploy failed | pass | ${VERIFY:-skipped} | :x: |" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+          # Smoke tests
+          SMOKE="${{ env.smoke_result }}"
+          SMOKE_DET="${{ env.smoke_details }}"
+          if [[ "${SMOKE}" == "pass" ]]; then
+            echo "| Entity smoke tests | pass | ${SMOKE} | :white_check_mark: |" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "| Entity smoke tests | pass | ${SMOKE:-skipped} | :x: |" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "### Details" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Test project:** \`${TEST_PROJECT}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Real project:** \`${REAL_PROJECT}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Smoke details:** \`${SMOKE_DET:-N/A}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Cleanup:** ${{ inputs.skip_cleanup == true && 'Skipped (debugging)' || 'Attempted' }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Actor:** @${GITHUB_ACTOR}" >> "$GITHUB_STEP_SUMMARY"
