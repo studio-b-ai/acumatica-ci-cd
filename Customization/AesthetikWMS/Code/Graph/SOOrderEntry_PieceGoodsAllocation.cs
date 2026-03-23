@@ -82,7 +82,7 @@ namespace Aesthetik.WMS
             var availableLots = SelectFrom<INLotSerialStatus>
                 .Where<INLotSerialStatus.inventoryID.IsEqual<@P.AsInt>
                     .And<INLotSerialStatus.siteID.IsEqual<@P.AsInt>>
-                    .And<INLotSerialStatus.qtyOnHand.IsGreater<decimal0>>>
+                    .And<INLotSerialStatus.qtyOnHand.IsGreater<decimal>>>
                 .OrderBy<INLotSerialStatus.receiptDate.Asc,
                          INLotSerialStatus.qtyOnHand.Desc>
                 .View.ReadOnly.Select(Base, line.InventoryID, line.SiteID);
