@@ -2,25 +2,23 @@
 """
 Nightly Test Environment Sync — Acumatica Company Copy
 
-Copies production company data to the test company on the same instance,
-keeping test in sync with production.
+Copies production company data to the test company on the same instance
+using SOAP Screen API (SM203520 — Company Maintenance).
 
-Uses the SOAP Screen API (SM203520 — Company Maintenance) CopyCompanyCommand
-action, which copies all data from one company to another directly.
+Runtime view names (from GetSchema — WSDL names differ!):
+  Companies            Header (CompanyID key, CompanyCD = name)
+  Snapshots            Snapshot grid
+  CopyCompanyPanel     Copy Company dialog (CompanyID field)
+  ExportSnapshotPanel  Create Snapshot dialog (Company, Description, ExportMode)
+  ImportSnapshotPanel  Restore Snapshot dialog (Company, Name, Description)
 
-No intermediate snapshot needed — no storage to manage.
-
-Environment variables (or --flag equivalents):
-  ACUMATICA_URL         Instance URL
-  ACUMATICA_USERNAME    API user (same creds for both companies)
-  ACUMATICA_PASSWORD    API password
-  SOURCE_COMPANY        Production company name (default: "Heritage Fabrics")
-  TARGET_COMPANY        Test company name (default: "Heritage Test")
+Actions (all on ObjectName=Companies, camelCase FieldName):
+  copyCompanyCommand, prepareAdbSnapshotCommand, importSnapshotCommand
 
 Usage:
   python sync-test-env.py
-  python sync-test-env.py --dry-run          # Login + schema discovery only
-  python sync-test-env.py --schema-only      # Print SM203520 field map
+  python sync-test-env.py --dry-run
+  python sync-test-env.py --schema-only
 """
 
 import argparse
@@ -33,35 +31,23 @@ import urllib.request
 import urllib.error
 import xml.etree.ElementTree as ET
 
-# ─── Colors ─────────────────────────────────────────────────────────────────
-
 RED = "\033[91m"
 GREEN = "\033[92m"
 YELLOW = "\033[93m"
 BLUE = "\033[94m"
 RESET = "\033[0m"
 
-def log(msg: str) -> None:
-    print(f"{BLUE}[SYNC]{RESET} {msg}", flush=True)
-
-def ok(msg: str) -> None:
-    print(f"{GREEN}[  OK  ]{RESET} {msg}", flush=True)
-
-def warn(msg: str) -> None:
-    print(f"{YELLOW}[ WARN ]{RESET} {msg}", flush=True)
-
-def err(msg: str) -> None:
-    print(f"{RED}[ERROR ]{RESET} {msg}", file=sys.stderr, flush=True)
-
-# ─── SOAP Client ────────────────────────────────────────────────────────────
+def log(msg): print(f"{BLUE}[SYNC]{RESET} {msg}", flush=True)
+def ok(msg): print(f"{GREEN}[  OK  ]{RESET} {msg}", flush=True)
+def warn(msg): print(f"{YELLOW}[ WARN ]{RESET} {msg}", flush=True)
+def err(msg): print(f"{RED}[ERROR ]{RESET} {msg}", file=sys.stderr, flush=True)
 
 SCREEN_ID = "SM203520"
 NS = "http://www.acumatica.com/typed/"
 
-class SoapClient:
-    """Minimal SOAP client for Acumatica Screen API."""
 
-    def __init__(self, url: str, username: str, password: str):
+class SoapClient:
+    def __init__(self, url, username, password):
         self.url = url.rstrip("/")
         self.username = username
         self.password = password
@@ -71,236 +57,141 @@ class SoapClient:
             urllib.request.HTTPCookieProcessor(self.cookie_jar)
         )
 
-    def _soap_call(self, action: str, body: str, timeout: int = 300) -> str:
-        """Execute a SOAP call and return the response body."""
+    def _soap_call(self, action, body, timeout=600):
         envelope = f"""<?xml version="1.0" encoding="utf-8"?>
 <soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/"
                xmlns:tns="{NS}">
-  <soap:Body>
-    {body}
-  </soap:Body>
+  <soap:Body>{body}</soap:Body>
 </soap:Envelope>"""
-
-        req = urllib.request.Request(
-            self.endpoint,
-            data=envelope.encode("utf-8"),
-            headers={
-                "Content-Type": "text/xml; charset=utf-8",
-                "SOAPAction": f'"{NS}{action}"',
-            },
-        )
+        req = urllib.request.Request(self.endpoint, data=envelope.encode("utf-8"), headers={
+            "Content-Type": "text/xml; charset=utf-8",
+            "SOAPAction": f'"{NS}{action}"',
+        })
         try:
-            resp = self.opener.open(req, timeout=timeout)
-            return resp.read().decode("utf-8")
+            return self.opener.open(req, timeout=timeout).read().decode("utf-8")
         except urllib.error.HTTPError as e:
             body_text = e.read().decode("utf-8", errors="replace")
-            fault_msg = ""
+            fault = ""
             try:
-                fault_root = ET.fromstring(body_text)
-                fault_el = fault_root.find(".//{http://schemas.xmlsoap.org/soap/envelope/}faultstring")
-                if fault_el is not None and fault_el.text:
-                    fault_msg = f"\nFault: {fault_el.text[:500]}"
+                root = ET.fromstring(body_text)
+                el = root.find(".//{http://schemas.xmlsoap.org/soap/envelope/}faultstring")
+                if el is not None and el.text:
+                    fault = el.text[:500]
             except Exception:
                 pass
-            raise RuntimeError(
-                f"SOAP {action} failed: HTTP {e.code}{fault_msg}\n{body_text[:2000]}"
-            )
+            raise RuntimeError(f"SOAP {action} HTTP {e.code}: {fault or body_text[:500]}")
 
-    def login(self, company: str) -> None:
-        """Authenticate to SM203520 in the context of a specific company."""
-        body = f"""<tns:Login>
+    def login(self, company):
+        self._soap_call("Login", f"""<tns:Login>
       <tns:name>{self.username}</tns:name>
       <tns:password>{self.password}</tns:password>
       <tns:company>{company}</tns:company>
-    </tns:Login>"""
-        self._soap_call("Login", body)
-        ok(f"Logged in to {SCREEN_ID} as {self.username} (company: {company})")
+    </tns:Login>""")
+        ok(f"Logged in to {SCREEN_ID} ({company})")
 
-    def logout(self) -> None:
-        """Release session."""
-        try:
-            self._soap_call("Logout", "<tns:Logout/>")
-        except Exception:
-            pass
+    def logout(self):
+        try: self._soap_call("Logout", "<tns:Logout/>")
+        except Exception: pass
 
-    def get_schema(self) -> str:
-        """Get SM203520 field schema."""
+    def get_schema(self):
         return self._soap_call("GetSchema", "<tns:GetSchema/>")
 
-    def get_process_status(self) -> tuple[str, str]:
-        """Poll process status. Returns (status, message)."""
+    def get_process_status(self):
         resp = self._soap_call("GetProcessStatus", "<tns:GetProcessStatus/>")
         root = ET.fromstring(resp)
-        status_el = root.find(f".//{{{NS}}}Status")
-        message_el = root.find(f".//{{{NS}}}Message")
-        status = status_el.text if status_el is not None else "NotExists"
-        message = message_el.text if message_el is not None else ""
-        return status, message or ""
+        s = root.find(f".//{{{NS}}}Status")
+        m = root.find(f".//{{{NS}}}Message")
+        return (s.text if s is not None else "NotExists", (m.text or "") if m is not None else "")
 
-    def submit(self, commands: list[dict]) -> str:
-        """Submit commands to SM203520."""
-        cmd_xml = []
-        for cmd in commands:
-            parts = [
-                f"<tns:FieldName>{cmd['FieldName']}</tns:FieldName>",
-                f"<tns:ObjectName>{cmd['ObjectName']}</tns:ObjectName>",
-            ]
-            if "Value" in cmd:
-                parts.append(f"<tns:Value>{cmd['Value']}</tns:Value>")
-            if cmd.get("Commit"):
-                parts.append("<tns:Commit>true</tns:Commit>")
-            cmd_xml.append(f"<tns:Command>{''.join(parts)}</tns:Command>")
+    def submit(self, commands):
+        xml = []
+        for c in commands:
+            parts = [f"<tns:FieldName>{c['FieldName']}</tns:FieldName>",
+                     f"<tns:ObjectName>{c['ObjectName']}</tns:ObjectName>"]
+            if "Value" in c: parts.append(f"<tns:Value>{c['Value']}</tns:Value>")
+            if c.get("Commit"): parts.append("<tns:Commit>true</tns:Commit>")
+            xml.append(f"<tns:Command>{''.join(parts)}</tns:Command>")
+        return self._soap_call("Submit",
+            f"<tns:Submit><tns:commands>{''.join(xml)}</tns:commands></tns:Submit>")
 
-        body = f"""<tns:Submit>
-      <tns:commands>
-        {''.join(cmd_xml)}
-      </tns:commands>
-    </tns:Submit>"""
-        return self._soap_call("Submit", body, timeout=600)
-
-    def clear(self) -> None:
-        """Clear screen state."""
+    def clear(self):
         self._soap_call("Clear", "<tns:Clear/>")
 
-    def poll_process(self, operation: str, timeout_seconds: int = 1800, poll_interval: int = 15) -> bool:
-        """Poll GetProcessStatus until completed or timeout."""
+    def poll(self, operation, timeout_s=1800, interval=20):
         elapsed = 0
-        while elapsed < timeout_seconds:
-            time.sleep(poll_interval)
-            elapsed += poll_interval
-            status, message = self.get_process_status()
-            log(f"  {operation}: {status} ({elapsed}s) {message[:200] if message else ''}")
+        while elapsed < timeout_s:
+            time.sleep(interval)
+            elapsed += interval
+            status, msg = self.get_process_status()
+            log(f"  {operation}: {status} ({elapsed}s) {msg[:100]}")
             if status == "Completed":
                 ok(f"{operation} completed ({elapsed}s)")
                 return True
             if status == "Aborted":
-                err(f"{operation} aborted: {message[:500]}")
+                err(f"{operation} aborted: {msg[:300]}")
                 return False
-            if status == "NotExists":
-                if elapsed > 60:
-                    warn(f"{operation}: NotExists after {elapsed}s — may have completed instantly")
-                    return True
-        err(f"{operation} timed out after {timeout_seconds}s")
+            if status == "NotExists" and elapsed > 60:
+                warn(f"{operation}: NotExists after {elapsed}s — may have completed instantly")
+                return True
+        err(f"{operation} timed out after {timeout_s}s")
         return False
 
-# ─── Sync Logic ─────────────────────────────────────────────────────────────
 
-def print_schema(client: SoapClient) -> None:
-    """Print SM203520 schema for debugging."""
-    resp = client.get_schema()
-    log(f"GetSchema response length: {len(resp)} bytes")
+def copy_company(client, target_company):
+    """Copy current company to target using CopyCompanyCommand.
 
-    # Dump full raw XML for debugging (split into chunks to avoid line limits)
-    log("Raw schema:")
-    chunk_size = 2000
-    for i in range(0, min(len(resp), 15000), chunk_size):
-        chunk = resp[i:i+chunk_size].replace("\n", " ")
-        log(f"  CHUNK[{i}]: {chunk}")
-
-    root = ET.fromstring(resp)
-
-    # Try multiple namespace patterns
-    found = 0
-    for cmd in root.iter(f"{{{NS}}}Command"):
-        obj = cmd.find(f"{{{NS}}}ObjectName")
-        field = cmd.find(f"{{{NS}}}FieldName")
-        if obj is not None and field is not None:
-            log(f"  {obj.text}: {field.text}")
-            found += 1
-
-    if found == 0:
-        # Try without namespace
-        for cmd in root.iter("Command"):
-            obj = cmd.find("ObjectName")
-            field = cmd.find("FieldName")
-            if obj is not None and field is not None:
-                log(f"  {obj.text}: {field.text}")
-                found += 1
-
-    log(f"Total fields discovered: {found}")
-
-
-def copy_company(client: SoapClient, source_company: str, target_company: str) -> bool:
-    """Copy source company data to target company using CopyCompanyCommand.
-
-    SM203520 flow:
-    1. Navigate to source company (should already be in context from login)
-    2. Set CopyCompany.CompanyID to target company
-    3. Trigger CopyCompanyCommand action
-    4. Poll GetProcessStatus until complete
+    Runtime views: CopyCompanyPanel.CompanyID, Actions on Companies.
     """
-    log(f"Copying '{source_company}' → '{target_company}'...")
+    log(f"Copying to '{target_company}'...")
 
-    # Step 1: Set target company in CopyCompany dialog and trigger the action
-    log("  Setting target company and triggering copy...")
+    # Trigger CopyCompanyCommand action — this opens the CopyCompanyPanel dialog
+    log("  Triggering copyCompanyCommand...")
     try:
         client.submit([
-            {"FieldName": "CompanyID", "ObjectName": "CopyCompany", "Value": target_company, "Commit": True},
-            {"FieldName": "CopyCompanyCommand", "ObjectName": "Actions"},
+            {"FieldName": "copyCompanyCommand", "ObjectName": "Companies"},
+        ])
+        ok("  Copy dialog opened")
+    except RuntimeError as e:
+        # Action may return error while opening dialog — expected
+        warn(f"  Action response: {str(e)[:200]}")
+
+    # Set target company ID in the dialog and confirm
+    log(f"  Setting target to '{target_company}' and confirming...")
+    try:
+        client.submit([
+            {"FieldName": "CompanyID", "ObjectName": "CopyCompanyPanel", "Value": target_company, "Commit": True},
+            {"FieldName": "DialogAnswer", "ObjectName": "CopyCompanyPanel", "Value": "Yes"},
         ])
         ok("  Copy command accepted")
     except RuntimeError as e:
-        error_str = str(e)
-        if "InProcess" in error_str:
-            log("  Copy process started (HTTP error expected during long-running ops)...")
+        if "InProcess" in str(e):
+            log("  Copy process started...")
         else:
-            # Try alternative: action first, then dialog
-            warn(f"  First attempt: {error_str[:300]}")
-            log("  Retrying: action first, then dialog answer...")
-            try:
-                client.clear()
-                client.submit([
-                    {"FieldName": "CopyCompanyCommand", "ObjectName": "Actions"},
-                ])
-            except RuntimeError:
-                pass  # Action opens dialog
+            err(f"  Copy failed: {e}")
+            return False
 
-            try:
-                client.submit([
-                    {"FieldName": "CompanyID", "ObjectName": "CopyCompany", "Value": target_company, "Commit": True},
-                    {"FieldName": "DialogAnswer", "ObjectName": "CopyCompany", "Value": "OK"},
-                ])
-            except RuntimeError as e2:
-                if "InProcess" in str(e2):
-                    log("  Copy process started...")
-                else:
-                    err(f"  Copy failed: {e2}")
-                    return False
-
-    # Poll until copy completes (company copy can take 10-30 minutes for large datasets)
-    return client.poll_process("CopyCompany", timeout_seconds=1800, poll_interval=20)
+    return client.poll("CopyCompany", timeout_s=1800, interval=20)
 
 
-def send_slack(webhook_url: str, text: str) -> None:
-    """Post a Slack notification (best effort)."""
-    if not webhook_url:
-        return
+def slack(url, text):
+    if not url: return
     try:
-        data = json.dumps({"text": text}).encode("utf-8")
-        req = urllib.request.Request(
-            webhook_url,
-            data=data,
-            headers={"Content-Type": "application/json"},
-        )
-        urllib.request.urlopen(req, timeout=10)
-    except Exception:
-        pass
+        urllib.request.urlopen(urllib.request.Request(url,
+            data=json.dumps({"text": text}).encode("utf-8"),
+            headers={"Content-Type": "application/json"}), timeout=10)
+    except Exception: pass
 
 
-# ─── Main ───────────────────────────────────────────────────────────────────
-
-def main() -> None:
-    parser = argparse.ArgumentParser(description="Sync test environment from production via company copy")
-    parser.add_argument("--url", default=os.environ.get("ACUMATICA_URL", ""))
-    parser.add_argument("--username", default=os.environ.get("ACUMATICA_USERNAME", ""))
-    parser.add_argument("--password", default=os.environ.get("ACUMATICA_PASSWORD", ""))
-    parser.add_argument("--source", default=os.environ.get("SOURCE_COMPANY", "Heritage Fabrics"),
-                        help="Production company name")
-    parser.add_argument("--target", default=os.environ.get("TARGET_COMPANY", "Heritage Test"),
-                        help="Test company name")
-    parser.add_argument("--dry-run", action="store_true", help="Login + schema only, no copy")
-    parser.add_argument("--schema-only", action="store_true", help="Print field schema and exit")
-    args = parser.parse_args()
+def main():
+    p = argparse.ArgumentParser()
+    p.add_argument("--url", default=os.environ.get("ACUMATICA_URL", ""))
+    p.add_argument("--username", default=os.environ.get("ACUMATICA_USERNAME", ""))
+    p.add_argument("--password", default=os.environ.get("ACUMATICA_PASSWORD", ""))
+    p.add_argument("--source", default=os.environ.get("SOURCE_COMPANY", "Heritage Fabrics"))
+    p.add_argument("--target", default=os.environ.get("TARGET_COMPANY", "Heritage Test"))
+    p.add_argument("--dry-run", action="store_true")
+    p.add_argument("--schema-only", action="store_true")
+    args = p.parse_args()
 
     if not args.url or not args.username or not args.password:
         err("Missing ACUMATICA_URL, ACUMATICA_USERNAME, or ACUMATICA_PASSWORD")
@@ -310,46 +201,44 @@ def main() -> None:
     client = SoapClient(args.url, args.username, args.password)
 
     try:
-        # Login to source company
         client.login(args.source)
 
         if args.schema_only:
-            log("SM203520 schema:")
-            print_schema(client)
+            log("SM203520 GetSchema:")
+            resp = client.get_schema()
+            log(f"Response: {len(resp)} bytes")
+            # Print just the view/field pairs
+            root = ET.fromstring(resp)
+            for el in root.iter():
+                fn = el.find(f"{{{NS}}}FieldName")
+                on = el.find(f"{{{NS}}}ObjectName")
+                if fn is not None and on is not None:
+                    log(f"  {on.text}: {fn.text}")
             client.logout()
             return
 
         if args.dry_run:
-            log("Dry run — checking connectivity")
-            status, msg = client.get_process_status()
-            log(f"Process status: {status} — {msg}")
-            ok("Dry run passed — SOAP connectivity confirmed")
+            log("Dry run — connectivity OK")
             client.logout()
             return
 
-        # Copy source → target
-        copy_ok = copy_company(client, args.source, args.target)
-        if not copy_ok:
+        result = copy_company(client, args.target)
+        if not result:
             err("Company copy failed")
-            send_slack(slack_url,
-                       f":x: *Test Env Sync FAILED*\nCopy `{args.source}` → `{args.target}` failed\nManual copy required via SM203520")
+            slack(slack_url, f":x: *Test Env Sync FAILED*\nCopy `{args.source}` → `{args.target}` failed")
             client.logout()
             sys.exit(1)
 
-        ok(f"Test environment synced: {args.source} → {args.target}")
-        send_slack(slack_url,
-                   f":white_check_mark: *Test Env Sync Complete*\n`{args.source}` → `{args.target}` via CopyCompanyCommand")
+        ok(f"Synced: {args.source} → {args.target}")
+        slack(slack_url, f":white_check_mark: *Test Env Sync Complete*\n`{args.source}` → `{args.target}`")
 
     except Exception as e:
         err(f"Sync failed: {e}")
-        send_slack(slack_url,
-                   f":x: *Test Env Sync FAILED*\n{str(e)[:200]}")
+        slack(slack_url, f":x: *Test Env Sync FAILED*\n{str(e)[:200]}")
         sys.exit(1)
     finally:
-        try:
-            client.logout()
-        except Exception:
-            pass
+        try: client.logout()
+        except Exception: pass
 
 
 if __name__ == "__main__":
