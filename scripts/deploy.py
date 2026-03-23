@@ -291,7 +291,23 @@ class AcumaticaCustomizationClient:
             # Reset connection error counter on successful response
             connection_errors = 0
 
-            # publishEnd returns JSON with isCompleted/isFailed on both 200 and 400
+            # publishEnd returns JSON with isCompleted/isFailed on both 200 and 400.
+            # During app pool restart, 500/502/503 are expected — treat like connection errors.
+            if resp.status_code in (500, 502, 503, 504):
+                connection_errors += 1
+                _log(
+                    f"  HTTP {resp.status_code} during poll ({connection_errors}/{max_connection_errors}) "
+                    f"— app pool likely restarting ({elapsed}s)",
+                    style="warn",
+                )
+                if connection_errors >= max_connection_errors:
+                    raise RuntimeError(
+                        f"Publish poll returned HTTP {resp.status_code} after "
+                        f"{connection_errors} attempts ({elapsed}s). "
+                        f"Response: {resp.text[:300]}"
+                    )
+                continue
+
             if resp.status_code not in (200, 400):
                 raise RuntimeError(
                     f"Publish poll error (HTTP {resp.status_code}): {resp.text[:500]}"
