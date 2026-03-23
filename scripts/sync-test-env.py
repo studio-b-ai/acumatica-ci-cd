@@ -233,6 +233,66 @@ class SoapClient:
 
 # ─── Sync Logic ─────────────────────────────────────────────────────────────
 
+def delete_old_snapshots(client: SoapClient, keep_description: str | None = None) -> int:
+    """Delete all prod-mirror-* snapshots except the one matching keep_description.
+
+    Returns count of deleted snapshots.
+    """
+    log("Cleaning up old prod-mirror snapshots...")
+    try:
+        rows = client.export([
+            {"FieldName": "Name", "ObjectName": "Snapshots"},
+            {"FieldName": "Description", "ObjectName": "Snapshots"},
+            {"FieldName": "CreationDate", "ObjectName": "Snapshots"},
+        ], top_count=50)
+    except RuntimeError as e:
+        warn(f"  Could not read Snapshots grid: {str(e)[:200]}")
+        return 0
+
+    if not rows or len(rows) <= 1:
+        log("  No snapshots found")
+        return 0
+
+    # First row is headers
+    deleted = 0
+    for row in rows[1:]:
+        if len(row) < 2:
+            continue
+        name, desc = row[0], row[1] or ""
+        if not desc.startswith("prod-mirror-"):
+            continue
+        if keep_description and desc == keep_description:
+            log(f"  Keeping: {name} ({desc})")
+            continue
+
+        log(f"  Deleting: {name} ({desc})")
+        try:
+            # Select the snapshot row, then trigger delete
+            client.submit([
+                {"FieldName": "Name", "ObjectName": "Snapshots", "Value": name, "Commit": True},
+            ])
+            client.submit([
+                {"FieldName": "DeleteSnapshotCommand", "ObjectName": "Actions"},
+            ])
+            # Confirm deletion dialog if one appears
+            try:
+                client.submit([
+                    {"FieldName": "DialogAnswer", "ObjectName": "Snapshots", "Value": "Yes"},
+                ])
+            except RuntimeError:
+                pass  # Dialog may not appear
+            deleted += 1
+            ok(f"  Deleted snapshot: {name}")
+        except RuntimeError as e:
+            warn(f"  Failed to delete {name}: {str(e)[:200]}")
+
+    if deleted:
+        ok(f"Cleaned up {deleted} old snapshot(s)")
+    else:
+        log("  No old prod-mirror snapshots to clean up")
+    return deleted
+
+
 def print_schema(client: SoapClient) -> None:
     """Print SM203520 schema for debugging."""
     resp = client.get_schema()
@@ -433,6 +493,9 @@ def main() -> None:
             ok("Dry run passed — SOAP connectivity confirmed")
             client.logout()
             return
+
+        # Step 0: Delete old prod-mirror snapshots to prevent storage bloat
+        delete_old_snapshots(client)
 
         # Step 1: Create snapshot (logged into source company)
         timestamp = time.strftime("%Y-%m-%d-%H%M%S")
