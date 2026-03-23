@@ -714,18 +714,23 @@ jobs:
           fi
 
           EXTRA_FLAGS=""
-          SANDBOX_COPUBLISH="${PROJECT_NAME}"
+          SANDBOX_COPUBLISH=""
           for pkg in dist/*.zip; do
             if [ "${pkg}" != "${PACKAGE_FILE}" ]; then
               PKG_BASE=$(basename "${pkg}" .zip)
               PKG_NAME=$(echo "${PKG_BASE}" | sed 's/_[0-9]\{8\}-[0-9]\{6\}$//')
               EXTRA_FLAGS+=" --extra-import ${PKG_NAME}:${pkg}"
-              SANDBOX_COPUBLISH+=",${PKG_NAME}"
+              if [ -n "${SANDBOX_COPUBLISH}" ]; then
+                SANDBOX_COPUBLISH+=",${PKG_NAME}"
+              else
+                SANDBOX_COPUBLISH="${PKG_NAME}"
+              fi
             fi
           done
 
-          # Sandbox only co-publishes projects we just imported —
-          # no ISV/vendor packages, no projects not in test company.
+          # Sandbox only co-publishes extra packages we just imported —
+          # deploy.py prepends PROJECT_NAME automatically, so don't include it here.
+          # No ISV/vendor packages, no projects not in test company.
           python scripts/deploy.py \
             --project "${PROJECT_NAME}" \
             --package "${PACKAGE_FILE}" \
