@@ -722,10 +722,12 @@ jobs:
             fi
           done
 
+          # Sandbox only co-publishes projects we own (KNOWN_PROJECTS),
+          # not ISV/vendor packages that may not exist in test company.
           python scripts/deploy.py \
             --project "${PROJECT_NAME}" \
             --package "${PACKAGE_FILE}" \
-            --also-publish "${ALSO_PUBLISH}" \
+            --also-publish "${KNOWN_PROJECTS}" \
             ${EXTRA_FLAGS}
 
       - name: Validate custom fields on sandbox
