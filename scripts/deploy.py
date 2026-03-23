@@ -260,15 +260,36 @@ class AcumaticaCustomizationClient:
         _log("Publish started — polling for completion...", style="ok")
 
         elapsed = 0
+        connection_errors = 0
+        max_connection_errors = 6  # Allow up to 6 consecutive connection failures (60s at 10s interval)
         while elapsed < poll_timeout:
             time.sleep(poll_interval)
             elapsed += poll_interval
 
-            resp = self.session.post(
-                f"{self.base_url}/CustomizationApi/publishEnd",
-                json={},
-                timeout=self.timeout,
-            )
+            try:
+                resp = self.session.post(
+                    f"{self.base_url}/CustomizationApi/publishEnd",
+                    json={},
+                    timeout=self.timeout,
+                )
+            except (requests.ConnectionError, requests.Timeout) as exc:
+                # App pool restart kills connections — this is EXPECTED during publish.
+                # Keep polling until the app pool comes back or we exhaust retries.
+                connection_errors += 1
+                _log(
+                    f"  Connection lost during poll ({connection_errors}/{max_connection_errors}) "
+                    f"— app pool likely restarting ({elapsed}s)",
+                    style="warn",
+                )
+                if connection_errors >= max_connection_errors:
+                    raise TimeoutError(
+                        f"App pool did not recover after {connection_errors} connection failures "
+                        f"({elapsed}s elapsed). Check Acumatica System Monitor."
+                    ) from exc
+                continue
+
+            # Reset connection error counter on successful response
+            connection_errors = 0
 
             # publishEnd returns JSON with isCompleted/isFailed on both 200 and 400
             if resp.status_code not in (200, 400):
