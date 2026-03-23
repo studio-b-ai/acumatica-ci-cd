@@ -4,6 +4,7 @@
         <CDATA name="Source"><![CDATA[using System;
 using PX.Data;
 using PX.Data.BQL;
+using PX.Objects.CS;
 using PX.Objects.IN;
 
 namespace Aesthetik.WMS
@@ -147,6 +148,7 @@ namespace Aesthetik.WMS
         <CDATA name="Source"><![CDATA[using System;
 using PX.Data;
 using PX.Data.BQL;
+using PX.Objects.CS;
 using PX.Objects.IN;
 
 namespace Aesthetik.WMS
@@ -355,6 +357,7 @@ using System.Linq;
 using PX.Data;
 using PX.Data.BQL;
 using PX.Data.BQL.Fluent;
+using PX.Objects.CS;
 using PX.Objects.IN;
 using PX.Objects.SO;
 
@@ -768,6 +771,7 @@ using System.Linq;
 using PX.Data;
 using PX.Data.BQL;
 using PX.Data.BQL.Fluent;
+using PX.Objects.CS;
 using PX.Objects.IN;
 using PX.Objects.SO;
 
@@ -1180,6 +1184,7 @@ namespace Aesthetik.WMS
 using PX.Data;
 using PX.Data.BQL;
 using PX.Data.BQL.Fluent;
+using PX.Objects.CS;
 using PX.Objects.IN;
 using PX.Objects.PO;
 
@@ -1644,6 +1649,7 @@ namespace Aesthetik.WMS
     </Graph>
     <Graph ClassName="INSetupMaintExt" Source="#CDATA" IsNew="True" FileType="NewFile">
         <CDATA name="Source"><![CDATA[using PX.Data;
+using PX.Objects.CS;
 using PX.Objects.IN;
 
 namespace Aesthetik.WMS
@@ -1764,6 +1770,7 @@ using System.Linq;
 using PX.Data;
 using PX.Data.BQL;
 using PX.Data.BQL.Fluent;
+using PX.Objects.CS;
 using PX.Objects.IN;
 
 namespace Aesthetik.WMS
@@ -2174,6 +2181,7 @@ using System.Linq;
 using PX.Data;
 using PX.Data.BQL;
 using PX.Data.BQL.Fluent;
+using PX.Objects.CS;
 using PX.Objects.IN;
 using PX.Objects.PO;
 
@@ -3330,6 +3338,7 @@ using System.Linq;
 using PX.Data;
 using PX.Data.BQL;
 using PX.Data.BQL.Fluent;
+using PX.Objects.CS;
 using PX.Objects.IN;
 using PX.Objects.SO;
 
@@ -3409,7 +3418,7 @@ namespace Aesthetik.WMS
             var availableLots = SelectFrom<INLotSerialStatus>
                 .Where<INLotSerialStatus.inventoryID.IsEqual<@P.AsInt>
                     .And<INLotSerialStatus.siteID.IsEqual<@P.AsInt>>
-                    .And<INLotSerialStatus.qtyOnHand.IsGreater<decimal>>>
+                    .And<INLotSerialStatus.qtyOnHand.IsGreater<decimal0>>>
                 .OrderBy<INLotSerialStatus.receiptDate.Asc,
                          INLotSerialStatus.qtyOnHand.Desc>
                 .View.ReadOnly.Select(Base, line.InventoryID, line.SiteID);

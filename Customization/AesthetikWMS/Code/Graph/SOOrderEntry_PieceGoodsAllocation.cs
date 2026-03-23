@@ -3,6 +3,7 @@ using System.Linq;
 using PX.Data;
 using PX.Data.BQL;
 using PX.Data.BQL.Fluent;
+using PX.Objects.CS;
 using PX.Objects.IN;
 using PX.Objects.SO;
 
@@ -82,7 +83,7 @@ namespace Aesthetik.WMS
             var availableLots = SelectFrom<INLotSerialStatus>
                 .Where<INLotSerialStatus.inventoryID.IsEqual<@P.AsInt>
                     .And<INLotSerialStatus.siteID.IsEqual<@P.AsInt>>
-                    .And<INLotSerialStatus.qtyOnHand.IsGreater<decimal>>>
+                    .And<INLotSerialStatus.qtyOnHand.IsGreater<decimal0>>>
                 .OrderBy<INLotSerialStatus.receiptDate.Asc,
                          INLotSerialStatus.qtyOnHand.Desc>
                 .View.ReadOnly.Select(Base, line.InventoryID, line.SiteID);
