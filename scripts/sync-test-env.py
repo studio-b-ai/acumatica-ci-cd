@@ -102,20 +102,28 @@ class SoapClient:
             return resp.read().decode("utf-8")
         except urllib.error.HTTPError as e:
             body_text = e.read().decode("utf-8", errors="replace")
+            # Extract faultstring from SOAP fault for cleaner error messages
+            fault_msg = ""
+            try:
+                fault_root = ET.fromstring(body_text)
+                fault_el = fault_root.find(".//{http://schemas.xmlsoap.org/soap/envelope/}faultstring")
+                if fault_el is not None and fault_el.text:
+                    fault_msg = f"\nFault: {fault_el.text[:500]}"
+            except Exception:
+                pass
             raise RuntimeError(
-                f"SOAP {action} failed: HTTP {e.code}\n{body_text[:1000]}"
+                f"SOAP {action} failed: HTTP {e.code}{fault_msg}\n{body_text[:2000]}"
             )
 
-    def login(self, company: str | None = None) -> None:
-        """Authenticate to SM203520."""
-        company_xml = f"<tns:company>{company}</tns:company>" if company else ""
+    def login(self, company: str) -> None:
+        """Authenticate to SM203520 in the context of a specific company."""
         body = f"""<tns:Login>
       <tns:name>{self.username}</tns:name>
       <tns:password>{self.password}</tns:password>
-      {company_xml}
+      <tns:company>{company}</tns:company>
     </tns:Login>"""
         self._soap_call("Login", body)
-        ok(f"Logged in to {SCREEN_ID} as {self.username}")
+        ok(f"Logged in to {SCREEN_ID} as {self.username} (company: {company})")
 
     def logout(self) -> None:
         """Release session."""
@@ -203,49 +211,73 @@ def print_schema(client: SoapClient) -> None:
 
 
 def create_snapshot(client: SoapClient, source_company: str, description: str) -> bool:
-    """Create a snapshot of the source company."""
+    """Create a snapshot of the source company.
+
+    SM203520 dialog flow:
+    1. Set snapshot description in CreateSnapshot dialog
+    2. Trigger PrepareAdbSnapshotCommand action
+    3. Poll GetProcessStatus until complete
+    """
     log(f"Step 1: Creating snapshot of '{source_company}'...")
     log(f"  Description: {description}")
 
-    # Navigate to the source company first
-    client.submit([
-        {"FieldName": "TenantName", "ObjectName": "CompanySummary", "Value": source_company, "Commit": True},
-    ])
-
-    # Open CreateSnapshot dialog and set parameters
-    client.submit([
-        {"FieldName": "Description", "ObjectName": "CreateSnapshot", "Value": description},
-        {"FieldName": "ExportMode", "ObjectName": "CreateSnapshot", "Value": "All"},
-        # Trigger snapshot creation
-        {"FieldName": "PrepareAdbSnapshotCommand", "ObjectName": "Actions"},
-    ])
+    # Set snapshot parameters and trigger creation in one Submit.
+    # The CreateSnapshot view is a dialog — set fields then trigger the action.
+    try:
+        client.submit([
+            {"FieldName": "Description", "ObjectName": "CreateSnapshot", "Value": description},
+            {"FieldName": "PrepareAdbSnapshotCommand", "ObjectName": "Actions"},
+        ])
+    except RuntimeError as e:
+        # Some SOAP screens return 500 on long-running process initiation
+        # but the process actually starts. Check GetProcessStatus.
+        if "InProcess" in str(e) or "process" in str(e).lower():
+            log("  Submit returned error but process may have started — polling...")
+        else:
+            err(f"  Submit failed: {e}")
+            # Try alternative: use dialog answer pattern
+            log("  Retrying with dialog answer pattern...")
+            try:
+                client.submit([
+                    {"FieldName": "Description", "ObjectName": "CreateSnapshot", "Value": description},
+                    {"FieldName": "ExportMode", "ObjectName": "CreateSnapshot", "Value": "All"},
+                    {"FieldName": "DialogAnswer", "ObjectName": "CreateSnapshot", "Value": "OK"},
+                ])
+            except RuntimeError as e2:
+                err(f"  Retry also failed: {e2}")
+                return False
 
     # Poll until snapshot completes
     return client.poll_process("CreateSnapshot", timeout_seconds=1200, poll_interval=15)
 
 
 def restore_snapshot(client: SoapClient, target_company: str, snapshot_name: str) -> bool:
-    """Restore a snapshot to the target company."""
+    """Restore a snapshot to the target company.
+
+    This requires a separate SOAP session logged into the TARGET company,
+    since snapshot restore operates on the current company context.
+    """
     log(f"Step 2: Restoring snapshot '{snapshot_name}' to '{target_company}'...")
 
-    # Navigate to the target company
-    client.submit([
-        {"FieldName": "TenantName", "ObjectName": "CompanySummary", "Value": target_company, "Commit": True},
-    ])
-
-    # Select the snapshot and set restore parameters
-    client.submit([
-        {"FieldName": "Name", "ObjectName": "RestoreSnapshot", "Value": snapshot_name},
-        {"FieldName": "Company", "ObjectName": "RestoreSnapshot", "Value": target_company},
-    ])
-
-    # The restore dialog may need a confirmation — try DialogAnswer
+    # Select the snapshot and trigger restore
     try:
         client.submit([
-            {"FieldName": "DialogAnswer", "ObjectName": "RestoreSnapshot", "Value": "Yes"},
+            {"FieldName": "Name", "ObjectName": "Snapshots", "Value": snapshot_name, "Commit": True},
         ])
-    except RuntimeError:
-        pass  # Dialog may not appear
+    except RuntimeError as e:
+        warn(f"  Snapshot selection: {str(e)[:200]}")
+
+    try:
+        client.submit([
+            {"FieldName": "Company", "ObjectName": "RestoreSnapshot", "Value": target_company},
+            {"FieldName": "DialogAnswer", "ObjectName": "RestoreSnapshot", "Value": "OK"},
+        ])
+    except RuntimeError as e:
+        if "InProcess" in str(e) or "process" in str(e).lower():
+            log("  Restore may have started — polling...")
+        else:
+            err(f"  Restore submit failed: {e}")
+            return False
 
     # Poll until restore completes
     return client.poll_process("RestoreSnapshot", timeout_seconds=1200, poll_interval=15)
@@ -290,12 +322,13 @@ def main() -> None:
     client = SoapClient(args.url, args.username, args.password)
 
     try:
-        # Login as admin (no company = admin context for cross-company operations)
-        client.login()
+        # Login to source company for schema/dry-run
+        client.login(args.source)
 
         if args.schema_only:
             log("SM203520 schema:")
             print_schema(client)
+            client.logout()
             return
 
         if args.dry_run:
@@ -303,9 +336,10 @@ def main() -> None:
             status, msg = client.get_process_status()
             log(f"Process status: {status} — {msg}")
             ok("Dry run passed — SOAP connectivity confirmed")
+            client.logout()
             return
 
-        # Step 1: Create snapshot
+        # Step 1: Create snapshot (logged into source company)
         timestamp = time.strftime("%Y-%m-%d")
         description = f"prod-mirror-{timestamp}"
 
@@ -314,30 +348,41 @@ def main() -> None:
             err("Snapshot creation failed — aborting")
             send_slack(slack_url,
                        f":x: *Test Env Sync FAILED*\nSnapshot creation failed for `{args.source}`\nManual intervention required")
+            client.logout()
             sys.exit(1)
 
-        # Clear screen state between operations
-        client.clear()
+        # Logout source session
+        client.logout()
+        log("Source session closed")
 
-        # Step 2: Restore to test company
-        restore_ok = restore_snapshot(client, args.target, description)
-        if not restore_ok:
-            err("Snapshot restore failed")
+        # Step 2: Login to target company for restore
+        target_client = SoapClient(args.url, args.username, args.password)
+        try:
+            target_client.login(args.target)
+
+            restore_ok = restore_snapshot(target_client, args.target, description)
+            if not restore_ok:
+                err("Snapshot restore failed")
+                send_slack(slack_url,
+                           f":x: *Test Env Sync FAILED*\nSnapshot `{description}` created but restore to `{args.target}` failed\nSnapshot available for manual restore in SM203520")
+                target_client.logout()
+                sys.exit(1)
+
+            ok(f"Test environment synced: {args.source} → {args.target}")
             send_slack(slack_url,
-                       f":x: *Test Env Sync FAILED*\nSnapshot `{description}` created but restore to `{args.target}` failed\nSnapshot available for manual restore in SM203520")
-            sys.exit(1)
-
-        ok(f"Test environment synced: {args.source} → {args.target}")
-        send_slack(slack_url,
-                   f":white_check_mark: *Test Env Sync Complete*\n`{args.source}` → `{args.target}`\nSnapshot: `{description}`")
+                       f":white_check_mark: *Test Env Sync Complete*\n`{args.source}` → `{args.target}`\nSnapshot: `{description}`")
+        finally:
+            target_client.logout()
 
     except Exception as e:
         err(f"Sync failed: {e}")
         send_slack(slack_url,
                    f":x: *Test Env Sync FAILED*\n{str(e)[:200]}")
+        try:
+            client.logout()
+        except Exception:
+            pass
         sys.exit(1)
-    finally:
-        client.logout()
 
 
 if __name__ == "__main__":
