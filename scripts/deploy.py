@@ -49,6 +49,10 @@ from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
 
+# Force unbuffered output — critical for GitHub Actions log visibility
+os.environ["PYTHONUNBUFFERED"] = "1"
+
+
 class CustomizationCorruptionError(RuntimeError):
     """Raised when NullReferenceException indicates database corruption.
 
@@ -454,7 +458,7 @@ STYLES = {
 
 def _log(msg: str, style: str = "info") -> None:
     prefix = STYLES.get(style, STYLES["info"])
-    print(f"{prefix} {msg}")
+    print(f"{prefix} {msg}", flush=True)
 
 
 def _filesize(path: Path) -> str:
