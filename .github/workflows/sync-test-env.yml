@@ -52,6 +52,28 @@ jobs:
       - name: Install dependencies
         run: pip install requests
 
+      # Enter maintenance mode — pause sync workers to free API session slot
+      - name: Enter maintenance mode
+        continue-on-error: true
+        env:
+          WEBHOOK_ROUTER_URL: ${{ secrets.WEBHOOK_ROUTER_URL }}
+          PROVISION_API_KEY: ${{ secrets.PROVISION_API_KEY }}
+        run: |
+          if [ -z "${WEBHOOK_ROUTER_URL}" ]; then
+            echo "::warning::WEBHOOK_ROUTER_URL not set — skipping maintenance mode"
+            exit 0
+          fi
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+            -X POST "${WEBHOOK_ROUTER_URL}/maintenance/start" \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer ${PROVISION_API_KEY}" \
+            -d '{"reason":"Entity sync — Prod to Test","ttl_seconds":2700}')
+          if [ "${HTTP_CODE}" = "200" ]; then
+            echo "Maintenance mode active — workers paused"
+          else
+            echo "::warning::Could not set maintenance mode (HTTP ${HTTP_CODE})"
+          fi
+
       # After-hours gate — entity sync doesn't restart app pool, but
       # avoid competing with active users for session gate
       - name: After-hours gate
@@ -73,6 +95,21 @@ jobs:
           TEST_TENANT: Heritage Test
           SLACK_WEBHOOK_URL: ${{ secrets.STUDIOB_SLACK_WEBHOOK_URL }}
         run: python scripts/entity-sync.py
+
+      # Exit maintenance mode
+      - name: Exit maintenance mode
+        if: always()
+        continue-on-error: true
+        env:
+          WEBHOOK_ROUTER_URL: ${{ secrets.WEBHOOK_ROUTER_URL }}
+          PROVISION_API_KEY: ${{ secrets.PROVISION_API_KEY }}
+        run: |
+          if [ -z "${WEBHOOK_ROUTER_URL}" ]; then exit 0; fi
+          curl -s -o /dev/null \
+            -X POST "${WEBHOOK_ROUTER_URL}/maintenance/end" \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer ${PROVISION_API_KEY}"
+          echo "Maintenance mode cleared"
 
       # Post-sync audit — verify test data actually changed
       - name: Audit sync results

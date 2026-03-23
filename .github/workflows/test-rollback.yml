@@ -98,13 +98,14 @@ jobs:
           ACUMATICA_PASSWORD: ${{ secrets.ACUMATICA_PROD_PASSWORD }}
           ACUMATICA_TENANT: ${{ secrets.ACUMATICA_SANDBOX_TENANT }}
         run: |
-          chmod +x scripts/deploy.sh
-          scripts/deploy.sh \
+          python scripts/deploy.py \
+            --url "${ACUMATICA_URL}" \
+            --login "${ACUMATICA_USERNAME}" \
+            --password "${ACUMATICA_PASSWORD}" \
+            --tenant "${ACUMATICA_TENANT}" \
             --project "${TEST_PROJECT}" \
             --package "${BROKEN_PACKAGE}" \
-            --also-publish "${REAL_PROJECT}" \
-            --backup \
-            --manifest publish-manifest-rollback-test.json
+            --also-publish "${REAL_PROJECT}"
 
       # ── Step 4: Verify deploy FAILED as expected ──────────────────────
       - name: Verify deploy failed as expected
