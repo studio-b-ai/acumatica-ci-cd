@@ -325,6 +325,8 @@ class AcumaticaCustomizationClient:
                 if isinstance(data, dict):
                     if data.get("isFailed"):
                         log_text = data.get("log", "No details")
+                        if isinstance(log_text, list):
+                            log_text = "\n".join(str(x) for x in log_text)
                         raise RuntimeError(f"Publish failed: {log_text[:1000]}")
                     if data.get("isCompleted"):
                         action = "Validation" if validation_only else "Publish"
@@ -335,7 +337,14 @@ class AcumaticaCustomizationClient:
                         # Dump publish log for SQL diagnostics
                         log_text = data.get("log", "")
                         if log_text:
-                            for line in log_text.split("\n"):
+                            # log may be a list (Acumatica returns array) or string
+                            if isinstance(log_text, list):
+                                lines = log_text
+                            else:
+                                lines = log_text.split("\n")
+                            for line in lines:
+                                if not isinstance(line, str):
+                                    line = str(line)
                                 line = line.strip()
                                 if not line:
                                     continue
