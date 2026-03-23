@@ -156,6 +156,9 @@ def validate(path: str, strict: bool = False):
             # Device Hub prerequisite checklist (SMPrintJobMaint usage)
             validate_device_hub_usage(class_name, code, strict)
 
+            # Report parameter completeness — data linkage between packages and contents
+            validate_report_parameters(class_name, code, strict)
+
         ok(f"Found {len(graphs)} <Graph> element(s)")
 
     # Check 7: Validate <SqlScript> elements
@@ -323,6 +326,147 @@ def validate_extension_safety(class_name: str, code: str, strict: bool):
             error(msg)
         else:
             warn(msg)
+
+
+def validate_report_parameters(class_name: str, code: str, strict: bool):
+    """Validate that Device Hub report parameter sets are complete and correct.
+
+    The BoxLabel4x6 report requires exactly two parameters to build its data
+    linkage between a package header (SOPackageDetailEx) and the contents of
+    that package (SOShipmentLine + INItemXRef):
+
+      ShipmentNbr    — identifies the SOShipment record; used to join the
+                       package header row and filter shipment lines.
+      PackageLineNbr — identifies the specific SOPackageDetailEx row within
+                       the shipment; used to scope the detail table to the
+                       correct box and compute the "Box X of Y" counter.
+
+    If either parameter is missing the report will either fail to render or
+    show an empty/wrong detail table at print time.  This cannot be caught by
+    the Acumatica compile step or the SM204505 import — it only surfaces at
+    the moment a user (or the auto-print trigger) submits the first print job.
+
+    Known required parameter sets (keyed by report ID):
+      BoxLabel4x6:  ["ShipmentNbr", "PackageLineNbr"]
+
+    Additionally, this check validates that the code uses SOPackageDetailEx
+    (not the base SOPackageDetail) when iterating packages.  SOPackageDetailEx
+    carries the extended fields required by the report detail table; using the
+    base SOPackageDetail drops those fields and produces an incomplete label.
+    """
+
+    # Strip comments to avoid false positives from inline documentation
+    clean = re.sub(r"///.*$", "", code, flags=re.MULTILINE)
+    clean = re.sub(r"//.*$", "", clean, flags=re.MULTILINE)
+    clean = re.sub(r"/\*.*?\*/", "", clean, flags=re.DOTALL)
+
+    # Only check code that uses AttachReportParameter or SMPrintJobParameter
+    # (i.e., code that actually builds Device Hub parameter sets).
+    uses_report_params = (
+        "AttachReportParameter" in clean
+        or "SMPrintJobParameter" in clean
+        or "PrintParameters" in clean
+    )
+    if not uses_report_params:
+        return  # No report parameter building in this class — skip
+
+    # ── Required parameter sets per report ID ────────────────────────────────
+    # Maps report_id → list of required parameter names.
+    # Extend this dict when new reports are added to the customization.
+    REQUIRED_PARAMS: dict[str, list[str]] = {
+        "BoxLabel4x6": ["ShipmentNbr", "PackageLineNbr"],
+    }
+
+    # Try to find the report ID used in this class.
+    # Handles: const string BOX_LABEL_REPORT_ID = "BoxLabel4x6";
+    #          ReportID = "BoxLabel4x6"
+    #          ReportID = BOX_LABEL_REPORT_ID  (constant reference)
+    report_ids_found: list[str] = []
+
+    # Direct string literals assigned to ReportID
+    for m in re.finditer(r'ReportID\s*=\s*"([A-Za-z0-9_]+)"', clean):
+        report_ids_found.append(m.group(1))
+
+    # String constant declarations that look like report IDs
+    for m in re.finditer(r'const\s+string\s+\w*REPORT\w*\s*=\s*"([A-Za-z0-9_]+)"', clean, re.IGNORECASE):
+        candidate = m.group(1)
+        if candidate not in report_ids_found:
+            report_ids_found.append(candidate)
+
+    # Resolve constant references: ReportID = SOME_CONST  →  look up the const value
+    for m in re.finditer(r'ReportID\s*=\s*([A-Z_][A-Z0-9_]+)\b', clean):
+        const_name = m.group(1)
+        const_val_match = re.search(
+            rf'const\s+string\s+{re.escape(const_name)}\s*=\s*"([A-Za-z0-9_]+)"', clean
+        )
+        if const_val_match:
+            candidate = const_val_match.group(1)
+            if candidate not in report_ids_found:
+                report_ids_found.append(candidate)
+
+    if not report_ids_found:
+        # AttachReportParameter is used but no report ID is visible to static analysis.
+        # This is unusual — warn so a developer can investigate.
+        if strict:
+            warn(
+                f"{class_name}: Uses AttachReportParameter but report ID could not be "
+                f"determined statically. Verify parameter completeness manually."
+            )
+        return
+
+    # Collect all parameter names passed to AttachReportParameter / PrintParameters
+    # Pattern: AttachReportParameter(graph, job, "ParamName", value)
+    attached_params: list[str] = []
+    for m in re.finditer(r'AttachReportParameter\s*\([^,]+,[^,]+,\s*"([^"]+)"', clean):
+        attached_params.append(m.group(1))
+
+    # Also catch direct SMPrintJobParameter.ParameterName = "..." assignments
+    for m in re.finditer(r'ParameterName\s*=\s*"([^"]+)"', clean):
+        if m.group(1) not in attached_params:
+            attached_params.append(m.group(1))
+
+    # ── Validate each report ID found ────────────────────────────────────────
+    for report_id in report_ids_found:
+        required = REQUIRED_PARAMS.get(report_id)
+        if required is None:
+            # Unknown report — no required-params rule defined; skip silently
+            continue
+
+        missing = [p for p in required if p not in attached_params]
+        if missing:
+            missing_str = ", ".join(f'"{p}"' for p in missing)
+            msg = (
+                f"{class_name}: Report '{report_id}' missing required parameter(s): {missing_str}\n"
+                f"         The report needs both ShipmentNbr and PackageLineNbr to build\n"
+                f"         its data linkage: SOPackageDetailEx (header) → SOShipmentLine\n"
+                f"         (contents) → INItemXRef (Alternate ID). Without these parameters\n"
+                f"         the detail table will be empty or show the wrong box's contents.\n"
+                f"         Add: AttachReportParameter(printGraph, job, \"{missing[0]}\", value);"
+            )
+            error(msg)
+        else:
+            ok(
+                f"{class_name}: Report '{report_id}' — all required parameters present "
+                f"({', '.join(required)})"
+            )
+
+    # ── SOPackageDetailEx vs SOPackageDetail check ───────────────────────────
+    # The extended type carries additional fields used by the report (e.g. weight,
+    # dimensions).  Using the base type drops those fields and can produce labels
+    # with blank sections.
+    if "SOPackageDetail" in clean and "SOPackageDetailEx" not in clean:
+        msg = (
+            f"{class_name}: Uses SOPackageDetail (base) instead of SOPackageDetailEx\n"
+            f"         SOPackageDetailEx carries extended fields required by the BoxLabel4x6\n"
+            f"         report (weight, dimensions, box type). Switch to SOPackageDetailEx to\n"
+            f"         ensure the full data linkage is available to the report renderer."
+        )
+        if strict:
+            error(msg)
+        else:
+            warn(msg)
+    elif "SOPackageDetailEx" in clean:
+        ok(f"{class_name}: Uses SOPackageDetailEx (correct extended type for box-label reports)")
 
 
 def validate_device_hub_usage(class_name: str, code: str, strict: bool):

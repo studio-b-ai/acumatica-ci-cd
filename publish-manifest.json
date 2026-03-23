@@ -30,7 +30,10 @@
     "Shipment": {
       "screen": "SO302000",
       "custom_fields": [],
-      "_skipped_fields": ["UsrBoxLabelPrinted — server-side idempotency flag for Device Hub auto-print; not surfaced via REST API adHocSchema. Validate via sql_columns only."]
+      "_skipped_fields": [
+        "UsrBoxLabelPrinted — server-side idempotency flag for Device Hub auto-print; not surfaced via REST API adHocSchema. Validate via sql_columns only.",
+        "UsrFRPickStatus — Kensium WMS pick-status field (read-only from Heritage side); accessed via late-bound PXCache.GetValue to avoid hard compile-time dependency on the Kensium assembly. Not a Heritage custom field — do not validate."
+      ]
     }
   },
   "sql_columns": [
