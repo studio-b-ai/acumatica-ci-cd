@@ -190,10 +190,12 @@ def print_schema(client: SoapClient) -> None:
     resp = client.get_schema()
     log(f"GetSchema response length: {len(resp)} bytes")
 
-    # Dump first 3000 chars of raw XML for debugging
-    log("Raw schema (first 3000 chars):")
-    for line in resp[:3000].split("\n"):
-        log(f"  {line.strip()}")
+    # Dump full raw XML for debugging (split into chunks to avoid line limits)
+    log("Raw schema:")
+    chunk_size = 2000
+    for i in range(0, min(len(resp), 15000), chunk_size):
+        chunk = resp[i:i+chunk_size].replace("\n", " ")
+        log(f"  CHUNK[{i}]: {chunk}")
 
     root = ET.fromstring(resp)
 
