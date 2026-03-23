@@ -276,7 +276,7 @@ class AcumaticaCustomizationClient:
                     json={},
                     timeout=self.timeout,
                 )
-            except (requests.ConnectionError, requests.Timeout) as exc:
+            except Exception as exc:
                 # App pool restart kills connections — this is EXPECTED during publish.
                 # Keep polling until the app pool comes back or we exhaust retries.
                 connection_errors += 1
