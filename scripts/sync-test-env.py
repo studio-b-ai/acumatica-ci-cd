@@ -188,12 +188,34 @@ class SoapClient:
 def print_schema(client: SoapClient) -> None:
     """Print SM203520 schema for debugging."""
     resp = client.get_schema()
+    log(f"GetSchema response length: {len(resp)} bytes")
+
+    # Dump first 3000 chars of raw XML for debugging
+    log("Raw schema (first 3000 chars):")
+    for line in resp[:3000].split("\n"):
+        log(f"  {line.strip()}")
+
     root = ET.fromstring(resp)
+
+    # Try multiple namespace patterns
+    found = 0
     for cmd in root.iter(f"{{{NS}}}Command"):
         obj = cmd.find(f"{{{NS}}}ObjectName")
         field = cmd.find(f"{{{NS}}}FieldName")
         if obj is not None and field is not None:
-            print(f"  {obj.text}: {field.text}")
+            log(f"  {obj.text}: {field.text}")
+            found += 1
+
+    if found == 0:
+        # Try without namespace
+        for cmd in root.iter("Command"):
+            obj = cmd.find("ObjectName")
+            field = cmd.find("FieldName")
+            if obj is not None and field is not None:
+                log(f"  {obj.text}: {field.text}")
+                found += 1
+
+    log(f"Total fields discovered: {found}")
 
 
 def copy_company(client: SoapClient, source_company: str, target_company: str) -> bool:
