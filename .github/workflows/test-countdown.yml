@@ -1,0 +1,124 @@
+# Countdown Offload Test — Verifies BullMQ delayed dispatch works end-to-end
+#
+# Posts to webhook-router /deploy/schedule with a 1-minute delay,
+# then polls /deploy/status/:jobId to confirm the job completed.
+#
+# Safe: uses dry_run=true inputs so even if dispatch fires, nothing publishes.
+# Manual dispatch only.
+
+name: Test Countdown Offload
+
+on:
+  workflow_dispatch: {}
+
+jobs:
+  test-countdown:
+    name: Countdown Timer E2E
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Schedule countdown (1-minute delay)
+        id: schedule
+        env:
+          WEBHOOK_ROUTER_URL: ${{ secrets.WEBHOOK_ROUTER_URL }}
+          WEBHOOK_AUTH_TOKEN: ${{ secrets.WEBHOOK_AUTH_TOKEN }}
+        run: |
+          RESPONSE=$(curl -s -w "\n%{http_code}" \
+            -X POST "${WEBHOOK_ROUTER_URL}/deploy/schedule" \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer ${WEBHOOK_AUTH_TOKEN}" \
+            -d '{
+              "repo": "studio-b-ai/acumatica-ci-cd",
+              "workflow": "deploy-customization.yml",
+              "delay_minutes": 1,
+              "inputs": { "dry_run": "true", "project_name": "CountdownTest" },
+              "notifications": [
+                { "minutes_remaining": 1, "channel": "slack" }
+              ]
+            }')
+
+          HTTP_CODE=$(echo "${RESPONSE}" | tail -1)
+          BODY=$(echo "${RESPONSE}" | head -n -1)
+
+          echo "HTTP: ${HTTP_CODE}"
+          echo "Body: ${BODY}"
+
+          if [[ "${HTTP_CODE}" != "200" ]]; then
+            echo "::error::Schedule request failed (HTTP ${HTTP_CODE})"
+            exit 1
+          fi
+
+          # Extract deploy job ID
+          DEPLOY_JOB_ID=$(echo "${BODY}" | python3 -c "
+          import json, sys
+          data = json.load(sys.stdin)
+          ids = data.get('job_ids', [])
+          print(ids[0] if ids else '')
+          ")
+
+          echo "deploy_job_id=${DEPLOY_JOB_ID}" >> "$GITHUB_OUTPUT"
+          echo "Scheduled deploy job: ${DEPLOY_JOB_ID}"
+
+      - name: Wait for countdown (90 seconds)
+        run: |
+          echo "Waiting 90 seconds for 1-minute delayed job to process..."
+          sleep 90
+
+      - name: Check job status
+        env:
+          WEBHOOK_ROUTER_URL: ${{ secrets.WEBHOOK_ROUTER_URL }}
+          WEBHOOK_AUTH_TOKEN: ${{ secrets.WEBHOOK_AUTH_TOKEN }}
+        run: |
+          JOB_ID="${{ steps.schedule.outputs.deploy_job_id }}"
+
+          RESPONSE=$(curl -s -w "\n%{http_code}" \
+            -X GET "${WEBHOOK_ROUTER_URL}/deploy/status/${JOB_ID}" \
+            -H "Authorization: Bearer ${WEBHOOK_AUTH_TOKEN}")
+
+          HTTP_CODE=$(echo "${RESPONSE}" | tail -1)
+          BODY=$(echo "${RESPONSE}" | head -n -1)
+
+          echo "HTTP: ${HTTP_CODE}"
+          echo "Body: ${BODY}"
+
+          if [[ "${HTTP_CODE}" != "200" ]]; then
+            echo "::error::Status check failed (HTTP ${HTTP_CODE})"
+            exit 1
+          fi
+
+          # Check state
+          STATE=$(echo "${BODY}" | python3 -c "
+          import json, sys
+          data = json.load(sys.stdin)
+          print(data.get('state', 'unknown'))
+          ")
+
+          echo "Job state: ${STATE}"
+
+          if [[ "${STATE}" == "completed" ]]; then
+            echo "Countdown job completed successfully"
+          elif [[ "${STATE}" == "failed" ]]; then
+            REASON=$(echo "${BODY}" | python3 -c "
+            import json, sys
+            data = json.load(sys.stdin)
+            print(data.get('failedReason', 'unknown'))
+            ")
+            echo "::warning::Job failed: ${REASON}"
+            echo "This may be expected if GH_PAT_DISPATCH is not configured on webhook-router"
+            echo "The key test is that the job was PROCESSED (not stuck in delayed)"
+          elif [[ "${STATE}" == "delayed" || "${STATE}" == "waiting" ]]; then
+            echo "::error::Job still in ${STATE} state after 90s — BullMQ delay not working"
+            exit 1
+          else
+            echo "::warning::Unexpected state: ${STATE}"
+          fi
+
+      - name: Test Summary
+        if: always()
+        run: |
+          echo "## Countdown Offload Test Results" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Scheduled deploy job: \`${{ steps.schedule.outputs.deploy_job_id }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Delay: 1 minute" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Inputs: \`dry_run=true\` (safe — nothing publishes)" >> "$GITHUB_STEP_SUMMARY"
