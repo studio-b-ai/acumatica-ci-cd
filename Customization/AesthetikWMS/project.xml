@@ -3464,9 +3464,8 @@ namespace HeritageFabrics.SO
                 .ThenBy(c => c.QtyOnHand)
                 .First();
 
-            // Assign lot and update quantity to full bolt
-            Base.Transactions.Cache.SetValueExt<SOLine.lotSerialNbr>(line, best.LotSerialNbr);
-            Base.Transactions.Cache.SetValueExt<SOLine.orderQty>(line, best.QtyOnHand);
+            // Assign lot only — do NOT touch OrderQty (corrupts SOOrder aggregates)
+            Base.Transactions.Cache.SetValue<SOLine.lotSerialNbr>(line, best.LotSerialNbr);
 
             PXTrace.WriteInformation(
                 $"[AUTO-ALLOC] Assigned: Ln{line.LineNbr}={best.LotSerialNbr} ({best.QtyOnHand})");
