@@ -18,7 +18,8 @@ namespace HeritageFabrics.SO
     /// </summary>
     public class SOOrderEntry_AutoAllocation : PXGraphExtension<SOOrderEntry>
     {
-        public static bool IsActive() => true;
+        // DISABLED — corrupts SOOrder aggregates. Needs SOLineSplit approach.
+        public static bool IsActive() => false;
 
         private const string PieceGoodsClassID = "PIECENBR";
 
