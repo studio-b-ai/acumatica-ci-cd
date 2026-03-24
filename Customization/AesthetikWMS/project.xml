@@ -3347,47 +3347,50 @@ namespace HeritageFabrics.SO
     /// <summary>
     /// Auto-allocates lot/serial (bolt) to PIECENBR items on PC and FO sales orders.
     ///
-    /// Behavior:
-    ///   1. RowUpdated fires when a line is added or changed
-    ///   2. Queries available bolts: fully unreserved (QtyAvail == QtyOnHand), QtyOnHand > 0
-    ///   3. Sorting: 3+ bolts → group by receipt date (same dye lot), then FIFO, then tightest fit
-    ///              1-2 bolts → FIFO, then tightest fit
-    ///   4. Assigns bolt lot to line, sets line qty to full bolt QtyOnHand
-    ///   5. If remainder > 0, inserts new lines until requested qty covered (120% overship cap)
-    ///   6. If bolts run out, inserts backorder line with MarkForPO = true
+    /// Two-phase approach to avoid aggregate validation errors:
+    ///   Phase 1 (RowUpdated): Assigns the first bolt to the triggering line and
+    ///           queues a pending split request with the remaining allocation plan.
+    ///   Phase 2 (Persist override): Before base persist, inserts additional lines
+    ///           for remaining bolts + backorder. This runs inside the save transaction
+    ///           where aggregate counters are properly maintained.
     ///
-    /// Uses RowUpdated (not RowInserted) because RowInserted fires before InventoryID
-    /// and OrderQty are populated.
+    /// Rules:
+    ///   - PC and FO order types only, PIECENBR lot class items only
+    ///   - Bolts must be fully unreserved (QtyAvail == QtyOnHand)
+    ///   - 3+ bolts: group by receipt date (same dye lot), then FIFO, tightest fit
+    ///   - 1-2 bolts: FIFO, then tightest fit
+    ///   - Each line gets full bolt qty (whole bolt allocation)
+    ///   - 120% overship cap on total allocated vs requested
+    ///   - Remainder → backorder line with POCreate = true
     /// </summary>
     public class SOOrderEntry_PieceGoodsAllocation : PXGraphExtension<SOOrderEntry>
     {
         public static bool IsActive() => true;
 
         private const string PieceGoodsClassID = "PIECENBR";
-        private const decimal OvershipFactor = 1.20m; // 120% max
+        private const decimal OvershipFactor = 1.20m;
 
-        /// <summary>Re-entry guard to prevent recursive allocation.</summary>
         [ThreadStatic]
         private static bool _allocating;
 
+        /// <summary>Pending line insertions to execute during Persist.</summary>
+        private readonly List<PendingAllocation> _pendingAllocations = new List<PendingAllocation>();
+
+        // =================================================================
+        // Phase 1: RowUpdated — assign first bolt, queue remaining splits
+        // =================================================================
         protected void _(Events.RowUpdated<SOLine> e)
         {
             if (_allocating) return;
             if (e.Row == null) return;
 
-            // Only for PC and FO order types
             SOOrder order = Base.Document.Current;
             if (order == null) return;
             string orderType = order.OrderType;
             if (orderType != "PC" && orderType != "FO") return;
 
-            // Guard: skip if lot already assigned (prevents re-trigger from qty/lot update)
             if (!string.IsNullOrEmpty(e.Row.LotSerialNbr)) return;
-
-            // Need both item and qty to proceed
             if (e.Row.InventoryID == null || (e.Row.OrderQty ?? 0) <= 0) return;
-
-            // Only process PIECENBR items
             if (!IsPieceGoodsItem(e.Row.InventoryID)) return;
 
             int inventoryID = e.Row.InventoryID.Value;
@@ -3403,10 +3406,10 @@ namespace HeritageFabrics.SO
                 _allocating = true;
 
                 PXTrace.WriteInformation(
-                    $"[AUTO-ALLOC] Starting: Item {e.Row.InventoryID}, WH {siteID}, " +
-                    $"RequestedQty {requestedQty}, MaxQty {maxQty}");
+                    $"[AUTO-ALLOC] Starting: Item {inventoryID}, WH {siteID}, " +
+                    $"Requested {requestedQty}, Max {maxQty}");
 
-                // Collect serials already assigned to other lines on this order
+                // Collect already-assigned serials
                 var assignedSerials = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                 foreach (SOLine existing in Base.Transactions.Select())
                 {
@@ -3415,7 +3418,6 @@ namespace HeritageFabrics.SO
                         assignedSerials.Add(existing.LotSerialNbr);
                 }
 
-                // Query all lot/serial inventory for this item + warehouse
                 var candidates = GetAvailableBolts(inventoryID, siteID.Value, assignedSerials);
 
                 PXTrace.WriteInformation(
@@ -3423,96 +3425,90 @@ namespace HeritageFabrics.SO
 
                 if (candidates.Count == 0)
                 {
-                    // No bolts at all — mark entire line for PO
                     Base.Transactions.Cache.SetValueExt<SOLine.pOCreate>(e.Row, true);
                     PXTrace.WriteInformation(
-                        $"[AUTO-ALLOC] No bolts available — marked line for PO");
+                        $"[AUTO-ALLOC] No bolts — marked line for PO");
                     return;
                 }
 
-                // Sort candidates based on how many we'll need
                 var sorted = SortBolts(candidates, requestedQty);
 
                 // Assign first bolt to the triggering line
-                decimal totalAllocated = 0m;
-                int boltIndex = 0;
-
-                var firstBolt = sorted[boltIndex];
-                boltIndex++;
-
+                var firstBolt = sorted[0];
                 Base.Transactions.Cache.SetValueExt<SOLine.lotSerialNbr>(e.Row, firstBolt.LotSerialNbr);
                 Base.Transactions.Cache.SetValueExt<SOLine.orderQty>(e.Row, firstBolt.QtyOnHand);
-                totalAllocated += firstBolt.QtyOnHand;
+
+                decimal totalAllocated = firstBolt.QtyOnHand;
                 assignedSerials.Add(firstBolt.LotSerialNbr);
 
                 PXTrace.WriteInformation(
-                    $"[AUTO-ALLOC] Line {e.Row.LineNbr}: assigned {firstBolt.LotSerialNbr} " +
-                    $"qty {firstBolt.QtyOnHand} (total: {totalAllocated}/{requestedQty})");
+                    $"[AUTO-ALLOC] Line {e.Row.LineNbr}: {firstBolt.LotSerialNbr} " +
+                    $"qty {firstBolt.QtyOnHand} ({totalAllocated}/{requestedQty})");
 
-                // Insert additional lines for remaining bolts
+                // Queue remaining bolts for Phase 2 (Persist)
+                var pendingLines = new List<PendingLine>();
+                int boltIndex = 1;
+
                 while (totalAllocated < requestedQty && boltIndex < sorted.Count)
                 {
                     var nextBolt = sorted[boltIndex];
 
-                    // Check overship cap: would adding this bolt exceed 120%?
                     if (totalAllocated + nextBolt.QtyOnHand > maxQty)
                     {
-                        // Try to find a smaller bolt that fits within cap
-                        var fittingBolt = FindBoltWithinCap(sorted, boltIndex, maxQty - totalAllocated, assignedSerials);
-                        if (fittingBolt == null) break; // No bolt fits — stop allocating
-                        nextBolt = fittingBolt;
+                        var fit = FindBoltWithinCap(sorted, boltIndex, maxQty - totalAllocated, assignedSerials);
+                        if (fit == null) break;
+                        nextBolt = fit;
                     }
 
                     boltIndex++;
-
-                    // Insert a new SOLine for this bolt
-                    SOLine newLine = Base.Transactions.Insert(new SOLine());
-                    if (newLine == null) break;
-
-                    Base.Transactions.Cache.SetValueExt<SOLine.inventoryID>(newLine, inventoryID);
-                    Base.Transactions.Cache.SetValueExt<SOLine.siteID>(newLine, siteID);
-                    if (uom != null)
-                        Base.Transactions.Cache.SetValueExt<SOLine.uOM>(newLine, uom);
-                    Base.Transactions.Cache.SetValueExt<SOLine.lotSerialNbr>(newLine, nextBolt.LotSerialNbr);
-                    Base.Transactions.Cache.SetValueExt<SOLine.orderQty>(newLine, nextBolt.QtyOnHand);
-
                     totalAllocated += nextBolt.QtyOnHand;
                     assignedSerials.Add(nextBolt.LotSerialNbr);
 
+                    pendingLines.Add(new PendingLine
+                    {
+                        LotSerialNbr = nextBolt.LotSerialNbr,
+                        Qty = nextBolt.QtyOnHand,
+                        IsPOCreate = false,
+                    });
+
                     PXTrace.WriteInformation(
-                        $"[AUTO-ALLOC] New line {newLine.LineNbr}: assigned {nextBolt.LotSerialNbr} " +
-                        $"qty {nextBolt.QtyOnHand} (total: {totalAllocated}/{requestedQty})");
+                        $"[AUTO-ALLOC] Queued: {nextBolt.LotSerialNbr} " +
+                        $"qty {nextBolt.QtyOnHand} ({totalAllocated}/{requestedQty})");
                 }
 
-                // If still short, insert backorder line for remainder
+                // Queue backorder line if short
                 if (totalAllocated < requestedQty)
                 {
                     decimal remainder = requestedQty - totalAllocated;
-
-                    SOLine backorderLine = Base.Transactions.Insert(new SOLine());
-                    if (backorderLine != null)
+                    pendingLines.Add(new PendingLine
                     {
-                        Base.Transactions.Cache.SetValueExt<SOLine.inventoryID>(backorderLine, inventoryID);
-                        Base.Transactions.Cache.SetValueExt<SOLine.siteID>(backorderLine, siteID);
-                        if (uom != null)
-                            Base.Transactions.Cache.SetValueExt<SOLine.uOM>(backorderLine, uom);
-                        Base.Transactions.Cache.SetValueExt<SOLine.orderQty>(backorderLine, remainder);
-                        Base.Transactions.Cache.SetValueExt<SOLine.pOCreate>(backorderLine, true);
+                        LotSerialNbr = null,
+                        Qty = remainder,
+                        IsPOCreate = true,
+                    });
+                    PXTrace.WriteInformation(
+                        $"[AUTO-ALLOC] Queued backorder: qty {remainder}");
+                }
 
-                        PXTrace.WriteInformation(
-                            $"[AUTO-ALLOC] Backorder line {backorderLine.LineNbr}: " +
-                            $"qty {remainder}, MarkForPO=true");
-                    }
+                if (pendingLines.Count > 0)
+                {
+                    _pendingAllocations.Add(new PendingAllocation
+                    {
+                        InventoryID = inventoryID,
+                        SiteID = siteID.Value,
+                        UOM = uom,
+                        Lines = pendingLines,
+                    });
                 }
 
                 PXTrace.WriteInformation(
-                    $"[AUTO-ALLOC] Complete: allocated {totalAllocated} of {requestedQty} requested");
+                    $"[AUTO-ALLOC] Phase 1 done: {totalAllocated} allocated, " +
+                    $"{pendingLines.Count} lines queued for persist");
             }
             catch (Exception ex)
             {
-                // Never throw from RowUpdated — log and let the order save normally
                 PXTrace.WriteWarning(
-                    $"[AUTO-ALLOC] Error: {ex.GetType().Name}: {ex.Message}");
+                    $"[AUTO-ALLOC] Error in RowUpdated: {ex.GetType().Name}: {ex.Message}");
             }
             finally
             {
@@ -3520,10 +3516,66 @@ namespace HeritageFabrics.SO
             }
         }
 
-        /// <summary>
-        /// Queries INLotSerialStatus for available bolts. Filters to fully unreserved
-        /// bolts with positive qty, excluding already-assigned serials.
-        /// </summary>
+        // =================================================================
+        // Phase 2: Persist override — insert queued lines before base save
+        // =================================================================
+        [PXOverride]
+        public void Persist(Action del)
+        {
+            if (_pendingAllocations.Count > 0)
+            {
+                try
+                {
+                    _allocating = true;
+
+                    PXTrace.WriteInformation(
+                        $"[AUTO-ALLOC] Persist: inserting {_pendingAllocations.Sum(a => a.Lines.Count)} queued line(s)");
+
+                    foreach (var alloc in _pendingAllocations)
+                    {
+                        foreach (var pending in alloc.Lines)
+                        {
+                            SOLine newLine = Base.Transactions.Insert(new SOLine());
+                            if (newLine == null) continue;
+
+                            Base.Transactions.Cache.SetValueExt<SOLine.inventoryID>(newLine, alloc.InventoryID);
+                            Base.Transactions.Cache.SetValueExt<SOLine.siteID>(newLine, alloc.SiteID);
+                            if (alloc.UOM != null)
+                                Base.Transactions.Cache.SetValueExt<SOLine.uOM>(newLine, alloc.UOM);
+                            Base.Transactions.Cache.SetValueExt<SOLine.orderQty>(newLine, pending.Qty);
+
+                            if (!string.IsNullOrEmpty(pending.LotSerialNbr))
+                                Base.Transactions.Cache.SetValueExt<SOLine.lotSerialNbr>(newLine, pending.LotSerialNbr);
+
+                            if (pending.IsPOCreate)
+                                Base.Transactions.Cache.SetValueExt<SOLine.pOCreate>(newLine, true);
+
+                            PXTrace.WriteInformation(
+                                $"[AUTO-ALLOC] Inserted line {newLine.LineNbr}: " +
+                                $"lot={pending.LotSerialNbr ?? "(backorder)"}, qty={pending.Qty}");
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    PXTrace.WriteWarning(
+                        $"[AUTO-ALLOC] Error in Persist: {ex.GetType().Name}: {ex.Message}");
+                }
+                finally
+                {
+                    _pendingAllocations.Clear();
+                    _allocating = false;
+                }
+            }
+
+            // Always call base persist
+            del();
+        }
+
+        // =================================================================
+        // Bolt query + sorting helpers
+        // =================================================================
+
         private List<BoltCandidate> GetAvailableBolts(
             int inventoryID, int siteID, HashSet<string> assignedSerials)
         {
@@ -3538,17 +3590,12 @@ namespace HeritageFabrics.SO
             {
                 var status = (INLotSerialStatus)row;
                 if (status.LotSerialNbr == null) continue;
-
-                // Skip already assigned to another line in this order
                 if (assignedSerials.Contains(status.LotSerialNbr)) continue;
 
                 decimal qtyOnHand = status.QtyOnHand ?? 0;
                 decimal qtyAvail = status.QtyAvail ?? 0;
 
-                // Must have positive quantity
                 if (qtyOnHand <= 0) continue;
-
-                // Must be fully unreserved (entire bolt available)
                 if (qtyAvail != qtyOnHand) continue;
 
                 candidates.Add(new BoltCandidate
@@ -3562,49 +3609,21 @@ namespace HeritageFabrics.SO
             return candidates;
         }
 
-        /// <summary>
-        /// Sorts bolts based on how many are needed to fulfill the order.
-        /// 3+ bolts: group by receipt date (same dye lot/container), then FIFO, then tightest fit.
-        /// 1-2 bolts: FIFO (oldest first), then tightest fit (smallest qty).
-        /// </summary>
         private List<BoltCandidate> SortBolts(List<BoltCandidate> candidates, decimal requestedQty)
         {
-            // Estimate how many bolts needed using average qty
-            decimal avgQty = candidates.Average(c => c.QtyOnHand);
-            int estimatedBolts = avgQty > 0 ? (int)Math.Ceiling(requestedQty / avgQty) : 1;
-
-            if (estimatedBolts >= 3)
-            {
-                // Group by receipt date — prefer bolts from the same shipment/dye lot.
-                // Within each date group: tightest fit (smallest qty first).
-                // Date groups ordered FIFO (oldest first).
-                return candidates
-                    .OrderBy(c => c.ReceiptDate ?? DateTime.MaxValue)
-                    .ThenBy(c => c.QtyOnHand)
-                    .ToList();
-
-                // Note: OrderBy on ReceiptDate naturally groups same-date bolts together
-                // and orders groups FIFO. ThenBy QtyOnHand gives tightest fit within group.
-            }
-
-            // 1-2 bolts: FIFO then tightest fit
+            // Both paths sort the same way — FIFO then tightest fit.
+            // For 3+ bolts, FIFO naturally groups same-receipt-date bolts together.
             return candidates
                 .OrderBy(c => c.ReceiptDate ?? DateTime.MaxValue)
                 .ThenBy(c => c.QtyOnHand)
                 .ToList();
         }
 
-        /// <summary>
-        /// Searches remaining sorted bolts for one that fits within the overship cap.
-        /// Returns null if no bolt fits.
-        /// </summary>
         private BoltCandidate FindBoltWithinCap(
             List<BoltCandidate> sorted, int startIndex,
             decimal remainingCap, HashSet<string> assignedSerials)
         {
-            // Search from startIndex forward for the largest bolt that fits
             BoltCandidate best = null;
-
             for (int i = startIndex; i < sorted.Count; i++)
             {
                 var bolt = sorted[i];
@@ -3615,32 +3634,46 @@ namespace HeritageFabrics.SO
                         best = bolt;
                 }
             }
-
             return best;
         }
 
-        /// <summary>Checks if an item uses the PIECENBR lot/serial class.</summary>
         private bool IsPieceGoodsItem(int? inventoryID)
         {
             if (inventoryID == null) return false;
-
             var item = SelectFrom<InventoryItem>
                 .Where<InventoryItem.inventoryID.IsEqual<@P.AsInt>>
                 .View.ReadOnly.Select(Base, inventoryID);
-
             if (item == null) return false;
-
             return string.Equals(
                 ((InventoryItem)item).LotSerClassID,
                 PieceGoodsClassID,
                 StringComparison.OrdinalIgnoreCase);
         }
 
+        // =================================================================
+        // Internal types
+        // =================================================================
+
         private class BoltCandidate
         {
             public string LotSerialNbr { get; set; }
             public decimal QtyOnHand { get; set; }
             public DateTime? ReceiptDate { get; set; }
+        }
+
+        private class PendingLine
+        {
+            public string LotSerialNbr { get; set; }
+            public decimal Qty { get; set; }
+            public bool IsPOCreate { get; set; }
+        }
+
+        private class PendingAllocation
+        {
+            public int InventoryID { get; set; }
+            public int SiteID { get; set; }
+            public string UOM { get; set; }
+            public List<PendingLine> Lines { get; set; }
         }
     }
 }
