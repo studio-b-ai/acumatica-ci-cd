@@ -110,8 +110,9 @@ namespace HeritageFabrics.SO
                 $"[AUTO-ALLOC] Ln{line.LineNbr}: {best.LotSerialNbr} qty={best.QtyOnHand}");
 
             // CRITICAL: SetValue for lot — bypasses INLotSerialNbrAttribute
+            // Do NOT touch OrderQty — SetValueExt<orderQty> corrupts SOOrder aggregates.
+            // The lot assignment is informational — warehouse pulls this bolt.
             Base.Transactions.Cache.SetValue<SOLine.lotSerialNbr>(line, best.LotSerialNbr);
-            Base.Transactions.Cache.SetValueExt<SOLine.orderQty>(line, best.QtyOnHand);
         }
 
         protected void _(Events.RowDeleted<SOLine> e)
