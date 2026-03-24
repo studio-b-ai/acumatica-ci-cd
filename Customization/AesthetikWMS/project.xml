@@ -3442,9 +3442,9 @@ namespace HeritageFabrics.SO
 
                 // Check if a single bolt covers it
                 var singleBolt = bolts
-                    .Where(b => b.QtyOnHand >= requestedQty)
+                    .Where(b => b.QtyOnHand >= requestedQty && b.QtyOnHand <= maxQty)
                     .OrderBy(b => b.ReceiptDate ?? DateTime.MaxValue)
-                    .ThenBy(b => b.QtyOnHand)
+                    .ThenByDescending(b => b.QtyOnHand)
                     .FirstOrDefault();
 
                 if (singleBolt != null && singleBolt.QtyOnHand <= maxQty)
@@ -3601,11 +3601,11 @@ namespace HeritageFabrics.SO
 
         private List<BoltCandidate> SortBolts(List<BoltCandidate> candidates, decimal requestedQty)
         {
-            // FIFO (oldest receipt) then tightest fit (smallest qty)
+            // FIFO (oldest receipt) then largest bolt first (fewer lines, save remnants for other customers)
             // For 3+ bolts, FIFO naturally groups same-date bolts (same dye lot)
             return candidates
                 .OrderBy(c => c.ReceiptDate ?? DateTime.MaxValue)
-                .ThenBy(c => c.QtyOnHand)
+                .ThenByDescending(c => c.QtyOnHand)
                 .ToList();
         }
 
