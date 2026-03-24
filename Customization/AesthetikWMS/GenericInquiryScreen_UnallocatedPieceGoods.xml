@@ -1,0 +1,94 @@
+<GenericInquiryScreen>
+  <data-set>
+    <relations format-version="3" relations-version="20190410" main-table="GIDesign" stable-sharing="True" file-name="UnallocatedPieceGoods">
+      <link from="GIFilter (DesignID)" to="GIDesign (DesignID)" />
+      <link from="GIGroupBy (DesignID)" to="GIDesign (DesignID)" />
+      <link from="GINavigationCondition (DesignID)" to="GIDesign (DesignID)" />
+      <link from="GINavigationParameter (DesignID)" to="GIDesign (DesignID)" />
+      <link from="GINavigationScreen (DesignID)" to="GIDesign (DesignID)" />
+      <link from="GIOn (DesignID)" to="GIDesign (DesignID)" />
+      <link from="GIRelation (DesignID)" to="GIDesign (DesignID)" />
+      <link from="GIResult (DesignID)" to="GIDesign (DesignID)" />
+      <link from="GISort (DesignID)" to="GIDesign (DesignID)" />
+      <link from="GITable (DesignID)" to="GIDesign (DesignID)" />
+      <link from="GIWhere (DesignID)" to="GIDesign (DesignID)" />
+      <link from="GIOn (DesignID,LineNbr)" to="GIRelation (DesignID,LineNbr)" />
+      <link from="GIRelation (DesignID)" to="GITable (DesignID,Alias)" />
+      <link from="GIResult (DesignID)" to="GITable (DesignID,Alias)" />
+      <link from="SiteMap (linkname)" to="GIDesign (DesignID)" />
+      <link from="MUIScreen (linkname)" to="SiteMap (NodeID)" />
+    </relations>
+    <layout>
+      <group id="1" sorting="Natural" filtering="Natural" />
+    </layout>
+    <data>
+      <GIDesign>
+        <row DesignID="a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d" Name="UnallocatedPieceGoods" ScreenID="GI007010" FilterColCount="3" PageSize="0" ExportTop="0" NewRecordCreationEnabled="0" MassDeleteEnabled="0" AutoConfirmDelete="0" MassRecordsUpdateEnabled="0" MassActionsOnRecordsEnabled="0" ExposeViaOData="1" ExposeViaMobile="0">
+
+          <!-- Table 1: SOOrder (header) -->
+          <GITable Alias="SOOrder" Name="PX.Objects.SO.SOOrder">
+            <GIResult LineNbr="1" SortOrder="1" IsActive="1" Field="OrderType" Width="60" IsVisible="1" DefaultNav="1" QuickFilter="0" FastFilter="1" Caption="Order Type" RowID="a1000001-0000-0000-0000-000000000001" />
+            <GIResult LineNbr="2" SortOrder="2" IsActive="1" Field="OrderNbr" Width="120" IsVisible="1" DefaultNav="1" QuickFilter="0" FastFilter="1" Caption="Order Nbr" RowID="a1000001-0000-0000-0000-000000000002" />
+            <GIResult LineNbr="3" SortOrder="3" IsActive="1" Field="Status" Width="60" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Status" RowID="a1000001-0000-0000-0000-000000000003" />
+            <GIResult LineNbr="4" SortOrder="4" IsActive="1" Field="CustomerID" Width="120" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Customer" RowID="a1000001-0000-0000-0000-000000000004" />
+            <GIResult LineNbr="5" SortOrder="5" IsActive="1" Field="OrderDate" Width="100" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Order Date" RowID="a1000001-0000-0000-0000-000000000005" />
+          </GITable>
+
+          <!-- Table 2: SOLine (detail — joined to SOOrder) -->
+          <GITable Alias="SOLine" Name="PX.Objects.SO.SOLine">
+            <GIResult LineNbr="6" SortOrder="6" IsActive="1" Field="LineNbr" Width="60" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="0" Caption="Line Nbr" RowID="a1000001-0000-0000-0000-000000000006" />
+            <GIResult LineNbr="7" SortOrder="7" IsActive="1" Field="InventoryID" Width="120" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Inventory ID" RowID="a1000001-0000-0000-0000-000000000007" />
+            <GIResult LineNbr="8" SortOrder="8" IsActive="1" Field="OrderQty" Width="80" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="0" Caption="Order Qty" RowID="a1000001-0000-0000-0000-000000000008" />
+            <GIResult LineNbr="9" SortOrder="9" IsActive="1" Field="LotSerialNbr" Width="120" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Lot/Serial Nbr" RowID="a1000001-0000-0000-0000-000000000009" />
+            <GIResult LineNbr="10" SortOrder="10" IsActive="1" Field="SiteID" Width="80" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Warehouse" RowID="a1000001-0000-0000-0000-000000000010" />
+            <GIResult LineNbr="11" SortOrder="11" IsActive="1" Field="UOM" Width="60" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="0" Caption="UOM" RowID="a1000001-0000-0000-0000-000000000011" />
+          </GITable>
+
+          <!-- Table 3: InventoryItem (joined to SOLine for LotSerClassID filter) -->
+          <GITable Alias="InventoryItem" Name="PX.Objects.IN.InventoryItem">
+            <GIResult LineNbr="12" SortOrder="12" IsActive="1" Field="LotSerClassID" Width="100" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Lot/Serial Class" RowID="a1000001-0000-0000-0000-000000000012" />
+          </GITable>
+
+          <!-- JOIN: SOLine to SOOrder -->
+          <GIRelation LineNbr="1" ParentTable="SOOrder" ChildTable="SOLine" JoinType="I" IsActive="1">
+            <GIOn LineNbr="1" IsActive="1" ParentField="OrderType" Condition="E" ChildField="OrderType" />
+            <GIOn LineNbr="2" IsActive="1" ParentField="OrderNbr" Condition="E" ChildField="OrderNbr" />
+          </GIRelation>
+
+          <!-- JOIN: InventoryItem to SOLine -->
+          <GIRelation LineNbr="2" ParentTable="SOLine" ChildTable="InventoryItem" JoinType="I" IsActive="1">
+            <GIOn LineNbr="1" IsActive="1" ParentField="InventoryID" Condition="E" ChildField="InventoryID" />
+          </GIRelation>
+
+          <!-- WHERE: PC or FO order types -->
+          <GIWhere LineNbr="1" IsActive="1" OpenBrackets="1" DataFieldName="SOOrder.OrderType" Condition="EQ" Value1="PC" Operator="O" />
+          <GIWhere LineNbr="2" IsActive="1" CloseBrackets="1" DataFieldName="SOOrder.OrderType" Condition="EQ" Value1="FO" Operator="A" />
+          <!-- WHERE: Order is Open or On Hold -->
+          <GIWhere LineNbr="3" IsActive="1" OpenBrackets="1" DataFieldName="SOOrder.Status" Condition="EQ" Value1="N" Operator="O" />
+          <GIWhere LineNbr="4" IsActive="1" CloseBrackets="1" DataFieldName="SOOrder.Status" Condition="EQ" Value1="H" Operator="A" />
+          <!-- WHERE: Lot/Serial Nbr is empty (unallocated) -->
+          <GIWhere LineNbr="5" IsActive="1" DataFieldName="SOLine.LotSerialNbr" Condition="NU" Operator="A" />
+          <!-- WHERE: PIECENBR lot class -->
+          <GIWhere LineNbr="6" IsActive="1" DataFieldName="InventoryItem.LotSerClassID" Condition="EQ" Value1="PIECENBR" />
+
+          <!-- SORT by Order Date DESC, Order Nbr -->
+          <GISort LineNbr="1" IsActive="1" DataFieldName="SOOrder.OrderDate" SortOrder="D" />
+          <GISort LineNbr="2" IsActive="1" DataFieldName="SOOrder.OrderNbr" SortOrder="A" />
+
+          <!-- Navigation: click row → open SO301000 -->
+          <GINavigationScreen LineNbr="1" IsActive="1" ScreenID="SO301000" />
+          <GINavigationCondition LineNbr="1" IsActive="1" FieldName="OrderType" />
+          <GINavigationCondition LineNbr="2" IsActive="1" FieldName="OrderNbr" />
+
+          <!-- SiteMap entry -->
+          <SiteMap linkname="toDesignById">
+            <row Position="1102" Title="Unallocated Piece Goods" Url="~/GenericInquiry/GenericInquiry.aspx?id=a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d" Expanded="0" IsFolder="0" ScreenID="GI007010" NodeID="b2c3d4e5-f6a7-4b8c-9d0e-1f2a3b4c5d6e" ParentID="d9e3f4a5-b2c3-4678-9abc-def012345678">
+              <MUIScreen IsPortal="0" WorkspaceID="e0f4a5b6-c3d4-4789-abcd-ef0123456789" Order="2032" SubcategoryID="f1a5b6c7-d4e5-489a-bcde-f01234567890" />
+            </row>
+          </SiteMap>
+
+        </row>
+      </GIDesign>
+    </data>
+  </data-set>
+</GenericInquiryScreen>
