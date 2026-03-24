@@ -116,6 +116,35 @@ def validate(path: str, strict: bool = False):
     if not table_elements:
         ok("No <Table> elements (columns auto-created by DAC attributes)")
 
+    # Check 5b: Validate <Report> elements — BoxLabel4x6 must be present when
+    # the Device Hub print extension is in the project (cross-reference check).
+    # The <Report> element registers the .rpx file with Acumatica's Report Designer
+    # import pipeline.  Without it the report is not published and Device Hub
+    # print jobs for "BoxLabel4x6" will fail silently at runtime.
+    report_elements = root.findall(".//Report")
+    report_names = {r.get("Name", "") for r in report_elements}
+
+    # We only flag the missing report if the C# code references BOX_LABEL_REPORT_ID
+    # ("BoxLabel4x6"). Check CDATA blocks for this reference.
+    csharp_references_boxlabel = False
+    for graph in root.findall(".//Graph"):
+        cdata = graph.find("CDATA")
+        if cdata is not None and cdata.text:
+            if "BoxLabel4x6" in cdata.text or "BOX_LABEL_REPORT_ID" in cdata.text:
+                csharp_references_boxlabel = True
+                break
+
+    if csharp_references_boxlabel:
+        if "BoxLabel4x6" in report_names:
+            ok("Report 'BoxLabel4x6' registered in project.xml (<Report Name=\"BoxLabel4x6\">)")
+        else:
+            error(
+                "C# code references report 'BoxLabel4x6' (BOX_LABEL_REPORT_ID) but no "
+                "<Report Name=\"BoxLabel4x6\"> element found in project.xml.\n"
+                "         The report will not be published to Acumatica Report Designer.\n"
+                "         Add: <Report Name=\"BoxLabel4x6\" FileName=\"BoxLabel4x6.rpx\" />"
+            )
+
     # Check 6: Validate <Graph> elements
     graphs = root.findall(".//Graph")
     if not graphs:

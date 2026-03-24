@@ -1,0 +1,422 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  BoxLabel4x6.rpx
+  Heritage Fabrics / Studio B — Acumatica 24.208 Customization
+
+  PURPOSE:
+    4×6 thermal label report for shipment box labels. Printed via Device Hub
+    (SMPrintJobMaint) — one label per SOPackageDetailEx row.
+
+  REPORT ID: BoxLabel4x6
+    Must be registered in Acumatica Report Designer (SM208000) with this
+    exact Report ID (case-sensitive). The C# graph extension references the
+    string "BoxLabel4x6" as a constant.
+
+  PARAMETERS:
+    ShipmentNbr    — SOShipment.ShipmentNbr: identifies the shipment.
+    PackageLineNbr — SOPackageDetailEx.LineNbr: identifies the specific box.
+
+  DATA LINKAGE:
+    SOShipment (header)
+      └─ SOPackageDetailEx (the specific box — filtered by ShipmentNbr + PackageLineNbr)
+           └─ SOShipmentLine (all lines packed into this box, joined via ShipmentNbr)
+                └─ InventoryItem (stock item master — description, inventory CD)
+                     └─ INItemXRef (customer cross-reference for Alternate ID)
+
+  LABEL LAYOUT (4 in × 6 in):
+    ┌─────────────────────────────────────────────┐
+    │ Customer Name           Box X of Y          │  ← header row
+    │ Ship ID: 000123         Ship Date: MM/DD/YY │  ← shipment details
+    ├─────────────────────────────────────────────┤
+    │ Inventory ID │ Alt ID │ Description │ Lot   │ Qty │  ← column headers
+    │ ─────────────────────────────────────────── │
+    │ (one row per SOShipmentLine in this package)│
+    └─────────────────────────────────────────────┘
+
+  PAGE SETUP: 4 inches wide × 6 inches tall, no margins beyond 0.1 in.
+  FONT: Arial 8pt for detail rows, Arial 9pt bold for header fields.
+-->
+<Report Name="BoxLabel4x6" TemplateName="BoxLabel4x6">
+  <PageSettings
+    PaperKind="Custom"
+    PaperWidth="400"
+    PaperHeight="600"
+    Landscape="False"
+    TopMargin="10"
+    BottomMargin="10"
+    LeftMargin="10"
+    RightMargin="10" />
+
+  <!-- ═══════════════════════════════════════════════════════════════════════
+       PARAMETERS
+       Both parameters are required. ShipmentNbr scopes all data queries.
+       PackageLineNbr scopes the SOPackageDetailEx row and the "Box X of Y"
+       counter logic.
+  ═══════════════════════════════════════════════════════════════════════ -->
+  <Parameters>
+    <Parameter
+      Name="ShipmentNbr"
+      SchemaObject="SOShipment"
+      SchemaField="ShipmentNbr"
+      Required="True" />
+    <Parameter
+      Name="PackageLineNbr"
+      SchemaObject="SOPackageDetailEx"
+      SchemaField="LineNbr"
+      Required="True" />
+  </Parameters>
+
+  <!-- ═══════════════════════════════════════════════════════════════════════
+       DATA SOURCES
+
+       Schema objects referenced (Acumatica automatically binds these
+       through the report's primary business account context):
+
+         SOShipment           — shipment header (customer, date, status)
+         SOPackageDetailEx    — the box being labelled (weight, box type)
+         SOShipmentLine       — order lines assigned to this shipment
+         InventoryItem        — stock item master (description, CD)
+         INItemXRef           — customer cross-reference (Alternate ID)
+         ARCustomer / BAccount — customer name for the label header
+
+       JOIN logic expressed as report schema relations:
+         SOShipment          [ShipmentNbr = @ShipmentNbr]
+         SOPackageDetailEx   [ShipmentNbr = SOShipment.ShipmentNbr
+                              AND LineNbr = @PackageLineNbr]
+         SOShipmentLine      [ShipmentNbr = SOShipment.ShipmentNbr]
+                               ← all lines on the shipment (not per-package:
+                                 Acumatica standard does not store a per-line
+                                 package assignment; the label prints all
+                                 shipment lines with qty in this shipment)
+         InventoryItem       [InventoryID = SOShipmentLine.InventoryID]
+         INItemXRef          [InventoryID = SOShipmentLine.InventoryID
+                              AND AlternateType = 'CPN'
+                              AND BAccountID = SOShipment.CustomerID]
+  ═══════════════════════════════════════════════════════════════════════ -->
+  <SchemaObjects>
+    <SchemaObject Name="SOShipment" />
+    <SchemaObject Name="SOPackageDetailEx" />
+    <SchemaObject Name="SOShipmentLine" />
+    <SchemaObject Name="InventoryItem" />
+    <SchemaObject Name="INItemXRef" />
+  </SchemaObjects>
+
+  <Relations>
+    <!-- SOShipment is the root; filter by ShipmentNbr parameter -->
+    <Relation
+      ParentObject="SOShipment"
+      ParentField="ShipmentNbr"
+      ChildObject="SOPackageDetailEx"
+      ChildField="ShipmentNbr"
+      JoinType="Inner" />
+
+    <!-- All shipment lines for the shipment (printed in the detail table) -->
+    <Relation
+      ParentObject="SOShipment"
+      ParentField="ShipmentNbr"
+      ChildObject="SOShipmentLine"
+      ChildField="ShipmentNbr"
+      JoinType="Inner" />
+
+    <!-- Stock item master — join on InventoryID -->
+    <Relation
+      ParentObject="SOShipmentLine"
+      ParentField="InventoryID"
+      ChildObject="InventoryItem"
+      ChildField="InventoryID"
+      JoinType="Left" />
+
+    <!-- Customer cross-reference — join on InventoryID + AlternateType 'CPN' -->
+    <Relation
+      ParentObject="SOShipmentLine"
+      ParentField="InventoryID"
+      ChildObject="INItemXRef"
+      ChildField="InventoryID"
+      JoinType="Left">
+      <Condition
+        Field="INItemXRef.AlternateType"
+        Condition="Equal"
+        Value="CPN" />
+      <Condition
+        Field="INItemXRef.BAccountID"
+        Condition="Equal"
+        Value="=SOShipment.CustomerID" />
+    </Relation>
+  </Relations>
+
+  <!-- ═══════════════════════════════════════════════════════════════════════
+       FILTERS
+       Scope the report to the specific shipment and package.
+  ═══════════════════════════════════════════════════════════════════════ -->
+  <Filters>
+    <Filter
+      DataField="SOShipment.ShipmentNbr"
+      Condition="Equal"
+      Value="=@ShipmentNbr"
+      Operation="And" />
+    <Filter
+      DataField="SOPackageDetailEx.LineNbr"
+      Condition="Equal"
+      Value="=@PackageLineNbr"
+      Operation="And" />
+  </Filters>
+
+  <!-- ═══════════════════════════════════════════════════════════════════════
+       SORT ORDER
+       Detail rows sorted by InventoryCD for consistent label appearance.
+  ═══════════════════════════════════════════════════════════════════════ -->
+  <Sorting>
+    <SortField DataField="InventoryItem.InventoryCD" Direction="Ascending" />
+  </Sorting>
+
+  <!-- ═══════════════════════════════════════════════════════════════════════
+       SECTIONS
+
+       Section layout (top to bottom, 4 in × 6 in label):
+
+         PageHeader  — 0.90 in: customer name, ship date, box counter
+         Detail      — fills remaining space: one row per shipment line
+         PageFooter  — 0.15 in: optional footer (none by default)
+
+       All coordinates are in hundredths of an inch (100 = 1 inch).
+  ═══════════════════════════════════════════════════════════════════════ -->
+  <Sections>
+
+    <!-- ─────────────────────────────────────────────────────────────────
+         PAGE HEADER (height = 90 / 100 in = 0.9 in)
+         Printed once at the top of the label.
+         Contains: customer name, shipment number, ship date, box counter.
+    ───────────────────────────────────────────────────────────────────── -->
+    <Section Name="PageHeader" Height="90" CanGrow="False" CanShrink="False">
+
+      <!-- Row 1: Customer Name (left) + Box X of Y (right) -->
+      <TextObject
+        Name="lblCustomer"
+        Text="=[SOShipment.CustomerID]"
+        Left="0"
+        Top="0"
+        Width="250"
+        Height="20"
+        Font="Arial, 9pt, Bold"
+        HorzAlign="Left" />
+
+      <!--
+        Box counter: "Box N of T"
+        N = PackageLineNbr parameter (1-based index for this print job)
+        T = COUNT of SOPackageDetailEx rows for the shipment
+
+        Acumatica report expressions support aggregate functions scoped to
+        the current data source. The formula below counts all package rows
+        for the shipment to produce "Box X of Y":
+          =@PackageLineNbr & ' of ' & Count([SOPackageDetailEx.LineNbr])
+      -->
+      <TextObject
+        Name="lblBoxCounter"
+        Text="='Box ' &amp; @PackageLineNbr &amp; ' of ' &amp; Count([SOPackageDetailEx.LineNbr])"
+        Left="255"
+        Top="0"
+        Width="115"
+        Height="20"
+        Font="Arial, 9pt, Bold"
+        HorzAlign="Right" />
+
+      <!-- Row 2: "Ship ID:" label + shipment number (left) | Ship Date (right) -->
+      <TextObject
+        Name="lblShipIdCaption"
+        Text="Ship ID:"
+        Left="0"
+        Top="22"
+        Width="45"
+        Height="16"
+        Font="Arial, 8pt"
+        HorzAlign="Left" />
+
+      <TextObject
+        Name="lblShipId"
+        Text="=[SOShipment.ShipmentNbr]"
+        Left="47"
+        Top="22"
+        Width="130"
+        Height="16"
+        Font="Arial, 8pt, Bold"
+        HorzAlign="Left" />
+
+      <TextObject
+        Name="lblShipDateCaption"
+        Text="Ship Date:"
+        Left="190"
+        Top="22"
+        Width="55"
+        Height="16"
+        Font="Arial, 8pt"
+        HorzAlign="Left" />
+
+      <TextObject
+        Name="lblShipDate"
+        Text="=[SOShipment.ShipDate]"
+        Left="247"
+        Top="22"
+        Width="123"
+        Height="16"
+        Font="Arial, 8pt"
+        HorzAlign="Right"
+        Format="ShortDate" />
+
+      <!-- Horizontal divider line between header and detail area -->
+      <LineObject
+        Name="headerDivider"
+        Left="0"
+        Top="42"
+        Width="380"
+        Height="1"
+        ForeColor="Black" />
+
+      <!-- Column headers for the detail grid -->
+      <TextObject
+        Name="colInventoryID"
+        Text="Inventory ID"
+        Left="0"
+        Top="46"
+        Width="75"
+        Height="14"
+        Font="Arial, 7pt, Bold"
+        HorzAlign="Left" />
+
+      <TextObject
+        Name="colAltID"
+        Text="Alt ID"
+        Left="77"
+        Top="46"
+        Width="70"
+        Height="14"
+        Font="Arial, 7pt, Bold"
+        HorzAlign="Left" />
+
+      <TextObject
+        Name="colDescription"
+        Text="Description"
+        Left="149"
+        Top="46"
+        Width="130"
+        Height="14"
+        Font="Arial, 7pt, Bold"
+        HorzAlign="Left" />
+
+      <TextObject
+        Name="colLotSerial"
+        Text="Lot / Serial"
+        Left="281"
+        Top="46"
+        Width="65"
+        Height="14"
+        Font="Arial, 7pt, Bold"
+        HorzAlign="Left" />
+
+      <TextObject
+        Name="colQty"
+        Text="Qty"
+        Left="348"
+        Top="46"
+        Width="32"
+        Height="14"
+        Font="Arial, 7pt, Bold"
+        HorzAlign="Right" />
+
+      <!-- Thin line under column headers -->
+      <LineObject
+        Name="colHeaderDivider"
+        Left="0"
+        Top="62"
+        Width="380"
+        Height="1"
+        ForeColor="Black" />
+
+    </Section>
+
+    <!-- ─────────────────────────────────────────────────────────────────
+         DETAIL (one row per SOShipmentLine on this shipment)
+         Height = 16 (auto-grow if description wraps)
+    ───────────────────────────────────────────────────────────────────── -->
+    <Section Name="Detail" Height="16" CanGrow="True" CanShrink="False">
+
+      <TextObject
+        Name="detInventoryCD"
+        Text="=[InventoryItem.InventoryCD]"
+        Left="0"
+        Top="0"
+        Width="75"
+        Height="16"
+        Font="Arial, 7.5pt"
+        HorzAlign="Left"
+        CanGrow="True" />
+
+      <!--
+        Alternate ID from INItemXRef (customer part number).
+        INItemXRef is LEFT JOINed so this may be blank if no customer
+        cross-reference is configured for the item.
+        See docs: "Alternate ID (customer part number) is blank on the label"
+        troubleshooting section for setup instructions (IN202500).
+      -->
+      <TextObject
+        Name="detAltID"
+        Text="=[INItemXRef.AlternateID]"
+        Left="77"
+        Top="0"
+        Width="70"
+        Height="16"
+        Font="Arial, 7.5pt"
+        HorzAlign="Left"
+        CanGrow="True" />
+
+      <TextObject
+        Name="detDescription"
+        Text="=[InventoryItem.Descr]"
+        Left="149"
+        Top="0"
+        Width="130"
+        Height="16"
+        Font="Arial, 7.5pt"
+        HorzAlign="Left"
+        CanGrow="True" />
+
+      <!--
+        Lot / Serial number. SOShipmentLine.LotSerialNbr is populated when
+        the item is lot/serial-tracked. Blank for non-tracked items.
+      -->
+      <TextObject
+        Name="detLotSerial"
+        Text="=[SOShipmentLine.LotSerialNbr]"
+        Left="281"
+        Top="0"
+        Width="65"
+        Height="16"
+        Font="Arial, 7.5pt"
+        HorzAlign="Left"
+        CanGrow="True" />
+
+      <TextObject
+        Name="detQty"
+        Text="=[SOShipmentLine.ShippedQty]"
+        Left="348"
+        Top="0"
+        Width="32"
+        Height="16"
+        Font="Arial, 7.5pt"
+        HorzAlign="Right"
+        Format="Quantity"
+        CanGrow="False" />
+
+    </Section>
+
+    <!-- ─────────────────────────────────────────────────────────────────
+         PAGE FOOTER (height = 15)
+         Minimal footer — blank by default. Reserved for future use
+         (e.g., barcode, QR code, compliance marks).
+    ───────────────────────────────────────────────────────────────────── -->
+    <Section Name="PageFooter" Height="15" CanGrow="False" CanShrink="False">
+      <!-- Intentionally empty — space reserved for future barcode/QR -->
+    </Section>
+
+  </Sections>
+
+</Report>

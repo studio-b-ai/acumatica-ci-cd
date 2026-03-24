@@ -35,7 +35,7 @@ Before the feature will work, confirm all of the following are in place:
 |---|-------------|-------|
 | 1 | **Acumatica Device Hub** installed and running on the warehouse print server | The Windows service must be running and connected to the Acumatica instance |
 | 2 | **4×6 thermal label printer** connected and configured on the print server | Tested with Zebra ZD420, ZT230; any 4×6 thermal printer with a Windows driver is supported |
-| 3 | **`BoxLabel4x6.rpx` report** published to the Acumatica instance | The report must be registered in Report Designer (SM208000) with Report ID `BoxLabel4x6` exactly — the code matches this ID case-sensitively |
+| 3 | **`BoxLabel4x6.rpx` report** published to the Acumatica instance | The report is included in the customization project (`Customization/_project/BoxLabel4x6.rpx`) and published automatically. It must appear in Report Designer (SM208000) with Report ID `BoxLabel4x6` exactly — the code matches this ID case-sensitively |
 | 4 | **`ShipmentLabelAutoPrint` customization project** published | Deploys `SOShipmentLabelExt` (DAC), `SOShipmentEntry_LabelAutoPrint` (graph extension with both auto-print and manual action), and `ShipmentLabelSchemaInstaller` (adds `UsrBoxLabelPrinted` column to `SOShipment`) |
 | 5 | **`UsrBoxLabelPrinted` column** present on the `SOShipment` SQL table | Created automatically on first publish by `ShipmentLabelSchemaInstaller`. Verify via `validate-publish.py` (`sql_columns` check) |
 | 6 | **Kensium WMS** installed and the `UsrFRPickStatus` field present on shipments | Required for auto-print only. The extension reads this field by name at runtime; if absent, the auto-print trigger never fires (manual print still works) |
@@ -123,7 +123,47 @@ The button is always **visible** regardless of shipment status — this is inten
 
 ---
 
-## 5. Report Parameters
+## 5. Report File — Data Linkage
+
+The `BoxLabel4x6.rpx` report file is included in the customization project at `Customization/_project/BoxLabel4x6.rpx` and is registered in `project.xml` as:
+
+```xml
+<Report Name="BoxLabel4x6" FileName="BoxLabel4x6.rpx" />
+```
+
+It is published to the Acumatica instance automatically as part of the customization publish.
+
+### Data Linkage (Packages → Contents)
+
+The report builds its label content by joining four Acumatica tables:
+
+```
+SOShipment          [filtered: ShipmentNbr = @ShipmentNbr]
+  │
+  ├─ SOPackageDetailEx  [filtered: LineNbr = @PackageLineNbr]
+  │    Box header row: weight, box type, dimensions.
+  │    Drives the "Box X of Y" counter.
+  │
+  └─ SOShipmentLine    [ShipmentNbr = SOShipment.ShipmentNbr]
+       One row per inventory item on the shipment.
+       │
+       ├─ InventoryItem  [InventoryID = SOShipmentLine.InventoryID]
+       │    Provides: InventoryCD (SKU), Descr (description)
+       │
+       └─ INItemXRef     [InventoryID + AlternateType='CPN' + BAccountID = CustomerID]
+            Provides: AlternateID (customer part number / Alternate ID column)
+            LEFT JOINed — blank if no cross-reference is configured for the item.
+```
+
+**Why `SOPackageDetailEx` instead of `SOPackageDetail`:**  
+`SOPackageDetailEx` is the extended DAC that carries additional fields (box type, dimensions, weight, custom fields added by the WMS). The base `SOPackageDetail` drops these fields. The C# code and the report both use `SOPackageDetailEx` to ensure full data availability.
+
+**Box X of Y counter:**  
+The `@PackageLineNbr` parameter holds the current box's line number (1, 2, 3...). The report calculates the total box count using `Count([SOPackageDetailEx.LineNbr])` across all package rows for the shipment. This produces "Box 1 of 3", "Box 2 of 3", etc.
+
+---
+
+## 6. Report Parameters
 
 The `BoxLabel4x6` report accepts exactly two parameters. These are automatically populated by the customization code — no manual entry is needed during normal operation.
 
@@ -136,7 +176,7 @@ These same parameters can be used when **manually re-running** the report from t
 
 ---
 
-## 6. Label Layout
+## 7. Label Layout
 
 Each printed label is 4 inches × 6 inches and contains the following information:
 
@@ -163,7 +203,7 @@ One row per inventory line within the package:
 
 ---
 
-## 7. Troubleshooting
+## 8. Troubleshooting
 
 ### Labels are not printing at all
 
@@ -202,7 +242,7 @@ The label reads the total package count from the packages already saved on the s
 
 ---
 
-## 8. Re-printing Labels
+## 9. Re-printing Labels
 
 Use these steps when labels need to be re-printed — for example, after a printer jam, after correcting package contents, or after a wrong label was produced.
 
@@ -258,7 +298,7 @@ WHERE Status <> 'N';            -- non-Confirmed shipments
 
 ---
 
-## 9. Code Architecture — Shared Print Method
+## 10. Code Architecture — Shared Print Method
 
 Both print paths share the same private `ExecuteBoxLabelPrint()` method in `SOShipmentEntry_LabelAutoPrint`. This ensures identical Device Hub logic, parameter building, and error handling regardless of how printing is triggered.
 
@@ -306,5 +346,6 @@ RowUpdated (auto-print)          printBoxLabels action (manual)
 | Report Designer | SM208000 |
 | Trace Log | SM205070 |
 | Stock Item Cross-References | IN202500 → Cross-References tab |
+| Report file (data linkage) | `Customization/_project/BoxLabel4x6.rpx` |
 | Customization source | `Customization/_project/ShipmentLabelAutoPrint.cs` |
 | DB column validated by | `publish-manifest.json` → `sql_columns` → `SOShipment.UsrBoxLabelPrinted` |

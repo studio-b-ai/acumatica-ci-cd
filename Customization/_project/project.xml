@@ -1051,6 +1051,33 @@ IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('SOOrder') 
         than requiring a secondary click to expand.
     ============================================================================
     -->
+    <!--
+    ============================================================================
+    BoxLabel4x6 Report
+    4x6 thermal label report printed via Device Hub (SMPrintJobMaint).
+
+    DATA LINKAGE (packages to contents):
+      SOShipment [ShipmentNbr = @ShipmentNbr]
+        +- SOPackageDetailEx [LineNbr = @PackageLineNbr]   (the specific box)
+        +- SOShipmentLine    [ShipmentNbr = SOShipment.ShipmentNbr]
+             +- InventoryItem [InventoryID]
+             +- INItemXRef    [InventoryID + AlternateType=CPN + BAccountID]
+
+    PARAMETERS (set by SOShipmentEntry_LabelAutoPrint.QueueSingleLabelJob):
+      ShipmentNbr    -- identifies the SOShipment record
+      PackageLineNbr -- identifies the specific SOPackageDetailEx row
+
+    REGISTRATION:
+      After publishing this project, open Report Designer (SM208000) and
+      confirm the report appears with Report ID "BoxLabel4x6" exactly
+      (case-sensitive match to the C# constant BOX_LABEL_REPORT_ID).
+      Then map the report to the thermal printer in Device Hub (SM206530):
+        Reports tab -> Report ID = BoxLabel4x6, Paper Size = 4x6.
+
+    SOURCE FILE: Customization/_project/BoxLabel4x6.rpx
+    ============================================================================
+    -->
+    <Report Name="BoxLabel4x6" FileName="BoxLabel4x6.rpx" />
     <Page path="~/pages/so/so302000.aspx">
         <PXToolBar ID="usercaption_toolbar" ParentId="usercaption_toolbar" TypeFullName="PX.Web.UI.PXToolBar">
             <Children Key="Items">
