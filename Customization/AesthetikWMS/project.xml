@@ -3468,18 +3468,8 @@ namespace HeritageFabrics.SO
             Base.Transactions.Cache.SetValueExt<SOLine.lotSerialNbr>(line, best.LotSerialNbr);
             Base.Transactions.Cache.SetValueExt<SOLine.orderQty>(line, best.QtyOnHand);
 
-            // Write observability marker to order Description
-            string desc = order.Description ?? string.Empty;
-            string marker = $"[AUTO-ALLOC] Ln{line.LineNbr}={best.LotSerialNbr} ({best.QtyOnHand})";
-            if (!desc.Contains("[AUTO-ALLOC"))
-            {
-                Base.Document.Cache.SetValueExt<SOOrder.description>(order, marker);
-            }
-            else
-            {
-                // Append to existing marker
-                Base.Document.Cache.SetValueExt<SOOrder.description>(order, desc + "; " + marker);
-            }
+            PXTrace.WriteInformation(
+                $"[AUTO-ALLOC] Assigned: Ln{line.LineNbr}={best.LotSerialNbr} ({best.QtyOnHand})");
         }
 
         /// <summary>
@@ -3531,6 +3521,7 @@ namespace HeritageFabrics.SO
         }
     }
 }
+
 ]]></CDATA>
     </Graph>
 
