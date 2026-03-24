@@ -335,11 +335,72 @@ RowUpdated (auto-print)          printBoxLabels action (manual)
 
 ---
 
+## 10. Post-Deploy Verification
+
+After publishing the `ShipmentLabelAutoPrint` customization project to any Acumatica instance, run the included smoke test to confirm that every required component is in place:
+
+```bash
+python scripts/test-box-label.py \
+    --url      https://instance.acumatica.com \
+    --username admin \
+    --password secret \
+    --tenant   MyTenant
+```
+
+Or set environment variables and run without flags:
+
+```bash
+export ACUMATICA_URL=https://instance.acumatica.com
+export ACUMATICA_USERNAME=admin
+export ACUMATICA_PASSWORD=secret
+export ACUMATICA_TENANT=MyTenant
+python scripts/test-box-label.py
+```
+
+### What the smoke test checks
+
+| Check | What it tests | Failure indicates |
+|-------|--------------|-------------------|
+| **1. Authentication** | Login to the Acumatica instance | Wrong credentials / unreachable instance |
+| **2. Entity reachability** | `GET /Shipment` returns HTTP 200 (not 500) | Graph extension compile error in `SOShipmentEntry_LabelAutoPrint` |
+| **3. DAC schema** | `UsrBoxLabelPrinted` in `Shipment/$adHocSchema` (informational) | DAC extension not registered *(WARN only — field is SQL-only by design)* |
+| **4. SQL column** | `$expand=custom` query succeeds without column-missing error | `ShipmentLabelSchemaInstaller` did not run; column missing from `SOShipment` |
+| **5. Package data** | `$expand=Packages` query on confirmed shipments succeeds | REST API version mismatch *(WARN only — C# uses PXSelect directly)* |
+| **6. Field access** | Single shipment retrieval does not 500 | Graph extension is broken at runtime |
+| **7. Device Hub config** | *(Informational reminder — always WARN, never FAIL)* | Check manually per §3 of this document |
+
+### Exit codes
+
+| Code | Meaning |
+|------|---------|
+| `0` | All required checks passed (warnings are allowed) |
+| `1` | One or more **FAIL** checks — deployment is not complete |
+
+### CI/CD integration
+
+The smoke test can be added as a post-deploy step in the GitHub Actions workflow. Add it after the deploy step in `.github/workflows/deploy-customization.yml`:
+
+```yaml
+- name: Box-label smoke test
+  env:
+    ACUMATICA_URL:      ${{ secrets.ACUMATICA_PROD_URL }}
+    ACUMATICA_USERNAME: ${{ secrets.ACUMATICA_PROD_USERNAME }}
+    ACUMATICA_PASSWORD: ${{ secrets.ACUMATICA_PROD_PASSWORD }}
+    ACUMATICA_TENANT:   ${{ secrets.ACUMATICA_PROD_TENANT }}
+  run: |
+    python scripts/test-box-label.py --skip-device-hub
+```
+
+> **`--skip-device-hub`** suppresses the Device Hub reminder (Check 7) in CI output, since it cannot be automated and would always appear as a warning, cluttering the log. Run without the flag for a first-time environment audit.
+
+---
+
 ## Quick Reference
 
 | Topic | Location |
 |-------|----------|
 | **Manual Print Box Labels button** | SO302000 → Actions menu |
+| **Post-deploy smoke test** | `scripts/test-box-label.py` |
 | Device Hub Printers | SM206530 |
 | User Preferences (printer assignment) | SM202010 |
 | Shipments screen | SO302000 |
