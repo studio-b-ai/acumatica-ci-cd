@@ -89,7 +89,7 @@ namespace HeritageFabrics.SO
                 if (candidates.Count == 0)
                 {
                     // No bolts at all — mark entire line for PO
-                    Base.Transactions.Cache.SetValueExt<SOLine.markForPO>(e.Row, true);
+                    Base.Transactions.Cache.SetValueExt<SOLine.pOCreate>(e.Row, true);
                     PXTrace.WriteInformation(
                         $"[AUTO-ALLOC] No bolts available — marked line for PO");
                     return;
@@ -162,7 +162,7 @@ namespace HeritageFabrics.SO
                         if (uom != null)
                             Base.Transactions.Cache.SetValueExt<SOLine.uOM>(backorderLine, uom);
                         Base.Transactions.Cache.SetValueExt<SOLine.orderQty>(backorderLine, remainder);
-                        Base.Transactions.Cache.SetValueExt<SOLine.markForPO>(backorderLine, true);
+                        Base.Transactions.Cache.SetValueExt<SOLine.pOCreate>(backorderLine, true);
 
                         PXTrace.WriteInformation(
                             $"[AUTO-ALLOC] Backorder line {backorderLine.LineNbr}: " +
