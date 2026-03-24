@@ -44,25 +44,29 @@ namespace HeritageFabrics.SO
 
         private void TryAllocate(SOLine line)
         {
-            if (line == null) return;
+            PXTrace.WriteInformation("[AUTO-ALLOC] TryAllocate entered");
+
+            if (line == null) { PXTrace.WriteInformation("[AUTO-ALLOC] BAIL: line is null"); return; }
 
             SOOrder order = Base.Document.Current;
-            if (order == null) return;
+            if (order == null) { PXTrace.WriteInformation("[AUTO-ALLOC] BAIL: order is null"); return; }
             string orderType = order.OrderType;
-            if (orderType != "PC" && orderType != "FO") return;
+            PXTrace.WriteInformation($"[AUTO-ALLOC] OrderType={orderType}");
+            if (orderType != "PC" && orderType != "FO") { PXTrace.WriteInformation($"[AUTO-ALLOC] BAIL: orderType={orderType} not PC/FO"); return; }
 
-            // Skip if lot already assigned
-            if (!string.IsNullOrEmpty(line.LotSerialNbr)) return;
+            PXTrace.WriteInformation($"[AUTO-ALLOC] LotSerialNbr='{line.LotSerialNbr}' InventoryID={line.InventoryID} OrderQty={line.OrderQty}");
+            if (!string.IsNullOrEmpty(line.LotSerialNbr)) { PXTrace.WriteInformation("[AUTO-ALLOC] BAIL: lot already assigned"); return; }
 
-            // Need item and qty
-            if (line.InventoryID == null || (line.OrderQty ?? 0) <= 0) return;
+            if (line.InventoryID == null || (line.OrderQty ?? 0) <= 0) { PXTrace.WriteInformation("[AUTO-ALLOC] BAIL: no item or qty"); return; }
 
-            // Only PIECENBR items
-            if (!IsPieceGoodsItem(line.InventoryID)) return;
+            bool isPiece = IsPieceGoodsItem(line.InventoryID);
+            PXTrace.WriteInformation($"[AUTO-ALLOC] IsPieceGoodsItem={isPiece}");
+            if (!isPiece) return;
 
             int inventoryID = line.InventoryID.Value;
             int? siteID = line.SiteID ?? order.DefaultSiteID;
-            if (siteID == null) return;
+            PXTrace.WriteInformation($"[AUTO-ALLOC] siteID={siteID}");
+            if (siteID == null) { PXTrace.WriteInformation("[AUTO-ALLOC] BAIL: no warehouse"); return; }
 
             // Rebuild assigned serials from other lines
             _assignedSerials.Clear();
