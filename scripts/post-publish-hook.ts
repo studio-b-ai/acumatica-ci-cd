@@ -332,41 +332,87 @@ function mergeFields(...sourceLists: DacField[][]): DacField[] {
 }
 
 /**
- * Main entry point: scan all sources and dispatch test config updates.
- *
- * Usage (from acumatica-ci-cd repo root):
- *   npx tsx scripts/post-publish-hook.ts Customization/_project
+ * Scan a single project directory across all three sources and return the
+ * merged, de-duplicated list of DacField entries.
  */
-async function main() {
-  const projectDir = process.argv[2] || 'Customization/_project';
-  const resolvedDir = resolve(projectDir);
-
-  if (!existsSync(resolvedDir)) {
-    console.error(`[post-publish] Project directory not found: ${resolvedDir}`);
-    process.exit(1);
-  }
-
-  console.log(`[post-publish] Scanning ${resolvedDir} for DAC extension fields...`);
-
-  // Gather fields from all three sources
+function scanProjectDir(resolvedDir: string): DacField[] {
   const fromXml     = parseProjectXml(resolvedDir);
   const fromRootCs  = parseProjectRootCs(resolvedDir);
   const fromCodeDir = parseCodeSubdir(resolvedDir);
 
   console.log(
-    `[post-publish] Sources: project.xml=${fromXml.length} field(s), ` +
+    `[post-publish]   project.xml=${fromXml.length} field(s), ` +
     `root *.cs=${fromRootCs.length} field(s), ` +
     `Code/=${fromCodeDir.length} field(s)`,
   );
 
-  const fields = mergeFields(fromXml, fromRootCs, fromCodeDir);
+  return mergeFields(fromXml, fromRootCs, fromCodeDir);
+}
+
+/**
+ * Main entry point: scan one or more project directories and dispatch test
+ * config updates for every discovered Usr* DAC extension field.
+ *
+ * Accepts multiple directory arguments so that all customization packages
+ * deployed together can be covered in a single hook run:
+ *
+ * Usage (from acumatica-ci-cd repo root):
+ *   # Single project (backwards-compatible default):
+ *   npx tsx scripts/post-publish-hook.ts Customization/_project
+ *
+ *   # Multiple projects in one pass:
+ *   npx tsx scripts/post-publish-hook.ts \
+ *       Customization/_project \
+ *       Customization/StudioBPORelations
+ *
+ * De-duplication is applied across all directories: if the same DAC+field
+ * pair appears in more than one project it is only dispatched once.
+ */
+async function main() {
+  // Collect all project directory arguments (argv[2] onward).
+  // Fall back to the primary project dir when none are supplied.
+  const rawDirs = process.argv.slice(2);
+  const projectDirs = rawDirs.length > 0 ? rawDirs : ['Customization/_project'];
+
+  // Validate every supplied directory up-front so we fail fast with a clear
+  // message rather than silently skipping missing paths.
+  const resolvedDirs: string[] = [];
+  for (const dir of projectDirs) {
+    const resolved = resolve(dir);
+    if (!existsSync(resolved)) {
+      console.warn(`[post-publish] WARNING: Project directory not found, skipping: ${resolved}`);
+      continue;
+    }
+    resolvedDirs.push(resolved);
+  }
+
+  if (resolvedDirs.length === 0) {
+    console.error('[post-publish] No valid project directories found — nothing to scan');
+    process.exit(1);
+  }
+
+  console.log(
+    `[post-publish] Scanning ${resolvedDirs.length} project director${resolvedDirs.length === 1 ? 'y' : 'ies'} ` +
+    `for DAC extension fields...`,
+  );
+
+  // Gather fields from all directories, merging across the full set.
+  let allFields: DacField[] = [];
+  for (const dir of resolvedDirs) {
+    console.log(`[post-publish] → ${dir}`);
+    const dirFields = scanProjectDir(dir);
+    // Merge: keep only fields not already present (by dacName + fieldName).
+    allFields = mergeFields(allFields, dirFields);
+  }
+
+  const fields = allFields;
 
   if (fields.length === 0) {
     console.log('[post-publish] No Usr* fields found — nothing to dispatch');
     return;
   }
 
-  console.log(`[post-publish] Found ${fields.length} unique custom field(s):`);
+  console.log(`[post-publish] Found ${fields.length} unique custom field(s) across all projects:`);
   for (const f of fields) {
     console.log(`  ${f.entity}.${f.path} (${f.dacName}.${f.fieldName})`);
   }

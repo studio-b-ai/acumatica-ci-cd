@@ -556,6 +556,13 @@ jobs:
 
       - name: Dispatch test config for new custom fields
         if: success()
-        run: npx tsx scripts/post-publish-hook.ts Customization/_project
+        run: |
+          # Scan all customization project directories so that fields from every
+          # deployed package are dispatched in a single hook run.
+          DIRS="Customization/_project"
+          if [ -d "Customization/StudioBPORelations" ]; then
+            DIRS="${DIRS} Customization/StudioBPORelations"
+          fi
+          npx tsx scripts/post-publish-hook.ts ${DIRS}
         env:
           GH_PAT_DISPATCH: ${{ secrets.GH_PAT_DISPATCH }}
