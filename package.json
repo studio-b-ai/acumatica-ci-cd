@@ -5,10 +5,15 @@
   "main": "dist/index.js",
   "scripts": {
     "build": "tsc",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:unit": "vitest run tests/services/",
+    "test:api": "vitest run tests/routes/",
+    "test:e2e": "vitest run tests/e2e/"
   },
   "devDependencies": {
     "@types/node": "^25.5.0",
-    "typescript": "^5.4.5"
+    "typescript": "^5.4.5",
+    "vitest": "^1.6.0"
   }
 }
