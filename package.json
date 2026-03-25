@@ -1,0 +1,13 @@
+{
+  "name": "webhook-router",
+  "version": "1.0.0",
+  "description": "Heritage Fabrics / Studio B webhook routing service",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.5"
+  }
+}
