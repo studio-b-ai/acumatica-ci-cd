@@ -3315,6 +3315,492 @@ namespace Aesthetik.WMS
     }
 }]]></CDATA>
     </Graph>
+    <Graph ClassName="UnallocatedPieceGoodsGISetup" Source="#CDATA" IsNew="True" FileType="NewFile">
+        <CDATA name="Source"><![CDATA[using System;
+using System.Collections.Generic;
+using System.Configuration;
+using Customization;
+
+namespace Aesthetik.WMS
+{
+    /// <summary>
+    /// Creates the UnallocatedPieceGoods Generic Inquiry via direct SQL.
+    /// Acumatica CustomizationApi/Import does NOT create new GIs from XML —
+    /// it only updates existing ones. This plugin creates the GI from scratch
+    /// using INSERT...SELECT from template rows.
+    ///
+    /// GI definition:
+    ///   Tables: SOOrder (main) + SOLine (inner join) + InventoryItem (inner join)
+    ///   Filters: OrderType IN (PC,FO), Status IN (N=Open,H=Hold),
+    ///            SOLine.LotSerialNbr IS NULL, InventoryItem.LotSerClassID = PIECENBR
+    ///   Navigation: click-through to SO301000
+    ///   OData: exposed
+    ///
+    /// Safe to re-run: idempotent (checks if GI exists, recreates result/table/join/where rows).
+    /// </summary>
+    public class UnallocatedPieceGoodsGISetup : CustomizationPlugin
+    {
+        private const string GI_NAME = "UnallocatedPieceGoods";
+
+        public override void UpdateDatabase()
+        {
+            WriteLog("[GISetup] Starting UnallocatedPieceGoods GI creation...");
+
+            try
+            {
+                var cs = ConfigurationManager.ConnectionStrings["ProjectX"];
+                if (cs == null) { WriteLog("[GISetup] No ProjectX connection string"); return; }
+
+                string connStr = cs.ConnectionString + ";TrustServerCertificate=True";
+                using (var conn = new Microsoft.Data.SqlClient.SqlConnection(connStr))
+                {
+                    conn.Open();
+
+                    // Get CompanyID
+                    int companyId = 0;
+                    using (var cmd = new Microsoft.Data.SqlClient.SqlCommand(
+                        "SELECT TOP 1 CompanyID FROM GIDesign WHERE CompanyID > 0", conn))
+                    {
+                        var r = cmd.ExecuteScalar();
+                        if (r != null) companyId = Convert.ToInt32(r);
+                    }
+                    if (companyId == 0) { WriteLog("[GISetup] No CompanyID found"); return; }
+                    WriteLog("[GISetup] CompanyID: " + companyId);
+
+                    // Check if GI already exists
+                    string designId = null;
+                    using (var cmd = new Microsoft.Data.SqlClient.SqlCommand(
+                        "SELECT TOP 1 CONVERT(NVARCHAR(36), DesignID) FROM GIDesign WHERE Name = @name AND CompanyID = @cid", conn))
+                    {
+                        cmd.Parameters.AddWithValue("@name", GI_NAME);
+                        cmd.Parameters.AddWithValue("@cid", companyId);
+                        var r = cmd.ExecuteScalar();
+                        if (r != null && r != DBNull.Value) designId = r.ToString();
+                    }
+
+                    if (designId == null)
+                    {
+                        // CREATE the GI header — copy structure from template
+                        designId = Guid.NewGuid().ToString();
+                        WriteLog("[GISetup] Creating GI with DesignID: " + designId);
+
+                        string templateId = FindTemplate(conn, companyId, "GIDesign");
+                        if (templateId == null) { WriteLog("[GISetup] No template GIDesign found"); return; }
+
+                        InsertFromTemplate(conn, "GIDesign", templateId, companyId, new Dictionary<string, string>
+                        {
+                            {"DesignID", "'" + designId + "'"},
+                            {"Name", "'" + GI_NAME + "'"},
+                            {"ExposeViaOData", "1"},
+                            {"ExposeViaMobile", "0"},
+                            {"ScreenID", "'GI000000'"},
+                            {"FilterColCount", "3"},
+                            {"PageSize", "200"},
+                            {"NewRecordCreationEnabled", "0"},
+                            {"MassDeleteEnabled", "0"},
+                            {"MassRecordsUpdateEnabled", "0"},
+                            {"MassActionsOnRecordsEnabled", "0"},
+                            {"NoteID", "NEWID()"},
+                            {"RowID", "NEWID()"},
+                            {"CreatedDateTime", "GETUTCDATE()"},
+                            {"LastModifiedDateTime", "GETUTCDATE()"}
+                        });
+                        WriteLog("[GISetup] GIDesign row created");
+                    }
+                    else
+                    {
+                        WriteLog("[GISetup] GI already exists: " + designId);
+                        // Ensure OData is enabled
+                        ExecNonQuery(conn, "UPDATE GIDesign SET ExposeViaOData = 1 WHERE DesignID = @did AND CompanyID = @cid",
+                            new[] { "@did", designId, "@cid", companyId.ToString() });
+                    }
+
+                    // Clear existing child rows (idempotent rebuild)
+                    foreach (string table in new[] { "GIResult", "GIWhere", "GISort", "GIOn", "GIRelation", "GITable",
+                                                     "GINavigationCondition", "GINavigationScreen" })
+                    {
+                        int deleted = ExecNonQuery(conn,
+                            "DELETE FROM " + table + " WHERE DesignID = @did AND CompanyID = @cid",
+                            new[] { "@did", designId, "@cid", companyId.ToString() });
+                        if (deleted > 0) WriteLog("[GISetup] Cleared " + deleted + " rows from " + table);
+                    }
+
+                    // --- DATA SOURCES (GITable) ---
+                    string tplTable = FindTemplate(conn, companyId, "GITable");
+                    if (tplTable == null) { WriteLog("[GISetup] No template GITable"); return; }
+
+                    // Table 1: SOOrder (main)
+                    InsertFromTemplate(conn, "GITable", tplTable, companyId, new Dictionary<string, string>
+                    {
+                        {"DesignID", "'" + designId + "'"},
+                        {"Name", "'PX.Objects.SO.SOOrder'"},
+                        {"Alias", "'SOOrder'"},
+                        {"NoteID", "NEWID()"},
+                        {"RowID", "NEWID()"},
+                        {"CreatedDateTime", "GETUTCDATE()"},
+                        {"LastModifiedDateTime", "GETUTCDATE()"}
+                    });
+                    WriteLog("[GISetup] GITable: SOOrder");
+
+                    // Table 2: SOLine
+                    InsertFromTemplate(conn, "GITable", tplTable, companyId, new Dictionary<string, string>
+                    {
+                        {"DesignID", "'" + designId + "'"},
+                        {"Name", "'PX.Objects.SO.SOLine'"},
+                        {"Alias", "'SOLine'"},
+                        {"NoteID", "NEWID()"},
+                        {"RowID", "NEWID()"},
+                        {"CreatedDateTime", "GETUTCDATE()"},
+                        {"LastModifiedDateTime", "GETUTCDATE()"}
+                    });
+                    WriteLog("[GISetup] GITable: SOLine");
+
+                    // Table 3: InventoryItem
+                    InsertFromTemplate(conn, "GITable", tplTable, companyId, new Dictionary<string, string>
+                    {
+                        {"DesignID", "'" + designId + "'"},
+                        {"Name", "'PX.Objects.IN.InventoryItem'"},
+                        {"Alias", "'InventoryItem'"},
+                        {"NoteID", "NEWID()"},
+                        {"RowID", "NEWID()"},
+                        {"CreatedDateTime", "GETUTCDATE()"},
+                        {"LastModifiedDateTime", "GETUTCDATE()"}
+                    });
+                    WriteLog("[GISetup] GITable: InventoryItem");
+
+                    // --- JOINS (GIRelation + GIOn) ---
+                    string tplRelation = FindTemplate(conn, companyId, "GIRelation");
+                    string tplOn = FindTemplate(conn, companyId, "GIOn");
+
+                    // Join 1: SOOrder -> SOLine (inner join on OrderType + OrderNbr)
+                    if (tplRelation != null)
+                    {
+                        InsertFromTemplate(conn, "GIRelation", tplRelation, companyId, new Dictionary<string, string>
+                        {
+                            {"DesignID", "'" + designId + "'"},
+                            {"LineNbr", "1"},
+                            {"ParentTable", "'SOOrder'"},
+                            {"ChildTable", "'SOLine'"},
+                            {"JoinType", "'I'"},
+                            {"IsActive", "1"},
+                            {"NoteID", "NEWID()"},
+                            {"RowID", "NEWID()"},
+                            {"CreatedDateTime", "GETUTCDATE()"},
+                            {"LastModifiedDateTime", "GETUTCDATE()"}
+                        });
+                    }
+                    if (tplOn != null)
+                    {
+                        InsertFromTemplate(conn, "GIOn", tplOn, companyId, new Dictionary<string, string>
+                        {
+                            {"DesignID", "'" + designId + "'"},
+                            {"LineNbr", "1"},
+                            {"IsActive", "1"},
+                            {"ParentField", "'OrderType'"},
+                            {"Condition", "'E'"},
+                            {"ChildField", "'OrderType'"},
+                            {"NoteID", "NEWID()"},
+                            {"RowID", "NEWID()"},
+                            {"CreatedDateTime", "GETUTCDATE()"},
+                            {"LastModifiedDateTime", "GETUTCDATE()"}
+                        });
+                        InsertFromTemplate(conn, "GIOn", tplOn, companyId, new Dictionary<string, string>
+                        {
+                            {"DesignID", "'" + designId + "'"},
+                            {"LineNbr", "1"},
+                            {"IsActive", "1"},
+                            {"ParentField", "'OrderNbr'"},
+                            {"Condition", "'E'"},
+                            {"ChildField", "'OrderNbr'"},
+                            {"NoteID", "NEWID()"},
+                            {"RowID", "NEWID()"},
+                            {"CreatedDateTime", "GETUTCDATE()"},
+                            {"LastModifiedDateTime", "GETUTCDATE()"}
+                        });
+                    }
+                    WriteLog("[GISetup] Join 1: SOOrder -> SOLine");
+
+                    // Join 2: SOLine -> InventoryItem (inner join on InventoryID)
+                    if (tplRelation != null)
+                    {
+                        InsertFromTemplate(conn, "GIRelation", tplRelation, companyId, new Dictionary<string, string>
+                        {
+                            {"DesignID", "'" + designId + "'"},
+                            {"LineNbr", "2"},
+                            {"ParentTable", "'SOLine'"},
+                            {"ChildTable", "'InventoryItem'"},
+                            {"JoinType", "'I'"},
+                            {"IsActive", "1"},
+                            {"NoteID", "NEWID()"},
+                            {"RowID", "NEWID()"},
+                            {"CreatedDateTime", "GETUTCDATE()"},
+                            {"LastModifiedDateTime", "GETUTCDATE()"}
+                        });
+                    }
+                    if (tplOn != null)
+                    {
+                        InsertFromTemplate(conn, "GIOn", tplOn, companyId, new Dictionary<string, string>
+                        {
+                            {"DesignID", "'" + designId + "'"},
+                            {"LineNbr", "2"},
+                            {"IsActive", "1"},
+                            {"ParentField", "'InventoryID'"},
+                            {"Condition", "'E'"},
+                            {"ChildField", "'InventoryID'"},
+                            {"NoteID", "NEWID()"},
+                            {"RowID", "NEWID()"},
+                            {"CreatedDateTime", "GETUTCDATE()"},
+                            {"LastModifiedDateTime", "GETUTCDATE()"}
+                        });
+                    }
+                    WriteLog("[GISetup] Join 2: SOLine -> InventoryItem");
+
+                    // --- WHERE CONDITIONS (GIWhere) ---
+                    string tplWhere = FindTemplate(conn, companyId, "GIWhere");
+                    if (tplWhere != null)
+                    {
+                        // (OrderType = 'PC' OR OrderType = 'FO')
+                        InsertGIWhere(conn, tplWhere, designId, companyId, 1, "SOOrder.OrderType", "EQ", "PC", "O", 1, 0);
+                        InsertGIWhere(conn, tplWhere, designId, companyId, 2, "SOOrder.OrderType", "EQ", "FO", "A", 0, 1);
+                        // AND (Status = 'N' [Open] OR Status = 'H' [Hold])
+                        InsertGIWhere(conn, tplWhere, designId, companyId, 3, "SOOrder.Status", "EQ", "N", "O", 1, 0);
+                        InsertGIWhere(conn, tplWhere, designId, companyId, 4, "SOOrder.Status", "EQ", "H", "A", 0, 1);
+                        // AND LotSerialNbr IS NULL
+                        InsertGIWhere(conn, tplWhere, designId, companyId, 5, "SOLine.LotSerialNbr", "NU", null, "A", 0, 0);
+                        // AND LotSerClassID = 'PIECENBR'
+                        InsertGIWhere(conn, tplWhere, designId, companyId, 6, "InventoryItem.LotSerClassID", "EQ", "PIECENBR", null, 0, 0);
+                    }
+                    WriteLog("[GISetup] WHERE conditions created (6 rows)");
+
+                    // --- RESULT COLUMNS (GIResult) ---
+                    string tplResult = FindTemplate(conn, companyId, "GIResult");
+                    if (tplResult == null) { WriteLog("[GISetup] No template GIResult"); return; }
+
+                    var columns = new[]
+                    {
+                        new[] { "SOOrder",       "OrderType",     "60",  "Order Type",       "1", "1" },
+                        new[] { "SOOrder",       "OrderNbr",      "120", "Order Nbr",        "1", "1" },
+                        new[] { "SOOrder",       "Status",        "60",  "Status",           "0", "1" },
+                        new[] { "SOOrder",       "CustomerID",    "120", "Customer",         "0", "1" },
+                        new[] { "SOOrder",       "OrderDate",     "100", "Order Date",       "0", "1" },
+                        new[] { "SOOrder",       "RequestedOn",   "100", "Requested On",     "0", "0" },
+                        new[] { "SOLine",        "LineNbr",       "60",  "Line Nbr",         "0", "0" },
+                        new[] { "SOLine",        "InventoryID",   "120", "Inventory ID",     "0", "1" },
+                        new[] { "SOLine",        "TranDesc",      "200", "Description",      "0", "0" },
+                        new[] { "SOLine",        "OrderQty",      "80",  "Order Qty",        "0", "0" },
+                        new[] { "SOLine",        "UOM",           "60",  "UOM",              "0", "0" },
+                        new[] { "SOLine",        "SiteID",        "80",  "Warehouse",        "0", "1" },
+                        new[] { "InventoryItem", "LotSerClassID", "100", "Lot/Serial Class", "0", "1" }
+                    };
+
+                    for (int i = 0; i < columns.Length; i++)
+                    {
+                        InsertFromTemplate(conn, "GIResult", tplResult, companyId, new Dictionary<string, string>
+                        {
+                            {"DesignID", "'" + designId + "'"},
+                            {"LineNbr", (i + 1).ToString()},
+                            {"IsActive", "1"},
+                            {"ObjectName", "'" + columns[i][0] + "'"},
+                            {"Field", "'" + columns[i][1] + "'"},
+                            {"SchemaField", "NULL"},
+                            {"SortOrder", (i + 1).ToString()},
+                            {"IsVisible", "1"},
+                            {"Width", columns[i][2]},
+                            {"DefaultNav", columns[i][4]},
+                            {"QuickFilter", "0"},
+                            {"FastFilter", columns[i][5]},
+                            {"Caption", "'" + columns[i][3].Replace("'", "''") + "'"},
+                            {"NoteID", "NEWID()"},
+                            {"RowID", "NEWID()"},
+                            {"CreatedDateTime", "GETUTCDATE()"},
+                            {"LastModifiedDateTime", "GETUTCDATE()"}
+                        });
+                    }
+                    WriteLog("[GISetup] Result columns created (" + columns.Length + " columns)");
+
+                    // --- SORT (GISort) ---
+                    string tplSort = FindTemplate(conn, companyId, "GISort");
+                    if (tplSort != null)
+                    {
+                        InsertFromTemplate(conn, "GISort", tplSort, companyId, new Dictionary<string, string>
+                        {
+                            {"DesignID", "'" + designId + "'"},
+                            {"LineNbr", "1"},
+                            {"IsActive", "1"},
+                            {"DataFieldName", "'SOOrder.OrderDate'"},
+                            {"SortOrder", "'D'"},
+                            {"NoteID", "NEWID()"},
+                            {"RowID", "NEWID()"},
+                            {"CreatedDateTime", "GETUTCDATE()"},
+                            {"LastModifiedDateTime", "GETUTCDATE()"}
+                        });
+                        InsertFromTemplate(conn, "GISort", tplSort, companyId, new Dictionary<string, string>
+                        {
+                            {"DesignID", "'" + designId + "'"},
+                            {"LineNbr", "2"},
+                            {"IsActive", "1"},
+                            {"DataFieldName", "'SOOrder.OrderNbr'"},
+                            {"SortOrder", "'A'"},
+                            {"NoteID", "NEWID()"},
+                            {"RowID", "NEWID()"},
+                            {"CreatedDateTime", "GETUTCDATE()"},
+                            {"LastModifiedDateTime", "GETUTCDATE()"}
+                        });
+                    }
+                    WriteLog("[GISetup] Sort order created");
+
+                    // --- NAVIGATION (click-through to SO301000) ---
+                    string tplNavScreen = FindTemplate(conn, companyId, "GINavigationScreen");
+                    string tplNavCond = FindTemplate(conn, companyId, "GINavigationCondition");
+                    if (tplNavScreen != null)
+                    {
+                        InsertFromTemplate(conn, "GINavigationScreen", tplNavScreen, companyId, new Dictionary<string, string>
+                        {
+                            {"DesignID", "'" + designId + "'"},
+                            {"LineNbr", "1"},
+                            {"IsActive", "1"},
+                            {"ScreenID", "'SO301000'"},
+                            {"NoteID", "NEWID()"},
+                            {"RowID", "NEWID()"},
+                            {"CreatedDateTime", "GETUTCDATE()"},
+                            {"LastModifiedDateTime", "GETUTCDATE()"}
+                        });
+                    }
+                    if (tplNavCond != null)
+                    {
+                        InsertFromTemplate(conn, "GINavigationCondition", tplNavCond, companyId, new Dictionary<string, string>
+                        {
+                            {"DesignID", "'" + designId + "'"},
+                            {"LineNbr", "1"},
+                            {"IsActive", "1"},
+                            {"FieldName", "'OrderType'"},
+                            {"NoteID", "NEWID()"},
+                            {"RowID", "NEWID()"},
+                            {"CreatedDateTime", "GETUTCDATE()"},
+                            {"LastModifiedDateTime", "GETUTCDATE()"}
+                        });
+                        InsertFromTemplate(conn, "GINavigationCondition", tplNavCond, companyId, new Dictionary<string, string>
+                        {
+                            {"DesignID", "'" + designId + "'"},
+                            {"LineNbr", "2"},
+                            {"IsActive", "1"},
+                            {"FieldName", "'OrderNbr'"},
+                            {"NoteID", "NEWID()"},
+                            {"RowID", "NEWID()"},
+                            {"CreatedDateTime", "GETUTCDATE()"},
+                            {"LastModifiedDateTime", "GETUTCDATE()"}
+                        });
+                    }
+                    WriteLog("[GISetup] Navigation to SO301000 configured");
+                    WriteLog("[GISetup] UnallocatedPieceGoods GI creation COMPLETE");
+                }
+            }
+            catch (Exception ex)
+            {
+                WriteLog("[GISetup] ERROR: " + ex.GetType().FullName + ": " + ex.Message);
+                if (ex.InnerException != null)
+                    WriteLog("[GISetup] Inner: " + ex.InnerException.Message);
+            }
+        }
+
+        // --- Helpers ---
+
+        private string FindTemplate(Microsoft.Data.SqlClient.SqlConnection conn, int companyId, string tableName)
+        {
+            using (var cmd = new Microsoft.Data.SqlClient.SqlCommand(
+                "SELECT TOP 1 CONVERT(NVARCHAR(36), DesignID) FROM " + tableName + " WHERE CompanyID = @cid", conn))
+            {
+                cmd.Parameters.AddWithValue("@cid", companyId);
+                var r = cmd.ExecuteScalar();
+                return (r != null && r != DBNull.Value) ? r.ToString() : null;
+            }
+        }
+
+        private void InsertFromTemplate(Microsoft.Data.SqlClient.SqlConnection conn, string tableName,
+            string templateDesignId, int companyId, Dictionary<string, string> overrides)
+        {
+            // Get column names dynamically
+            var cols = new List<string>();
+            using (var cmd = new Microsoft.Data.SqlClient.SqlCommand(@"
+                SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS
+                WHERE TABLE_NAME = @tbl
+                AND COLUMN_NAME NOT IN ('DeletedDatabaseRecord','Tstamp')
+                AND DATA_TYPE NOT IN ('timestamp')
+                ORDER BY ORDINAL_POSITION", conn))
+            {
+                cmd.Parameters.AddWithValue("@tbl", tableName);
+                using (var reader = cmd.ExecuteReader())
+                {
+                    while (reader.Read()) cols.Add(reader.GetString(0));
+                }
+            }
+
+            // Build SELECT parts with overrides
+            var selectParts = new List<string>();
+            foreach (var col in cols)
+            {
+                if (overrides.ContainsKey(col))
+                    selectParts.Add(overrides[col]);
+                else
+                    selectParts.Add("[" + col + "]");
+            }
+
+            string sql = "INSERT INTO " + tableName + " ([" + string.Join("],[", cols) + "]) SELECT TOP 1 " +
+                string.Join(",", selectParts) + " FROM " + tableName +
+                " WHERE DesignID = @tid AND CompanyID = @cid";
+
+            using (var cmd = new Microsoft.Data.SqlClient.SqlCommand(sql, conn))
+            {
+                cmd.Parameters.AddWithValue("@tid", templateDesignId);
+                cmd.Parameters.AddWithValue("@cid", companyId);
+                cmd.ExecuteNonQuery();
+            }
+        }
+
+        private void InsertGIWhere(Microsoft.Data.SqlClient.SqlConnection conn, string templateId,
+            string designId, int companyId, int lineNbr, string fieldName, string condition,
+            string value1, string op, int openBrackets, int closeBrackets)
+        {
+            var overrides = new Dictionary<string, string>
+            {
+                {"DesignID", "'" + designId + "'"},
+                {"LineNbr", lineNbr.ToString()},
+                {"IsActive", "1"},
+                {"DataFieldName", "'" + fieldName + "'"},
+                {"Condition", "'" + condition + "'"},
+                {"OpenBrackets", openBrackets.ToString()},
+                {"CloseBrackets", closeBrackets.ToString()},
+                {"NoteID", "NEWID()"},
+                {"RowID", "NEWID()"},
+                {"CreatedDateTime", "GETUTCDATE()"},
+                {"LastModifiedDateTime", "GETUTCDATE()"}
+            };
+            if (value1 != null)
+                overrides["Value1"] = "'" + value1.Replace("'", "''") + "'";
+            else
+                overrides["Value1"] = "NULL";
+            if (op != null)
+                overrides["Operator"] = "'" + op + "'";
+            else
+                overrides["Operator"] = "NULL";
+
+            InsertFromTemplate(conn, "GIWhere", templateId, companyId, overrides);
+        }
+
+        private int ExecNonQuery(Microsoft.Data.SqlClient.SqlConnection conn, string sql, string[] parms)
+        {
+            using (var cmd = new Microsoft.Data.SqlClient.SqlCommand(sql, conn))
+            {
+                for (int i = 0; i < parms.Length; i += 2)
+                {
+                    cmd.Parameters.AddWithValue(parms[i], parms[i + 1]);
+                }
+                return cmd.ExecuteNonQuery();
+            }
+        }
+    }
+}]]></CDATA>
+    </Graph>
     <Sql Name="AesthetikWMS_SOOrder_BAccount_Columns_v1" Script="#CDATA">
         <CDATA name="Script"><![CDATA[
 -- SOOrder compliance hold fields (from AesthetikERP consolidation)
