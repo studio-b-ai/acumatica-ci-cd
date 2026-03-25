@@ -198,6 +198,62 @@ async def list_tools() -> list[types.Tool]:
                 "required": []
             },
         ),
+
+        # ─── Customer Order / Invoice Lookup Tools ────────────────────────
+        types.Tool(
+            name="get_customer_orders",
+            description=(
+                "Retrieve the most recent sales orders for a given Acumatica customer. "
+                "Returns up to 10 orders sorted newest-first, each with a direct deep-link "
+                "URL into the Acumatica SO301000 screen. Use this when working a support "
+                "ticket to quickly surface what orders the customer has open or recently placed."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "customer_id": {
+                        "type": "string",
+                        "description": (
+                            "Acumatica CustomerID (e.g. 'C000123' or 'HERITAGE'). "
+                            "Must be a non-empty string matching the CustomerID field in Acumatica."
+                        ),
+                    },
+                    "top": {
+                        "type": "integer",
+                        "description": "Maximum number of orders to return (1–50, default 10).",
+                        "default": 10,
+                    },
+                },
+                "required": ["customer_id"],
+            },
+        ),
+        types.Tool(
+            name="get_customer_invoices",
+            description=(
+                "Retrieve the most recent AR invoices for a given Acumatica customer. "
+                "Returns up to 10 invoices sorted newest-first, each with a direct deep-link "
+                "URL into the Acumatica AR301000 screen. Use this when working a support "
+                "ticket to quickly surface outstanding balances or recent billing activity."
+            ),
+            inputSchema={
+                "type": "object",
+                "properties": {
+                    "customer_id": {
+                        "type": "string",
+                        "description": (
+                            "Acumatica CustomerID (e.g. 'C000123' or 'HERITAGE'). "
+                            "Must be a non-empty string matching the CustomerID field in Acumatica."
+                        ),
+                    },
+                    "top": {
+                        "type": "integer",
+                        "description": "Maximum number of invoices to return (1–50, default 10).",
+                        "default": 10,
+                    },
+                },
+                "required": ["customer_id"],
+            },
+        ),
     ]
 
 
@@ -328,6 +384,94 @@ def _dispatch(name: str, args: dict) -> Any:
         r.raise_for_status()
         projects = r.json() if r.content else []
         return {"projects": projects, "count": len(projects)}
+
+    # --- CUSTOMER ORDERS ---
+    if name == "get_customer_orders":
+        customer_id = args.get("customer_id", "").strip()
+        if not customer_id:
+            raise ValueError("get_customer_orders: customer_id must be a non-empty string")
+        top = min(max(int(args.get("top", 10)), 1), 50)
+
+        raw_orders = acumatica_get("SalesOrder", params={
+            "$filter": f"CustomerID eq '{customer_id}'",
+            "$top": str(top),
+            "$orderby": "Date desc",
+            "$select": "OrderNbr,OrderType,Status,OrderedQty,OrderTotal,Date,CustomerID",
+        })
+
+        if not isinstance(raw_orders, list):
+            raise ValueError(
+                f"get_customer_orders: unexpected API response shape for customer '{customer_id}'"
+            )
+
+        orders = []
+        for order in raw_orders:
+            order_nbr  = (order.get("OrderNbr")  or {}).get("value", "")
+            order_type = (order.get("OrderType") or {}).get("value", "")
+            orders.append({
+                "orderNbr":   order_nbr,
+                "orderType":  order_type,
+                "status":     (order.get("Status")     or {}).get("value", ""),
+                "orderedQty": (order.get("OrderedQty") or {}).get("value", 0),
+                "orderTotal": (order.get("OrderTotal") or {}).get("value", 0),
+                "date":       (order.get("Date")       or {}).get("value", ""),
+                # Direct deep-link into SO301000 — same format as salesOrders.ts
+                "acumaticaUrl": (
+                    f"{BASE_URL}/Main?ScreenId=SO301000"
+                    f"&OrderType={order_type}"
+                    f"&OrderNbr={order_nbr}"
+                ),
+            })
+
+        return {
+            "customerId": customer_id,
+            "count": len(orders),
+            "orders": orders,
+        }
+
+    # --- CUSTOMER INVOICES ---
+    if name == "get_customer_invoices":
+        customer_id = args.get("customer_id", "").strip()
+        if not customer_id:
+            raise ValueError("get_customer_invoices: customer_id must be a non-empty string")
+        top = min(max(int(args.get("top", 10)), 1), 50)
+
+        raw_invoices = acumatica_get("Invoice", params={
+            # Filter to this customer + standard invoices only (exclude credit memos / debit adj.)
+            "$filter": f"CustomerID eq '{customer_id}' and Type eq 'Invoice'",
+            "$top": str(top),
+            "$orderby": "Date desc",
+            "$select": "ReferenceNbr,Status,Amount,Balance,Date,CustomerID",
+        })
+
+        if not isinstance(raw_invoices, list):
+            raise ValueError(
+                f"get_customer_invoices: unexpected API response shape for customer '{customer_id}'"
+            )
+
+        invoices = []
+        for invoice in raw_invoices:
+            ref_nbr = (invoice.get("ReferenceNbr") or {}).get("value", "")
+            invoices.append({
+                "referenceNbr": ref_nbr,
+                "status":  (invoice.get("Status")  or {}).get("value", ""),
+                "amount":  (invoice.get("Amount")  or {}).get("value", 0),
+                "balance": (invoice.get("Balance") or {}).get("value", 0),
+                "date":    (invoice.get("Date")    or {}).get("value", ""),
+                # Direct deep-link into AR301000 — DocType=INV always valid because
+                # we filter Type eq 'Invoice' above (same logic as invoices.ts)
+                "acumaticaUrl": (
+                    f"{BASE_URL}/Main?ScreenId=AR301000"
+                    f"&DocType=INV"
+                    f"&RefNbr={ref_nbr}"
+                ),
+            })
+
+        return {
+            "customerId": customer_id,
+            "count": len(invoices),
+            "invoices": invoices,
+        }
 
     raise ValueError(f"Unknown tool: {name}")
 
