@@ -50,8 +50,10 @@ export interface CustomerInvoice {
 /**
  * Retrieve the most recent 10 AR invoices for a given Acumatica customer.
  *
- * Filters to DocType eq 'INV' (standard invoices only — excludes credit memos,
- * debit adjustments, etc.) to ensure the AR301000 deep-link is always valid.
+ * Filters to `Type eq 'INV'` (standard invoices only — excludes credit memos
+ * 'CRM', debit adjustments 'DRM', etc.) so the AR301000 deep-link is always
+ * valid. The Acumatica OData filter uses the short doc-type code ('INV'), not
+ * the display label ('Invoice').
  *
  * Uses the same OData query pattern as getCustomerSalesOrders() and
  * entity-sync.py fetch_all(): $filter + $top + $orderby + $select.
@@ -71,8 +73,11 @@ export async function getCustomerInvoices(
   }
 
   const raw = await acumaticaGet<RawInvoice[]>('Invoice', {
-    // Filter to this customer + invoices only (exclude credit memos / debit adj.)
-    $filter: `CustomerID eq '${customerId.trim()}' and Type eq 'Invoice'`,
+    // Filter to this customer + standard invoices only (Type 'INV' — excludes
+    // credit memos 'CRM', debit adjustments 'DRM', etc.).
+    // Acumatica OData uses the short doc-type code ('INV'), not the display
+    // label ('Invoice'), so 'Type eq Invoice' would return no results.
+    $filter: `CustomerID eq '${customerId.trim()}' and Type eq 'INV'`,
     // Return newest 10 invoices
     $top: '10',
     // Newest first — Date descending
@@ -98,7 +103,7 @@ export async function getCustomerInvoices(
       balance: unwrap(invoice.Balance) ?? 0,
       date: unwrap(invoice.Date) ?? '',
       // Deep-link URL — format confirmed by publish-manifest.json (AR301000)
-      // DocType=INV always valid because we filter Type eq 'Invoice' above
+      // DocType=INV always valid because we filter Type eq 'INV' above
       acumaticaUrl:
         `${ACUMATICA_BASE_URL}/Main?ScreenId=AR301000` +
         `&DocType=INV` +
