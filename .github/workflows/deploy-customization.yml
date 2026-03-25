@@ -584,6 +584,34 @@ jobs:
             echo "✅ Maintenance mode cleared — workers resuming"
           else
             echo "⚠️ Could not clear maintenance mode (HTTP ${HTTP_CODE}) — TTL will auto-expire"
+
+      # ── Post-deploy regression tests ─────────────────────────────────
+      - name: Trigger API regression tests
+        if: success() && env.DRY_RUN != 'true'
+        id: regression
+        continue-on-error: true
+        env:
+          REGRESSION_WEBHOOK_URL: ${{ secrets.REGRESSION_WEBHOOK_URL || 'https://webhook-router-production-e161.up.railway.app' }}
+          REGRESSION_WEBHOOK_SECRET: ${{ secrets.REGRESSION_WEBHOOK_SECRET }}
+        run: |
+          if [ -z "${REGRESSION_WEBHOOK_SECRET}" ]; then
+            echo "REGRESSION_WEBHOOK_SECRET not set — skipping regression tests"
+            exit 0
+          fi
+          TARGET="${{ steps.env.outputs.target }}"
+          COMMIT="${{ github.sha }}"
+          RESPONSE=$(curl -sf -X POST "${REGRESSION_WEBHOOK_URL}/api/regression/trigger" \
+            -H "Content-Type: application/json" \
+            -H "X-Webhook-Secret: ${REGRESSION_WEBHOOK_SECRET}" \
+            -d "{\"environment\": \"${TARGET}\", \"deployCommit\": \"${COMMIT}\", \"trigger\": \"post-deploy\"}" \
+            --max-time 10 || true)
+          echo "Regression trigger response: ${RESPONSE}"
+          if echo "${RESPONSE}" | grep -q '"ok":true'; then
+            RUN_ID=$(echo "${RESPONSE}" | python3 -c "import sys,json; print(json.load(sys.stdin).get('runId','unknown'))" 2>/dev/null || echo "unknown")
+            echo "run_id=${RUN_ID}" >> $GITHUB_OUTPUT
+            echo "Regression tests triggered (runId: ${RUN_ID})"
+          else
+            echo "Regression trigger failed or not configured — continuing deploy"
           fi
 
       # ── Post-deploy notifications ─────────────────────────────────────
