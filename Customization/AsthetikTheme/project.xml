@@ -1,0 +1,194 @@
+<Customization level="0" description="Asthetik brand theme — deep teal top bar, terracotta accents, cream backgrounds. Visual identity aligned with asthetik.com DTC palette." product-version="24.208">
+    <File AppRelativePath="Content\asthetik-theme.css" Source="#CDATA">
+        <CDATA name="Source"><![CDATA[/*
+ * AsthetikTheme — Acumatica Brand Override
+ * Colors: Deep Teal #1A2A2E, Terracotta #C2705A, Cream #FAF8F4, Sage #5E8572
+ * Deployed via acumatica-ci-cd pipeline (AsthetikTheme package)
+ */
+
+/* ===== TOP NAVIGATION BAR ===== */
+#mainForm .phNavBar,
+.main-nav-bar,
+.top-nav,
+.phNavBar,
+div[id$='_phNavBar'],
+#ctl00_phNavBar {
+    background: #1A2A2E !important;
+    background-color: #1A2A2E !important;
+    border-bottom: 2px solid #C2705A !important;
+}
+
+/* Nav bar links and text */
+.phNavBar a,
+.phNavBar span,
+.phNavBar .navBarText,
+#ctl00_phNavBar a,
+#ctl00_phNavBar span,
+.toolsBtn span,
+.main-nav-bar a {
+    color: #FAF8F4 !important;
+}
+
+/* Nav bar hover states */
+.phNavBar a:hover,
+#ctl00_phNavBar a:hover,
+.main-nav-bar a:hover {
+    color: #C2705A !important;
+}
+
+/* Active/selected nav tab */
+.phNavBar .navBarSelected,
+.phNavBar .navBarItemSelected,
+#ctl00_phNavBar .navBarItemSelected {
+    border-bottom: 3px solid #C2705A !important;
+    background: rgba(194, 112, 90, 0.15) !important;
+}
+
+/* ===== TOP BAR BUTTONS & ICONS ===== */
+.toolsBtn,
+.toolsBtn:hover,
+div.toolsBtn[id$='_btnFav'],
+div.toolsBtn[id$='_btnHelp'],
+div.toolsBtn[id$='_btnUser'] {
+    color: #FAF8F4 !important;
+}
+.toolsBtn:hover {
+    background: rgba(194, 112, 90, 0.2) !important;
+}
+
+/* ===== CORNER LOGO AREA ===== */
+.logo-area,
+.phLogo,
+#ctl00_phLogo,
+div[id$='_phLogo'] {
+    background: #1A2A2E !important;
+}
+
+/* ===== MODULE SIDEBAR ===== */
+.moduleSidePanel,
+.sidePanel,
+#ctl00_phSidePanel {
+    background: #1A2A2E !important;
+    border-right: 1px solid rgba(194, 112, 90, 0.3) !important;
+}
+
+/* Sidebar links */
+.moduleSidePanel a,
+.sidePanel a,
+#ctl00_phSidePanel a {
+    color: #FAF8F4 !important;
+}
+.moduleSidePanel a:hover,
+.sidePanel a:hover {
+    color: #C2705A !important;
+    background: rgba(194, 112, 90, 0.1) !important;
+}
+
+/* ===== PRIMARY BUTTONS (Terracotta accent) ===== */
+.phDS .ToolsButtonCont .ToolsButtonStrip .ToolsBtn:first-child,
+input.btn_std[type='submit'],
+.PrimaryToolsBtn,
+div.ToolsBtn.PrimaryToolsBtn {
+    background: #C2705A !important;
+    background-color: #C2705A !important;
+    border-color: #B5634D !important;
+    color: #FAF8F4 !important;
+}
+input.btn_std[type='submit']:hover,
+.PrimaryToolsBtn:hover,
+div.ToolsBtn.PrimaryToolsBtn:hover {
+    background: #B5634D !important;
+    background-color: #B5634D !important;
+}
+
+/* ===== LOGIN PAGE ===== */
+.login-page,
+.login_bg,
+#form1.login-page,
+body.login-page {
+    background: #FAF8F4 !important;
+}
+
+/* Login form card */
+.login-form,
+.login_form,
+.login-card,
+#form1 .login_form {
+    background: #FFFFFF !important;
+    border: 1px solid rgba(26, 42, 46, 0.1) !important;
+    box-shadow: 0 4px 24px rgba(26, 42, 46, 0.08) !important;
+}
+
+/* Login submit button */
+.login-page input[type='submit'],
+.login_form input[type='submit'],
+.login_btn,
+#form1 .login_btn {
+    background: #C2705A !important;
+    background-color: #C2705A !important;
+    border: none !important;
+    color: #FAF8F4 !important;
+    border-radius: 4px !important;
+}
+.login-page input[type='submit']:hover,
+.login_form input[type='submit']:hover,
+.login_btn:hover {
+    background: #B5634D !important;
+    background-color: #B5634D !important;
+}
+
+/* Login input fields */
+.login-page input[type='text'],
+.login-page input[type='password'],
+.login_form input[type='text'],
+.login_form input[type='password'] {
+    border: 1px solid rgba(26, 42, 46, 0.2) !important;
+    border-radius: 4px !important;
+}
+.login-page input[type='text']:focus,
+.login-page input[type='password']:focus,
+.login_form input[type='text']:focus,
+.login_form input[type='password']:focus {
+    border-color: #5E8572 !important;
+    box-shadow: 0 0 0 2px rgba(94, 133, 114, 0.15) !important;
+}
+
+/* ===== GRID ROW SELECTION ===== */
+.GridRow.GridActiveRow,
+.GridRow:hover {
+    background: rgba(94, 133, 114, 0.08) !important;
+}
+
+/* ===== LINKS (Sage accent) ===== */
+a.linkEdit,
+a.link,
+.phDS a {
+    color: #5E8572 !important;
+}
+a.linkEdit:hover,
+a.link:hover {
+    color: #4A7260 !important;
+}
+
+/* ===== TAB BAR ===== */
+.phTabBar .TabBar .Tab_Active,
+.phTabBar .TabBar .Tab_Active a {
+    border-bottom-color: #C2705A !important;
+    color: #1A2A2E !important;
+}
+
+/* ===== BREADCRUMB / TITLE BAR ===== */
+.phTitleBar,
+#ctl00_phTitleBar {
+    border-bottom: 1px solid rgba(26, 42, 46, 0.08) !important;
+}
+.phTitleBar .ScreenTitle,
+#ctl00_phTitleBar .ScreenTitle {
+    color: #1A2A2E !important;
+}
+]]></CDATA>
+    </File>
+    <Page PageID="SM200505" GraphName="PX.SM.PreferencesGeneral">
+        <Modify Container="SitePreferences" Field="CompanyName" Value="Ästhetik" />
+    </Page>
+</Customization>
