@@ -5,7 +5,8 @@
       "screen": "PO301000",
       "custom_fields": [
         "custom.Document.UsrExpArrivalDate",
-        "custom.Document.UsrActArrivalDate"
+        "custom.Document.UsrActArrivalDate",
+        "custom.Document.UsrContainerRef"
       ]
     },
     "SalesOrder": {
@@ -37,14 +38,18 @@
     }
   },
   "sql_columns": [
-    {"table": "POOrder", "columns": ["UsrExpArrivalDate", "UsrActArrivalDate"]},
+    {"table": "POOrder", "columns": ["UsrExpArrivalDate", "UsrActArrivalDate", "UsrContainerRef"]},
     {"table": "POLine", "columns": ["UsrExpArrivalDate", "UsrActArrivalDate"]},
-    {"table": "SOOrder", "columns": ["UsrHubSpotDealId"]},
+    {"table": "SOOrder", "columns": ["UsrHubSpotDealId", "UsrWMSStatus", "UsrComplianceHold", "UsrComplianceHoldReason"]},
     {"table": "BAccount", "columns": ["UsrDisablePayLink"]},
     {"table": "SOShipment", "columns": ["UsrBoxLabelPrinted"]}
   ],
   "_notes": {
     "UsrDisablePayLink": "CustomerExt : PXCacheExtension<Customer> field. Works on AR303000 screen and in C# (ARInvoiceEntry_PayLink_Extension), but NOT exposed via REST API $adHocSchema for Customer entity. SQL column on BAccount table. Cannot validate via REST API schema check — only via sql_columns.",
-    "UsrBoxLabelPrinted": "SOShipmentLabelExt : PXCacheExtension<SOShipment> field. Idempotency guard for Device Hub box-label auto-print (SOShipmentEntry_LabelAutoPrint). Set to true after all SMPrintJob records queued for every SOPackageDetailEx on the shipment. Reset to false if shipment status leaves Confirmed ('N'). Not surfaced via REST API — validate via sql_columns only."
+    "UsrBoxLabelPrinted": "SOShipmentLabelExt : PXCacheExtension<SOShipment> field. Idempotency guard for Device Hub box-label auto-print (SOShipmentEntry_LabelAutoPrint). Set to true after all SMPrintJob records queued for every SOPackageDetailEx on the shipment. Reset to false if shipment status leaves Confirmed ('N'). Not surfaced via REST API — validate via sql_columns only.",
+    "UsrContainerRef": "POOrderExt : PXCacheExtension<POOrder> field. Container / BOL reference string (nvarchar 50) on PO301000 header form. Displayed as a free-text edit field. Surfaced via REST API custom.Document block — validated in PurchaseOrder custom_fields above.",
+    "UsrWMSStatus": "SOOrderExt : PXCacheExtension<SOOrder> field. Read-only WMS pick-status drop-down on SO301000 (Not Started / Allocated / Picking / Finishing / Packed / Shipped). Set by the Kensium WMS integration. SQL column on SOOrder table. Not currently surfaced via the REST API $adHocSchema endpoint — validate via sql_columns only.",
+    "UsrComplianceHold": "SOOrderExt : PXCacheExtension<SOOrder> bool field. Compliance-hold flag set programmatically (not user-editable). Triggers a warning banner and disables shipment creation on SO301000 when true. DAC + SQL exist but not yet visible in the REST API $adHocSchema response — re-enable in SalesOrder.custom_fields once confirmed.",
+    "UsrComplianceHoldReason": "SOOrderExt : PXCacheExtension<SOOrder> string field (nvarchar 500). Human-readable reason text accompanying UsrComplianceHold. Same REST API visibility caveat as UsrComplianceHold — validate via sql_columns only until confirmed in $adHocSchema."
   }
 }

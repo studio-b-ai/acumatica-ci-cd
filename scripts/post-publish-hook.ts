@@ -41,16 +41,27 @@ import { dispatchCustomField } from './dispatch-test-config.js';
 // fieldName as declared in the DAC extension class).
 //
 // Current exclusions (cross-reference with publish-manifest.json _notes):
-//   • Shipment.UsrBoxLabelPrinted  — server-side idempotency flag for Device
+//   • Shipment.UsrBoxLabelPrinted       — server-side idempotency flag for Device
 //     Hub auto-print; not surfaced via REST API adHocSchema.
 //     Validate via sql_columns only.
-//   • Customer.UsrDisablePayLink   — CustomerExt field on BAccount table; not
+//   • Customer.UsrDisablePayLink        — CustomerExt field on BAccount table; not
 //     exposed via REST API $adHocSchema for the Customer entity.
 //     Validate via sql_columns only.
+//   • SalesOrder.UsrWMSStatus          — Kensium WMS pick-status field; set by the
+//     WMS integration, not surfaced via REST API $adHocSchema.
+//     Validate via sql_columns only.
+//   • SalesOrder.UsrComplianceHold     — DAC + SQL column exist; field not yet
+//     visible in REST API $adHocSchema (re-enable once confirmed in schema).
+//     Validate via sql_columns only.
+//   • SalesOrder.UsrComplianceHoldReason — Same REST API visibility caveat as
+//     UsrComplianceHold. Validate via sql_columns only.
 
 const DISPATCH_SKIP: ReadonlySet<string> = new Set([
   'Shipment.UsrBoxLabelPrinted',
   'Customer.UsrDisablePayLink',
+  'SalesOrder.UsrWMSStatus',
+  'SalesOrder.UsrComplianceHold',
+  'SalesOrder.UsrComplianceHoldReason',
 ]);
 
 // ── Entity mapping: DAC name → Acumatica REST API entity name ──────────────

@@ -367,6 +367,22 @@ jobs:
           retention-days: 30
           if-no-files-found: ignore
 
+      # ── Box-label smoke test ──────────────────────────────────────
+      # Verifies that the ShipmentLabelAutoPrint customization components
+      # are correctly deployed: graph extension loaded, SQL column present,
+      # and Shipment entity queryable without HTTP 500.
+      # --skip-device-hub suppresses the manual-config reminder in CI output.
+      - name: Box-label auto-print smoke test
+        if: github.event.inputs.dry_run != 'true'
+        continue-on-error: true
+        env:
+          ACUMATICA_URL: ${{ (steps.env.outputs.target == 'production') && secrets.ACUMATICA_PROD_URL || (secrets.ACUMATICA_STG_URL || secrets.ACUMATICA_PROD_URL) }}
+          ACUMATICA_USERNAME: ${{ (steps.env.outputs.target == 'production') && secrets.ACUMATICA_PROD_USERNAME || (secrets.ACUMATICA_STG_USERNAME || secrets.ACUMATICA_PROD_USERNAME) }}
+          ACUMATICA_PASSWORD: ${{ (steps.env.outputs.target == 'production') && secrets.ACUMATICA_PROD_PASSWORD || (secrets.ACUMATICA_STG_PASSWORD || secrets.ACUMATICA_PROD_PASSWORD) }}
+          ACUMATICA_TENANT: ${{ (steps.env.outputs.target == 'production') && secrets.ACUMATICA_PROD_TENANT || (secrets.ACUMATICA_STG_TENANT || secrets.ACUMATICA_PROD_TENANT) }}
+        run: |
+          python scripts/test-box-label.py --skip-device-hub
+
       # ── Post-deploy notifications ─────────────────────────────────────
       - name: Notify system back online
         if: success() && steps.env.outputs.target == 'production'
