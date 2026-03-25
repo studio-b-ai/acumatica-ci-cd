@@ -24,12 +24,15 @@ import {
   AcumaticaCustomerPayload,
   NormalizedCustomer,
 } from '../../types/customer.js';
+import { syncCustomerToHubSpot, HubSpotSyncResult } from '../../services/hubspot/index.js';
 
 // ── Lightweight result type returned by the handler ───────────────────────
 
 export interface CustomerHandlerResult {
   success: boolean;
   customer?: NormalizedCustomer;
+  /** Included when the HubSpot sync step ran (success or failure) */
+  hubspot?: HubSpotSyncResult;
   error?: string;
 }
 
@@ -67,9 +70,9 @@ function isValidCustomerPayload(
  * @returns A CustomerHandlerResult indicating success/failure and, on success,
  *          the normalized customer object.
  */
-export function handleCustomerWebhook(
+export async function handleCustomerWebhook(
   rawBody: unknown,
-): CustomerHandlerResult {
+): Promise<CustomerHandlerResult> {
   // ── 1. Validate ──────────────────────────────────────────────────────────
   if (!isValidCustomerPayload(rawBody)) {
     return {
@@ -87,9 +90,19 @@ export function handleCustomerWebhook(
   // inadvertently dropped before the transform sees it.
   const customer = transformCustomer(rawBody);
 
-  // ── 3. Return normalized result ──────────────────────────────────────────
+  // ── 3. Sync to HubSpot ───────────────────────────────────────────────────
+  //
+  // Fires the HubSpot upsert asynchronously and captures the result so the
+  // caller can inspect it (e.g. for logging).  A HubSpot failure does NOT
+  // cause the overall handler to fail — the Acumatica event has already been
+  // received and transformed successfully; HubSpot sync errors are surfaced
+  // in the returned hubspot field for observability.
+  const hubspot = await syncCustomerToHubSpot(customer);
+
+  // ── 4. Return normalized result ──────────────────────────────────────────
   return {
     success: true,
     customer,
+    hubspot,
   };
 }
