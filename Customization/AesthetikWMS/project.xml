@@ -3801,6 +3801,457 @@ namespace Aesthetik.WMS
     }
 }]]></CDATA>
     </Graph>
+    <Graph ClassName="LotAvailabilityGISetup" Source="#CDATA" IsNew="True" FileType="NewFile">
+        <CDATA name="Source"><![CDATA[using System;
+using System.Collections.Generic;
+using System.Configuration;
+using Customization;
+
+namespace Aesthetik.WMS
+{
+    /// <summary>
+    /// Creates the LotAvailability Generic Inquiry via direct SQL.
+    /// Single table: INLotSerialStatus — shows lot/serial inventory with qty, expiration, receipt date.
+    /// OData exposed for REST API access.
+    /// </summary>
+    public class LotAvailabilityGISetup : CustomizationPlugin
+    {
+        private const string GI_NAME = "LotAvailability";
+
+        public override void UpdateDatabase()
+        {
+            WriteLog("[LotAvailGI] Starting LotAvailability GI creation...");
+            try
+            {
+                var cs = ConfigurationManager.ConnectionStrings["ProjectX"];
+                if (cs == null) { WriteLog("[LotAvailGI] No ProjectX connection string"); return; }
+                string connStr = cs.ConnectionString + ";TrustServerCertificate=True";
+
+                using (var conn = new Microsoft.Data.SqlClient.SqlConnection(connStr))
+                {
+                    conn.Open();
+                    int companyId = GetCompanyId(conn);
+                    if (companyId == 0) { WriteLog("[LotAvailGI] No CompanyID found"); return; }
+
+                    string designId = FindGI(conn, companyId, GI_NAME);
+                    if (designId == null)
+                    {
+                        designId = Guid.NewGuid().ToString();
+                        WriteLog("[LotAvailGI] Creating GI: " + designId);
+                        string tpl = FindTemplate(conn, companyId, "GIDesign");
+                        if (tpl == null) { WriteLog("[LotAvailGI] No template"); return; }
+                        InsertFromTemplate(conn, "GIDesign", tpl, companyId, new Dictionary<string, string>
+                        {
+                            {"DesignID","'"+designId+"'"},{"Name","'"+GI_NAME+"'"},{"ExposeViaOData","1"},
+                            {"ExposeViaMobile","0"},{"ScreenID","'GI000000'"},{"FilterColCount","3"},{"PageSize","200"},
+                            {"NewRecordCreationEnabled","0"},{"MassDeleteEnabled","0"},{"MassRecordsUpdateEnabled","0"},
+                            {"MassActionsOnRecordsEnabled","0"},{"NoteID","NEWID()"},{"RowID","NEWID()"},
+                            {"CreatedDateTime","GETUTCDATE()"},{"LastModifiedDateTime","GETUTCDATE()"}
+                        });
+                    }
+                    else
+                    {
+                        WriteLog("[LotAvailGI] GI exists: " + designId);
+                        ExecSql(conn, "UPDATE GIDesign SET ExposeViaOData=1 WHERE DesignID=@did AND CompanyID=@cid",
+                            new[]{"@did",designId,"@cid",companyId.ToString()});
+                    }
+
+                    ClearChildRows(conn, designId, companyId);
+
+                    // Table: INLotSerialStatus
+                    string tplT = FindTemplate(conn, companyId, "GITable");
+                    if (tplT != null)
+                        InsertFromTemplate(conn, "GITable", tplT, companyId, new Dictionary<string, string>
+                        {
+                            {"DesignID","'"+designId+"'"},{"Name","'PX.Objects.IN.INLotSerialStatus'"},
+                            {"Alias","'INLotSerialStatus'"},{"NoteID","NEWID()"},{"RowID","NEWID()"},
+                            {"CreatedDateTime","GETUTCDATE()"},{"LastModifiedDateTime","GETUTCDATE()"}
+                        });
+
+                    // Result columns
+                    string tplR = FindTemplate(conn, companyId, "GIResult");
+                    if (tplR == null) { WriteLog("[LotAvailGI] No template GIResult"); return; }
+                    var cols = new[]{
+                        new[]{"INLotSerialStatus","InventoryID","120","Inventory ID","1","1"},
+                        new[]{"INLotSerialStatus","LotSerialNbr","120","Lot/Serial Nbr","0","1"},
+                        new[]{"INLotSerialStatus","SiteID","80","Warehouse","0","1"},
+                        new[]{"INLotSerialStatus","LocationID","80","Location","0","1"},
+                        new[]{"INLotSerialStatus","QtyOnHand","80","Qty On Hand","0","1"},
+                        new[]{"INLotSerialStatus","QtyAvail","80","Qty Available","0","1"},
+                        new[]{"INLotSerialStatus","ExpireDate","100","Expiration Date","0","1"},
+                        new[]{"INLotSerialStatus","ReceiptDate","100","Receipt Date","0","1"}
+                    };
+                    for (int i=0; i<cols.Length; i++)
+                        InsertFromTemplate(conn,"GIResult",tplR,companyId,MakeResultOverrides(designId,i+1,cols[i]));
+                    WriteLog("[LotAvailGI] "+cols.Length+" result columns");
+
+                    // Sort
+                    string tplS = FindTemplate(conn, companyId, "GISort");
+                    if (tplS != null)
+                    {
+                        InsertFromTemplate(conn,"GISort",tplS,companyId,new Dictionary<string,string>{
+                            {"DesignID","'"+designId+"'"},{"LineNbr","1"},{"IsActive","1"},
+                            {"DataFieldName","'INLotSerialStatus.InventoryID'"},{"SortOrder","'A'"},
+                            {"NoteID","NEWID()"},{"RowID","NEWID()"},{"CreatedDateTime","GETUTCDATE()"},{"LastModifiedDateTime","GETUTCDATE()"}});
+                        InsertFromTemplate(conn,"GISort",tplS,companyId,new Dictionary<string,string>{
+                            {"DesignID","'"+designId+"'"},{"LineNbr","2"},{"IsActive","1"},
+                            {"DataFieldName","'INLotSerialStatus.LotSerialNbr'"},{"SortOrder","'A'"},
+                            {"NoteID","NEWID()"},{"RowID","NEWID()"},{"CreatedDateTime","GETUTCDATE()"},{"LastModifiedDateTime","GETUTCDATE()"}});
+                    }
+                    WriteLog("[LotAvailGI] COMPLETE");
+                }
+            }
+            catch (Exception ex) { WriteLog("[LotAvailGI] ERROR: "+ex.GetType().FullName+": "+ex.Message); }
+        }
+
+        private int GetCompanyId(Microsoft.Data.SqlClient.SqlConnection c) { using(var cmd=new Microsoft.Data.SqlClient.SqlCommand("SELECT TOP 1 CompanyID FROM GIDesign WHERE CompanyID>0",c)){var r=cmd.ExecuteScalar();return r!=null?Convert.ToInt32(r):0;} }
+        private string FindGI(Microsoft.Data.SqlClient.SqlConnection c,int cid,string name) { using(var cmd=new Microsoft.Data.SqlClient.SqlCommand("SELECT TOP 1 CONVERT(NVARCHAR(36),DesignID) FROM GIDesign WHERE Name=@n AND CompanyID=@c",c)){cmd.Parameters.AddWithValue("@n",name);cmd.Parameters.AddWithValue("@c",cid);var r=cmd.ExecuteScalar();return(r!=null&&r!=DBNull.Value)?r.ToString():null;} }
+        private string FindTemplate(Microsoft.Data.SqlClient.SqlConnection c,int cid,string tbl) { using(var cmd=new Microsoft.Data.SqlClient.SqlCommand("SELECT TOP 1 CONVERT(NVARCHAR(36),DesignID) FROM "+tbl+" WHERE CompanyID=@c",c)){cmd.Parameters.AddWithValue("@c",cid);var r=cmd.ExecuteScalar();return(r!=null&&r!=DBNull.Value)?r.ToString():null;} }
+        private void ClearChildRows(Microsoft.Data.SqlClient.SqlConnection c,string did,int cid) { foreach(var t in new[]{"GIResult","GIWhere","GISort","GIOn","GIRelation","GITable","GIFilter","GINavigationCondition","GINavigationScreen"}) ExecSql(c,"DELETE FROM "+t+" WHERE DesignID=@did AND CompanyID=@cid",new[]{"@did",did,"@cid",cid.ToString()}); }
+        private int ExecSql(Microsoft.Data.SqlClient.SqlConnection c,string sql,string[] p) { using(var cmd=new Microsoft.Data.SqlClient.SqlCommand(sql,c)){for(int i=0;i<p.Length;i+=2)cmd.Parameters.AddWithValue(p[i],p[i+1]);return cmd.ExecuteNonQuery();} }
+        private Dictionary<string,string> MakeResultOverrides(string did,int ln,string[] col) { return new Dictionary<string,string>{{"DesignID","'"+did+"'"},{"LineNbr",ln.ToString()},{"IsActive","1"},{"ObjectName","'"+col[0]+"'"},{"Field","'"+col[1]+"'"},{"SchemaField","NULL"},{"SortOrder",ln.ToString()},{"IsVisible","1"},{"Width",col[2]},{"DefaultNav",col[4]},{"QuickFilter","0"},{"FastFilter",col[5]},{"Caption","'"+col[3].Replace("'","''")+"'"},{"NoteID","NEWID()"},{"RowID","NEWID()"},{"CreatedDateTime","GETUTCDATE()"},{"LastModifiedDateTime","GETUTCDATE()"}}; }
+        private void InsertFromTemplate(Microsoft.Data.SqlClient.SqlConnection conn,string tableName,string templateDesignId,int companyId,Dictionary<string,string> overrides) { var cols=new List<string>();using(var cmd=new Microsoft.Data.SqlClient.SqlCommand("SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME=@tbl AND COLUMN_NAME NOT IN ('DeletedDatabaseRecord','Tstamp') AND DATA_TYPE NOT IN ('timestamp') ORDER BY ORDINAL_POSITION",conn)){cmd.Parameters.AddWithValue("@tbl",tableName);using(var r=cmd.ExecuteReader())while(r.Read())cols.Add(r.GetString(0));}var sp=new List<string>();foreach(var c in cols)sp.Add(overrides.ContainsKey(c)?overrides[c]:"["+c+"]");using(var cmd=new Microsoft.Data.SqlClient.SqlCommand("INSERT INTO "+tableName+" (["+string.Join("],[",cols)+"]) SELECT TOP 1 "+string.Join(",",sp)+" FROM "+tableName+" WHERE DesignID=@tid AND CompanyID=@cid",conn)){cmd.Parameters.AddWithValue("@tid",templateDesignId);cmd.Parameters.AddWithValue("@cid",companyId);cmd.ExecuteNonQuery();} }
+    }
+}]]></CDATA>
+    </Graph>
+    <Graph ClassName="UserAuditTrailGISetup" Source="#CDATA" IsNew="True" FileType="NewFile">
+        <CDATA name="Source"><![CDATA[using System;
+using System.Collections.Generic;
+using System.Configuration;
+using Customization;
+
+namespace Aesthetik.WMS
+{
+    /// <summary>
+    /// Creates the UserAuditTrail Generic Inquiry via direct SQL.
+    /// Single table: PX.SM.AuditHistory — audit trail with filter parameters for ScreenID and date range.
+    /// OData exposed.
+    /// </summary>
+    public class UserAuditTrailGISetup : CustomizationPlugin
+    {
+        private const string GI_NAME = "UserAuditTrail";
+
+        public override void UpdateDatabase()
+        {
+            WriteLog("[AuditGI] Starting UserAuditTrail GI creation...");
+            try
+            {
+                var cs = ConfigurationManager.ConnectionStrings["ProjectX"];
+                if (cs == null) { WriteLog("[AuditGI] No ProjectX connection string"); return; }
+                string connStr = cs.ConnectionString + ";TrustServerCertificate=True";
+
+                using (var conn = new Microsoft.Data.SqlClient.SqlConnection(connStr))
+                {
+                    conn.Open();
+                    int companyId = GetCompanyId(conn);
+                    if (companyId == 0) { WriteLog("[AuditGI] No CompanyID found"); return; }
+
+                    string designId = FindGI(conn, companyId, GI_NAME);
+                    if (designId == null)
+                    {
+                        designId = Guid.NewGuid().ToString();
+                        WriteLog("[AuditGI] Creating GI: " + designId);
+                        string tpl = FindTemplate(conn, companyId, "GIDesign");
+                        if (tpl == null) { WriteLog("[AuditGI] No template"); return; }
+                        InsertFromTemplate(conn, "GIDesign", tpl, companyId, new Dictionary<string, string>
+                        {
+                            {"DesignID","'"+designId+"'"},{"Name","'"+GI_NAME+"'"},{"ExposeViaOData","1"},
+                            {"ExposeViaMobile","0"},{"ScreenID","'GI000000'"},{"FilterColCount","4"},{"PageSize","200"},
+                            {"NewRecordCreationEnabled","0"},{"MassDeleteEnabled","0"},{"MassRecordsUpdateEnabled","0"},
+                            {"MassActionsOnRecordsEnabled","0"},{"NoteID","NEWID()"},{"RowID","NEWID()"},
+                            {"CreatedDateTime","GETUTCDATE()"},{"LastModifiedDateTime","GETUTCDATE()"}
+                        });
+                    }
+                    else
+                    {
+                        WriteLog("[AuditGI] GI exists: " + designId);
+                        ExecSql(conn, "UPDATE GIDesign SET ExposeViaOData=1 WHERE DesignID=@did AND CompanyID=@cid",
+                            new[]{"@did",designId,"@cid",companyId.ToString()});
+                    }
+
+                    ClearChildRows(conn, designId, companyId);
+
+                    // Table: PX.SM.AuditHistory
+                    string tplT = FindTemplate(conn, companyId, "GITable");
+                    if (tplT != null)
+                        InsertFromTemplate(conn, "GITable", tplT, companyId, new Dictionary<string, string>
+                        {
+                            {"DesignID","'"+designId+"'"},{"Name","'PX.SM.AuditHistory'"},
+                            {"Alias","'AuditHistory'"},{"NoteID","NEWID()"},{"RowID","NEWID()"},
+                            {"CreatedDateTime","GETUTCDATE()"},{"LastModifiedDateTime","GETUTCDATE()"}
+                        });
+
+                    // Result columns
+                    string tplR = FindTemplate(conn, companyId, "GIResult");
+                    if (tplR == null) { WriteLog("[AuditGI] No template GIResult"); return; }
+                    var cols = new[]{
+                        new[]{"AuditHistory","ScreenID","100","Screen ID","1","1"},
+                        new[]{"AuditHistory","Operation","80","Operation","0","1"},
+                        new[]{"AuditHistory","ChangeDate","160","Change Date","0","1"},
+                        new[]{"AuditHistory","TableName","140","Table Name","0","1"},
+                        new[]{"AuditHistory","BatchID","80","Batch ID","0","0"},
+                        new[]{"AuditHistory","ChangeID","80","Change ID","0","0"},
+                        new[]{"AuditHistory","CombinedKey","200","Record Keys","0","0"},
+                        new[]{"AuditHistory","ModifiedFields","300","Modified Fields","0","0"},
+                        new[]{"AuditHistory","UserID","140","User","0","1"}
+                    };
+                    for (int i=0; i<cols.Length; i++)
+                        InsertFromTemplate(conn,"GIResult",tplR,companyId,MakeResultOverrides(designId,i+1,cols[i]));
+                    WriteLog("[AuditGI] "+cols.Length+" result columns");
+
+                    // Filter parameters
+                    string tplF = FindTemplate(conn, companyId, "GIFilter");
+                    if (tplF != null)
+                    {
+                        InsertFromTemplate(conn,"GIFilter",tplF,companyId,new Dictionary<string,string>{
+                            {"DesignID","'"+designId+"'"},{"LineNbr","1"},{"IsActive","1"},
+                            {"FieldName","'ScreenFilter'"},{"DisplayName","'Screen ID'"},{"ColSpan","1"},
+                            {"Required","0"},{"DefaultValue","''"},{"DataType","6"},
+                            {"NoteID","NEWID()"},{"RowID","NEWID()"},{"CreatedDateTime","GETUTCDATE()"},{"LastModifiedDateTime","GETUTCDATE()"}});
+                        InsertFromTemplate(conn,"GIFilter",tplF,companyId,new Dictionary<string,string>{
+                            {"DesignID","'"+designId+"'"},{"LineNbr","2"},{"IsActive","1"},
+                            {"FieldName","'FromDate'"},{"DisplayName","'From Date'"},{"ColSpan","1"},
+                            {"Required","0"},{"DefaultValue","''"},{"DataType","5"},
+                            {"NoteID","NEWID()"},{"RowID","NEWID()"},{"CreatedDateTime","GETUTCDATE()"},{"LastModifiedDateTime","GETUTCDATE()"}});
+                        InsertFromTemplate(conn,"GIFilter",tplF,companyId,new Dictionary<string,string>{
+                            {"DesignID","'"+designId+"'"},{"LineNbr","3"},{"IsActive","1"},
+                            {"FieldName","'ToDate'"},{"DisplayName","'To Date'"},{"ColSpan","1"},
+                            {"Required","0"},{"DefaultValue","''"},{"DataType","5"},
+                            {"NoteID","NEWID()"},{"RowID","NEWID()"},{"CreatedDateTime","GETUTCDATE()"},{"LastModifiedDateTime","GETUTCDATE()"}});
+                    }
+                    WriteLog("[AuditGI] 3 filter parameters");
+
+                    // WHERE (filter params bound to fields)
+                    string tplW = FindTemplate(conn, companyId, "GIWhere");
+                    if (tplW != null)
+                    {
+                        InsertGIWhere(conn,tplW,designId,companyId,1,"AuditHistory.ScreenID","EQ","@ScreenFilter","A",0,0);
+                        InsertGIWhere(conn,tplW,designId,companyId,2,"AuditHistory.ChangeDate","GE","@FromDate","A",0,0);
+                        InsertGIWhere(conn,tplW,designId,companyId,3,"AuditHistory.ChangeDate","LE","@ToDate",null,0,0);
+                    }
+                    WriteLog("[AuditGI] 3 WHERE conditions");
+
+                    // Sort by ChangeDate DESC
+                    string tplS = FindTemplate(conn, companyId, "GISort");
+                    if (tplS != null)
+                        InsertFromTemplate(conn,"GISort",tplS,companyId,new Dictionary<string,string>{
+                            {"DesignID","'"+designId+"'"},{"LineNbr","1"},{"IsActive","1"},
+                            {"DataFieldName","'AuditHistory.ChangeDate'"},{"SortOrder","'D'"},
+                            {"NoteID","NEWID()"},{"RowID","NEWID()"},{"CreatedDateTime","GETUTCDATE()"},{"LastModifiedDateTime","GETUTCDATE()"}});
+
+                    WriteLog("[AuditGI] COMPLETE");
+                }
+            }
+            catch (Exception ex) { WriteLog("[AuditGI] ERROR: "+ex.GetType().FullName+": "+ex.Message); }
+        }
+
+        private int GetCompanyId(Microsoft.Data.SqlClient.SqlConnection c) { using(var cmd=new Microsoft.Data.SqlClient.SqlCommand("SELECT TOP 1 CompanyID FROM GIDesign WHERE CompanyID>0",c)){var r=cmd.ExecuteScalar();return r!=null?Convert.ToInt32(r):0;} }
+        private string FindGI(Microsoft.Data.SqlClient.SqlConnection c,int cid,string name) { using(var cmd=new Microsoft.Data.SqlClient.SqlCommand("SELECT TOP 1 CONVERT(NVARCHAR(36),DesignID) FROM GIDesign WHERE Name=@n AND CompanyID=@c",c)){cmd.Parameters.AddWithValue("@n",name);cmd.Parameters.AddWithValue("@c",cid);var r=cmd.ExecuteScalar();return(r!=null&&r!=DBNull.Value)?r.ToString():null;} }
+        private string FindTemplate(Microsoft.Data.SqlClient.SqlConnection c,int cid,string tbl) { using(var cmd=new Microsoft.Data.SqlClient.SqlCommand("SELECT TOP 1 CONVERT(NVARCHAR(36),DesignID) FROM "+tbl+" WHERE CompanyID=@c",c)){cmd.Parameters.AddWithValue("@c",cid);var r=cmd.ExecuteScalar();return(r!=null&&r!=DBNull.Value)?r.ToString():null;} }
+        private void ClearChildRows(Microsoft.Data.SqlClient.SqlConnection c,string did,int cid) { foreach(var t in new[]{"GIResult","GIWhere","GISort","GIOn","GIRelation","GITable","GIFilter","GINavigationCondition","GINavigationScreen"}) ExecSql(c,"DELETE FROM "+t+" WHERE DesignID=@did AND CompanyID=@cid",new[]{"@did",did,"@cid",cid.ToString()}); }
+        private int ExecSql(Microsoft.Data.SqlClient.SqlConnection c,string sql,string[] p) { using(var cmd=new Microsoft.Data.SqlClient.SqlCommand(sql,c)){for(int i=0;i<p.Length;i+=2)cmd.Parameters.AddWithValue(p[i],p[i+1]);return cmd.ExecuteNonQuery();} }
+        private Dictionary<string,string> MakeResultOverrides(string did,int ln,string[] col) { return new Dictionary<string,string>{{"DesignID","'"+did+"'"},{"LineNbr",ln.ToString()},{"IsActive","1"},{"ObjectName","'"+col[0]+"'"},{"Field","'"+col[1]+"'"},{"SchemaField","NULL"},{"SortOrder",ln.ToString()},{"IsVisible","1"},{"Width",col[2]},{"DefaultNav",col[4]},{"QuickFilter","0"},{"FastFilter",col[5]},{"Caption","'"+col[3].Replace("'","''")+"'"},{"NoteID","NEWID()"},{"RowID","NEWID()"},{"CreatedDateTime","GETUTCDATE()"},{"LastModifiedDateTime","GETUTCDATE()"}}; }
+        private void InsertGIWhere(Microsoft.Data.SqlClient.SqlConnection conn,string tplId,string did,int cid,int ln,string field,string cond,string val,string op,int ob,int cb) { var o=new Dictionary<string,string>{{"DesignID","'"+did+"'"},{"LineNbr",ln.ToString()},{"IsActive","1"},{"DataFieldName","'"+field+"'"},{"Condition","'"+cond+"'"},{"OpenBrackets",ob.ToString()},{"CloseBrackets",cb.ToString()},{"NoteID","NEWID()"},{"RowID","NEWID()"},{"CreatedDateTime","GETUTCDATE()"},{"LastModifiedDateTime","GETUTCDATE()"}};o["Value1"]=val!=null?"'"+val.Replace("'","''")+"'":"NULL";o["Operator"]=op!=null?"'"+op+"'":"NULL";InsertFromTemplate(conn,"GIWhere",tplId,cid,o); }
+        private void InsertFromTemplate(Microsoft.Data.SqlClient.SqlConnection conn,string tableName,string templateDesignId,int companyId,Dictionary<string,string> overrides) { var cols=new List<string>();using(var cmd=new Microsoft.Data.SqlClient.SqlCommand("SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME=@tbl AND COLUMN_NAME NOT IN ('DeletedDatabaseRecord','Tstamp') AND DATA_TYPE NOT IN ('timestamp') ORDER BY ORDINAL_POSITION",conn)){cmd.Parameters.AddWithValue("@tbl",tableName);using(var r=cmd.ExecuteReader())while(r.Read())cols.Add(r.GetString(0));}var sp=new List<string>();foreach(var c in cols)sp.Add(overrides.ContainsKey(c)?overrides[c]:"["+c+"]");using(var cmd=new Microsoft.Data.SqlClient.SqlCommand("INSERT INTO "+tableName+" (["+string.Join("],[",cols)+"]) SELECT TOP 1 "+string.Join(",",sp)+" FROM "+tableName+" WHERE DesignID=@tid AND CompanyID=@cid",conn)){cmd.Parameters.AddWithValue("@tid",templateDesignId);cmd.Parameters.AddWithValue("@cid",companyId);cmd.ExecuteNonQuery();} }
+    }
+}]]></CDATA>
+    </Graph>
+    <Graph ClassName="InventoryQuantityDetailGISetup" Source="#CDATA" IsNew="True" FileType="NewFile">
+        <CDATA name="Source"><![CDATA[using System;
+using System.Collections.Generic;
+using System.Configuration;
+using Customization;
+
+namespace Aesthetik.WMS
+{
+    /// <summary>
+    /// Creates the InventoryQuantityDetail Generic Inquiry via direct SQL.
+    /// 9 tables with LEFT JOINs: InventoryItem + INSiteStatus + TemplateItem + POVendorInventory
+    ///   + WMSTLVendorLeadTimes + POLine + POOrder + IGCMPOLandedCostLine + IGCMPOLandedCost
+    /// Shows stock items with warehouse qty, template, vendor, lead time, open PO, container info.
+    /// OData exposed.
+    /// </summary>
+    public class InventoryQuantityDetailGISetup : CustomizationPlugin
+    {
+        private const string GI_NAME = "InventoryQuantityDetail";
+
+        public override void UpdateDatabase()
+        {
+            WriteLog("[InvQtyGI] Starting InventoryQuantityDetail GI creation...");
+            try
+            {
+                var cs = ConfigurationManager.ConnectionStrings["ProjectX"];
+                if (cs == null) { WriteLog("[InvQtyGI] No ProjectX connection string"); return; }
+                string connStr = cs.ConnectionString + ";TrustServerCertificate=True";
+
+                using (var conn = new Microsoft.Data.SqlClient.SqlConnection(connStr))
+                {
+                    conn.Open();
+                    int companyId = GetCompanyId(conn);
+                    if (companyId == 0) { WriteLog("[InvQtyGI] No CompanyID found"); return; }
+
+                    string designId = FindGI(conn, companyId, GI_NAME);
+                    if (designId == null)
+                    {
+                        designId = Guid.NewGuid().ToString();
+                        WriteLog("[InvQtyGI] Creating GI: " + designId);
+                        string tpl = FindTemplate(conn, companyId, "GIDesign");
+                        if (tpl == null) { WriteLog("[InvQtyGI] No template"); return; }
+                        InsertFromTemplate(conn, "GIDesign", tpl, companyId, new Dictionary<string, string>
+                        {
+                            {"DesignID","'"+designId+"'"},{"Name","'"+GI_NAME+"'"},{"ExposeViaOData","1"},
+                            {"ExposeViaMobile","0"},{"ScreenID","'GI000000'"},{"FilterColCount","3"},{"PageSize","0"},
+                            {"NewRecordCreationEnabled","0"},{"MassDeleteEnabled","0"},{"MassRecordsUpdateEnabled","0"},
+                            {"MassActionsOnRecordsEnabled","0"},{"NoteID","NEWID()"},{"RowID","NEWID()"},
+                            {"CreatedDateTime","GETUTCDATE()"},{"LastModifiedDateTime","GETUTCDATE()"}
+                        });
+                    }
+                    else
+                    {
+                        WriteLog("[InvQtyGI] GI exists: " + designId);
+                        ExecSql(conn, "UPDATE GIDesign SET ExposeViaOData=1 WHERE DesignID=@did AND CompanyID=@cid",
+                            new[]{"@did",designId,"@cid",companyId.ToString()});
+                    }
+
+                    ClearChildRows(conn, designId, companyId);
+
+                    // --- 9 DATA SOURCES ---
+                    string tplT = FindTemplate(conn, companyId, "GITable");
+                    if (tplT == null) { WriteLog("[InvQtyGI] No template GITable"); return; }
+
+                    var tables = new[]{
+                        new[]{"PX.Objects.IN.InventoryItem","InventoryItem"},
+                        new[]{"PX.Objects.IN.INSiteStatus","INSiteStatus"},
+                        new[]{"PX.Objects.IN.InventoryItem","TemplateItem"},
+                        new[]{"PX.Objects.PO.POVendorInventory","POVendorInventory"},
+                        new[]{"WMSTLVendorLeadTimes","WMSTLVendorLeadTimes"},
+                        new[]{"PX.Objects.PO.POLine","POLine"},
+                        new[]{"PX.Objects.PO.POOrder","POOrder"},
+                        new[]{"IGCM.PO.IGCMPOLandedCostLine","IGCMPOLandedCostLine"},
+                        new[]{"IGCM.PO.IGCMPOLandedCost","IGCMPOLandedCost"}
+                    };
+                    foreach (var t in tables)
+                        InsertFromTemplate(conn,"GITable",tplT,companyId,new Dictionary<string,string>{
+                            {"DesignID","'"+designId+"'"},{"Name","'"+t[0]+"'"},{"Alias","'"+t[1]+"'"},
+                            {"NoteID","NEWID()"},{"RowID","NEWID()"},{"CreatedDateTime","GETUTCDATE()"},{"LastModifiedDateTime","GETUTCDATE()"}});
+                    WriteLog("[InvQtyGI] 9 tables created");
+
+                    // --- 8 JOINS (all LEFT) ---
+                    string tplRel = FindTemplate(conn, companyId, "GIRelation");
+                    string tplOn = FindTemplate(conn, companyId, "GIOn");
+                    if (tplRel != null && tplOn != null)
+                    {
+                        // Join 1: InventoryItem LEFT JOIN INSiteStatus ON InventoryID
+                        AddJoin(conn,tplRel,tplOn,designId,companyId,1,"InventoryItem","INSiteStatus","L",
+                            new[]{new[]{"InventoryID","E","InventoryID"}});
+                        // Join 2: InventoryItem LEFT JOIN TemplateItem ON TemplateItemID = InventoryID
+                        AddJoin(conn,tplRel,tplOn,designId,companyId,2,"InventoryItem","TemplateItem","L",
+                            new[]{new[]{"TemplateItemID","E","InventoryID"}});
+                        // Join 3: InventoryItem LEFT JOIN POVendorInventory ON InventoryID
+                        AddJoin(conn,tplRel,tplOn,designId,companyId,3,"InventoryItem","POVendorInventory","L",
+                            new[]{new[]{"InventoryID","E","InventoryID"}});
+                        // Join 4: InventoryItem LEFT JOIN WMSTLVendorLeadTimes ON InventoryID
+                        AddJoin(conn,tplRel,tplOn,designId,companyId,4,"InventoryItem","WMSTLVendorLeadTimes","L",
+                            new[]{new[]{"InventoryID","E","InventoryID"}});
+                        // Join 5: InventoryItem LEFT JOIN POLine ON InventoryID
+                        AddJoin(conn,tplRel,tplOn,designId,companyId,5,"InventoryItem","POLine","L",
+                            new[]{new[]{"InventoryID","E","InventoryID"}});
+                        // Join 6: POLine LEFT JOIN POOrder ON OrderType+OrderNbr
+                        AddJoin(conn,tplRel,tplOn,designId,companyId,6,"POLine","POOrder","L",
+                            new[]{new[]{"OrderType","E","OrderType"},new[]{"OrderNbr","E","OrderNbr"}});
+                        // Join 7: POLine LEFT JOIN IGCMPOLandedCostLine ON OrderType+OrderNbr+LineNbr
+                        AddJoin(conn,tplRel,tplOn,designId,companyId,7,"POLine","IGCMPOLandedCostLine","L",
+                            new[]{new[]{"OrderType","E","POOrderType"},new[]{"OrderNbr","E","PONbr"},new[]{"LineNbr","E","POLineNbr"}});
+                        // Join 8: IGCMPOLandedCostLine LEFT JOIN IGCMPOLandedCost ON RefNbr
+                        AddJoin(conn,tplRel,tplOn,designId,companyId,8,"IGCMPOLandedCostLine","IGCMPOLandedCost","L",
+                            new[]{new[]{"RefNbr","E","RefNbr"}});
+                    }
+                    WriteLog("[InvQtyGI] 8 joins created");
+
+                    // --- 15 RESULT COLUMNS ---
+                    string tplR = FindTemplate(conn, companyId, "GIResult");
+                    if (tplR == null) { WriteLog("[InvQtyGI] No template GIResult"); return; }
+                    var cols = new[]{
+                        new[]{"InventoryItem","InventoryCD","120","Stock Item SKU","1","1"},
+                        new[]{"InventoryItem","Descr","220","Description","0","1"},
+                        new[]{"TemplateItem","Descr","180","Template Description","0","1"},
+                        new[]{"INSiteStatus","QtyAvail","100","Qty Available","0","1"},
+                        new[]{"INSiteStatus","QtyOnHand","100","Qty On Hand","0","1"},
+                        new[]{"InventoryItem","ItemStatus","80","Status","0","1"},
+                        new[]{"POVendorInventory","VendorID","100","Vendor","0","1"},
+                        new[]{"WMSTLVendorLeadTimes","LeadTimeDays","80","Lead Time (Days)","0","1"},
+                        new[]{"InventoryItem","CountryOfOrigin","100","Country of Origin","0","1"},
+                        new[]{"POOrder","OrderNbr","100","PO Number","0","1"},
+                        new[]{"POLine","OpenQty","80","Open Qty on PO","0","1"},
+                        new[]{"POLine","UsrExpArrivalDate","100","Expected Arrival","0","1"},
+                        new[]{"IGCMPOLandedCostLine","ContainerNbr","100","Container Number","0","1"},
+                        new[]{"IGCMPOLandedCost","RefNbr","100","Container Trans#","0","1"}
+                    };
+                    for (int i=0; i<cols.Length; i++)
+                        InsertFromTemplate(conn,"GIResult",tplR,companyId,MakeResultOverrides(designId,i+1,cols[i]));
+                    WriteLog("[InvQtyGI] "+cols.Length+" result columns");
+
+                    // --- 10 WHERE CONDITIONS ---
+                    string tplW = FindTemplate(conn, companyId, "GIWhere");
+                    if (tplW != null)
+                    {
+                        // (INSiteStatus.SiteID = '99' OR IS NULL) — warehouse 99 or no warehouse record
+                        InsertGIWhere(conn,tplW,designId,companyId,1,"INSiteStatus.SiteID","EQ","99","O",1,0);
+                        InsertGIWhere(conn,tplW,designId,companyId,2,"INSiteStatus.SiteID","NU",null,"A",0,1);
+                        // AND StkItem = True
+                        InsertGIWhere(conn,tplW,designId,companyId,3,"InventoryItem.StkItem","EQ","True","A",0,0);
+                        // AND (POVendorInventory.IsDefault = True OR IS NULL)
+                        InsertGIWhere(conn,tplW,designId,companyId,4,"POVendorInventory.IsDefault","EQ","True","O",1,0);
+                        InsertGIWhere(conn,tplW,designId,companyId,5,"POVendorInventory.IsDefault","NU",null,"A",0,1);
+                        // AND (POLine.OpenQty > 0 OR IS NULL)
+                        InsertGIWhere(conn,tplW,designId,companyId,6,"POLine.OpenQty","GT","0","O",1,0);
+                        InsertGIWhere(conn,tplW,designId,companyId,7,"POLine.OpenQty","NU",null,"A",0,1);
+                        // AND (POOrder.Status IN (N,O) OR IS NULL)
+                        InsertGIWhere(conn,tplW,designId,companyId,8,"POOrder.Status","EQ","N","O",1,0);
+                        InsertGIWhere(conn,tplW,designId,companyId,9,"POOrder.Status","EQ","O","O",0,0);
+                        InsertGIWhere(conn,tplW,designId,companyId,10,"POOrder.Status","NU",null,"A",0,1);
+                    }
+                    WriteLog("[InvQtyGI] 10 WHERE conditions");
+
+                    // Sort by SKU
+                    string tplS = FindTemplate(conn, companyId, "GISort");
+                    if (tplS != null)
+                        InsertFromTemplate(conn,"GISort",tplS,companyId,new Dictionary<string,string>{
+                            {"DesignID","'"+designId+"'"},{"LineNbr","1"},{"IsActive","1"},
+                            {"DataFieldName","'InventoryItem.InventoryCD'"},{"SortOrder","'A'"},
+                            {"NoteID","NEWID()"},{"RowID","NEWID()"},{"CreatedDateTime","GETUTCDATE()"},{"LastModifiedDateTime","GETUTCDATE()"}});
+
+                    WriteLog("[InvQtyGI] COMPLETE");
+                }
+            }
+            catch (Exception ex) { WriteLog("[InvQtyGI] ERROR: "+ex.GetType().FullName+": "+ex.Message); }
+        }
+
+        private void AddJoin(Microsoft.Data.SqlClient.SqlConnection conn,string tplRel,string tplOn,
+            string did,int cid,int lineNbr,string parent,string child,string joinType,string[][] ons)
+        {
+            InsertFromTemplate(conn,"GIRelation",tplRel,cid,new Dictionary<string,string>{
+                {"DesignID","'"+did+"'"},{"LineNbr",lineNbr.ToString()},{"ParentTable","'"+parent+"'"},
+                {"ChildTable","'"+child+"'"},{"JoinType","'"+joinType+"'"},{"IsActive","1"},
+                {"NoteID","NEWID()"},{"RowID","NEWID()"},{"CreatedDateTime","GETUTCDATE()"},{"LastModifiedDateTime","GETUTCDATE()"}});
+            for (int i=0; i<ons.Length; i++)
+                InsertFromTemplate(conn,"GIOn",tplOn,cid,new Dictionary<string,string>{
+                    {"DesignID","'"+did+"'"},{"LineNbr",lineNbr.ToString()},{"IsActive","1"},
+                    {"ParentField","'"+ons[i][0]+"'"},{"Condition","'"+ons[i][1]+"'"},{"ChildField","'"+ons[i][2]+"'"},
+                    {"NoteID","NEWID()"},{"RowID","NEWID()"},{"CreatedDateTime","GETUTCDATE()"},{"LastModifiedDateTime","GETUTCDATE()"}});
+        }
+
+        private int GetCompanyId(Microsoft.Data.SqlClient.SqlConnection c) { using(var cmd=new Microsoft.Data.SqlClient.SqlCommand("SELECT TOP 1 CompanyID FROM GIDesign WHERE CompanyID>0",c)){var r=cmd.ExecuteScalar();return r!=null?Convert.ToInt32(r):0;} }
+        private string FindGI(Microsoft.Data.SqlClient.SqlConnection c,int cid,string name) { using(var cmd=new Microsoft.Data.SqlClient.SqlCommand("SELECT TOP 1 CONVERT(NVARCHAR(36),DesignID) FROM GIDesign WHERE Name=@n AND CompanyID=@c",c)){cmd.Parameters.AddWithValue("@n",name);cmd.Parameters.AddWithValue("@c",cid);var r=cmd.ExecuteScalar();return(r!=null&&r!=DBNull.Value)?r.ToString():null;} }
+        private string FindTemplate(Microsoft.Data.SqlClient.SqlConnection c,int cid,string tbl) { using(var cmd=new Microsoft.Data.SqlClient.SqlCommand("SELECT TOP 1 CONVERT(NVARCHAR(36),DesignID) FROM "+tbl+" WHERE CompanyID=@c",c)){cmd.Parameters.AddWithValue("@c",cid);var r=cmd.ExecuteScalar();return(r!=null&&r!=DBNull.Value)?r.ToString():null;} }
+        private void ClearChildRows(Microsoft.Data.SqlClient.SqlConnection c,string did,int cid) { foreach(var t in new[]{"GIResult","GIWhere","GISort","GIOn","GIRelation","GITable","GIFilter","GINavigationCondition","GINavigationScreen"}) ExecSql(c,"DELETE FROM "+t+" WHERE DesignID=@did AND CompanyID=@cid",new[]{"@did",did,"@cid",cid.ToString()}); }
+        private int ExecSql(Microsoft.Data.SqlClient.SqlConnection c,string sql,string[] p) { using(var cmd=new Microsoft.Data.SqlClient.SqlCommand(sql,c)){for(int i=0;i<p.Length;i+=2)cmd.Parameters.AddWithValue(p[i],p[i+1]);return cmd.ExecuteNonQuery();} }
+        private Dictionary<string,string> MakeResultOverrides(string did,int ln,string[] col) { return new Dictionary<string,string>{{"DesignID","'"+did+"'"},{"LineNbr",ln.ToString()},{"IsActive","1"},{"ObjectName","'"+col[0]+"'"},{"Field","'"+col[1]+"'"},{"SchemaField","NULL"},{"SortOrder",ln.ToString()},{"IsVisible","1"},{"Width",col[2]},{"DefaultNav",col[4]},{"QuickFilter","0"},{"FastFilter",col[5]},{"Caption","'"+col[3].Replace("'","''")+"'"},{"NoteID","NEWID()"},{"RowID","NEWID()"},{"CreatedDateTime","GETUTCDATE()"},{"LastModifiedDateTime","GETUTCDATE()"}}; }
+        private void InsertGIWhere(Microsoft.Data.SqlClient.SqlConnection conn,string tplId,string did,int cid,int ln,string field,string cond,string val,string op,int ob,int cb) { var o=new Dictionary<string,string>{{"DesignID","'"+did+"'"},{"LineNbr",ln.ToString()},{"IsActive","1"},{"DataFieldName","'"+field+"'"},{"Condition","'"+cond+"'"},{"OpenBrackets",ob.ToString()},{"CloseBrackets",cb.ToString()},{"NoteID","NEWID()"},{"RowID","NEWID()"},{"CreatedDateTime","GETUTCDATE()"},{"LastModifiedDateTime","GETUTCDATE()"}};o["Value1"]=val!=null?"'"+val.Replace("'","''")+"'":"NULL";o["Operator"]=op!=null?"'"+op+"'":"NULL";InsertFromTemplate(conn,"GIWhere",tplId,cid,o); }
+        private void InsertFromTemplate(Microsoft.Data.SqlClient.SqlConnection conn,string tableName,string templateDesignId,int companyId,Dictionary<string,string> overrides) { var cols=new List<string>();using(var cmd=new Microsoft.Data.SqlClient.SqlCommand("SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME=@tbl AND COLUMN_NAME NOT IN ('DeletedDatabaseRecord','Tstamp') AND DATA_TYPE NOT IN ('timestamp') ORDER BY ORDINAL_POSITION",conn)){cmd.Parameters.AddWithValue("@tbl",tableName);using(var r=cmd.ExecuteReader())while(r.Read())cols.Add(r.GetString(0));}var sp=new List<string>();foreach(var c in cols)sp.Add(overrides.ContainsKey(c)?overrides[c]:"["+c+"]");using(var cmd=new Microsoft.Data.SqlClient.SqlCommand("INSERT INTO "+tableName+" (["+string.Join("],[",cols)+"]) SELECT TOP 1 "+string.Join(",",sp)+" FROM "+tableName+" WHERE DesignID=@tid AND CompanyID=@cid",conn)){cmd.Parameters.AddWithValue("@tid",templateDesignId);cmd.Parameters.AddWithValue("@cid",companyId);cmd.ExecuteNonQuery();} }
+    }
+}]]></CDATA>
+    </Graph>
     <Sql Name="AesthetikWMS_SOOrder_BAccount_Columns_v1" Script="#CDATA">
         <CDATA name="Script"><![CDATA[
 -- SOOrder compliance hold fields (from AesthetikERP consolidation)
