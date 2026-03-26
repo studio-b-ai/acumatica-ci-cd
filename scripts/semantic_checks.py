@@ -25,20 +25,44 @@ RESET = "\033[0m"
 # covers the known exceptions where the C# class differs from the physical
 # table.  Unmapped DACs are assumed to have the same name as the table.
 DAC_TO_TABLE: dict[str, str] = {
+    # Accounts
     "Customer": "BAccount",
     "Vendor": "BAccount",
+    "BAccount": "BAccount",
+    "EPEmployee": "BAccountR",
+    # Inventory
     "InventoryItem": "InventoryItem",
     "INLotSerialStatus": "INLotSerialStatus",
     "INLotSerialClass": "INLotSerClass",
     "INSetup": "INSetup",
+    "INItemClass": "INItemClass",
+    "INRegister": "INRegister",
+    "INTran": "INTran",
+    # Purchase
     "POOrder": "POOrder",
     "POLine": "POLine",
+    "POReceipt": "POReceipt",
     "POReceiptLine": "POReceiptLine",
+    # Sales
     "SOOrder": "SOOrder",
     "SOLine": "SOLine",
     "SOShipment": "SOShipment",
+    "SOShipLine": "SOShipLine",
+    "SOPackageDetailEx": "SOPackageDetail",
+    # AR/AP
     "ARInvoice": "ARRegister",
     "APInvoice": "APRegister",
+    "ARPayment": "ARRegister",
+    "APPayment": "APRegister",
+    # CRM
+    "CRCase": "CRCase",
+    "CRLead": "Contact",
+    "Contact": "Contact",
+    "Address": "Address",
+    # Other
+    "CSAnswers": "CSAnswers",
+    "Note": "Note",
+    "NoteDoc": "NoteDoc",
 }
 
 # ── PXDB attribute → expected SQL type family ────────────────────────────
