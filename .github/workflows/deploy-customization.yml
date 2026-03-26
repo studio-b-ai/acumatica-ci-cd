@@ -130,13 +130,54 @@ jobs:
             exit 1
           fi
 
-      - name: Validate project.xml
+      - name: Validate primary project
+        env:
+          ALSO_PUBLISH_PROJECTS: ${{ vars.ALSO_PUBLISH_PROJECTS || '' }}
         run: |
           python scripts/validate-project.py Customization/${PROJECT_NAME}/project.xml
           # Production deploys run strict mode — unsafe extension patterns become errors
           if [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
             echo "Running strict validation for production..."
             python scripts/validate-project.py --strict Customization/${PROJECT_NAME}/project.xml
+          fi
+
+      - name: Validate ALL co-published projects
+        env:
+          ALSO_PUBLISH_PROJECTS: ${{ vars.ALSO_PUBLISH_PROJECTS || '' }}
+        run: |
+          # CRITICAL: Every project in ALSO_PUBLISH_PROJECTS must pass semantic
+          # checks. Previously only the primary project was validated, allowing
+          # broken DAC extensions in co-published projects to reach production.
+          # See: ARR-2026-03-26-stockitem-invalid-columns.md
+          IFS=',' read -ra PROJECTS <<< "${ALSO_PUBLISH_PROJECTS}"
+          FAILED=0
+          for proj in "${PROJECTS[@]}"; do
+            proj=$(echo "$proj" | xargs)  # trim whitespace
+            [ -z "$proj" ] && continue
+            # Skip ISV packages (contain brackets or dots — not our code)
+            if [[ "$proj" == *"["* ]] || [[ "$proj" == *"."* ]]; then
+              echo "Skipping ISV package: $proj"
+              continue
+            fi
+            # Skip primary project (already validated above)
+            if [[ "$proj" == "${PROJECT_NAME}" ]]; then
+              continue
+            fi
+            PROJECT_XML="Customization/${proj}/project.xml"
+            if [ -f "$PROJECT_XML" ]; then
+              echo ""
+              echo "━━━ Validating co-published project: $proj ━━━"
+              if ! python scripts/validate-project.py "$PROJECT_XML"; then
+                echo "::error::Co-published project '$proj' failed validation"
+                FAILED=1
+              fi
+            else
+              echo "⚠ Project '$proj' in ALSO_PUBLISH_PROJECTS has no project.xml in repo"
+            fi
+          done
+          if [ "$FAILED" -eq 1 ]; then
+            echo "::error::One or more co-published projects failed validation. Fix before deploying."
+            exit 1
           fi
 
       - name: Check for C# extension library

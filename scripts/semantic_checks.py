@@ -671,6 +671,300 @@ def check_manifest_coverage(
     return errors, warnings
 
 
+# ── Phase 4: Acumatica-specific anti-patterns ────────────────────────────
+
+
+# Known CRM DACs that crash when used in non-CRM graphs
+_CRM_DACS = {"CRRelation", "CRPMTimeActivity", "CRActivity", "CRSMEmail"}
+
+# Known non-CRM graphs where CRM DACs cause selector crashes
+_NON_CRM_GRAPHS = {
+    "POOrderEntry", "SOOrderEntry", "APInvoiceEntry", "ARInvoiceEntry",
+    "INReceiptEntry", "INIssueEntry", "POReceiptEntry",
+}
+
+
+def check_system_typecode(cs_code: str) -> tuple[list[str], list[str]]:
+    """Detect unqualified TypeCode usage that causes CS0104 ambiguous reference.
+
+    Acumatica has its own TypeCode enum. Using `TypeCode.Decimal` without
+    `System.` prefix causes compilation failure.
+
+    Returns (errors, warnings).
+    """
+    errors: list[str] = []
+    warnings: list[str] = []
+
+    # Find [PXDefault(TypeCode.xxx, ...)] without System. prefix
+    for m in re.finditer(r"\[\s*PXDefault\s*\(\s*TypeCode\.", cs_code):
+        # Check if it's preceded by "System."
+        start = max(0, m.start() - 30)
+        context = cs_code[start:m.start() + len(m.group())]
+        if "System.TypeCode" not in context:
+            errors.append(
+                f"Unqualified TypeCode usage: '{m.group().strip()}' — "
+                f"must use System.TypeCode to avoid CS0104 ambiguous reference"
+            )
+
+    return errors, warnings
+
+
+def check_isactive_required(cs_code: str) -> tuple[list[str], list[str]]:
+    """Every PXCacheExtension and PXGraphExtension must have IsActive().
+
+    Missing IsActive() silently disables the extension — fields don't appear,
+    graph logic doesn't fire.
+
+    Returns (errors, warnings).
+    """
+    errors: list[str] = []
+    warnings: list[str] = []
+
+    # Find all extension class declarations
+    ext_pattern = re.compile(
+        r"class\s+(\w+)\s*:\s*(?:PXCacheExtension|PXGraphExtension)<"
+    )
+    for m in ext_pattern.finditer(cs_code):
+        class_name = m.group(1)
+        # Find the class body — look for the next matching brace
+        class_start = m.start()
+        # Simple approach: search for IsActive within ~2000 chars after class declaration
+        search_window = cs_code[class_start:class_start + 2000]
+        if "IsActive()" not in search_window:
+            errors.append(
+                f"Extension '{class_name}' missing IsActive() method — "
+                f"extension will be silently disabled"
+            )
+
+    return errors, warnings
+
+
+def check_banned_table_elements(project_xml_path: str) -> tuple[list[str], list[str]]:
+    """Detect <Table> elements that cause NullReferenceException on cloud.
+
+    Returns (errors, warnings).
+    """
+    errors: list[str] = []
+    warnings: list[str] = []
+
+    try:
+        tree = ET.parse(project_xml_path)
+        root = tree.getroot()
+        tables = root.findall(".//Table")
+        for table in tables:
+            name = table.get("Name", "(unknown)")
+            errors.append(
+                f"<Table Name=\"{name}\"> element found — causes NullReferenceException "
+                f"on Acumatica Cloud. Remove it; [PXDB*] attributes handle column creation."
+            )
+    except ET.ParseError:
+        pass
+
+    return errors, warnings
+
+
+def check_banned_imports(cs_code: str) -> tuple[list[str], list[str]]:
+    """Detect banned using statements and API calls.
+
+    - Microsoft.Data.SqlClient → doesn't work on Acumatica Cloud
+    - string.Contains(char) → .NET Framework doesn't support char overload
+
+    Returns (errors, warnings).
+    """
+    errors: list[str] = []
+    warnings: list[str] = []
+
+    if "Microsoft.Data.SqlClient" in cs_code:
+        errors.append(
+            "using Microsoft.Data.SqlClient — not available on Acumatica Cloud. "
+            "Use System.Data.SqlClient instead."
+        )
+
+    # Detect .Contains('x') with single-char argument (char overload)
+    for m in re.finditer(r"\.Contains\s*\(\s*'[^']*'\s*\)", cs_code):
+        errors.append(
+            f"string.Contains(char) at '{m.group().strip()}' — .NET Framework "
+            f"doesn't support char overload. Use .Contains(\"x\") instead."
+        )
+
+    return errors, warnings
+
+
+def check_crm_dac_in_non_crm_graph(cs_code: str) -> tuple[list[str], list[str]]:
+    """Detect CRM DAC references in non-CRM graph extensions.
+
+    CRM DACs (CRRelation, CRPMTimeActivity) have field-level selectors that
+    reference CRM views. Using them in PO/SO graphs crashes at runtime.
+
+    Returns (errors, warnings).
+    """
+    errors: list[str] = []
+    warnings: list[str] = []
+
+    # Find graph extension declarations
+    graph_ext_re = re.compile(
+        r"class\s+(\w+)\s*:\s*PXGraphExtension<(\w+)>"
+    )
+    for m in graph_ext_re.finditer(cs_code):
+        ext_name = m.group(1)
+        base_graph = m.group(2)
+
+        if base_graph not in _NON_CRM_GRAPHS:
+            continue
+
+        # Check if any CRM DAC is referenced in this extension
+        class_start = m.start()
+        # Crude but effective: check the next ~5000 chars for CRM DAC references
+        search_window = cs_code[class_start:class_start + 5000]
+        for crm_dac in _CRM_DACS:
+            if crm_dac in search_window:
+                errors.append(
+                    f"Extension '{ext_name}' on {base_graph} references CRM DAC "
+                    f"'{crm_dac}' — CRM selectors crash on non-CRM graphs. "
+                    f"Use a custom DAC instead."
+                )
+
+    return errors, warnings
+
+
+def check_aspx_duplicate_controls(
+    project_xml_path: str,
+    also_publish: list[str] | None = None,
+) -> tuple[list[str], list[str]]:
+    """Detect duplicate ASPX control IDs across co-published projects.
+
+    Two packages adding the same control ID to the same screen causes
+    silent publish failures.
+
+    Returns (errors, warnings).
+    """
+    errors: list[str] = []
+    warnings: list[str] = []
+
+    # Collect controls: {screen_id: {control_id: project_name}}
+    controls: dict[str, dict[str, str]] = {}
+    project_dir = Path(project_xml_path).parent
+
+    def _collect_controls(xml_path: str, proj_name: str):
+        try:
+            tree = ET.parse(xml_path)
+            for page in tree.getroot().findall(".//Page"):
+                screen = page.get("ScreenID", page.get("PageID", ""))
+                for control in page.findall(".//*[@ControlID]"):
+                    cid = control.get("ControlID", "")
+                    if cid:
+                        controls.setdefault(screen, {})
+                        if cid in controls[screen] and controls[screen][cid] != proj_name:
+                            errors.append(
+                                f"Duplicate ASPX control '{cid}' on screen {screen}: "
+                                f"defined in both '{controls[screen][cid]}' and '{proj_name}'"
+                            )
+                        controls[screen][cid] = proj_name
+        except (ET.ParseError, FileNotFoundError):
+            pass
+
+    _collect_controls(project_xml_path, project_dir.name)
+
+    if also_publish:
+        for other_name in also_publish:
+            other_xml = project_dir.parent / other_name.strip() / "project.xml"
+            if other_xml.exists():
+                _collect_controls(str(other_xml), other_name.strip())
+
+    return errors, warnings
+
+
+def check_versioned_project_names(
+    project_name: str,
+) -> tuple[list[str], list[str]]:
+    """Detect versioned project names (v2, v3, etc.) that cause corruption.
+
+    Importing a project under a new versioned name creates a parallel copy.
+    Both compile during publish, causing CS0101 duplicate type errors or
+    subsystem corruption.
+
+    Returns (errors, warnings).
+    """
+    errors: list[str] = []
+    warnings: list[str] = []
+
+    if re.search(r"[vV]\d+$", project_name):
+        errors.append(
+            f"Project name '{project_name}' ends with version suffix — "
+            f"NEVER create versioned project names. Always import over the same name. "
+            f"Versioned names cause subsystem corruption and CS0101 duplicate types."
+        )
+
+    return errors, warnings
+
+
+def check_unbound_usr_fields(cs_code: str) -> tuple[list[str], list[str]]:
+    """Warn for Usr* fields using [PXString] instead of [PXDBString].
+
+    Unbound attributes ([PXString], [PXInt], etc.) don't persist to the database.
+    Usr* fields should almost always use [PXDB*] attributes.
+
+    Returns (errors, warnings).
+    """
+    errors: list[str] = []
+    warnings: list[str] = []
+
+    # Find Usr* properties preceded by unbound attributes
+    unbound_re = re.compile(
+        r"\[\s*(PXString|PXInt|PXDecimal|PXBool|PXDate|PXFloat|PXLong|PXShort)"
+        r"(?:\([^)]*\))?\s*\]"
+        r".*?"
+        r"public\s+\w+\??\s+(Usr\w+)\s*\{",
+        re.DOTALL,
+    )
+    for m in unbound_re.finditer(cs_code):
+        attr = m.group(1)
+        field = m.group(2)
+        warnings.append(
+            f"Field '{field}' uses unbound [{attr}] instead of [{attr.replace('PX', 'PXDB', 1)}] — "
+            f"value will NOT persist to database. Use [PXDB*] if this field should be saved."
+        )
+
+    return errors, warnings
+
+
+def check_ghost_packages(
+    also_publish: list[str] | None,
+    customization_dir: str,
+) -> tuple[list[str], list[str]]:
+    """Warn for projects in ALSO_PUBLISH_PROJECTS with no directory in repo.
+
+    Ghost packages were previously imported to the Acumatica instance and may
+    still compile during publish even though they're not tracked in the repo.
+
+    Returns (errors, warnings).
+    """
+    errors: list[str] = []
+    warnings: list[str] = []
+
+    if not also_publish:
+        return errors, warnings
+
+    cust_dir = Path(customization_dir)
+
+    for proj_name in also_publish:
+        proj_name = proj_name.strip()
+        if not proj_name:
+            continue
+        # ISV packages typically have version strings with brackets — skip those
+        if "[" in proj_name or "." in proj_name:
+            continue
+        proj_dir = cust_dir / proj_name
+        if not proj_dir.exists():
+            warnings.append(
+                f"Project '{proj_name}' is in ALSO_PUBLISH_PROJECTS but has no "
+                f"directory in {cust_dir}. If it exists on the Acumatica instance, "
+                f"it will compile during publish with potentially stale code."
+            )
+
+    return errors, warnings
+
+
 # ── Orchestrator ────────────────────────────────────────────────────────
 
 
@@ -818,6 +1112,36 @@ def run_semantic_checks(
     all_errors.extend(errs)
     all_warnings.extend(warns)
 
+    # ── Phase 1b: Acumatica anti-patterns ──
+
+    errs, warns = check_system_typecode(cs_code)
+    all_errors.extend(errs)
+    all_warnings.extend(warns)
+
+    errs, warns = check_isactive_required(cs_code)
+    all_errors.extend(errs)
+    all_warnings.extend(warns)
+
+    errs, warns = check_banned_table_elements(str(project_xml))
+    all_errors.extend(errs)
+    all_warnings.extend(warns)
+
+    errs, warns = check_banned_imports(cs_code)
+    all_errors.extend(errs)
+    all_warnings.extend(warns)
+
+    errs, warns = check_crm_dac_in_non_crm_graph(cs_code)
+    all_errors.extend(errs)
+    all_warnings.extend(warns)
+
+    errs, warns = check_versioned_project_names(project_xml.parent.name)
+    all_errors.extend(errs)
+    all_warnings.extend(warns)
+
+    errs, warns = check_unbound_usr_fields(cs_code)
+    all_errors.extend(errs)
+    all_warnings.extend(warns)
+
     # ── Phase 2: Extension references, cross-project, namespaces ──
 
     declared_extensions: set[str] = set()
@@ -836,6 +1160,20 @@ def run_semantic_checks(
         all_warnings.extend(warns)
 
     errs, warns = check_namespace_consistency(file_code_map)
+    all_errors.extend(errs)
+    all_warnings.extend(warns)
+
+    # ── Phase 2b: Cross-project ASPX and ghost package checks ──
+
+    errs, warns = check_aspx_duplicate_controls(
+        str(project_xml), also_publish
+    )
+    all_errors.extend(errs)
+    all_warnings.extend(warns)
+
+    errs, warns = check_ghost_packages(
+        also_publish, str(project_xml.parent.parent)
+    )
     all_errors.extend(errs)
     all_warnings.extend(warns)
 
