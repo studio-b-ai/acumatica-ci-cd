@@ -243,7 +243,7 @@ class AcumaticaCustomizationClient:
         _log(f"Publishing: {', '.join(project_names)}")
 
         payload = {
-            "isMergeWithExistingPackages": True,
+            "isMergeWithExistingPackages": False,  # Clean compile — no ghost DAC extensions from old imports
             "isOnlyValidation": validation_only,
             "isOnlyDbUpdates": False,
             "projectNames": project_names,
