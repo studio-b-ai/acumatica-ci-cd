@@ -15,7 +15,7 @@ namespace Aesthetik.WMS
     {
         public static bool IsActive() => true;
 
-        #region UsrMinRemnant
+        #region UsrPGMinRemnant
         /// <summary>
         /// Minimum remnant yardage threshold. If cutting would leave a remnant
         /// below this value, the system suggests shipping the full roll instead.
@@ -25,11 +25,11 @@ namespace Aesthetik.WMS
         [PXDefault(TypeCode.Decimal, "1.00")]
         [PXUIField(DisplayName = "Min Remnant (Yards)",
             FieldClass = PieceGoodsConstants.LotSerialClassID)]
-        public decimal? UsrMinRemnant { get; set; }
-        public abstract class usrMinRemnant : BqlDecimal.Field<usrMinRemnant> { }
+        public decimal? UsrPGMinRemnant { get; set; }
+        public abstract class usrPGMinRemnant : BqlDecimal.Field<usrPGMinRemnant> { }
         #endregion
 
-        #region UsrAutoPrint
+        #region UsrPGAutoPrint
         /// <summary>
         /// When true, the system automatically sends a barcode label to the
         /// Keyence-compatible printer upon receiving a roll into this class.
@@ -38,11 +38,11 @@ namespace Aesthetik.WMS
         [PXDefault(true)]
         [PXUIField(DisplayName = "Auto-Print Label on Receiving",
             FieldClass = PieceGoodsConstants.LotSerialClassID)]
-        public bool? UsrAutoPrint { get; set; }
-        public abstract class usrAutoPrint : BqlBool.Field<usrAutoPrint> { }
+        public bool? UsrPGAutoPrint { get; set; }
+        public abstract class usrPGAutoPrint : BqlBool.Field<usrPGAutoPrint> { }
         #endregion
 
-        #region UsrDefaultWidth
+        #region UsrPGDefaultWidth
         /// <summary>
         /// Default fabric width in inches for items in this class.
         /// Pre-populates the Width attribute on new serials; can be overridden per roll.
@@ -51,11 +51,11 @@ namespace Aesthetik.WMS
         [PXDefault(TypeCode.Decimal, "54.0")]
         [PXUIField(DisplayName = "Default Width (inches)",
             FieldClass = PieceGoodsConstants.LotSerialClassID)]
-        public decimal? UsrDefaultWidth { get; set; }
-        public abstract class usrDefaultWidth : BqlDecimal.Field<usrDefaultWidth> { }
+        public decimal? UsrPGDefaultWidth { get; set; }
+        public abstract class usrPGDefaultWidth : BqlDecimal.Field<usrPGDefaultWidth> { }
         #endregion
 
-        #region UsrPreRecvEnabled
+        #region UsrPGPreRecvEnabled
         /// <summary>
         /// Enables the pre-receiving workflow for this lot/serial class.
         /// When true, serial numbers and bin assignments can be created from PO/ASN
@@ -65,8 +65,8 @@ namespace Aesthetik.WMS
         [PXDefault(true)]
         [PXUIField(DisplayName = "Enable Pre-Receiving",
             FieldClass = PieceGoodsConstants.LotSerialClassID)]
-        public bool? UsrPreRecvEnabled { get; set; }
-        public abstract class usrPreRecvEnabled : BqlBool.Field<usrPreRecvEnabled> { }
+        public bool? UsrPGPreRecvEnabled { get; set; }
+        public abstract class usrPGPreRecvEnabled : BqlBool.Field<usrPGPreRecvEnabled> { }
         #endregion
     }
 }

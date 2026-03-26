@@ -361,7 +361,7 @@ namespace Aesthetik.WMS
                 .View.ReadOnly.Select(Base, PieceGoodsConstants.LotSerialClassID);
 
             var ext = lotClass?.GetItem<INLotSerialClass>()?.GetExtension<INLotSerialClassExt>();
-            return ext?.UsrDefaultWidth ?? 54.0m;
+            return ext?.UsrPGDefaultWidth ?? 54.0m;
         }
 
         /// <summary>Gets next sequence number for ad-hoc serial generation.</summary>

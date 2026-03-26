@@ -440,7 +440,7 @@ namespace Aesthetik.WMS
                     .View.ReadOnly.Select(_graph, PieceGoodsConstants.LotSerialClassID);
                 var classExt = lotClass?.GetItem<INLotSerialClass>()
                     ?.GetExtension<INLotSerialClassExt>();
-                decimal defaultWidth = classExt?.UsrDefaultWidth ?? 54.0m;
+                decimal defaultWidth = classExt?.UsrPGDefaultWidth ?? 54.0m;
 
                 foreach (var line in skuGroup)
                 {

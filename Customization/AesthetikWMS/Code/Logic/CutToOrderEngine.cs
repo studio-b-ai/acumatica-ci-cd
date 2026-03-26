@@ -47,7 +47,7 @@ namespace Aesthetik.WMS
 
             return new CutConfig
             {
-                MinRemnant = classExt?.UsrMinRemnant
+                MinRemnant = classExt?.UsrPGMinRemnant
                     ?? setupExt?.UsrPGMinRemnant
                     ?? PieceGoodsConstants.DefaultMinRemnantYardage,
                 CutSerialSuffix = setupExt?.UsrPGCutSuffix
