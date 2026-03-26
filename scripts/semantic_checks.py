@@ -359,10 +359,20 @@ def check_type_compatibility(
             )
             continue
 
-        if col["sql_type"] != expected_sql:
+        # nchar is an acceptable (if unusual) alternative for nvarchar
+        compatible_types = {expected_sql}
+        if expected_sql == "nvarchar":
+            compatible_types.add("nchar")
+
+        if col["sql_type"] not in compatible_types:
             errors.append(
                 f"Type mismatch: {field['dac']}.{field['name']} is {field['db_type']} "
                 f"(expects SQL {expected_sql}) but SQL column is {col['sql_type']}"
+            )
+        elif col["sql_type"] != expected_sql:
+            warnings.append(
+                f"Type variant: {field['dac']}.{field['name']} is {field['db_type']} "
+                f"(expects {expected_sql}) but SQL uses {col['sql_type']} — functional but non-standard"
             )
 
         if field["precision"] is not None and col["precision"] is not None:
@@ -767,23 +777,49 @@ def run_semantic_checks(
 
     print(f"{GREEN}[OK]{RESET}    Parsed {len(fields)} DAC fields, {len(columns)} SQL columns")
 
+    # ── Merge co-published project SQL columns ──
+    # When projects are co-published, one project may create SQL columns that
+    # another project's DAC extensions reference. Merge SQL from all co-published
+    # projects so Phase 1 checks don't false-positive on cross-project dependencies.
+    all_columns = list(columns)  # start with this project's columns
+    other_projects: dict[str, list[dict]] = {}
+
+    if also_publish:
+        project_name = project_xml.parent.name
+        for other_name in also_publish:
+            other_name = other_name.strip()
+            if not other_name or other_name == project_name:
+                continue
+            other_xml = project_xml.parent.parent / other_name / "project.xml"
+            if other_xml.exists():
+                try:
+                    other_cs, other_sql, _, _ = _collect_project_code(str(other_xml))
+                    # Merge SQL columns from sibling project
+                    sibling_cols = parse_sql_columns(other_sql)
+                    all_columns.extend(sibling_cols)
+                    # Also collect fields for duplicate check
+                    other_fields = parse_dac_fields(other_cs)
+                    if other_fields:
+                        other_projects[other_name] = other_fields
+                except Exception:
+                    pass
+
     # ── Phase 1: DAC-to-SQL cross-reference ──
 
-    errs, warns = check_fields_have_sql_columns(fields, columns)
+    errs, warns = check_fields_have_sql_columns(fields, all_columns)
     all_errors.extend(errs)
     all_warnings.extend(warns)
 
-    errs, warns = check_type_compatibility(fields, columns)
+    errs, warns = check_type_compatibility(fields, all_columns)
     all_errors.extend(errs)
     all_warnings.extend(warns)
 
-    errs, warns = check_table_name_mapping(fields, columns)
+    errs, warns = check_table_name_mapping(fields, all_columns)
     all_errors.extend(errs)
     all_warnings.extend(warns)
 
     # ── Phase 2: Extension references, cross-project, namespaces ──
 
-    # Collect declared extension class names from the code
     declared_extensions: set[str] = set()
     for m in re.finditer(r"class\s+(\w+)\s*:\s*PXCacheExtension", cs_code):
         declared_extensions.add(m.group(1))
@@ -792,32 +828,12 @@ def run_semantic_checks(
     all_errors.extend(errs)
     all_warnings.extend(warns)
 
-    # Cross-project duplicate check
-    if also_publish:
-        project_name = project_xml.parent.name
-        other_projects: dict[str, list[dict]] = {}
-
-        for other_name in also_publish:
-            other_name = other_name.strip()
-            if not other_name or other_name == project_name:
-                continue
-            # Look for sibling project directory
-            other_xml = project_xml.parent.parent / other_name / "project.xml"
-            if other_xml.exists():
-                try:
-                    other_cs, _, _, _ = _collect_project_code(str(other_xml))
-                    other_fields = parse_dac_fields(other_cs)
-                    if other_fields:
-                        other_projects[other_name] = other_fields
-                except Exception:
-                    pass  # Skip unparseable sibling projects
-
-        if other_projects:
-            errs, warns = check_cross_project_duplicates(
-                project_name, fields, other_projects
-            )
-            all_errors.extend(errs)
-            all_warnings.extend(warns)
+    if other_projects:
+        errs, warns = check_cross_project_duplicates(
+            project_xml.parent.name, fields, other_projects
+        )
+        all_errors.extend(errs)
+        all_warnings.extend(warns)
 
     errs, warns = check_namespace_consistency(file_code_map)
     all_errors.extend(errs)
