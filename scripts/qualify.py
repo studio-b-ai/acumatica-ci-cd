@@ -64,7 +64,13 @@ def check_acumatica_health(url, username, password, tenant):
 
 
 def check_orphan_scan(url, username, password, tenant, known_projects):
-    """Check 2: Are there any unknown projects on the instance?"""
+    """Check 2: Drift detection — are deprecated projects still on the instance?
+
+    Uses instance-manifest.json to identify deprecated projects that should
+    have been deleted. If any exist on the instance, they could get compiled
+    during the next publish and cause runtime errors (like the 2026-03-26
+    StockItemExt incident).
+    """
     cj = http.cookiejar.CookieJar()
     opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(cj))
 
@@ -76,10 +82,25 @@ def check_orphan_scan(url, username, password, tenant, known_projects):
     try:
         opener.open(req, timeout=30)
     except Exception as e:
-        return WARN, f"Could not login for orphan scan: {e}"
+        return WARN, f"Could not login for drift scan: {e}"
 
-    # Check each known project exists
-    for name in known_projects:
+    # Load instance manifest
+    manifest = _load_instance_manifest()
+    deprecated_names = []
+    managed_names = []
+    if manifest:
+        for name, info in manifest.get("projects", {}).items():
+            cat = info.get("category", "")
+            if cat == "deprecated":
+                deprecated_names.append(name)
+            elif cat == "managed":
+                managed_names.append(name)
+
+    issues = []
+
+    # Check managed projects for NullRef (corruption indicator)
+    check_names = managed_names if managed_names else known_projects
+    for name in check_names:
         try:
             req2 = urllib.request.Request(
                 f"{url}/CustomizationApi/getProject",
@@ -87,24 +108,54 @@ def check_orphan_scan(url, username, password, tenant, known_projects):
                 headers={"Content-Type": "application/json"},
                 method="POST",
             )
-            resp2 = opener.open(req2, timeout=30)
-            # 200 = project exists, 400 = not found (OK — means no orphan with this name)
+            opener.open(req2, timeout=30)
         except urllib.error.HTTPError as e:
             if e.code == 400:
-                pass  # Project doesn't exist — that's fine for the scan
+                pass  # Not on instance — OK
             else:
                 error_body = e.read().decode() if e.fp else ""
                 if "NullReferenceException" in error_body:
-                    return FAIL, f"NullReferenceException checking project {name}"
+                    issues.append(f"NullRef on {name} — subsystem corrupted")
+
+    # Check deprecated projects aren't lingering on instance
+    for name in deprecated_names:
+        try:
+            req2 = urllib.request.Request(
+                f"{url}/CustomizationApi/getProject",
+                data=json.dumps({"projectName": name}).encode(),
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            opener.open(req2, timeout=30)
+            # 200 = project exists — should have been deleted
+            issues.append(f"DRIFT: deprecated '{name}' still on instance — delete via SM204505")
+        except urllib.error.HTTPError:
+            pass  # 400 = not found — good
+        except Exception:
+            pass
 
     try:
         opener.open(urllib.request.Request(f"{url}/entity/auth/logout", method="POST"), timeout=10)
     except Exception:
         pass
 
-    # Note: Acumatica has no "list all projects" API endpoint.
-    # We can only check known names. True orphan detection requires SM204505 UI or SQL.
-    return PASS, "No NullRef during project checks"
+    if any("DRIFT" in i for i in issues):
+        return FAIL, "; ".join(issues)
+    if issues:
+        return WARN, "; ".join(issues)
+    return PASS, f"No drift detected ({len(check_names)} managed, {len(deprecated_names)} deprecated checked)"
+
+
+def _load_instance_manifest():
+    """Load instance-manifest.json from repo root."""
+    for path in [
+        os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "instance-manifest.json"),
+        "instance-manifest.json",
+    ]:
+        if os.path.exists(path):
+            with open(path) as f:
+                return json.load(f)
+    return None
 
 
 def check_diff_scope(isv_packages):

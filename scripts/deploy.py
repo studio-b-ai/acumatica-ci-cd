@@ -490,6 +490,131 @@ def _filesize(path: Path) -> str:
     return f"{size:.1f}TB"
 
 
+# ─── Rollback ────────────────────────────────────────────────────────────────
+
+
+def _rollback(args) -> None:
+    """Rollback to a previous deploy by reimporting a snapshot or git-tagged version.
+
+    Three modes:
+      1. --rollback-from-snapshot path.zip  → Reimport a specific .zip file
+      2. --rollback-to-tag deploy/prod/...  → Checkout that tag, build .zip, reimport
+      3. --rollback (bare)                  → Find latest non-ROLLED-BACK tag automatically
+    """
+    import subprocess
+
+    also_publish = []
+    for item in args.also_publish:
+        also_publish.extend([p.strip() for p in item.split(",") if p.strip()])
+
+    snapshot_path = args.rollback_from_snapshot
+
+    if not snapshot_path:
+        # Find the tag to rollback to
+        tag = args.rollback_to_tag
+        if not tag:
+            result = subprocess.run(
+                ["git", "tag", "-l", "deploy/prod/*", "--sort=-creatordate"],
+                capture_output=True, text=True,
+            )
+            tags = [
+                t for t in result.stdout.strip().split("\n")
+                if t and "ROLLED-BACK" not in t
+            ]
+            if len(tags) < 2:
+                _log("Cannot find previous deploy tag to rollback to", style="err")
+                sys.exit(1)
+            # tags[0] is current deploy, tags[1] is the one before
+            tag = tags[1]
+
+        _log(f"Rolling back to tag: {tag}")
+
+        # Checkout the tag into a temp dir and build the .zip
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmpdir:
+            result = subprocess.run(
+                ["git", "archive", "--format=zip", "--prefix=",
+                 f"{tag}", f"Customization/{args.project}/"],
+                capture_output=True,
+            )
+            if result.returncode != 0:
+                _log(f"git archive failed: {result.stderr.decode()}", style="err")
+                sys.exit(1)
+
+            snapshot_path = os.path.join(tmpdir, f"{args.project}_rollback.zip")
+
+            # git archive includes the directory prefix — we need to strip it
+            # and repackage just the project contents
+            import zipfile
+            with open(os.path.join(tmpdir, "raw.zip"), "wb") as f:
+                f.write(result.stdout)
+
+            prefix = f"Customization/{args.project}/"
+            with zipfile.ZipFile(os.path.join(tmpdir, "raw.zip"), "r") as zin:
+                with zipfile.ZipFile(snapshot_path, "w") as zout:
+                    for item in zin.infolist():
+                        if item.filename.startswith(prefix):
+                            item.filename = item.filename[len(prefix):]
+                            if item.filename:  # skip empty string (directory itself)
+                                zout.writestr(item, zin.read(item.orig_filename))
+
+            _log(f"Built rollback package from {tag}: {_filesize(Path(snapshot_path))}")
+
+            # Now deploy it
+            _deploy_snapshot(args, snapshot_path, also_publish, tag)
+            return
+
+    if not Path(snapshot_path).exists():
+        _log(f"Snapshot not found: {snapshot_path}", style="err")
+        sys.exit(1)
+
+    _log(f"Rolling back from snapshot: {snapshot_path}")
+    _deploy_snapshot(args, snapshot_path, also_publish, "snapshot")
+
+
+def _deploy_snapshot(args, snapshot_path: str, also_publish: list, source: str) -> None:
+    """Import a snapshot .zip and publish it."""
+    try:
+        with AcumaticaCustomizationClient(
+            url=args.url,
+            username=args.username,
+            password=args.password,
+            tenant=args.tenant,
+        ) as client:
+            # Backup current version first
+            _log("Backing up current version before rollback...")
+            try:
+                client.download_package(args.project, output_dir="backups")
+            except Exception as exc:
+                _log(f"Backup failed (continuing with rollback): {exc}", style="warn")
+
+            # Import rollback package
+            client.import_package(args.project, snapshot_path)
+
+            # Publish
+            all_projects = [args.project] + also_publish
+            _log(f"Publishing rollback ({source})...")
+            client.publish(
+                project_names=all_projects,
+                poll_interval=args.poll_interval,
+                poll_timeout=args.poll_timeout,
+            )
+
+            # Smoke test
+            smoke_ok = client.smoke_test()
+            if smoke_ok:
+                _log(f"ROLLBACK COMPLETE — restored from {source}", style="ok")
+            else:
+                _log("Rollback published but smoke test failed", style="warn")
+                sys.exit(1)
+
+    except Exception as exc:
+        import traceback
+        _log(f"ROLLBACK FAILED: {exc}", style="err")
+        traceback.print_exc()
+        sys.exit(1)
+
+
 # ─── CLI ─────────────────────────────────────────────────────────────────────
 
 
@@ -560,6 +685,22 @@ def main():
         default=[],
         help="Additional package NAME:FILE to import (repeatable)",
     )
+    parser.add_argument(
+        "--rollback",
+        action="store_true",
+        help="Rollback: download current package from instance, find previous git tag, "
+             "checkout that version, and redeploy it",
+    )
+    parser.add_argument(
+        "--rollback-to-tag",
+        default="",
+        help="Specific git tag to rollback to (default: latest non-ROLLED-BACK deploy tag)",
+    )
+    parser.add_argument(
+        "--rollback-from-snapshot",
+        default="",
+        help="Path to a .zip snapshot to restore (skips git tag lookup)",
+    )
 
     args = parser.parse_args()
 
@@ -570,6 +711,12 @@ def main():
         parser.error("--username is required (or set ACUMATICA_USERNAME)")
     if not args.password:
         parser.error("--password is required (or set ACUMATICA_PASSWORD)")
+
+    # ── Rollback mode ────────────────────────────────────────────────
+    if args.rollback:
+        _rollback(args)
+        return
+
     if not args.download and not args.package:
         parser.error("--package is required (or use --download to just backup)")
 

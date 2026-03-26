@@ -97,7 +97,7 @@ env:
   # See: 2026-03-22 incident — AesthetikWMSv2/v3 orphans blocked all deploys.
   PROJECT_NAME: AesthetikWMS
   ALSO_PUBLISH: ${{ vars.ALSO_PUBLISH_PROJECTS || '' }}
-  KNOWN_PROJECTS: "AesthetikWMS,StudioBPORelations"
+  KNOWN_PROJECTS: "AesthetikWMS,AsthetikTheme"
   ISV_PACKAGES: "IIGHFContainerMods,IIGGlobalContainerMgmt"
 
 jobs:
