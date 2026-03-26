@@ -3414,29 +3414,29 @@ namespace Aesthetik.WMS
                         if (deleted > 0) WriteLog("[GISetup] Cleared " + deleted + " rows from " + table);
                     }
 
-                    // --- DATA SOURCES ---
+                    // --- DATA SOURCES (Type=0 is required NOT NULL) ---
                     DirectInsert(conn, "GITable", new Dictionary<string, object>
-                    { {"DesignID", designId}, {"CompanyID", companyId}, {"Name", "PX.Objects.SO.SOOrder"}, {"Alias", "SOOrder"} });
+                    { {"DesignID", designId}, {"CompanyID", companyId}, {"Name", "PX.Objects.SO.SOOrder"}, {"Alias", "SOOrder"}, {"Type", 0} });
                     DirectInsert(conn, "GITable", new Dictionary<string, object>
-                    { {"DesignID", designId}, {"CompanyID", companyId}, {"Name", "PX.Objects.SO.SOLine"}, {"Alias", "SOLine"} });
+                    { {"DesignID", designId}, {"CompanyID", companyId}, {"Name", "PX.Objects.SO.SOLine"}, {"Alias", "SOLine"}, {"Type", 0} });
                     DirectInsert(conn, "GITable", new Dictionary<string, object>
-                    { {"DesignID", designId}, {"CompanyID", companyId}, {"Name", "PX.Objects.IN.InventoryItem"}, {"Alias", "InventoryItem"} });
+                    { {"DesignID", designId}, {"CompanyID", companyId}, {"Name", "PX.Objects.IN.InventoryItem"}, {"Alias", "InventoryItem"}, {"Type", 0} });
                     WriteLog("[GISetup] 3 tables created");
 
-                    // --- JOINS ---
+                    // --- JOINS (GIOn LineNbr must be globally unique across all joins) ---
                     DirectInsert(conn, "GIRelation", new Dictionary<string, object>
                     { {"DesignID", designId}, {"CompanyID", companyId}, {"LineNbr", 1}, {"ParentTable", "SOOrder"}, {"ChildTable", "SOLine"}, {"JoinType", "I"}, {"IsActive", 1} });
                     DirectInsert(conn, "GIOn", new Dictionary<string, object>
                     { {"DesignID", designId}, {"CompanyID", companyId}, {"LineNbr", 1}, {"ParentField", "OrderType"}, {"Condition", "E"}, {"ChildField", "OrderType"}, {"Operation", "A"}, {"IsActive", 1} });
                     DirectInsert(conn, "GIOn", new Dictionary<string, object>
-                    { {"DesignID", designId}, {"CompanyID", companyId}, {"LineNbr", 1}, {"ParentField", "OrderNbr"}, {"Condition", "E"}, {"ChildField", "OrderNbr"}, {"Operation", "A"}, {"IsActive", 1} });
-                    WriteLog("[GISetup] Join 1: SOOrder -> SOLine");
+                    { {"DesignID", designId}, {"CompanyID", companyId}, {"LineNbr", 2}, {"ParentField", "OrderNbr"}, {"Condition", "E"}, {"ChildField", "OrderNbr"}, {"Operation", "A"}, {"IsActive", 1} });
+                    WriteLog("[GISetup] Join 1: SOOrder -> SOLine (ON lines 1-2)");
 
                     DirectInsert(conn, "GIRelation", new Dictionary<string, object>
                     { {"DesignID", designId}, {"CompanyID", companyId}, {"LineNbr", 2}, {"ParentTable", "SOLine"}, {"ChildTable", "InventoryItem"}, {"JoinType", "I"}, {"IsActive", 1} });
                     DirectInsert(conn, "GIOn", new Dictionary<string, object>
-                    { {"DesignID", designId}, {"CompanyID", companyId}, {"LineNbr", 2}, {"ParentField", "InventoryID"}, {"Condition", "E"}, {"ChildField", "InventoryID"}, {"Operation", "A"}, {"IsActive", 1} });
-                    WriteLog("[GISetup] Join 2: SOLine -> InventoryItem");
+                    { {"DesignID", designId}, {"CompanyID", companyId}, {"LineNbr", 3}, {"ParentField", "InventoryID"}, {"Condition", "E"}, {"ChildField", "InventoryID"}, {"Operation", "A"}, {"IsActive", 1} });
+                    WriteLog("[GISetup] Join 2: SOLine -> InventoryItem (ON line 3)");
 
                     // --- WHERE CONDITIONS ---
                     InsertGIWhere(conn, designId, companyId, 1, "SOOrder.OrderType", "EQ", "PC", "O", 1, 0);

@@ -255,6 +255,182 @@ namespace StudioB.Containers
 }
 ]]></CDATA>
     </Graph>
+    <Graph ClassName="StockItemExt" Source="#CDATA" IsNew="True" FileType="NewFile">
+        <CDATA name="Source"><![CDATA[using PX.Data;
+using PX.Objects.IN;
+
+namespace StudioB.Containers
+{
+    public sealed class StockItemExt : PXCacheExtension<InventoryItem>
+    {
+        public static bool IsActive() => true;
+        #region UsrHTSCode
+        public abstract class usrHTSCode : PX.Data.BQL.BqlString.Field<usrHTSCode> { }
+        [PXDBString(12, IsUnicode = true)]
+        [PXUIField(DisplayName = "HTS Code", Visibility = PXUIVisibility.SelectorVisible)]
+        public string UsrHTSCode { get; set; }
+        #endregion
+        #region UsrDutyRate
+        public abstract class usrDutyRate : PX.Data.BQL.BqlDecimal.Field<usrDutyRate> { }
+        [PXDBDecimal(4)]
+        [PXDefault(TypeCode.Decimal, "0.0000")]
+        [PXUIField(DisplayName = "Duty Rate %", Visibility = PXUIVisibility.SelectorVisible)]
+        public decimal? UsrDutyRate { get; set; }
+        #endregion
+        #region UsrCountryOfOrigin
+        public abstract class usrCountryOfOrigin : PX.Data.BQL.BqlString.Field<usrCountryOfOrigin> { }
+        [PXDBString(2, IsFixed = true, IsUnicode = true)]
+        [PXUIField(DisplayName = "Country of Origin", Visibility = PXUIVisibility.SelectorVisible)]
+        public string UsrCountryOfOrigin { get; set; }
+        #endregion
+        #region UsrFiberContent
+        public abstract class usrFiberContent : PX.Data.BQL.BqlString.Field<usrFiberContent> { }
+        [PXDBString(100, IsUnicode = true)]
+        [PXUIField(DisplayName = "Fiber Content", Visibility = PXUIVisibility.SelectorVisible)]
+        public string UsrFiberContent { get; set; }
+        #endregion
+        #region UsrPreferentialTariff
+        public abstract class usrPreferentialTariff : PX.Data.BQL.BqlBool.Field<usrPreferentialTariff> { }
+        [PXDBBool]
+        [PXDefault(false)]
+        [PXUIField(DisplayName = "Preferential Tariff")]
+        public bool? UsrPreferentialTariff { get; set; }
+        #endregion
+        #region UsrFreightClass
+        public abstract class usrFreightClass : PX.Data.BQL.BqlString.Field<usrFreightClass> { }
+        [PXDBString(10, IsUnicode = true)]
+        [PXDefault("70")]
+        [PXUIField(DisplayName = "Freight Class")]
+        public string UsrFreightClass { get; set; }
+        #endregion
+    }
+}
+]]></CDATA>
+    </Graph>
+    <Graph ClassName="POReceiptLineExt" Source="#CDATA" IsNew="True" FileType="NewFile">
+        <CDATA name="Source"><![CDATA[using PX.Data;
+using PX.Objects.PO;
+
+namespace StudioB.Containers
+{
+    public sealed class POReceiptLineExt : PXCacheExtension<POReceiptLine>
+    {
+        public static bool IsActive() => true;
+        #region UsrActualDutyAmt
+        public abstract class usrActualDutyAmt : PX.Data.BQL.BqlDecimal.Field<usrActualDutyAmt> { }
+        [PXDBDecimal(2)]
+        [PXDefault(TypeCode.Decimal, "0.00")]
+        [PXUIField(DisplayName = "Actual Duty", Visibility = PXUIVisibility.SelectorVisible)]
+        public decimal? UsrActualDutyAmt { get; set; }
+        #endregion
+        #region UsrActualFreightAmt
+        public abstract class usrActualFreightAmt : PX.Data.BQL.BqlDecimal.Field<usrActualFreightAmt> { }
+        [PXDBDecimal(2)]
+        [PXDefault(TypeCode.Decimal, "0.00")]
+        [PXUIField(DisplayName = "Freight Allocated", Visibility = PXUIVisibility.SelectorVisible)]
+        public decimal? UsrActualFreightAmt { get; set; }
+        #endregion
+        #region UsrBrokerageAmt
+        public abstract class usrBrokerageAmt : PX.Data.BQL.BqlDecimal.Field<usrBrokerageAmt> { }
+        [PXDBDecimal(2)]
+        [PXDefault(TypeCode.Decimal, "0.00")]
+        [PXUIField(DisplayName = "Brokerage", Visibility = PXUIVisibility.SelectorVisible)]
+        public decimal? UsrBrokerageAmt { get; set; }
+        #endregion
+        #region UsrLandedCostPerUnit
+        public abstract class usrLandedCostPerUnit : PX.Data.BQL.BqlDecimal.Field<usrLandedCostPerUnit> { }
+        [PXDecimal(4)]
+        [PXUIField(DisplayName = "Landed Cost/Unit", Enabled = false)]
+        public decimal? UsrLandedCostPerUnit { get; set; }
+        #endregion
+        #region UsrHTSCode
+        public abstract class usrHTSCode : PX.Data.BQL.BqlString.Field<usrHTSCode> { }
+        [PXDBString(12, IsUnicode = true)]
+        [PXUIField(DisplayName = "HTS Code", Enabled = false)]
+        public string UsrHTSCode { get; set; }
+        #endregion
+        #region UsrCountryOfOrigin
+        public abstract class usrCountryOfOrigin : PX.Data.BQL.BqlString.Field<usrCountryOfOrigin> { }
+        [PXDBString(2, IsFixed = true, IsUnicode = true)]
+        [PXUIField(DisplayName = "Origin", Enabled = false)]
+        public string UsrCountryOfOrigin { get; set; }
+        #endregion
+    }
+}
+]]></CDATA>
+    </Graph>
+    <Graph ClassName="POReceiptEntry_LandedCostExt" Source="#CDATA" IsNew="True" FileType="NewFile">
+        <CDATA name="Source"><![CDATA[using PX.Data;
+using PX.Objects.IN;
+using PX.Objects.PO;
+
+namespace StudioB.Containers
+{
+    public class POReceiptEntry_LandedCostExt : PXGraphExtension<POReceiptEntry>
+    {
+        public static bool IsActive() => true;
+
+        protected virtual void _(Events.RowInserted<POReceiptLine> e)
+        {
+            if (e.Row == null) return;
+            var lineExt = PXCache<POReceiptLine>.GetExtension<POReceiptLineExt>(e.Row);
+            if (lineExt == null) return;
+            var item = PXSelect<InventoryItem,
+                Where<InventoryItem.inventoryID, Equal<Required<InventoryItem.inventoryID>>>>
+                .Select(Base, e.Row.InventoryID);
+            if (item == null) return;
+            var itemExt = PXCache<InventoryItem>.GetExtension<StockItemExt>((InventoryItem)item);
+            if (itemExt == null) return;
+            lineExt.UsrHTSCode = itemExt.UsrHTSCode;
+            lineExt.UsrCountryOfOrigin = itemExt.UsrCountryOfOrigin;
+            if (itemExt.UsrDutyRate.GetValueOrDefault() > 0 && e.Row.ExtCost.GetValueOrDefault() > 0)
+            {
+                lineExt.UsrActualDutyAmt = e.Row.ExtCost.Value * (itemExt.UsrDutyRate.Value / 100m);
+            }
+            e.Cache.Update(e.Row);
+        }
+
+        protected virtual void _(Events.FieldUpdated<POReceiptLine, POReceiptLine.extCost> e)
+        {
+            if (e.Row == null) return;
+            var lineExt = PXCache<POReceiptLine>.GetExtension<POReceiptLineExt>(e.Row);
+            if (lineExt == null) return;
+            var item = PXSelect<InventoryItem,
+                Where<InventoryItem.inventoryID, Equal<Required<InventoryItem.inventoryID>>>>
+                .Select(Base, e.Row.InventoryID);
+            if (item == null) return;
+            var itemExt = PXCache<InventoryItem>.GetExtension<StockItemExt>((InventoryItem)item);
+            if (itemExt == null || itemExt.UsrDutyRate.GetValueOrDefault() == 0) return;
+            var oldExtCost = (decimal?)e.OldValue ?? 0m;
+            var oldAutoCalcDuty = oldExtCost * (itemExt.UsrDutyRate.Value / 100m);
+            if (lineExt.UsrActualDutyAmt == null ||
+                System.Math.Abs(lineExt.UsrActualDutyAmt.Value - System.Math.Round(oldAutoCalcDuty, 2)) < 0.01m)
+            {
+                lineExt.UsrActualDutyAmt = e.Row.ExtCost.GetValueOrDefault() * (itemExt.UsrDutyRate.Value / 100m);
+                lineExt.UsrActualDutyAmt = System.Math.Round(lineExt.UsrActualDutyAmt.Value, 2);
+            }
+        }
+
+        protected virtual void _(Events.RowSelected<POReceiptLine> e)
+        {
+            if (e.Row == null) return;
+            var lineExt = PXCache<POReceiptLine>.GetExtension<POReceiptLineExt>(e.Row);
+            if (lineExt == null) return;
+            decimal qty = e.Row.ReceiptQty.GetValueOrDefault();
+            if (qty == 0) qty = 1;
+            decimal unitCost = e.Row.UnitCost.GetValueOrDefault();
+            decimal totalLandedCosts =
+                lineExt.UsrActualDutyAmt.GetValueOrDefault() +
+                lineExt.UsrActualFreightAmt.GetValueOrDefault() +
+                lineExt.UsrBrokerageAmt.GetValueOrDefault();
+            decimal landedPerUnit = unitCost + (totalLandedCosts / qty);
+            e.Cache.SetValue<POReceiptLineExt.usrLandedCostPerUnit>(e.Row,
+                System.Math.Round(landedPerUnit, 4));
+        }
+    }
+}
+]]></CDATA>
+    </Graph>
     <Sql Name="AesthetikContainers_Columns_v1" Script="#CDATA">
         <CDATA name="Script"><![CDATA[
 -- POOrder extension fields (3 columns) -- container tracking
@@ -269,6 +445,32 @@ IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('POLine') A
   ALTER TABLE POLine ADD UsrExpArrivalDate datetime NULL;
 IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('POLine') AND name = 'UsrActArrivalDate')
   ALTER TABLE POLine ADD UsrActArrivalDate datetime NULL;
+
+-- InventoryItem extension fields (6 columns) -- tariff + trade compliance
+IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('InventoryItem') AND name = 'UsrHTSCode')
+  ALTER TABLE InventoryItem ADD UsrHTSCode nvarchar(12) NULL;
+IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('InventoryItem') AND name = 'UsrDutyRate')
+  ALTER TABLE InventoryItem ADD UsrDutyRate decimal(19,4) NULL DEFAULT 0.0000;
+IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('InventoryItem') AND name = 'UsrCountryOfOrigin')
+  ALTER TABLE InventoryItem ADD UsrCountryOfOrigin nchar(2) NULL;
+IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('InventoryItem') AND name = 'UsrFiberContent')
+  ALTER TABLE InventoryItem ADD UsrFiberContent nvarchar(100) NULL;
+IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('InventoryItem') AND name = 'UsrPreferentialTariff')
+  ALTER TABLE InventoryItem ADD UsrPreferentialTariff bit NULL DEFAULT 0;
+IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('InventoryItem') AND name = 'UsrFreightClass')
+  ALTER TABLE InventoryItem ADD UsrFreightClass nvarchar(10) NULL DEFAULT '70';
+
+-- POReceiptLine extension fields (5 columns) -- landed cost tracking
+IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('POReceiptLine') AND name = 'UsrActualDutyAmt')
+  ALTER TABLE POReceiptLine ADD UsrActualDutyAmt decimal(19,2) NULL DEFAULT 0.00;
+IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('POReceiptLine') AND name = 'UsrActualFreightAmt')
+  ALTER TABLE POReceiptLine ADD UsrActualFreightAmt decimal(19,2) NULL DEFAULT 0.00;
+IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('POReceiptLine') AND name = 'UsrBrokerageAmt')
+  ALTER TABLE POReceiptLine ADD UsrBrokerageAmt decimal(19,2) NULL DEFAULT 0.00;
+IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('POReceiptLine') AND name = 'UsrHTSCode')
+  ALTER TABLE POReceiptLine ADD UsrHTSCode nvarchar(12) NULL;
+IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('POReceiptLine') AND name = 'UsrCountryOfOrigin')
+  ALTER TABLE POReceiptLine ADD UsrCountryOfOrigin nchar(2) NULL;
 ]]></CDATA>
     </Sql>
 </Customization>
