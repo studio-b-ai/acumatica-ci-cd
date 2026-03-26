@@ -689,13 +689,12 @@ Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}\"}"
           node-version: '22'
 
       - name: Trigger ui-test-suite
-        continue-on-error: true
         env:
           GH_TOKEN: ${{ secrets.GH_PAT_DISPATCH }}
         run: |
           if [[ -z "${GH_TOKEN}" ]]; then
-            echo "::warning::GH_PAT_DISPATCH secret not set — skipping ui-test-suite trigger"
-            exit 0
+            echo "::error::GH_PAT_DISPATCH secret not set — post-deploy tests REQUIRED"
+            exit 1
           fi
           gh api repos/studio-b-ai/ui-test-suite/dispatches \
             --method POST \
@@ -703,8 +702,8 @@ Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}\"}"
             -f "client_payload[commit]=${GITHUB_SHA::8}" \
             -f "client_payload[project]=${PROJECT_NAME}" \
             -f "client_payload[actor]=${GITHUB_ACTOR}" \
-            -f "client_payload[suite]=@write-path"
-          echo "Triggered ui-test-suite post-deploy-validation run"
+            -f "client_payload[suite]=@acumatica"
+          echo "✅ Triggered ui-test-suite @acumatica suite — will verify schema + custom fields"
 
       - name: Dispatch test config for new custom fields
         if: success()
