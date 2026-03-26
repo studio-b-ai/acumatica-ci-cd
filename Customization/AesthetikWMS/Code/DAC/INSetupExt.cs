@@ -24,7 +24,7 @@ namespace Aesthetik.WMS
         /// the full roll. Can be overridden per lot/serial class.
         /// </summary>
         [PXDBDecimal(2)]
-        [PXDefault(TypeCode.Decimal, "1.00")]
+        [PXDefault(System.TypeCode.Decimal, "1.00")]
         [PXUIField(DisplayName = "Min Remnant Yardage",
             FieldClass = PieceGoodsConstants.LotSerialClassID)]
         public decimal? UsrPGMinRemnant { get; set; }
@@ -136,7 +136,7 @@ namespace Aesthetik.WMS
         /// the system flags a variance warning. Default: 0.02 (2%).
         /// </summary>
         [PXDBDecimal(4)]
-        [PXDefault(TypeCode.Decimal, "0.0200")]
+        [PXDefault(System.TypeCode.Decimal, "0.0200")]
         [PXUIField(DisplayName = "Yardage Variance Threshold (%)",
             FieldClass = PieceGoodsConstants.LotSerialClassID)]
         public decimal? UsrPGYardageVar { get; set; }

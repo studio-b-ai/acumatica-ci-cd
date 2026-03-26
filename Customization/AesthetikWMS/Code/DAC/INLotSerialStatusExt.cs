@@ -22,7 +22,7 @@ namespace Aesthetik.WMS
         /// starts at the mill-reported yardage and decreases with each cut.
         /// </summary>
         [PXDBDecimal(2)]
-        [PXDefault(TypeCode.Decimal, "0.00")]
+        [PXDefault(System.TypeCode.Decimal, "0.00")]
         [PXUIField(DisplayName = "Actual Yardage", Enabled = true)]
         public decimal? UsrActualYardage { get; set; }
         public abstract class usrActualYardage : BqlDecimal.Field<usrActualYardage> { }
