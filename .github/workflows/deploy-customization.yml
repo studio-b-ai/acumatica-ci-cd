@@ -280,105 +280,6 @@ jobs:
       - name: Send 20-minute warning and schedule deploy
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.STUDIOB_SLACK_WEBHOOK_URL }}
-          WEBHOOK_ROUTER_URL: ${{ secrets.WEBHOOK_ROUTER_URL }}
-          PROVISION_API_KEY: ${{ secrets.PROVISION_API_KEY }}
-          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
-          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
-          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
-          NOTIFY_RECIPIENTS: ${{ vars.MAINTENANCE_NOTIFY_RECIPIENTS }}
-          NOTIFY_SENDER: ${{ vars.MAINTENANCE_NOTIFY_SENDER || 'kevin@heritagefabrics.com' }}
-        run: |
-          # Send 20-min warning immediately
-          python scripts/notify.py --type countdown --minutes 20 \
-            --recipients "${NOTIFY_RECIPIENTS}" --sender "${NOTIFY_SENDER}" \
-            --project "${PROJECT_NAME}" --environment production \
-            --slack-webhook "${SLACK_WEBHOOK_URL}" || true
-
-          # Schedule delayed deploy via webhook-router
-          HTTP_CODE=$(curl -s -o /tmp/schedule-response.json -w "%{http_code}" \
-            -X POST "${WEBHOOK_ROUTER_URL}/deploy/schedule" \
-            -H "Content-Type: application/json" \
-            -H "Authorization: Bearer ${PROVISION_API_KEY}" \
-            -d '{
-              "repo": "studio-b-ai/acumatica-ci-cd",
-              "workflow": "deploy-customization.yml",
-              "delay_minutes": 20,
-              "inputs": {
-                "environment": "production",
-                "countdown_complete": "true",
-                "skip_countdown": "true",
-                "project_name": "'"${PROJECT_NAME}"'"
-              },
-              "notifications": [
-                {"minutes_remaining": 5, "channel": "slack"},
-                {"minutes_remaining": 1, "channel": "slack"}
-              ]
-            }')
-
-          if [ "${HTTP_CODE}" = "200" ]; then
-            echo "Deploy scheduled via webhook-router"
-            cat /tmp/schedule-response.json
-          else
-            echo "::warning::webhook-router unavailable (HTTP ${HTTP_CODE}) — falling back to inline countdown"
-            sleep 900
-            python scripts/notify.py --type countdown --minutes 5 \
-              --recipients "${NOTIFY_RECIPIENTS}" --sender "${NOTIFY_SENDER}" \
-              --project "${PROJECT_NAME}" --environment production \
-              --slack-webhook "${SLACK_WEBHOOK_URL}" || true
-            sleep 240
-            python scripts/notify.py --type countdown --minutes 1 \
-              --recipients "${NOTIFY_RECIPIENTS}" --sender "${NOTIFY_SENDER}" \
-              --project "${PROJECT_NAME}" --environment production \
-              --slack-webhook "${SLACK_WEBHOOK_URL}" || true
-            sleep 60
-          fi
-
-  # ──────────────────────────────────────────────
-  # Job 4: Deploy — Push to Acumatica instance
-  # ──────────────────────────────────────────────
-  deploy:
-    name: Deploy to ${{ github.event.inputs.environment || (github.ref == 'refs/heads/main' && 'production' || 'staging') }}
-    needs: [build, qualify]
-    runs-on: ubuntu-latest
-    if: |
-      always() &&
-      github.event_name != 'pull_request' &&
-      needs.build.result == 'success' && (
-        needs.qualify.result == 'success' || github.event.inputs.force_qualify == 'true'
-      ) && (
-        needs.qualify.outputs.needs_countdown != 'true' ||
-        github.event.inputs.countdown_complete == 'true'
-      )
-    environment:
-      name: ${{ github.event.inputs.environment || (github.ref == 'refs/heads/main' && 'production' || 'staging') }}
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Download package artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: customization-package
-          path: dist/
-
-      - name: Resolve environment
-        id: env
-        run: |
-          if [[ "${{ github.event.inputs.environment }}" == "production" ]] || [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
-            echo "target=production" >> "$GITHUB_OUTPUT"
-          else
-            echo "target=staging" >> "$GITHUB_OUTPUT"
-          fi
-
-      # ── Pre-deploy snapshot ─────────────────────────────────────────────
-      - name: Install Python dependencies
-        run: pip install -r scripts/requirements.txt
-
-      - name: Pre-deploy snapshot
-        id: snapshot
-        if: steps.env.outputs.target == 'production' && github.event.inputs.dry_run != 'true'
-        continue-on-error: true
         env:
           ACUMATICA_URL: ${{ secrets.ACUMATICA_PROD_URL }}
           ACUMATICA_USERNAME: ${{ secrets.ACUMATICA_PROD_USERNAME }}
@@ -412,79 +313,6 @@ jobs:
 
       # ── Maintenance Mode — pause all Acumatica workers before publish ─
       - name: Enter maintenance mode
-        if: steps.env.outputs.target == 'production' && github.event.inputs.dry_run != 'true'
-        env:
-          WEBHOOK_ROUTER_URL: https://webhook-router-production-e161.up.railway.app
-          PROVISION_API_KEY: ${{ secrets.PROVISION_API_KEY }}
-        run: |
-          echo "Setting maintenance mode on webhook-router..."
-          HTTP_CODE=$(curl -s -o /tmp/maint-response.json -w "%{http_code}" \
-            -X POST "${WEBHOOK_ROUTER_URL}/maintenance/start" \
-            -H "Content-Type: application/json" \
-            -H "Authorization: Bearer ${PROVISION_API_KEY}" \
-            -d '{"reason":"Acumatica customization publish — app pool restart expected","ttl_seconds":3600}')
-          if [ "${HTTP_CODE}" = "200" ]; then
-            echo "✅ Maintenance mode active — all Acumatica workers paused"
-            cat /tmp/maint-response.json
-          else
-            echo "⚠️ Could not set maintenance mode (HTTP ${HTTP_CODE}) — continuing anyway"
-            cat /tmp/maint-response.json 2>/dev/null || true
-          fi
-
-      # ── Deploy ───────────────────────────────────────────────────────
-      # Pass secrets directly as env vars — never write them to GITHUB_OUTPUT
-      # Environment routing:
-      #   production → PROD_URL + PROD_TENANT (live instance)
-      #   staging    → SANDBOX_URL + SANDBOX_TENANT (future state, separate instance)
-      #   Credentials shared: PROD_USERNAME + PROD_PASSWORD (same api-bot everywhere)
-      - name: Deploy customization via REST API
-        env:
-          ACUMATICA_URL: ${{ (steps.env.outputs.target == 'production') && secrets.ACUMATICA_PROD_URL || secrets.ACUMATICA_SANDBOX_URL }}
-          ACUMATICA_USERNAME: ${{ secrets.ACUMATICA_PROD_USERNAME }}
-          ACUMATICA_PASSWORD: ${{ secrets.ACUMATICA_PROD_PASSWORD }}
-          ACUMATICA_TENANT: ${{ (steps.env.outputs.target == 'production') && secrets.ACUMATICA_PROD_TENANT || secrets.ACUMATICA_SANDBOX_TENANT }}
-          SLACK_WEBHOOK_URL: ${{ secrets.STUDIOB_SLACK_WEBHOOK_URL }}
-        run: |
-          # Main package is the one matching PROJECT_NAME; extras are everything else
-          PACKAGE_FILE=$(ls dist/${PROJECT_NAME}_*.zip 2>/dev/null | head -1)
-          if [ -z "${PACKAGE_FILE}" ]; then
-            PACKAGE_FILE=$(ls dist/*.zip | head -1)
-          fi
-          DRY_RUN="${{ github.event.inputs.dry_run || 'false' }}"
-
-          # Build extra-import flags for any additional packages (name:path format)
-          EXTRA_FLAGS=""
-          for pkg in dist/*.zip; do
-            if [ "${pkg}" != "${PACKAGE_FILE}" ]; then
-              # Extract project name by removing timestamp suffix (_YYYYMMDD-HHMMSS.zip)
-              PKG_BASE=$(basename "${pkg}" .zip)
-              PKG_NAME=$(echo "${PKG_BASE}" | sed 's/_[0-9]\{8\}-[0-9]\{6\}$//')
-              EXTRA_FLAGS+=" --extra-import ${PKG_NAME}:${pkg}"
-            fi
-          done
-
-          python scripts/deploy.py \
-            --project "${PROJECT_NAME}" \
-            --package "${PACKAGE_FILE}" \
-            --also-publish "${ALSO_PUBLISH}" \
-            --download \
-            ${EXTRA_FLAGS} \
-            $( [[ "${DRY_RUN}" == "true" ]] && echo "--validate-only" )
-
-      - name: Upload backup artifact
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: customization-backup
-          path: dist/backup/*.zip
-          retention-days: 30
-          if-no-files-found: ignore
-
-      # ── Post-publish verification ────────────────────────────────────
-      - name: Post-publish smoke test
-        id: smoke
-        if: success() && github.event.inputs.dry_run != 'true'
-        continue-on-error: true
         env:
           ACUMATICA_URL: ${{ (steps.env.outputs.target == 'production') && secrets.ACUMATICA_PROD_URL || secrets.ACUMATICA_SANDBOX_URL }}
           ACUMATICA_USERNAME: ${{ secrets.ACUMATICA_PROD_USERNAME }}
@@ -535,7 +363,9 @@ jobs:
             echo "::error::No snapshot available — cannot rollback"
             curl -sf -X POST "${SLACK_WEBHOOK_URL}" \
               -H "Content-Type: application/json" \
-              -d '{"text":"ROLLBACK FAILED — no snapshot available\nDeploy: '"${PROJECT_NAME}"' @ '"${GITHUB_SHA::8}"'\nManual restore required via SM204505"}'
+              -d '{"text":"ROLLBACK FAILED — no snapshot available
+Deploy: '"${PROJECT_NAME}"' @ '"${GITHUB_SHA::8}"'
+Manual restore required via SM204505"}'
             exit 1
           fi
 
@@ -552,11 +382,17 @@ jobs:
           if [ ${ROLLBACK_VERIFY} -eq 0 ]; then
             curl -sf -X POST "${SLACK_WEBHOOK_URL}" \
               -H "Content-Type: application/json" \
-              -d '{"text":"Deploy ROLLED BACK — '"${PROJECT_NAME}"' -> production\n  Deploy: '"${GITHUB_SHA::8}"'\n  Rollback: snapshot restored + verified\n  Note: two app pool restarts occurred"}'
+              -d '{"text":"Deploy ROLLED BACK — '"${PROJECT_NAME}"' -> production
+  Deploy: '"${GITHUB_SHA::8}"'
+  Rollback: snapshot restored + verified
+  Note: two app pool restarts occurred"}'
           else
             curl -sf -X POST "${SLACK_WEBHOOK_URL}" \
               -H "Content-Type: application/json" \
-              -d '{"text":"ROLLBACK FAILED — verification did not pass\nDeploy: '"${PROJECT_NAME}"' @ '"${GITHUB_SHA::8}"'\nArtifact: '"${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"'\nManual restore: download artifact -> SM204505 Import -> Publish"}'
+              -d '{"text":"ROLLBACK FAILED — verification did not pass
+Deploy: '"${PROJECT_NAME}"' @ '"${GITHUB_SHA::8}"'
+Artifact: '"${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"'
+Manual restore: download artifact -> SM204505 Import -> Publish"}'
             exit 1
           fi
 
@@ -570,25 +406,6 @@ jobs:
       # ── Exit maintenance mode — resume all Acumatica workers ──────────
       - name: Exit maintenance mode
         if: always() && steps.env.outputs.target == 'production' && github.event.inputs.dry_run != 'true'
-        continue-on-error: true
-        env:
-          WEBHOOK_ROUTER_URL: https://webhook-router-production-e161.up.railway.app
-          PROVISION_API_KEY: ${{ secrets.PROVISION_API_KEY }}
-        run: |
-          echo "Clearing maintenance mode..."
-          HTTP_CODE=$(curl -s -o /tmp/maint-end.json -w "%{http_code}" \
-            -X POST "${WEBHOOK_ROUTER_URL}/maintenance/end" \
-            -H "Content-Type: application/json" \
-            -H "Authorization: Bearer ${PROVISION_API_KEY}")
-          if [ "${HTTP_CODE}" = "200" ]; then
-            echo "✅ Maintenance mode cleared — workers resuming"
-          else
-            echo "⚠️ Could not clear maintenance mode (HTTP ${HTTP_CODE}) — TTL will auto-expire"
-
-      # ── Post-deploy regression tests ─────────────────────────────────
-      - name: Trigger API regression tests
-        if: success() && env.DRY_RUN != 'true'
-        id: regression
         continue-on-error: true
         env:
           REGRESSION_WEBHOOK_URL: ${{ secrets.REGRESSION_WEBHOOK_URL || 'https://webhook-router-production-e161.up.railway.app' }}
@@ -665,22 +482,15 @@ jobs:
           if [ -n "${SLACK_WEBHOOK_URL}" ]; then
             curl -s -X POST "${SLACK_WEBHOOK_URL}" \
               -H "Content-Type: application/json" \
-              -d "{\"text\":\":x: *Acumatica Customization Deploy FAILED*\nProject: \`${PROJECT_NAME}\`\nEnvironment: \`${TARGET}\`\nCommit: \`${GITHUB_SHA::8}\`\nActor: @${GITHUB_ACTOR}\nRun: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}\"}"
+              -d "{\"text\":\":x: *Acumatica Customization Deploy FAILED*
+Project: \`${PROJECT_NAME}\`
+Environment: \`${TARGET}\`
+Commit: \`${GITHUB_SHA::8}\`
+Actor: @${GITHUB_ACTOR}
+Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}\"}"
           fi
 
       - name: Notify auto-remediation
-        if: failure() && github.ref == 'refs/heads/main'
-        env:
-          WEBHOOK_ROUTER_URL: ${{ secrets.WEBHOOK_ROUTER_URL }}
-        run: |
-          if [ -z "${WEBHOOK_ROUTER_URL}" ]; then
-            echo "::warning::WEBHOOK_ROUTER_URL not set — skipping auto-remediation"
-            exit 0
-          fi
-          curl -sf -X POST "${WEBHOOK_ROUTER_URL}/webhook/github/ci-failure" \
-            -H "Content-Type: application/json" \
-            -d '{"repo":"${{ github.repository }}","runId":${{ github.run_id }},"sha":"${{ github.sha }}","branch":"${{ github.ref_name }}"}'
-        continue-on-error: true
 
       - name: Post deployment summary
         if: always()
@@ -695,7 +505,8 @@ jobs:
           echo "| Package | \`${{ needs.build.outputs.package_name }}\` |" >> "$GITHUB_STEP_SUMMARY"
           echo "| Commit | \`${GITHUB_SHA::8}\` |" >> "$GITHUB_STEP_SUMMARY"
           echo "| Actor | @${GITHUB_ACTOR} |" >> "$GITHUB_STEP_SUMMARY"
-          SNAPSHOT_FILES=$(ls backups/*.zip 2>/dev/null | xargs -I{} basename {} | tr '\n' ', ' || echo "N/A")
+          SNAPSHOT_FILES=$(ls backups/*.zip 2>/dev/null | xargs -I{} basename {} | tr '
+' ', ' || echo "N/A")
           echo "| Snapshot | ${SNAPSHOT_FILES:-N/A} |" >> "$GITHUB_STEP_SUMMARY"
           if [[ "${TARGET}" == "production" && "${{ github.event.inputs.skip_countdown }}" != "true" && "${{ github.event.inputs.dry_run }}" != "true" ]]; then
             echo "| Countdown | 20-5-1 min warnings sent |" >> "$GITHUB_STEP_SUMMARY"
