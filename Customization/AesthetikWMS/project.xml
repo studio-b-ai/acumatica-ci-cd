@@ -26,7 +26,7 @@ namespace Aesthetik.WMS
         /// starts at the mill-reported yardage and decreases with each cut.
         /// </summary>
         [PXDBDecimal(2)]
-        [PXDefault(TypeCode.Decimal, "0.00")]
+        [PXDefault(System.TypeCode.Decimal, "0.00")]
         [PXUIField(DisplayName = "Actual Yardage", Enabled = true)]
         public decimal? UsrActualYardage { get; set; }
         public abstract class usrActualYardage : BqlDecimal.Field<usrActualYardage> { }
@@ -172,7 +172,7 @@ namespace Aesthetik.WMS
         /// the full roll. Can be overridden per lot/serial class.
         /// </summary>
         [PXDBDecimal(2)]
-        [PXDefault(TypeCode.Decimal, "1.00")]
+        [PXDefault(System.TypeCode.Decimal, "1.00")]
         [PXUIField(DisplayName = "Min Remnant Yardage",
             FieldClass = PieceGoodsConstants.LotSerialClassID)]
         public decimal? UsrPGMinRemnant { get; set; }
@@ -284,7 +284,7 @@ namespace Aesthetik.WMS
         /// the system flags a variance warning. Default: 0.02 (2%).
         /// </summary>
         [PXDBDecimal(4)]
-        [PXDefault(TypeCode.Decimal, "0.0200")]
+        [PXDefault(System.TypeCode.Decimal, "0.0200")]
         [PXUIField(DisplayName = "Yardage Variance Threshold (%)",
             FieldClass = PieceGoodsConstants.LotSerialClassID)]
         public decimal? UsrPGYardageVar { get; set; }
@@ -3260,7 +3260,7 @@ namespace Aesthetik.WMS
                 var cs = ConfigurationManager.ConnectionStrings["ProjectX"];
                 string connStr = cs.ConnectionString + ";TrustServerCertificate=True";
 
-                using (var conn = new Microsoft.Data.SqlClient.SqlConnection(connStr))
+                using (var conn = new System.Data.SqlClient.SqlConnection(connStr))
                 {
                     conn.Open();
                     string[] statements = new[]
@@ -3355,13 +3355,13 @@ namespace Aesthetik.WMS
                 if (cs == null) { WriteLog("[GISetup] No ProjectX connection string"); return; }
 
                 string connStr = cs.ConnectionString + ";TrustServerCertificate=True";
-                using (var conn = new Microsoft.Data.SqlClient.SqlConnection(connStr))
+                using (var conn = new System.Data.SqlClient.SqlConnection(connStr))
                 {
                     conn.Open();
 
                     // Get CompanyID
                     int companyId = 0;
-                    using (var cmd = new Microsoft.Data.SqlClient.SqlCommand(
+                    using (var cmd = new System.Data.SqlClient.SqlCommand(
                         "SELECT TOP 1 CompanyID FROM GIDesign WHERE CompanyID > 0", conn))
                     {
                         var r = cmd.ExecuteScalar();
@@ -3372,7 +3372,7 @@ namespace Aesthetik.WMS
 
                     // Check if GI already exists
                     string designId = null;
-                    using (var cmd = new Microsoft.Data.SqlClient.SqlCommand(
+                    using (var cmd = new System.Data.SqlClient.SqlCommand(
                         "SELECT TOP 1 CONVERT(NVARCHAR(36), DesignID) FROM GIDesign WHERE Name = @name AND CompanyID = @cid", conn))
                     {
                         cmd.Parameters.AddWithValue("@name", GI_NAME);
@@ -3509,10 +3509,10 @@ namespace Aesthetik.WMS
 
         // --- Helpers ---
 
-        private void DirectInsert(Microsoft.Data.SqlClient.SqlConnection conn, string table, Dictionary<string, object> values)
+        private void DirectInsert(System.Data.SqlClient.SqlConnection conn, string table, Dictionary<string, object> values)
         {
             var actualCols = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            using (var cmd = new Microsoft.Data.SqlClient.SqlCommand(@"
+            using (var cmd = new System.Data.SqlClient.SqlCommand(@"
                 SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS
                 WHERE TABLE_NAME = @tbl AND COLUMN_NAME NOT IN ('DeletedDatabaseRecord','Tstamp')
                 AND DATA_TYPE NOT IN ('timestamp') ORDER BY ORDINAL_POSITION", conn))
@@ -3542,7 +3542,7 @@ namespace Aesthetik.WMS
             var valueParts = new List<string>();
             int paramIdx = 0;
 
-            using (var cmd = new Microsoft.Data.SqlClient.SqlCommand())
+            using (var cmd = new System.Data.SqlClient.SqlCommand())
             {
                 cmd.Connection = conn;
                 foreach (var kv in merged)
@@ -3566,7 +3566,7 @@ namespace Aesthetik.WMS
             }
         }
 
-        private void InsertGIWhere(Microsoft.Data.SqlClient.SqlConnection conn,
+        private void InsertGIWhere(System.Data.SqlClient.SqlConnection conn,
             string designId, int companyId, int lineNbr, string fieldName, string condition,
             string value1, string op, int openBrackets, int closeBrackets)
         {
@@ -3582,9 +3582,9 @@ namespace Aesthetik.WMS
             DirectInsert(conn, "GIWhere", values);
         }
 
-        private int ExecNonQuery(Microsoft.Data.SqlClient.SqlConnection conn, string sql, string[] parms)
+        private int ExecNonQuery(System.Data.SqlClient.SqlConnection conn, string sql, string[] parms)
         {
-            using (var cmd = new Microsoft.Data.SqlClient.SqlCommand(sql, conn))
+            using (var cmd = new System.Data.SqlClient.SqlCommand(sql, conn))
             {
                 for (int i = 0; i < parms.Length; i += 2)
                     cmd.Parameters.AddWithValue(parms[i], parms[i + 1]);
@@ -3620,7 +3620,7 @@ namespace Aesthetik.WMS
                 if (cs == null) { WriteLog("[LotAvailGI] No ProjectX connection string"); return; }
                 string connStr = cs.ConnectionString + ";TrustServerCertificate=True";
 
-                using (var conn = new Microsoft.Data.SqlClient.SqlConnection(connStr))
+                using (var conn = new System.Data.SqlClient.SqlConnection(connStr))
                 {
                     conn.Open();
                     int companyId = GetCompanyId(conn);
@@ -3697,13 +3697,13 @@ namespace Aesthetik.WMS
             catch (Exception ex) { WriteLog("[LotAvailGI] ERROR: "+ex.GetType().FullName+": "+ex.Message); }
         }
 
-        private int GetCompanyId(Microsoft.Data.SqlClient.SqlConnection c) { using(var cmd=new Microsoft.Data.SqlClient.SqlCommand("SELECT TOP 1 CompanyID FROM GIDesign WHERE CompanyID>0",c)){var r=cmd.ExecuteScalar();return r!=null?Convert.ToInt32(r):0;} }
-        private string FindGI(Microsoft.Data.SqlClient.SqlConnection c,int cid,string name) { using(var cmd=new Microsoft.Data.SqlClient.SqlCommand("SELECT TOP 1 CONVERT(NVARCHAR(36),DesignID) FROM GIDesign WHERE Name=@n AND CompanyID=@c",c)){cmd.Parameters.AddWithValue("@n",name);cmd.Parameters.AddWithValue("@c",cid);var r=cmd.ExecuteScalar();return(r!=null&&r!=DBNull.Value)?r.ToString():null;} }
-        private string FindTemplate(Microsoft.Data.SqlClient.SqlConnection c,int cid,string tbl) { using(var cmd=new Microsoft.Data.SqlClient.SqlCommand("SELECT TOP 1 CONVERT(NVARCHAR(36),DesignID) FROM "+tbl+" WHERE CompanyID=@c",c)){cmd.Parameters.AddWithValue("@c",cid);var r=cmd.ExecuteScalar();return(r!=null&&r!=DBNull.Value)?r.ToString():null;} }
-        private void ClearChildRows(Microsoft.Data.SqlClient.SqlConnection c,string did,int cid) { foreach(var t in new[]{"GIResult","GIWhere","GISort","GIOn","GIRelation","GITable","GIFilter","GINavigationCondition","GINavigationScreen"}) ExecSql(c,"DELETE FROM "+t+" WHERE DesignID=@did AND CompanyID=@cid",new[]{"@did",did,"@cid",cid.ToString()}); }
-        private int ExecSql(Microsoft.Data.SqlClient.SqlConnection c,string sql,string[] p) { using(var cmd=new Microsoft.Data.SqlClient.SqlCommand(sql,c)){for(int i=0;i<p.Length;i+=2)cmd.Parameters.AddWithValue(p[i],p[i+1]);return cmd.ExecuteNonQuery();} }
+        private int GetCompanyId(System.Data.SqlClient.SqlConnection c) { using(var cmd=new System.Data.SqlClient.SqlCommand("SELECT TOP 1 CompanyID FROM GIDesign WHERE CompanyID>0",c)){var r=cmd.ExecuteScalar();return r!=null?Convert.ToInt32(r):0;} }
+        private string FindGI(System.Data.SqlClient.SqlConnection c,int cid,string name) { using(var cmd=new System.Data.SqlClient.SqlCommand("SELECT TOP 1 CONVERT(NVARCHAR(36),DesignID) FROM GIDesign WHERE Name=@n AND CompanyID=@c",c)){cmd.Parameters.AddWithValue("@n",name);cmd.Parameters.AddWithValue("@c",cid);var r=cmd.ExecuteScalar();return(r!=null&&r!=DBNull.Value)?r.ToString():null;} }
+        private string FindTemplate(System.Data.SqlClient.SqlConnection c,int cid,string tbl) { using(var cmd=new System.Data.SqlClient.SqlCommand("SELECT TOP 1 CONVERT(NVARCHAR(36),DesignID) FROM "+tbl+" WHERE CompanyID=@c",c)){cmd.Parameters.AddWithValue("@c",cid);var r=cmd.ExecuteScalar();return(r!=null&&r!=DBNull.Value)?r.ToString():null;} }
+        private void ClearChildRows(System.Data.SqlClient.SqlConnection c,string did,int cid) { foreach(var t in new[]{"GIResult","GIWhere","GISort","GIOn","GIRelation","GITable","GIFilter","GINavigationCondition","GINavigationScreen"}) ExecSql(c,"DELETE FROM "+t+" WHERE DesignID=@did AND CompanyID=@cid",new[]{"@did",did,"@cid",cid.ToString()}); }
+        private int ExecSql(System.Data.SqlClient.SqlConnection c,string sql,string[] p) { using(var cmd=new System.Data.SqlClient.SqlCommand(sql,c)){for(int i=0;i<p.Length;i+=2)cmd.Parameters.AddWithValue(p[i],p[i+1]);return cmd.ExecuteNonQuery();} }
         private Dictionary<string,string> MakeResultOverrides(string did,int ln,string[] col) { return new Dictionary<string,string>{{"DesignID","'"+did+"'"},{"LineNbr",ln.ToString()},{"IsActive","1"},{"ObjectName","'"+col[0]+"'"},{"Field","'"+col[1]+"'"},{"SchemaField","NULL"},{"SortOrder",ln.ToString()},{"IsVisible","1"},{"Width",col[2]},{"DefaultNav",col[4]},{"QuickFilter","0"},{"FastFilter",col[5]},{"Caption","'"+col[3].Replace("'","''")+"'"},{"NoteID","NEWID()"},{"RowID","NEWID()"},{"CreatedDateTime","GETUTCDATE()"},{"LastModifiedDateTime","GETUTCDATE()"}}; }
-        private void InsertFromTemplate(Microsoft.Data.SqlClient.SqlConnection conn,string tableName,string templateDesignId,int companyId,Dictionary<string,string> overrides) { var cols=new List<string>();using(var cmd=new Microsoft.Data.SqlClient.SqlCommand("SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME=@tbl AND COLUMN_NAME NOT IN ('DeletedDatabaseRecord','Tstamp') AND DATA_TYPE NOT IN ('timestamp') ORDER BY ORDINAL_POSITION",conn)){cmd.Parameters.AddWithValue("@tbl",tableName);using(var r=cmd.ExecuteReader())while(r.Read())cols.Add(r.GetString(0));}var sp=new List<string>();foreach(var c in cols)sp.Add(overrides.ContainsKey(c)?overrides[c]:"["+c+"]");using(var cmd=new Microsoft.Data.SqlClient.SqlCommand("INSERT INTO "+tableName+" (["+string.Join("],[",cols)+"]) SELECT TOP 1 "+string.Join(",",sp)+" FROM "+tableName+" WHERE DesignID=@tid AND CompanyID=@cid",conn)){cmd.Parameters.AddWithValue("@tid",templateDesignId);cmd.Parameters.AddWithValue("@cid",companyId);cmd.ExecuteNonQuery();} }
+        private void InsertFromTemplate(System.Data.SqlClient.SqlConnection conn,string tableName,string templateDesignId,int companyId,Dictionary<string,string> overrides) { var cols=new List<string>();using(var cmd=new System.Data.SqlClient.SqlCommand("SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME=@tbl AND COLUMN_NAME NOT IN ('DeletedDatabaseRecord','Tstamp') AND DATA_TYPE NOT IN ('timestamp') ORDER BY ORDINAL_POSITION",conn)){cmd.Parameters.AddWithValue("@tbl",tableName);using(var r=cmd.ExecuteReader())while(r.Read())cols.Add(r.GetString(0));}var sp=new List<string>();foreach(var c in cols)sp.Add(overrides.ContainsKey(c)?overrides[c]:"["+c+"]");using(var cmd=new System.Data.SqlClient.SqlCommand("INSERT INTO "+tableName+" (["+string.Join("],[",cols)+"]) SELECT TOP 1 "+string.Join(",",sp)+" FROM "+tableName+" WHERE DesignID=@tid AND CompanyID=@cid",conn)){cmd.Parameters.AddWithValue("@tid",templateDesignId);cmd.Parameters.AddWithValue("@cid",companyId);cmd.ExecuteNonQuery();} }
     }
 }]]></CDATA>
     </Graph>
@@ -3733,7 +3733,7 @@ namespace Aesthetik.WMS
                 if (cs == null) { WriteLog("[AuditGI] No ProjectX connection string"); return; }
                 string connStr = cs.ConnectionString + ";TrustServerCertificate=True";
 
-                using (var conn = new Microsoft.Data.SqlClient.SqlConnection(connStr))
+                using (var conn = new System.Data.SqlClient.SqlConnection(connStr))
                 {
                     conn.Open();
                     int companyId = GetCompanyId(conn);
@@ -3838,14 +3838,14 @@ namespace Aesthetik.WMS
             catch (Exception ex) { WriteLog("[AuditGI] ERROR: "+ex.GetType().FullName+": "+ex.Message); }
         }
 
-        private int GetCompanyId(Microsoft.Data.SqlClient.SqlConnection c) { using(var cmd=new Microsoft.Data.SqlClient.SqlCommand("SELECT TOP 1 CompanyID FROM GIDesign WHERE CompanyID>0",c)){var r=cmd.ExecuteScalar();return r!=null?Convert.ToInt32(r):0;} }
-        private string FindGI(Microsoft.Data.SqlClient.SqlConnection c,int cid,string name) { using(var cmd=new Microsoft.Data.SqlClient.SqlCommand("SELECT TOP 1 CONVERT(NVARCHAR(36),DesignID) FROM GIDesign WHERE Name=@n AND CompanyID=@c",c)){cmd.Parameters.AddWithValue("@n",name);cmd.Parameters.AddWithValue("@c",cid);var r=cmd.ExecuteScalar();return(r!=null&&r!=DBNull.Value)?r.ToString():null;} }
-        private string FindTemplate(Microsoft.Data.SqlClient.SqlConnection c,int cid,string tbl) { using(var cmd=new Microsoft.Data.SqlClient.SqlCommand("SELECT TOP 1 CONVERT(NVARCHAR(36),DesignID) FROM "+tbl+" WHERE CompanyID=@c",c)){cmd.Parameters.AddWithValue("@c",cid);var r=cmd.ExecuteScalar();return(r!=null&&r!=DBNull.Value)?r.ToString():null;} }
-        private void ClearChildRows(Microsoft.Data.SqlClient.SqlConnection c,string did,int cid) { foreach(var t in new[]{"GIResult","GIWhere","GISort","GIOn","GIRelation","GITable","GIFilter","GINavigationCondition","GINavigationScreen"}) ExecSql(c,"DELETE FROM "+t+" WHERE DesignID=@did AND CompanyID=@cid",new[]{"@did",did,"@cid",cid.ToString()}); }
-        private int ExecSql(Microsoft.Data.SqlClient.SqlConnection c,string sql,string[] p) { using(var cmd=new Microsoft.Data.SqlClient.SqlCommand(sql,c)){for(int i=0;i<p.Length;i+=2)cmd.Parameters.AddWithValue(p[i],p[i+1]);return cmd.ExecuteNonQuery();} }
+        private int GetCompanyId(System.Data.SqlClient.SqlConnection c) { using(var cmd=new System.Data.SqlClient.SqlCommand("SELECT TOP 1 CompanyID FROM GIDesign WHERE CompanyID>0",c)){var r=cmd.ExecuteScalar();return r!=null?Convert.ToInt32(r):0;} }
+        private string FindGI(System.Data.SqlClient.SqlConnection c,int cid,string name) { using(var cmd=new System.Data.SqlClient.SqlCommand("SELECT TOP 1 CONVERT(NVARCHAR(36),DesignID) FROM GIDesign WHERE Name=@n AND CompanyID=@c",c)){cmd.Parameters.AddWithValue("@n",name);cmd.Parameters.AddWithValue("@c",cid);var r=cmd.ExecuteScalar();return(r!=null&&r!=DBNull.Value)?r.ToString():null;} }
+        private string FindTemplate(System.Data.SqlClient.SqlConnection c,int cid,string tbl) { using(var cmd=new System.Data.SqlClient.SqlCommand("SELECT TOP 1 CONVERT(NVARCHAR(36),DesignID) FROM "+tbl+" WHERE CompanyID=@c",c)){cmd.Parameters.AddWithValue("@c",cid);var r=cmd.ExecuteScalar();return(r!=null&&r!=DBNull.Value)?r.ToString():null;} }
+        private void ClearChildRows(System.Data.SqlClient.SqlConnection c,string did,int cid) { foreach(var t in new[]{"GIResult","GIWhere","GISort","GIOn","GIRelation","GITable","GIFilter","GINavigationCondition","GINavigationScreen"}) ExecSql(c,"DELETE FROM "+t+" WHERE DesignID=@did AND CompanyID=@cid",new[]{"@did",did,"@cid",cid.ToString()}); }
+        private int ExecSql(System.Data.SqlClient.SqlConnection c,string sql,string[] p) { using(var cmd=new System.Data.SqlClient.SqlCommand(sql,c)){for(int i=0;i<p.Length;i+=2)cmd.Parameters.AddWithValue(p[i],p[i+1]);return cmd.ExecuteNonQuery();} }
         private Dictionary<string,string> MakeResultOverrides(string did,int ln,string[] col) { return new Dictionary<string,string>{{"DesignID","'"+did+"'"},{"LineNbr",ln.ToString()},{"IsActive","1"},{"ObjectName","'"+col[0]+"'"},{"Field","'"+col[1]+"'"},{"SchemaField","NULL"},{"SortOrder",ln.ToString()},{"IsVisible","1"},{"Width",col[2]},{"DefaultNav",col[4]},{"QuickFilter","0"},{"FastFilter",col[5]},{"Caption","'"+col[3].Replace("'","''")+"'"},{"NoteID","NEWID()"},{"RowID","NEWID()"},{"CreatedDateTime","GETUTCDATE()"},{"LastModifiedDateTime","GETUTCDATE()"}}; }
-        private void InsertGIWhere(Microsoft.Data.SqlClient.SqlConnection conn,string tplId,string did,int cid,int ln,string field,string cond,string val,string op,int ob,int cb) { var o=new Dictionary<string,string>{{"DesignID","'"+did+"'"},{"LineNbr",ln.ToString()},{"IsActive","1"},{"DataFieldName","'"+field+"'"},{"Condition","'"+cond+"'"},{"OpenBrackets",ob.ToString()},{"CloseBrackets",cb.ToString()},{"NoteID","NEWID()"},{"RowID","NEWID()"},{"CreatedDateTime","GETUTCDATE()"},{"LastModifiedDateTime","GETUTCDATE()"}};o["Value1"]=val!=null?"'"+val.Replace("'","''")+"'":"NULL";o["Operator"]=op!=null?"'"+op+"'":"NULL";InsertFromTemplate(conn,"GIWhere",tplId,cid,o); }
-        private void InsertFromTemplate(Microsoft.Data.SqlClient.SqlConnection conn,string tableName,string templateDesignId,int companyId,Dictionary<string,string> overrides) { var cols=new List<string>();using(var cmd=new Microsoft.Data.SqlClient.SqlCommand("SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME=@tbl AND COLUMN_NAME NOT IN ('DeletedDatabaseRecord','Tstamp') AND DATA_TYPE NOT IN ('timestamp') ORDER BY ORDINAL_POSITION",conn)){cmd.Parameters.AddWithValue("@tbl",tableName);using(var r=cmd.ExecuteReader())while(r.Read())cols.Add(r.GetString(0));}var sp=new List<string>();foreach(var c in cols)sp.Add(overrides.ContainsKey(c)?overrides[c]:"["+c+"]");using(var cmd=new Microsoft.Data.SqlClient.SqlCommand("INSERT INTO "+tableName+" (["+string.Join("],[",cols)+"]) SELECT TOP 1 "+string.Join(",",sp)+" FROM "+tableName+" WHERE DesignID=@tid AND CompanyID=@cid",conn)){cmd.Parameters.AddWithValue("@tid",templateDesignId);cmd.Parameters.AddWithValue("@cid",companyId);cmd.ExecuteNonQuery();} }
+        private void InsertGIWhere(System.Data.SqlClient.SqlConnection conn,string tplId,string did,int cid,int ln,string field,string cond,string val,string op,int ob,int cb) { var o=new Dictionary<string,string>{{"DesignID","'"+did+"'"},{"LineNbr",ln.ToString()},{"IsActive","1"},{"DataFieldName","'"+field+"'"},{"Condition","'"+cond+"'"},{"OpenBrackets",ob.ToString()},{"CloseBrackets",cb.ToString()},{"NoteID","NEWID()"},{"RowID","NEWID()"},{"CreatedDateTime","GETUTCDATE()"},{"LastModifiedDateTime","GETUTCDATE()"}};o["Value1"]=val!=null?"'"+val.Replace("'","''")+"'":"NULL";o["Operator"]=op!=null?"'"+op+"'":"NULL";InsertFromTemplate(conn,"GIWhere",tplId,cid,o); }
+        private void InsertFromTemplate(System.Data.SqlClient.SqlConnection conn,string tableName,string templateDesignId,int companyId,Dictionary<string,string> overrides) { var cols=new List<string>();using(var cmd=new System.Data.SqlClient.SqlCommand("SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME=@tbl AND COLUMN_NAME NOT IN ('DeletedDatabaseRecord','Tstamp') AND DATA_TYPE NOT IN ('timestamp') ORDER BY ORDINAL_POSITION",conn)){cmd.Parameters.AddWithValue("@tbl",tableName);using(var r=cmd.ExecuteReader())while(r.Read())cols.Add(r.GetString(0));}var sp=new List<string>();foreach(var c in cols)sp.Add(overrides.ContainsKey(c)?overrides[c]:"["+c+"]");using(var cmd=new System.Data.SqlClient.SqlCommand("INSERT INTO "+tableName+" (["+string.Join("],[",cols)+"]) SELECT TOP 1 "+string.Join(",",sp)+" FROM "+tableName+" WHERE DesignID=@tid AND CompanyID=@cid",conn)){cmd.Parameters.AddWithValue("@tid",templateDesignId);cmd.Parameters.AddWithValue("@cid",companyId);cmd.ExecuteNonQuery();} }
     }
 }]]></CDATA>
     </Graph>
@@ -3877,7 +3877,7 @@ namespace Aesthetik.WMS
                 if (cs == null) { WriteLog("[InvQtyGI] No ProjectX connection string"); return; }
                 string connStr = cs.ConnectionString + ";TrustServerCertificate=True";
 
-                using (var conn = new Microsoft.Data.SqlClient.SqlConnection(connStr))
+                using (var conn = new System.Data.SqlClient.SqlConnection(connStr))
                 {
                     conn.Open();
                     int companyId = GetCompanyId(conn);
@@ -4020,7 +4020,7 @@ namespace Aesthetik.WMS
             catch (Exception ex) { WriteLog("[InvQtyGI] ERROR: "+ex.GetType().FullName+": "+ex.Message); }
         }
 
-        private void AddJoin(Microsoft.Data.SqlClient.SqlConnection conn,string tplRel,string tplOn,
+        private void AddJoin(System.Data.SqlClient.SqlConnection conn,string tplRel,string tplOn,
             string did,int cid,int lineNbr,string parent,string child,string joinType,string[][] ons)
         {
             InsertFromTemplate(conn,"GIRelation",tplRel,cid,new Dictionary<string,string>{
@@ -4034,14 +4034,14 @@ namespace Aesthetik.WMS
                     {"NoteID","NEWID()"},{"RowID","NEWID()"},{"CreatedDateTime","GETUTCDATE()"},{"LastModifiedDateTime","GETUTCDATE()"}});
         }
 
-        private int GetCompanyId(Microsoft.Data.SqlClient.SqlConnection c) { using(var cmd=new Microsoft.Data.SqlClient.SqlCommand("SELECT TOP 1 CompanyID FROM GIDesign WHERE CompanyID>0",c)){var r=cmd.ExecuteScalar();return r!=null?Convert.ToInt32(r):0;} }
-        private string FindGI(Microsoft.Data.SqlClient.SqlConnection c,int cid,string name) { using(var cmd=new Microsoft.Data.SqlClient.SqlCommand("SELECT TOP 1 CONVERT(NVARCHAR(36),DesignID) FROM GIDesign WHERE Name=@n AND CompanyID=@c",c)){cmd.Parameters.AddWithValue("@n",name);cmd.Parameters.AddWithValue("@c",cid);var r=cmd.ExecuteScalar();return(r!=null&&r!=DBNull.Value)?r.ToString():null;} }
-        private string FindTemplate(Microsoft.Data.SqlClient.SqlConnection c,int cid,string tbl) { using(var cmd=new Microsoft.Data.SqlClient.SqlCommand("SELECT TOP 1 CONVERT(NVARCHAR(36),DesignID) FROM "+tbl+" WHERE CompanyID=@c",c)){cmd.Parameters.AddWithValue("@c",cid);var r=cmd.ExecuteScalar();return(r!=null&&r!=DBNull.Value)?r.ToString():null;} }
-        private void ClearChildRows(Microsoft.Data.SqlClient.SqlConnection c,string did,int cid) { foreach(var t in new[]{"GIResult","GIWhere","GISort","GIOn","GIRelation","GITable","GIFilter","GINavigationCondition","GINavigationScreen"}) ExecSql(c,"DELETE FROM "+t+" WHERE DesignID=@did AND CompanyID=@cid",new[]{"@did",did,"@cid",cid.ToString()}); }
-        private int ExecSql(Microsoft.Data.SqlClient.SqlConnection c,string sql,string[] p) { using(var cmd=new Microsoft.Data.SqlClient.SqlCommand(sql,c)){for(int i=0;i<p.Length;i+=2)cmd.Parameters.AddWithValue(p[i],p[i+1]);return cmd.ExecuteNonQuery();} }
+        private int GetCompanyId(System.Data.SqlClient.SqlConnection c) { using(var cmd=new System.Data.SqlClient.SqlCommand("SELECT TOP 1 CompanyID FROM GIDesign WHERE CompanyID>0",c)){var r=cmd.ExecuteScalar();return r!=null?Convert.ToInt32(r):0;} }
+        private string FindGI(System.Data.SqlClient.SqlConnection c,int cid,string name) { using(var cmd=new System.Data.SqlClient.SqlCommand("SELECT TOP 1 CONVERT(NVARCHAR(36),DesignID) FROM GIDesign WHERE Name=@n AND CompanyID=@c",c)){cmd.Parameters.AddWithValue("@n",name);cmd.Parameters.AddWithValue("@c",cid);var r=cmd.ExecuteScalar();return(r!=null&&r!=DBNull.Value)?r.ToString():null;} }
+        private string FindTemplate(System.Data.SqlClient.SqlConnection c,int cid,string tbl) { using(var cmd=new System.Data.SqlClient.SqlCommand("SELECT TOP 1 CONVERT(NVARCHAR(36),DesignID) FROM "+tbl+" WHERE CompanyID=@c",c)){cmd.Parameters.AddWithValue("@c",cid);var r=cmd.ExecuteScalar();return(r!=null&&r!=DBNull.Value)?r.ToString():null;} }
+        private void ClearChildRows(System.Data.SqlClient.SqlConnection c,string did,int cid) { foreach(var t in new[]{"GIResult","GIWhere","GISort","GIOn","GIRelation","GITable","GIFilter","GINavigationCondition","GINavigationScreen"}) ExecSql(c,"DELETE FROM "+t+" WHERE DesignID=@did AND CompanyID=@cid",new[]{"@did",did,"@cid",cid.ToString()}); }
+        private int ExecSql(System.Data.SqlClient.SqlConnection c,string sql,string[] p) { using(var cmd=new System.Data.SqlClient.SqlCommand(sql,c)){for(int i=0;i<p.Length;i+=2)cmd.Parameters.AddWithValue(p[i],p[i+1]);return cmd.ExecuteNonQuery();} }
         private Dictionary<string,string> MakeResultOverrides(string did,int ln,string[] col) { return new Dictionary<string,string>{{"DesignID","'"+did+"'"},{"LineNbr",ln.ToString()},{"IsActive","1"},{"ObjectName","'"+col[0]+"'"},{"Field","'"+col[1]+"'"},{"SchemaField","NULL"},{"SortOrder",ln.ToString()},{"IsVisible","1"},{"Width",col[2]},{"DefaultNav",col[4]},{"QuickFilter","0"},{"FastFilter",col[5]},{"Caption","'"+col[3].Replace("'","''")+"'"},{"NoteID","NEWID()"},{"RowID","NEWID()"},{"CreatedDateTime","GETUTCDATE()"},{"LastModifiedDateTime","GETUTCDATE()"}}; }
-        private void InsertGIWhere(Microsoft.Data.SqlClient.SqlConnection conn,string tplId,string did,int cid,int ln,string field,string cond,string val,string op,int ob,int cb) { var o=new Dictionary<string,string>{{"DesignID","'"+did+"'"},{"LineNbr",ln.ToString()},{"IsActive","1"},{"DataFieldName","'"+field+"'"},{"Condition","'"+cond+"'"},{"OpenBrackets",ob.ToString()},{"CloseBrackets",cb.ToString()},{"NoteID","NEWID()"},{"RowID","NEWID()"},{"CreatedDateTime","GETUTCDATE()"},{"LastModifiedDateTime","GETUTCDATE()"}};o["Value1"]=val!=null?"'"+val.Replace("'","''")+"'":"NULL";o["Operator"]=op!=null?"'"+op+"'":"NULL";InsertFromTemplate(conn,"GIWhere",tplId,cid,o); }
-        private void InsertFromTemplate(Microsoft.Data.SqlClient.SqlConnection conn,string tableName,string templateDesignId,int companyId,Dictionary<string,string> overrides) { var cols=new List<string>();using(var cmd=new Microsoft.Data.SqlClient.SqlCommand("SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME=@tbl AND COLUMN_NAME NOT IN ('DeletedDatabaseRecord','Tstamp') AND DATA_TYPE NOT IN ('timestamp') ORDER BY ORDINAL_POSITION",conn)){cmd.Parameters.AddWithValue("@tbl",tableName);using(var r=cmd.ExecuteReader())while(r.Read())cols.Add(r.GetString(0));}var sp=new List<string>();foreach(var c in cols)sp.Add(overrides.ContainsKey(c)?overrides[c]:"["+c+"]");using(var cmd=new Microsoft.Data.SqlClient.SqlCommand("INSERT INTO "+tableName+" (["+string.Join("],[",cols)+"]) SELECT TOP 1 "+string.Join(",",sp)+" FROM "+tableName+" WHERE DesignID=@tid AND CompanyID=@cid",conn)){cmd.Parameters.AddWithValue("@tid",templateDesignId);cmd.Parameters.AddWithValue("@cid",companyId);cmd.ExecuteNonQuery();} }
+        private void InsertGIWhere(System.Data.SqlClient.SqlConnection conn,string tplId,string did,int cid,int ln,string field,string cond,string val,string op,int ob,int cb) { var o=new Dictionary<string,string>{{"DesignID","'"+did+"'"},{"LineNbr",ln.ToString()},{"IsActive","1"},{"DataFieldName","'"+field+"'"},{"Condition","'"+cond+"'"},{"OpenBrackets",ob.ToString()},{"CloseBrackets",cb.ToString()},{"NoteID","NEWID()"},{"RowID","NEWID()"},{"CreatedDateTime","GETUTCDATE()"},{"LastModifiedDateTime","GETUTCDATE()"}};o["Value1"]=val!=null?"'"+val.Replace("'","''")+"'":"NULL";o["Operator"]=op!=null?"'"+op+"'":"NULL";InsertFromTemplate(conn,"GIWhere",tplId,cid,o); }
+        private void InsertFromTemplate(System.Data.SqlClient.SqlConnection conn,string tableName,string templateDesignId,int companyId,Dictionary<string,string> overrides) { var cols=new List<string>();using(var cmd=new System.Data.SqlClient.SqlCommand("SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME=@tbl AND COLUMN_NAME NOT IN ('DeletedDatabaseRecord','Tstamp') AND DATA_TYPE NOT IN ('timestamp') ORDER BY ORDINAL_POSITION",conn)){cmd.Parameters.AddWithValue("@tbl",tableName);using(var r=cmd.ExecuteReader())while(r.Read())cols.Add(r.GetString(0));}var sp=new List<string>();foreach(var c in cols)sp.Add(overrides.ContainsKey(c)?overrides[c]:"["+c+"]");using(var cmd=new System.Data.SqlClient.SqlCommand("INSERT INTO "+tableName+" (["+string.Join("],[",cols)+"]) SELECT TOP 1 "+string.Join(",",sp)+" FROM "+tableName+" WHERE DesignID=@tid AND CompanyID=@cid",conn)){cmd.Parameters.AddWithValue("@tid",templateDesignId);cmd.Parameters.AddWithValue("@cid",companyId);cmd.ExecuteNonQuery();} }
     }
 }]]></CDATA>
     </Graph>

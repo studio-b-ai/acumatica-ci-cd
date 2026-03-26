@@ -273,7 +273,7 @@ namespace StudioB.Containers
         #region UsrDutyRate
         public abstract class usrDutyRate : PX.Data.BQL.BqlDecimal.Field<usrDutyRate> { }
         [PXDBDecimal(4)]
-        [PXDefault(TypeCode.Decimal, "0.0000")]
+        [PXDefault(System.TypeCode.Decimal, "0.0000")]
         [PXUIField(DisplayName = "Duty Rate %", Visibility = PXUIVisibility.SelectorVisible)]
         public decimal? UsrDutyRate { get; set; }
         #endregion
@@ -319,21 +319,21 @@ namespace StudioB.Containers
         #region UsrActualDutyAmt
         public abstract class usrActualDutyAmt : PX.Data.BQL.BqlDecimal.Field<usrActualDutyAmt> { }
         [PXDBDecimal(2)]
-        [PXDefault(TypeCode.Decimal, "0.00")]
+        [PXDefault(System.TypeCode.Decimal, "0.00")]
         [PXUIField(DisplayName = "Actual Duty", Visibility = PXUIVisibility.SelectorVisible)]
         public decimal? UsrActualDutyAmt { get; set; }
         #endregion
         #region UsrActualFreightAmt
         public abstract class usrActualFreightAmt : PX.Data.BQL.BqlDecimal.Field<usrActualFreightAmt> { }
         [PXDBDecimal(2)]
-        [PXDefault(TypeCode.Decimal, "0.00")]
+        [PXDefault(System.TypeCode.Decimal, "0.00")]
         [PXUIField(DisplayName = "Freight Allocated", Visibility = PXUIVisibility.SelectorVisible)]
         public decimal? UsrActualFreightAmt { get; set; }
         #endregion
         #region UsrBrokerageAmt
         public abstract class usrBrokerageAmt : PX.Data.BQL.BqlDecimal.Field<usrBrokerageAmt> { }
         [PXDBDecimal(2)]
-        [PXDefault(TypeCode.Decimal, "0.00")]
+        [PXDefault(System.TypeCode.Decimal, "0.00")]
         [PXUIField(DisplayName = "Brokerage", Visibility = PXUIVisibility.SelectorVisible)]
         public decimal? UsrBrokerageAmt { get; set; }
         #endregion
