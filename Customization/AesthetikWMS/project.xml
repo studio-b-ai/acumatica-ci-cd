@@ -3388,7 +3388,7 @@ namespace Aesthetik.WMS
                         designId = Guid.NewGuid().ToString();
                         WriteLog("[GISetup] Creating GI with DesignID: " + designId);
 
-                        string templateId = FindTemplate(conn, companyId, "GIDesign");
+                        string templateId = FindTemplate(conn, companyId, "GIDesign", designId);
                         if (templateId == null) { WriteLog("[GISetup] No template GIDesign found"); return; }
 
                         InsertFromTemplate(conn, "GIDesign", templateId, companyId, new Dictionary<string, string>
@@ -3430,7 +3430,7 @@ namespace Aesthetik.WMS
                     }
 
                     // --- DATA SOURCES (GITable) ---
-                    string tplTable = FindTemplate(conn, companyId, "GITable");
+                    string tplTable = FindTemplate(conn, companyId, "GITable", designId);
                     if (tplTable == null) { WriteLog("[GISetup] No template GITable"); return; }
 
                     // Table 1: SOOrder (main)
@@ -3473,8 +3473,8 @@ namespace Aesthetik.WMS
                     WriteLog("[GISetup] GITable: InventoryItem");
 
                     // --- JOINS (GIRelation + GIOn) ---
-                    string tplRelation = FindTemplate(conn, companyId, "GIRelation");
-                    string tplOn = FindTemplate(conn, companyId, "GIOn");
+                    string tplRelation = FindTemplate(conn, companyId, "GIRelation", designId);
+                    string tplOn = FindTemplate(conn, companyId, "GIOn", designId);
 
                     // Join 1: SOOrder -> SOLine (inner join on OrderType + OrderNbr)
                     if (tplRelation != null)
@@ -3560,7 +3560,7 @@ namespace Aesthetik.WMS
                     WriteLog("[GISetup] Join 2: SOLine -> InventoryItem");
 
                     // --- WHERE CONDITIONS (GIWhere) ---
-                    string tplWhere = FindTemplate(conn, companyId, "GIWhere");
+                    string tplWhere = FindTemplate(conn, companyId, "GIWhere", designId);
                     if (tplWhere != null)
                     {
                         // (OrderType = 'PC' OR OrderType = 'FO')
@@ -3577,7 +3577,7 @@ namespace Aesthetik.WMS
                     WriteLog("[GISetup] WHERE conditions created (6 rows)");
 
                     // --- RESULT COLUMNS (GIResult) ---
-                    string tplResult = FindTemplate(conn, companyId, "GIResult");
+                    string tplResult = FindTemplate(conn, companyId, "GIResult", designId);
                     if (tplResult == null) { WriteLog("[GISetup] No template GIResult"); return; }
 
                     var columns = new[]
@@ -3623,7 +3623,7 @@ namespace Aesthetik.WMS
                     WriteLog("[GISetup] Result columns created (" + columns.Length + " columns)");
 
                     // --- SORT (GISort) ---
-                    string tplSort = FindTemplate(conn, companyId, "GISort");
+                    string tplSort = FindTemplate(conn, companyId, "GISort", designId);
                     if (tplSort != null)
                     {
                         InsertFromTemplate(conn, "GISort", tplSort, companyId, new Dictionary<string, string>
@@ -3654,8 +3654,8 @@ namespace Aesthetik.WMS
                     WriteLog("[GISetup] Sort order created");
 
                     // --- NAVIGATION (click-through to SO301000) ---
-                    string tplNavScreen = FindTemplate(conn, companyId, "GINavigationScreen");
-                    string tplNavCond = FindTemplate(conn, companyId, "GINavigationCondition");
+                    string tplNavScreen = FindTemplate(conn, companyId, "GINavigationScreen", designId);
+                    string tplNavCond = FindTemplate(conn, companyId, "GINavigationCondition", designId);
                     if (tplNavScreen != null)
                     {
                         InsertFromTemplate(conn, "GINavigationScreen", tplNavScreen, companyId, new Dictionary<string, string>
@@ -3709,14 +3709,23 @@ namespace Aesthetik.WMS
 
         // --- Helpers ---
 
-        private string FindTemplate(Microsoft.Data.SqlClient.SqlConnection conn, int companyId, string tableName)
+        /// <summary>
+        /// Finds a template DesignID that has at least one row in the given table.
+        /// Excludes our own DesignID to avoid matching rows we just cleared.
+        /// </summary>
+        private string FindTemplate(Microsoft.Data.SqlClient.SqlConnection conn, int companyId, string tableName, string excludeId = null)
         {
-            using (var cmd = new Microsoft.Data.SqlClient.SqlCommand(
-                "SELECT TOP 1 CONVERT(NVARCHAR(36), DesignID) FROM " + tableName + " WHERE CompanyID = @cid", conn))
+            string sql = "SELECT TOP 1 CONVERT(NVARCHAR(36), DesignID) FROM " + tableName + " WHERE CompanyID = @cid";
+            if (excludeId != null) sql += " AND DesignID <> @eid";
+            using (var cmd = new Microsoft.Data.SqlClient.SqlCommand(sql, conn))
             {
                 cmd.Parameters.AddWithValue("@cid", companyId);
+                if (excludeId != null) cmd.Parameters.AddWithValue("@eid", excludeId);
                 var r = cmd.ExecuteScalar();
-                return (r != null && r != DBNull.Value) ? r.ToString() : null;
+                if (r == null || r == DBNull.Value) { WriteLog("[GISetup] WARNING: No template row found in " + tableName); return null; }
+                string tpl = r.ToString();
+                WriteLog("[GISetup] Template for " + tableName + ": " + tpl);
+                return tpl;
             }
         }
 
@@ -3757,7 +3766,8 @@ namespace Aesthetik.WMS
             {
                 cmd.Parameters.AddWithValue("@tid", templateDesignId);
                 cmd.Parameters.AddWithValue("@cid", companyId);
-                cmd.ExecuteNonQuery();
+                int rows = cmd.ExecuteNonQuery();
+                if (rows == 0) WriteLog("[GISetup] WARNING: InsertFromTemplate inserted 0 rows into " + tableName + " (template " + templateDesignId + " has no rows)");
             }
         }
 
