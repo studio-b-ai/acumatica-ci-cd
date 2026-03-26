@@ -10,6 +10,7 @@ Usage:
     python validate-project.py --strict Customization/_project/project.xml
 """
 
+import os
 import sys
 import re
 import xml.etree.ElementTree as ET
@@ -38,7 +39,7 @@ def ok(msg: str):
     print(f"{GREEN}[OK]{RESET}    {msg}")
 
 
-def validate(path: str, strict: bool = False):
+def validate(path: str, strict: bool = False, no_semantic: bool = False):
     """Validate an Acumatica customization project.xml file."""
 
     file_path = Path(path)
@@ -230,6 +231,28 @@ def validate(path: str, strict: bool = False):
 
     if sql_scripts:
         ok(f"Found {len(sql_scripts)} <SqlScript> element(s) (remove before import)")
+
+    if not no_semantic:
+        from semantic_checks import run_semantic_checks
+        also_publish = os.environ.get("ALSO_PUBLISH_PROJECTS", "").split(",")
+        manifest_candidates = [
+            file_path.parent.parent.parent / "publish-manifest.json",
+            file_path.parent.parent / "publish-manifest.json",
+            Path("publish-manifest.json"),
+        ]
+        manifest_path = None
+        for mp in manifest_candidates:
+            if mp.exists():
+                manifest_path = str(mp)
+                break
+        sem_errors, sem_warnings = run_semantic_checks(
+            project_path=path,
+            strict=strict,
+            also_publish=also_publish,
+            manifest_path=manifest_path,
+        )
+        errors.extend(sem_errors)
+        warnings.extend(sem_warnings)
 
     return len(errors) == 0
 
@@ -445,20 +468,22 @@ def validate_crm_dac_safety(class_name: str, code: str, strict: bool):
 
 def main():
     strict = "--strict" in sys.argv
+    no_semantic = "--no-semantic" in sys.argv
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
 
     if not args:
-        print("Usage: python validate-project.py [--strict] <project.xml>")
+        print("Usage: python validate-project.py [--strict] [--no-semantic] <project.xml>")
         print()
         print("Validates Acumatica customization project XML format.")
-        print("  --strict  Enable additional warnings for best practices")
+        print("  --strict       Enable additional warnings for best practices")
+        print("  --no-semantic  Skip semantic cross-reference checks")
         sys.exit(1)
 
     path = args[0]
     print(f"Validating: {path}")
     print("=" * 60)
 
-    success = validate(path, strict)
+    success = validate(path, strict, no_semantic=no_semantic)
 
     print("=" * 60)
     if success:

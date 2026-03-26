@@ -1,8 +1,23 @@
 #!/usr/bin/env python3
-"""Tests for semantic_checks.py — DAC field and SQL column parsers."""
+"""Tests for semantic_checks.py — DAC field and SQL column parsers + semantic checks."""
 
 import pytest
-from semantic_checks import parse_dac_fields, parse_sql_columns, _strip_comments
+from pathlib import Path
+from semantic_checks import (
+    parse_dac_fields,
+    parse_sql_columns,
+    _strip_comments,
+    check_fields_have_sql_columns,
+    check_type_compatibility,
+    check_table_name_mapping,
+    check_extension_references,
+    check_cross_project_duplicates,
+    check_namespace_consistency,
+    check_orphaned_sql_columns,
+    check_external_paths,
+    check_pxdefault_vs_sql,
+    check_manifest_coverage,
+)
 
 
 # ── Fixtures: realistic C# code ──────────────────────────────────────────
@@ -308,3 +323,261 @@ class TestParseSqlColumns:
         tariff = next(c for c in cols if c["column"] == "UsrPreferentialTariff")
         assert tariff["sql_type"] == "bit"
         assert tariff["precision"] is None
+
+
+# ── Tests: check_fields_have_sql_columns ────────────────────────────────
+
+class TestCheckFieldsHaveSqlColumns:
+    def test_missing_sql_column(self):
+        fields = [{"name": "UsrFoo", "db_type": "PXDBBool", "precision": None, "dac": "SOOrder", "default_value": None}]
+        columns = []  # No SQL columns at all
+        errs, warns = check_fields_have_sql_columns(fields, columns)
+        assert len(errs) == 1
+        assert "UsrFoo" in errs[0]
+        assert "SOOrder" in errs[0]
+
+    def test_field_has_sql_column(self):
+        fields = [{"name": "UsrFoo", "db_type": "PXDBBool", "precision": None, "dac": "SOOrder", "default_value": None}]
+        columns = [{"table": "SOOrder", "column": "UsrFoo", "sql_type": "bit", "precision": None}]
+        errs, warns = check_fields_have_sql_columns(fields, columns)
+        assert len(errs) == 0
+
+    def test_dac_to_table_resolution(self):
+        """Customer maps to BAccount — field on Customer should match BAccount SQL."""
+        fields = [{"name": "UsrDisablePayLink", "db_type": "PXDBBool", "precision": None, "dac": "Customer", "default_value": "false"}]
+        columns = [{"table": "BAccount", "column": "UsrDisablePayLink", "sql_type": "bit", "precision": None}]
+        errs, warns = check_fields_have_sql_columns(fields, columns)
+        assert len(errs) == 0
+
+
+# ── Tests: check_type_compatibility ─────────────────────────────────────
+
+class TestCheckTypeCompatibility:
+    def test_type_mismatch(self):
+        fields = [{"name": "UsrFlag", "db_type": "PXDBBool", "precision": None, "dac": "SOOrder", "default_value": None}]
+        columns = [{"table": "SOOrder", "column": "UsrFlag", "sql_type": "nvarchar", "precision": 50}]
+        errs, warns = check_type_compatibility(fields, columns)
+        assert len(errs) == 1
+        assert "Type mismatch" in errs[0]
+
+    def test_precision_mismatch(self):
+        fields = [{"name": "UsrAmt", "db_type": "PXDBDecimal", "precision": 2, "dac": "SOOrder", "default_value": None}]
+        columns = [{"table": "SOOrder", "column": "UsrAmt", "sql_type": "decimal", "precision": 4}]
+        errs, warns = check_type_compatibility(fields, columns)
+        assert len(errs) == 1
+        assert "Precision mismatch" in errs[0]
+
+    def test_types_match(self):
+        fields = [
+            {"name": "UsrAmt", "db_type": "PXDBDecimal", "precision": 2, "dac": "SOOrder", "default_value": None},
+            {"name": "UsrFlag", "db_type": "PXDBBool", "precision": None, "dac": "SOOrder", "default_value": None},
+        ]
+        columns = [
+            {"table": "SOOrder", "column": "UsrAmt", "sql_type": "decimal", "precision": 2},
+            {"table": "SOOrder", "column": "UsrFlag", "sql_type": "bit", "precision": None},
+        ]
+        errs, warns = check_type_compatibility(fields, columns)
+        assert len(errs) == 0
+
+
+# ── Tests: check_table_name_mapping ─────────────────────────────────────
+
+class TestCheckTableNameMapping:
+    def test_table_name_mismatch(self):
+        """SQL uses DAC name 'INLotSerialClass' but table is 'INLotSerClass'."""
+        fields = [{"name": "UsrFoo", "db_type": "PXDBBool", "precision": None, "dac": "INLotSerialClass", "default_value": None}]
+        columns = [{"table": "INLotSerialClass", "column": "UsrFoo", "sql_type": "bit", "precision": None}]
+        errs, warns = check_table_name_mapping(fields, columns)
+        assert len(errs) == 1
+        assert "INLotSerClass" in errs[0]
+
+    def test_customer_baccount_mapping(self):
+        """Customer maps to BAccount — SQL using BAccount is correct."""
+        fields = [{"name": "UsrDisablePayLink", "db_type": "PXDBBool", "precision": None, "dac": "Customer", "default_value": None}]
+        columns = [{"table": "BAccount", "column": "UsrDisablePayLink", "sql_type": "bit", "precision": None}]
+        errs, warns = check_table_name_mapping(fields, columns)
+        assert len(errs) == 0
+
+    def test_same_name_dac_no_error(self):
+        """SOOrder maps to SOOrder — no mismatch possible."""
+        fields = [{"name": "UsrFoo", "db_type": "PXDBBool", "precision": None, "dac": "SOOrder", "default_value": None}]
+        columns = [{"table": "SOOrder", "column": "UsrFoo", "sql_type": "bit", "precision": None}]
+        errs, warns = check_table_name_mapping(fields, columns)
+        assert len(errs) == 0
+
+
+# ── Tests: check_extension_references ───────────────────────────────────
+
+class TestCheckExtensionReferences:
+    def test_unknown_extension_reference(self):
+        code = 'var ext = row.GetExtension<NonExistentExt>();'
+        errs, warns = check_extension_references(code, {"SOOrderExt"})
+        assert len(warns) == 1
+        assert "NonExistentExt" in warns[0]
+
+    def test_known_extension_reference(self):
+        code = 'var ext = row.GetExtension<SOOrderExt>();'
+        errs, warns = check_extension_references(code, {"SOOrderExt"})
+        assert len(warns) == 0
+
+
+# ── Tests: check_cross_project_duplicates ───────────────────────────────
+
+class TestCheckCrossProjectDuplicates:
+    def test_duplicate_field_across_projects(self):
+        primary = [{"name": "UsrFoo", "dac": "SOOrder", "db_type": "PXDBBool", "precision": None, "default_value": None}]
+        other = {"OtherProject": [{"name": "UsrFoo", "dac": "SOOrder", "db_type": "PXDBBool", "precision": None, "default_value": None}]}
+        errs, warns = check_cross_project_duplicates("Primary", primary, other)
+        assert len(errs) == 1
+        assert "Duplicate" in errs[0]
+
+    def test_same_field_different_dac_ok(self):
+        primary = [{"name": "UsrFoo", "dac": "SOOrder", "db_type": "PXDBBool", "precision": None, "default_value": None}]
+        other = {"OtherProject": [{"name": "UsrFoo", "dac": "POOrder", "db_type": "PXDBBool", "precision": None, "default_value": None}]}
+        errs, warns = check_cross_project_duplicates("Primary", primary, other)
+        assert len(errs) == 0
+
+
+# ── Tests: check_namespace_consistency ──────────────────────────────────
+
+class TestCheckNamespaceConsistency:
+    def test_inconsistent_namespaces(self):
+        files = {
+            "FileA.cs": "namespace Aesthetik.WMS\n{ class A {} }",
+            "FileB.cs": "namespace HeritageFabrics.PO\n{ class B {} }",
+        }
+        errs, warns = check_namespace_consistency(files)
+        assert len(warns) == 1  # The minority namespace gets a warning
+
+    def test_consistent_namespaces(self):
+        files = {
+            "FileA.cs": "namespace Aesthetik.WMS\n{ class A {} }",
+            "FileB.cs": "namespace Aesthetik.WMS\n{ class B {} }",
+        }
+        errs, warns = check_namespace_consistency(files)
+        assert len(warns) == 0
+
+
+# ── Tests: check_orphaned_sql_columns ───────────────────────────────────
+
+class TestCheckOrphanedSqlColumns:
+    def test_orphaned_column(self):
+        fields = []  # No DAC fields
+        columns = [{"table": "SOOrder", "column": "UsrOrphan", "sql_type": "bit", "precision": None}]
+        errs, warns = check_orphaned_sql_columns(fields, columns)
+        assert len(warns) == 1
+        assert "UsrOrphan" in warns[0]
+
+    def test_non_usr_column_not_flagged(self):
+        fields = []
+        columns = [{"table": "SOOrder", "column": "CompanyID", "sql_type": "int", "precision": None}]
+        errs, warns = check_orphaned_sql_columns(fields, columns)
+        assert len(warns) == 0
+
+    def test_matched_column_not_orphaned(self):
+        fields = [{"name": "UsrFoo", "dac": "SOOrder", "db_type": "PXDBBool", "precision": None, "default_value": None}]
+        columns = [{"table": "SOOrder", "column": "UsrFoo", "sql_type": "bit", "precision": None}]
+        errs, warns = check_orphaned_sql_columns(fields, columns)
+        assert len(warns) == 0
+
+
+# ── Tests: check_external_paths ─────────────────────────────────────────
+
+class TestCheckExternalPaths:
+    def test_missing_external_file(self, tmp_path):
+        graphs = [{"source": "Code\\Missing.cs", "class_name": "MissingClass"}]
+        errs, warns = check_external_paths(graphs, str(tmp_path))
+        assert len(errs) == 1
+        assert "missing file" in errs[0].lower()
+
+    def test_existing_external_file(self, tmp_path):
+        (tmp_path / "Code").mkdir()
+        (tmp_path / "Code" / "Exists.cs").write_text("class Foo {}")
+        graphs = [{"source": "Code\\Exists.cs", "class_name": "Foo"}]
+        errs, warns = check_external_paths(graphs, str(tmp_path))
+        assert len(errs) == 0
+
+    def test_inline_cdata_skipped(self, tmp_path):
+        graphs = [{"source": "#CDATA", "class_name": "InlineClass"}]
+        errs, warns = check_external_paths(graphs, str(tmp_path))
+        assert len(errs) == 0
+        assert len(warns) == 0
+
+
+# ── Tests: check_pxdefault_vs_sql ───────────────────────────────────────
+
+class TestCheckPxdefaultVsSql:
+    def test_pxdefault_without_sql_default(self):
+        fields = [{"name": "UsrFoo", "dac": "SOOrder", "db_type": "PXDBBool", "precision": None, "default_value": "true"}]
+        sql_text = "ALTER TABLE SOOrder ADD UsrFoo bit NULL"
+        errs, warns = check_pxdefault_vs_sql(fields, sql_text)
+        assert len(warns) == 1
+        assert "PXDefault" in warns[0]
+
+    def test_pxdefault_with_sql_default(self):
+        fields = [{"name": "UsrFoo", "dac": "SOOrder", "db_type": "PXDBBool", "precision": None, "default_value": "false"}]
+        sql_text = "ALTER TABLE SOOrder ADD UsrFoo bit NULL DEFAULT 0"
+        errs, warns = check_pxdefault_vs_sql(fields, sql_text)
+        assert len(warns) == 0
+
+    def test_no_default_no_warning(self):
+        fields = [{"name": "UsrBar", "dac": "SOOrder", "db_type": "PXDBBool", "precision": None, "default_value": None}]
+        sql_text = "ALTER TABLE SOOrder ADD UsrBar bit NULL"
+        errs, warns = check_pxdefault_vs_sql(fields, sql_text)
+        assert len(warns) == 0
+
+
+# ── Tests: check_manifest_coverage ──────────────────────────────────────
+
+class TestCheckManifestCoverage:
+    def test_field_not_in_manifest(self):
+        fields = [{"name": "UsrNotInManifest", "dac": "SOOrder", "db_type": "PXDBBool", "precision": None, "default_value": None}]
+        manifest = {
+            "entities": {"SalesOrder": {"custom_fields": ["custom.Document.UsrHubSpotDealId"]}},
+            "sql_columns": [{"table": "SOOrder", "columns": ["UsrHubSpotDealId"]}],
+        }
+        errs, warns = check_manifest_coverage(fields, manifest)
+        assert len(warns) == 1
+        assert "UsrNotInManifest" in warns[0]
+
+    def test_field_in_manifest_custom_fields(self):
+        fields = [{"name": "UsrHubSpotDealId", "dac": "SOOrder", "db_type": "PXDBString", "precision": 50, "default_value": None}]
+        manifest = {
+            "entities": {"SalesOrder": {"custom_fields": ["custom.Document.UsrHubSpotDealId"]}},
+            "sql_columns": [],
+        }
+        errs, warns = check_manifest_coverage(fields, manifest)
+        assert len(warns) == 0
+
+    def test_field_in_manifest_sql_columns(self):
+        fields = [{"name": "UsrDisablePayLink", "dac": "Customer", "db_type": "PXDBBool", "precision": None, "default_value": None}]
+        manifest = {
+            "entities": {},
+            "sql_columns": [{"table": "BAccount", "columns": ["UsrDisablePayLink"]}],
+        }
+        errs, warns = check_manifest_coverage(fields, manifest)
+        assert len(warns) == 0
+
+    def test_empty_manifest_no_warnings(self):
+        fields = [{"name": "UsrFoo", "dac": "SOOrder", "db_type": "PXDBBool", "precision": None, "default_value": None}]
+        manifest = {"entities": {}, "sql_columns": []}
+        errs, warns = check_manifest_coverage(fields, manifest)
+        assert len(warns) == 0  # Empty manifest = nothing to compare against
+
+
+# ── Integration test: run_semantic_checks on AesthetikWMS ───────────────
+
+class TestRunSemanticChecks:
+    def test_run_semantic_checks_on_aesthetik_wms(self):
+        project_path = Path(__file__).parent.parent / "Customization" / "AesthetikWMS" / "project.xml"
+        if not project_path.exists():
+            pytest.skip("AesthetikWMS project.xml not found")
+        from semantic_checks import run_semantic_checks
+        errors, warnings = run_semantic_checks(
+            project_path=str(project_path),
+            strict=False,
+            also_publish=[],
+            manifest_path=str(Path(__file__).parent.parent / "publish-manifest.json"),
+        )
+        assert isinstance(errors, list)
+        assert isinstance(warnings, list)
