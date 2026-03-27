@@ -3332,71 +3332,117 @@ IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('BAccount')
   ALTER TABLE BAccount ADD UsrDisablePayLink bit NULL;
 ]]></CDATA>
     </Sql>
-    <Graph ClassName="SOOrderEntry_PieceGoodsAllocation" Source="#CDATA" IsNew="True" FileType="NewFile">
+        <Graph ClassName="SOOrderEntry_PieceGoodsAllocation" Source="#CDATA" IsNew="True" FileType="NewFile">
         <CDATA name="Source"><![CDATA[using System;
+using System.Collections.Generic;
 using System.Linq;
 using PX.Data;
 using PX.Data.BQL;
 using PX.Data.BQL.Fluent;
-using PX.Objects.CS;
 using PX.Objects.IN;
 using PX.Objects.SO;
 
-namespace Aesthetik.WMS
+namespace HeritageFabrics.SO
 {
     /// <summary>
-    /// Graph extension for SOOrderEntry (SO.30.10.00 — Sales Orders screen).
+    /// Auto-allocates lot/serial (bolt) to PIECENBR items on PC and FO sales orders.
+    /// Fires on RowUpdated — when a line is added or its fields change, finds the best
+    /// available bolt via FIFO + tightest-fit and assigns it.
     ///
-    /// Auto-allocates lot serial numbers for piece goods items when new lines
-    /// are inserted. Works in both UI and REST API contexts.
-    ///
-    /// Behavior:
-    ///   1. New SOLine inserted with a PIECENBR/PIECEGOODS lot class item
-    ///   2. Queries available lots in the specified warehouse (FIFO)
-    ///   3. Assigns the best lot's serial number to the line
-    ///   4. Adjusts OrderQty to the lot's available quantity (full bolt)
-    ///   5. Stamps [AUTO-ALLOC ACTIVE] on the order Description
-    ///
-    /// Target: Acumatica 2024 R2
+    /// Uses RowUpdated (not RowInserted) because RowInserted fires before InventoryID
+    /// and OrderQty are populated on the line, causing guard clauses to bail out.
     /// </summary>
     public class SOOrderEntry_PieceGoodsAllocation : PXGraphExtension<SOOrderEntry>
     {
         public static bool IsActive() => true;
 
+        private const string PieceGoodsClassID = "PIECENBR";
+
         /// <summary>Re-entry guard to prevent recursive allocation.</summary>
         [ThreadStatic]
         private static bool _allocating;
 
-        #region Event Handlers
+        // Track assigned serials within the current order to prevent double-assignment
+        private readonly HashSet<string> _assignedSerials = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-        /// <summary>
-        /// Fires when a new SOLine is inserted — both from UI interaction and REST API PUT.
-        /// Checks if the item is a piece goods lot class, and if so, auto-assigns a lot.
-        /// </summary>
-        protected virtual void _(Events.RowInserted<SOLine> e)
+        protected void _(Events.RowUpdated<SOLine> e)
         {
             if (_allocating) return;
             if (e.Row == null) return;
 
-            SOLine line = e.Row;
+            // Only for PC and FO order types
+            SOOrder order = Base.Document.Current;
+            if (order == null) return;
+            string orderType = order.OrderType;
+            if (orderType != "PC" && orderType != "FO") return;
 
-            // Guard: skip if no inventory item set
-            if (line.InventoryID == null) return;
+            // Guard: skip if lot already assigned (prevents re-trigger from qty update)
+            if (!string.IsNullOrEmpty(e.Row.LotSerialNbr)) return;
 
-            // Guard: skip if lot/serial already assigned by user
-            if (!string.IsNullOrEmpty(line.LotSerialNbr)) return;
+            // Need both item and qty to proceed
+            if (e.Row.InventoryID == null || (e.Row.OrderQty ?? 0) <= 0) return;
 
-            // Guard: skip if no warehouse specified
-            if (line.SiteID == null) return;
+            // Only process PIECENBR items (Piece Number - Lot Tracked)
+            if (!IsPieceGoodsItem(e.Row.InventoryID)) return;
 
-            // Check if this item uses a piece goods lot class
-            if (!IsPieceGoodsItem(line.InventoryID.Value))
-                return;
+            decimal minQty = e.Row.OrderQty ?? 0;
+            int inventoryID = e.Row.InventoryID.Value;
+            int? siteID = e.Row.SiteID ?? order.DefaultSiteID;
+
+            if (siteID == null) return;
 
             try
             {
                 _allocating = true;
-                AllocateLotForLine(line);
+
+                // Rebuild assigned serials from other lines in this order
+                RebuildAssignedSerials(e.Row.LineNbr);
+
+                // Query INLotSerialStatus for available bolts
+                var allSerials = SelectFrom<INLotSerialStatus>
+                    .Where<INLotSerialStatus.inventoryID.IsEqual<@P.AsInt>
+                        .And<INLotSerialStatus.siteID.IsEqual<@P.AsInt>>>
+                    .View.ReadOnly.Select(Base, inventoryID, siteID.Value);
+
+                // Filter and score candidates
+                var candidates = new List<BoltCandidate>();
+
+                foreach (PXResult<INLotSerialStatus> row in allSerials)
+                {
+                    var status = (INLotSerialStatus)row;
+                    if (status.LotSerialNbr == null) continue;
+
+                    // Skip already assigned to another line in this order
+                    if (_assignedSerials.Contains(status.LotSerialNbr)) continue;
+
+                    decimal qtyOnHand = status.QtyOnHand ?? 0;
+                    decimal qtyAvail = status.QtyAvail ?? 0;
+
+                    // Must have enough quantity to meet minimum
+                    if (qtyOnHand < minQty) continue;
+
+                    // Must be fully unreserved (entire bolt available)
+                    if (qtyAvail != qtyOnHand) continue;
+
+                    candidates.Add(new BoltCandidate
+                    {
+                        LotSerialNbr = status.LotSerialNbr,
+                        QtyOnHand = qtyOnHand,
+                        ReceiptDate = status.ReceiptDate ?? status.LastModifiedDateTime?.Date,
+                    });
+                }
+
+                if (candidates.Count == 0) return; // No bolt meets minimum — leave unallocated
+
+                // Sort: FIFO first (oldest receipt date), then tightest fit (smallest qty >= minimum)
+                var best = candidates
+                    .OrderBy(c => c.ReceiptDate ?? DateTime.MaxValue)
+                    .ThenBy(c => c.QtyOnHand)
+                    .First();
+
+                // Assign lot and update quantity to full bolt
+                Base.Transactions.Cache.SetValueExt<SOLine.lotSerialNbr>(e.Row, best.LotSerialNbr);
+                Base.Transactions.Cache.SetValueExt<SOLine.orderQty>(e.Row, best.QtyOnHand);
             }
             finally
             {
@@ -3404,97 +3450,55 @@ namespace Aesthetik.WMS
             }
         }
 
-        #endregion
-
-        #region Allocation Logic
+        /// <summary>
+        /// When a line is deleted, remove its serial from the tracking set.
+        /// </summary>
+        protected void _(Events.RowDeleted<SOLine> e)
+        {
+            if (e.Row?.LotSerialNbr != null)
+                _assignedSerials.Remove(e.Row.LotSerialNbr);
+        }
 
         /// <summary>
-        /// Finds the best available lot for a piece goods line and assigns it.
-        /// Uses FIFO selection (oldest receipt date first), preferring fuller bolts.
+        /// Rebuilds the set of serials already assigned to other lines in this order.
+        /// Excludes the current line being processed.
         /// </summary>
-        private void AllocateLotForLine(SOLine line)
+        private void RebuildAssignedSerials(int? excludeLineNbr)
         {
-            // Query available lot/serial inventory for this item in the specified warehouse
-            var availableLots = SelectFrom<INLotSerialStatus>
-                .Where<INLotSerialStatus.inventoryID.IsEqual<@P.AsInt>
-                    .And<INLotSerialStatus.siteID.IsEqual<@P.AsInt>>
-                    .And<INLotSerialStatus.qtyOnHand.IsGreater<decimal0>>>
-                .OrderBy<INLotSerialStatus.receiptDate.Asc,
-                         INLotSerialStatus.qtyOnHand.Desc>
-                .View.ReadOnly.Select(Base, line.InventoryID, line.SiteID);
-
-            if (availableLots == null || availableLots.Count == 0)
-                return; // No inventory — skip silently
-
-            // Take the first (oldest, fullest) lot
-            var bestLot = (INLotSerialStatus)availableLots[0];
-            string lotNbr = bestLot.LotSerialNbr;
-            decimal availQty = bestLot.QtyOnHand ?? 0;
-
-            if (string.IsNullOrEmpty(lotNbr) || availQty <= 0)
-                return;
-
-            // Update the line: assign lot and adjust quantity to full bolt
-            var lineCache = Base.Transactions.Cache;
-            lineCache.SetValueExt<SOLine.lotSerialNbr>(line, lotNbr);
-
-            // Adjust quantity to full bolt (the lot's available quantity)
-            if (availQty != (line.OrderQty ?? 0))
+            _assignedSerials.Clear();
+            foreach (SOLine line in Base.Transactions.Select())
             {
-                lineCache.SetValueExt<SOLine.orderQty>(line, availQty);
-            }
-
-            // Stamp the order Description with the allocation marker
-            SOOrder order = Base.Document.Current;
-            if (order != null)
-            {
-                string marker = $"[AUTO-ALLOC ACTIVE] Lot {lotNbr} ({availQty:F0} {line.UOM ?? "EA"})";
-                string existingDesc = order.OrderDesc ?? "";
-
-                // Don't duplicate the marker if already present
-                if (!existingDesc.Contains("[AUTO-ALLOC"))
-                {
-                    string newDesc = string.IsNullOrEmpty(existingDesc)
-                        ? marker
-                        : $"{existingDesc} | {marker}";
-
-                    Base.Document.Cache.SetValueExt<SOOrder.orderDesc>(order, newDesc);
-                }
-                else if (!existingDesc.Contains(lotNbr))
-                {
-                    // Multiple lines allocated — append this lot
-                    string newDesc = $"{existingDesc} | Lot {lotNbr} ({availQty:F0} {line.UOM ?? "EA"})";
-                    Base.Document.Cache.SetValueExt<SOOrder.orderDesc>(order, newDesc);
-                }
+                if (line.LineNbr == excludeLineNbr) continue;
+                if (!string.IsNullOrEmpty(line.LotSerialNbr))
+                    _assignedSerials.Add(line.LotSerialNbr);
             }
         }
 
-        #endregion
-
-        #region Helper Methods
-
-        /// <summary>
-        /// Checks if an inventory item uses a piece goods lot serial class.
-        /// Supports both PIECENBR (production) and PIECEGOODS (constants) class IDs.
-        /// </summary>
-        private bool IsPieceGoodsItem(int inventoryID)
+        /// <summary>Checks if an item uses the PIECENBR lot/serial class.</summary>
+        private bool IsPieceGoodsItem(int? inventoryID)
         {
+            if (inventoryID == null) return false;
+
             var item = SelectFrom<InventoryItem>
                 .Where<InventoryItem.inventoryID.IsEqual<@P.AsInt>>
                 .View.ReadOnly.Select(Base, inventoryID);
 
             if (item == null) return false;
 
-            string lotClass = ((InventoryItem)item).LotSerClassID?.Trim();
-
-            if (string.IsNullOrEmpty(lotClass)) return false;
-
-            return string.Equals(lotClass, "PIECENBR", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(lotClass, PieceGoodsConstants.LotSerialClassID, StringComparison.OrdinalIgnoreCase);
+            return string.Equals(
+                ((InventoryItem)item).LotSerClassID,
+                PieceGoodsClassID,
+                StringComparison.OrdinalIgnoreCase);
         }
 
-        #endregion
+        private class BoltCandidate
+        {
+            public string LotSerialNbr { get; set; }
+            public decimal QtyOnHand { get; set; }
+            public DateTime? ReceiptDate { get; set; }
+        }
     }
-}]]></CDATA>
+}
+]]></CDATA>
     </Graph>
 </Customization>
