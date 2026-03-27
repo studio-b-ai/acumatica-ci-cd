@@ -436,7 +436,7 @@ namespace StudioB.Containers
 using System.Data;
 using System.Data.SqlClient;
 using PX.Data;
-using PX.Data.Update;
+using Customization;
 
 namespace StudioB.Containers
 {
@@ -450,7 +450,7 @@ namespace StudioB.Containers
     {
         public override void UpdateDatabase()
         {
-            string connStr = PX.Common.PXDatabase.Provider.GetConnectionString();
+            string connStr = System.Web.Configuration.WebConfigurationManager.ConnectionStrings["ProjectX"].ConnectionString;
 
             using (var conn = new SqlConnection(connStr))
             {
