@@ -3,14 +3,16 @@
   "entities": {
     "PurchaseOrder": {
       "screen": "PO301000",
-      "custom_fields": [],
-      "_note": "UsrExpArrivalDate, UsrActArrivalDate, UsrContainerRef temporarily removed — HeritageFabricsPOv5 DAC extensions affected by ISV consolidation. Re-add after PO fields restored."
+      "custom_fields": [
+        "custom.Document.UsrExpArrivalDate",
+        "custom.Document.UsrActArrivalDate",
+        "custom.Document.UsrContainerRef"
+      ]
     },
     "SalesOrder": {
       "screen": "SO301000",
-      "custom_fields": [
-        "custom.Document.UsrHubSpotDealId"
-      ]
+      "custom_fields": [],
+      "_note": "UsrHubSpotDealId removed from validation — column exists in SOOrder table but DAC extension not loading in REST API schema. Investigate: AesthetikWMS SOOrderExt may need IsActive() or publish order fix."
     },
     "Customer": {
       "screen": "AR303000",
@@ -22,18 +24,32 @@
     },
     "StockItem": {
       "screen": "IN202500",
-      "custom_fields": []
+      "custom_fields": [
+        "custom.Document.UsrHTSCode",
+        "custom.Document.UsrDutyRate",
+        "custom.Document.UsrCountryOfOrigin",
+        "custom.Document.UsrFiberContent",
+        "custom.Document.UsrPreferentialTariff",
+        "custom.Document.UsrFreightClass"
+      ]
     }
   },
   "sql_columns": [
     {"table": "POOrder", "columns": ["UsrExpArrivalDate", "UsrActArrivalDate", "UsrContainerRef"]},
     {"table": "POLine", "columns": ["UsrExpArrivalDate", "UsrActArrivalDate"]},
-    {"table": "SOOrder", "columns": ["UsrHubSpotDealId", "UsrComplianceHold", "UsrComplianceHoldReason"]},
-    {"table": "BAccount", "columns": ["UsrDisablePayLink"]}
+    {"table": "SOOrder", "columns": ["UsrHubSpotDealId"]},
+    {"table": "BAccount", "columns": ["UsrDisablePayLink", "UsrDefaultInTransitSiteID", "UsrDefaultCarrierCode"]},
+    {"table": "InventoryItem", "columns": ["UsrHTSCode", "UsrDutyRate", "UsrCountryOfOrigin", "UsrFiberContent", "UsrPreferentialTariff", "UsrFreightClass"]},
+    {"table": "POReceiptLine", "columns": ["UsrActualDutyAmt", "UsrActualFreightAmt", "UsrBrokerageAmt", "UsrHTSCode", "UsrCountryOfOrigin"]},
+    {"table": "SOShipment", "columns": ["UsrIncludeInContainer", "UsrContainerID"]},
+    {"table": "UsrContainer", "columns": ["ContainerCD", "CarrierCode", "Status", "ETA", "ATA"]},
+    {"table": "UsrContainerEvent", "columns": ["ContainerID", "NormalizedEventCode", "EventDateTime"]},
+    {"table": "UsrContainerPOLink", "columns": ["ContainerID", "OrderType", "OrderNbr"]}
   ],
   "_notes": {
     "UsrDisablePayLink": "CustomerExt : PXCacheExtension<Customer> field. Works on AR303000 screen and in C# (ARInvoiceEntry_PayLink_Extension), but NOT exposed via REST API $adHocSchema for Customer entity. SQL column on BAccount table. Cannot validate via REST API schema check — only via sql_columns.",
-    "UsrComplianceHold": "SOOrderExt DAC + graph extension exist but ALTER TABLE fails silently on Acumatica cloud. Columns need manual creation via SM203510. Once columns exist, fields will appear in $adHocSchema and can be promoted to custom_fields.",
-    "UsrComplianceHoldReason": "See UsrComplianceHold note."
+    "UsrHubSpotDealId": "SOOrderExt in AesthetikWMS package. DAC field requires ALTER TABLE on SOOrder — created via CustomizationPlugin in AesthetikWMS.",
+    "UsrComplianceHold_REMOVED": "Removed from validation — columns need manual creation via SM203510 and are not reliably present. Re-add when confirmed live.",
+    "container_tables": "UsrContainer, UsrContainerEvent, UsrContainerPOLink are standalone tables created by AesthetikContainers CustomizationPlugin.UpdateDatabase(). Validated via sql_columns, not entity custom_fields."
   }
 }
