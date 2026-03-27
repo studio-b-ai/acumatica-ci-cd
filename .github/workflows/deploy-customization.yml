@@ -97,7 +97,7 @@ env:
   # See: 2026-03-22 incident — AesthetikWMSv2/v3 orphans blocked all deploys.
   PROJECT_NAME: AesthetikWMS
   ALSO_PUBLISH: ${{ vars.ALSO_PUBLISH_PROJECTS || '' }}
-  KNOWN_PROJECTS: "AesthetikWMS,AsthetikTheme,AesthetikContainers"
+  KNOWN_PROJECTS: "AesthetikWMS,AsthetikTheme"
   ISV_PACKAGES: "IIGHFContainerMods,IIGGlobalContainerMgmt"
 
 jobs:
@@ -315,9 +315,24 @@ jobs:
       github.event_name != 'pull_request'
     steps:
       - uses: actions/checkout@v4
+      - name: Determine target environment
+        id: env
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            TARGET="${{ github.event.inputs.environment }}"
+          elif [ "${{ github.event_name }}" = "repository_dispatch" ]; then
+            TARGET="${{ github.event.client_payload.environment || 'production' }}"
+          elif [ "${{ github.ref }}" = "refs/heads/main" ]; then
+            TARGET="production"
+          else
+            TARGET="staging"
+          fi
+          echo "target=${TARGET}" >> "$GITHUB_OUTPUT"
+          echo "Determined target environment: ${TARGET}"
       - name: Install Python dependencies
         run: pip install -r scripts/requirements.txt
       - name: Send 20-minute warning and schedule deploy
+        id: snapshot
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.STUDIOB_SLACK_WEBHOOK_URL }}
           ACUMATICA_URL: ${{ secrets.ACUMATICA_PROD_URL }}
@@ -352,6 +367,7 @@ jobs:
 
       # ── Maintenance Mode — pause all Acumatica workers before publish ─
       - name: Enter maintenance mode
+        id: smoke
         env:
           ACUMATICA_URL: ${{ (steps.env.outputs.target == 'production') && secrets.ACUMATICA_PROD_URL || secrets.ACUMATICA_SANDBOX_URL }}
           ACUMATICA_USERNAME: ${{ secrets.ACUMATICA_PROD_USERNAME }}
