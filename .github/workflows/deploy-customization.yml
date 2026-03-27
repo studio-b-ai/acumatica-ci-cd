@@ -517,8 +517,6 @@ jobs:
               -d "{\"text\":\":x: *Acumatica Customization Deploy FAILED*\nProject: \`${PROJECT_NAME}\`\nEnvironment: \`${TARGET}\`\nCommit: \`${GITHUB_SHA::8}\`\nActor: @${GITHUB_ACTOR}\nRun: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}\"}"
           fi
 
-      - name: Notify auto-remediation
-
       - name: Post deployment summary
         if: always()
         run: |
