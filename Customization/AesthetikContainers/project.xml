@@ -431,4 +431,81 @@ namespace StudioB.Containers
 }
 ]]></CDATA>
     </Graph>
+    <Graph ClassName="AesthetikContainersInstall" Source="#CDATA" IsNew="True" FileType="NewFile">
+        <CDATA name="Source"><![CDATA[using System;
+using System.Data;
+using System.Data.SqlClient;
+using PX.Data;
+using PX.Data.Update;
+
+namespace StudioB.Containers
+{
+    /// <summary>
+    /// Customization plugin — creates SQL columns during publish via ADO.NET.
+    /// This is the ONLY reliable way to create columns on Acumatica Cloud.
+    /// [PXDB*] auto-create, SqlScript, and Sql elements all fail silently.
+    /// Acumatica calls UpdateDatabase() on every publish — idempotent via IF NOT EXISTS.
+    /// </summary>
+    public class AesthetikContainersInstall : CustomizationPlugin
+    {
+        public override void UpdateDatabase()
+        {
+            string connStr = PX.Common.PXDatabase.Provider.GetConnectionString();
+
+            using (var conn = new SqlConnection(connStr))
+            {
+                conn.Open();
+
+                // InventoryItem — trade compliance fields
+                EnsureColumn(conn, "InventoryItem", "UsrHTSCode", "nvarchar(12) NULL");
+                EnsureColumn(conn, "InventoryItem", "UsrDutyRate", "decimal(19,4) NULL DEFAULT 0.0000");
+                EnsureColumn(conn, "InventoryItem", "UsrCountryOfOrigin", "nchar(2) NULL");
+                EnsureColumn(conn, "InventoryItem", "UsrFiberContent", "nvarchar(100) NULL");
+                EnsureColumn(conn, "InventoryItem", "UsrPreferentialTariff", "bit NULL DEFAULT 0");
+                EnsureColumn(conn, "InventoryItem", "UsrFreightClass", "nvarchar(10) NULL DEFAULT '70'");
+
+                // POOrder — arrival date fields
+                EnsureColumn(conn, "POOrder", "UsrExpArrivalDate", "datetime NULL");
+                EnsureColumn(conn, "POOrder", "UsrActArrivalDate", "datetime NULL");
+                EnsureColumn(conn, "POOrder", "UsrContainerRef", "nvarchar(50) NULL");
+
+                // POLine — arrival date fields
+                EnsureColumn(conn, "POLine", "UsrExpArrivalDate", "datetime NULL");
+                EnsureColumn(conn, "POLine", "UsrActArrivalDate", "datetime NULL");
+
+                // POReceiptLine — landed cost fields
+                EnsureColumn(conn, "POReceiptLine", "UsrActualDutyAmt", "decimal(19,2) NULL DEFAULT 0.00");
+                EnsureColumn(conn, "POReceiptLine", "UsrActualFreightAmt", "decimal(19,2) NULL DEFAULT 0.00");
+                EnsureColumn(conn, "POReceiptLine", "UsrBrokerageAmt", "decimal(19,2) NULL DEFAULT 0.00");
+                EnsureColumn(conn, "POReceiptLine", "UsrHTSCode", "nvarchar(12) NULL");
+                EnsureColumn(conn, "POReceiptLine", "UsrCountryOfOrigin", "nchar(2) NULL");
+            }
+
+            WriteLog("AesthetikContainers: all columns verified/created.");
+        }
+
+        private void EnsureColumn(SqlConnection conn, string table, string column, string definition)
+        {
+            string sql = string.Format(
+                "IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('{0}') AND name = '{1}') " +
+                "ALTER TABLE [{0}] ADD [{1}] {2};",
+                table, column, definition);
+
+            try
+            {
+                using (var cmd = new SqlCommand(sql, conn))
+                {
+                    cmd.ExecuteNonQuery();
+                }
+                WriteLog(string.Format("  Column {0}.{1} — OK", table, column));
+            }
+            catch (Exception ex)
+            {
+                WriteLog(string.Format("  Column {0}.{1} — FAILED: {2}", table, column, ex.Message));
+            }
+        }
+    }
+}
+]]></CDATA>
+    </Graph>
 </Customization>
