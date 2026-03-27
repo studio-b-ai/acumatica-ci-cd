@@ -1,4 +1,4 @@
-<Customization level="1" description="PO custom date fields + Customer payment link exclusion + SO HubSpot Deal ID + WMS Status + IN402000 Exp Arrival Date + PO Receipt Print Labels button + SO Auto-Allocation Webhook" product-version="24.208">
+<Customization level="1" description="PO custom date fields + Customer payment link exclusion + SO HubSpot Deal ID + WMS Status + IN402000 Exp Arrival Date + PO Receipt Print Labels button + SO Auto-Allocation Webhook + SO Break Pricing Panel" product-version="24.208">
     <Graph ClassName="POLineExt" Source="#CDATA" IsNew="True" FileType="NewFile">
         <CDATA name="Source"><![CDATA[using System;
 using PX.Data;
@@ -700,6 +700,7 @@ IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('SOOrder') 
         </PXGridLevel>
     </Page>
     <Page path="~/pages/so/so301000.aspx">
+        <!-- ── Existing header form additions (HubSpot, WMS, Compliance) ───── -->
         <PXFormView ID="form" ParentId="phF_form" TypeFullName="PX.Web.UI.PXFormView">
             <Children Key="Template">
                 <AddItem>
@@ -735,6 +736,170 @@ IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('SOOrder') 
                 </AddItem>
             </Children>
         </PXFormView>
+
+        <!-- ══════════════════════════════════════════════════════════════════
+             BREAK PRICING PANEL
+             Inserted immediately above the tab strip (ID="tab") that contains
+             the Document Details grid.  Uses InsertBefore so the panel renders
+             between the header FormView and the tab area, surviving upgrades.
+
+             Layout hierarchy:
+               PXSmartPanel (key=BreakPricingHeader, auto-repaints on line change)
+                 └─ PXGroupBox  (collapsible, default=expanded)
+                      ├─ PXFormView  (DataMember=BreakPricingHeader → item label)
+                      └─ PXGrid      (DataMember=BreakPricingTiers  → tier rows)
+        ═══════════════════════════════════════════════════════════════════ -->
+
+        <!-- 1. Outer auto-repainting smart panel scoped to BreakPricingHeader -->
+        <PXSmartPanel ID="pnlBreakPricing"
+            ParentId="phG_tab"
+            InsertBefore="tab"
+            TypeFullName="PX.Web.UI.PXSmartPanel">
+            <Prop Key="Key"           Value="BreakPricingHeader" />
+            <Prop Key="AutoRepaint"   Value="True" />
+            <Prop Key="style"         Value="margin-bottom:6px;" />
+
+            <Children Key="ContentTemplate">
+
+                <!-- 2. Collapsible GroupBox — defaults to expanded -->
+                <AddItem>
+                    <PXGroupBox ID="gbBreakPricing"
+                        TypeFullName="PX.Web.UI.PXGroupBox">
+                        <Prop Key="Caption"             Value="Break Pricing" />
+                        <Prop Key="DataMember"          Value="BreakPricingHeader" />
+                        <Prop Key="DataSourceID"        Value="ds" />
+                        <Prop Key="RenderStyle"         Value="Fieldset" />
+                        <Prop Key="CollapsibleBehavior" Value="ServerSide" />
+                        <Prop Key="InitialExpandState"  Value="Expanded" />
+                        <Prop Key="ScreenID"            Value="SO301000" />
+                        <Prop Key="style"               Value="margin:0 0 6px 0; width:100%;" />
+
+                        <Children Key="Template">
+
+                            <!-- 3. Header FormView: "Item: {InventoryCD – Description}" -->
+                            <AddItem>
+                                <PXFormView ID="frmBreakPricingHeader"
+                                    TypeFullName="PX.Web.UI.PXFormView">
+                                    <Prop Key="DataMember"   Value="BreakPricingHeader" />
+                                    <Prop Key="DataSourceID" Value="ds" />
+                                    <Prop Key="SkinID"       Value="Transparent" />
+                                    <Prop Key="TabIndex"     Value="1800" />
+
+                                    <Children Key="Template">
+                                        <AddItem>
+                                            <PXLayoutRule TypeFullName="PX.Web.UI.PXLayoutRule">
+                                                <Prop Key="StartColumn" Value="True" />
+                                                <Prop Key="LabelsWidth" Value="S" />
+                                                <Prop Key="ControlSize" Value="XL" />
+                                            </PXLayoutRule>
+                                        </AddItem>
+                                        <!-- Bound to SOPricingBreakHeader.ItemDescription -->
+                                        <AddItem>
+                                            <PXTextEdit ID="edBreakPricingItemDesc"
+                                                TypeFullName="PX.Web.UI.PXTextEdit">
+                                                <Prop Key="DataField"  Value="ItemDescription" />
+                                                <Prop Key="LabelWidth" Value="120px" />
+                                                <Prop Key="Size"       Value="XL" />
+                                                <Prop Key="Enabled"    Value="False" />
+                                            </PXTextEdit>
+                                        </AddItem>
+                                    </Children>
+                                </PXFormView>
+                            </AddItem>
+
+                            <!-- 4. Read-only tier grid (AllowAddNew/Delete/Update=False) -->
+                            <AddItem>
+                                <PXGrid ID="gridBreakTiers"
+                                    TypeFullName="PX.Web.UI.PXGrid">
+                                    <Prop Key="DataMember"     Value="BreakPricingTiers" />
+                                    <Prop Key="DataSourceID"   Value="ds" />
+                                    <Prop Key="SkinID"         Value="ShortList" />
+                                    <Prop Key="Height"         Value="120px" />
+                                    <Prop Key="Width"          Value="100%" />
+                                    <Prop Key="AllowPaging"    Value="False" />
+                                    <Prop Key="AdjustPageSize" Value="Auto" />
+                                    <Prop Key="NoteIndicator"  Value="False" />
+                                    <Prop Key="FilesIndicator" Value="False" />
+                                    <Prop Key="TabIndex"       Value="1810" />
+
+                                    <Children Key="Mode">
+                                        <AddItem>
+                                            <PXGridMode TypeFullName="PX.Web.UI.PXGridMode">
+                                                <Prop Key="AllowAddNew" Value="False" />
+                                                <Prop Key="AllowDelete" Value="False" />
+                                                <Prop Key="AllowUpdate" Value="False" />
+                                            </PXGridMode>
+                                        </AddItem>
+                                    </Children>
+
+                                    <Children Key="Levels">
+                                        <AddItem>
+                                            <PXGridLevel DataMember="BreakPricingTiers"
+                                                TypeFullName="PX.Web.UI.PXGridLevel">
+                                                <Children Key="Columns">
+
+                                                    <!-- Col 1: Tier / Level (1-based seq) -->
+                                                    <AddItem>
+                                                        <PXGridColumn TypeFullName="PX.Web.UI.PXGridColumn">
+                                                            <Prop Key="DataField" Value="TierOrder" />
+                                                            <Prop Key="Width"     Value="50px" />
+                                                            <Prop Key="TextAlign" Value="Center" />
+                                                        </PXGridColumn>
+                                                    </AddItem>
+
+                                                    <!-- Col 2: Min Qty -->
+                                                    <AddItem>
+                                                        <PXGridColumn TypeFullName="PX.Web.UI.PXGridColumn">
+                                                            <Prop Key="DataField" Value="MinQty" />
+                                                            <Prop Key="Width"     Value="80px" />
+                                                            <Prop Key="TextAlign" Value="Right" />
+                                                        </PXGridColumn>
+                                                    </AddItem>
+
+                                                    <!-- Col 3: Max Qty ("No Limit" when null) -->
+                                                    <AddItem>
+                                                        <PXGridColumn TypeFullName="PX.Web.UI.PXGridColumn">
+                                                            <Prop Key="DataField" Value="MaxQty" />
+                                                            <Prop Key="Width"     Value="80px" />
+                                                            <Prop Key="TextAlign" Value="Right" />
+                                                            <Prop Key="NullText"  Value="No Limit" />
+                                                        </PXGridColumn>
+                                                    </AddItem>
+
+                                                    <!-- Col 4: Unit Price (currency format) -->
+                                                    <AddItem>
+                                                        <PXGridColumn TypeFullName="PX.Web.UI.PXGridColumn">
+                                                            <Prop Key="DataField" Value="UnitPrice" />
+                                                            <Prop Key="Width"     Value="90px" />
+                                                            <Prop Key="TextAlign" Value="Right" />
+                                                            <Prop Key="Format"    Value="Currency" />
+                                                        </PXGridColumn>
+                                                    </AddItem>
+
+                                                    <!-- Col 5: UOM -->
+                                                    <AddItem>
+                                                        <PXGridColumn TypeFullName="PX.Web.UI.PXGridColumn">
+                                                            <Prop Key="DataField" Value="UOM" />
+                                                            <Prop Key="Width"     Value="60px" />
+                                                        </PXGridColumn>
+                                                    </AddItem>
+
+                                                </Children>
+                                            </PXGridLevel>
+                                        </AddItem>
+                                    </Children>
+
+                                </PXGrid>
+                            </AddItem>
+
+                        </Children>
+                    </PXGroupBox>
+                </AddItem>
+
+            </Children>
+        </PXSmartPanel>
+        <!-- ══ End Break Pricing Panel ══════════════════════════════════════ -->
+
     </Page>
     <Page path="~/pages/in/in402000.aspx">
         <PXGridLevel DataMember="ResultRecords" ParentId="phG_tab_Items#0_grid_Levels#0" TypeFullName="PX.Web.UI.PXGridLevel">
@@ -748,6 +913,369 @@ IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('SOOrder') 
             </Children>
         </PXGridLevel>
     </Page>
+    <!-- ═══════════════════════════════════════════════════════════════════════
+         Break Pricing Panel — SO301000
+         Three artefacts:
+           1. SOPricingBreakHeader  — unbound single-row DAC for the header label
+           2. SOPricingBreakTier    — unbound virtual DAC for grid rows
+           3. SOOrderEntry_BreakPricing — graph extension that populates both views
+         The page XML delta is in the <Page path="~/pages/so/so301000.aspx"> block.
+         ═══════════════════════════════════════════════════════════════════════ -->
+
+    <Graph ClassName="SOPricingBreakHeader" Source="#CDATA" IsNew="True" FileType="NewFile">
+        <CDATA name="Source"><![CDATA[using System;
+using PX.Data;
+using PX.Data.BQL;
+
+namespace HeritageFabrics.SO
+{
+    /// <summary>
+    /// Unbound single-row DAC used as the data source for the PXFormView header inside
+    /// the Break Pricing panel on SO301000.
+    ///
+    /// Why a separate DAC instead of putting the label on SOPricingBreakTier?
+    ///   • PXFormView (the header) and PXGrid (the tiers) must bind to *different*
+    ///     data members.  Acumatica does not allow a single DAC/view to serve both.
+    ///   • A PXFilter<SOPricingBreakHeader> view is always current (single row),
+    ///     which is exactly what a header label needs.
+    ///
+    /// The graph extension (SOOrderEntry_BreakPricing) keeps this current by calling
+    ///   BreakPricingHeader.Current.ItemDescription = ...
+    /// whenever the selected SOLine changes.
+    /// </summary>
+    [Serializable]
+    [PXCacheName("Break Pricing Header")]
+    public class SOPricingBreakHeader : IBqlTable
+    {
+        #region ItemDescription
+        /// <summary>
+        /// Formatted string displayed in the panel title bar.
+        /// Built by the graph extension as:  "{InventoryCD} – {Descr}"
+        /// Falls back to "(no item selected)" when no line is active.
+        /// </summary>
+        public abstract class itemDescription : BqlString.Field<itemDescription> { }
+
+        [PXString(512, IsUnicode = true)]
+        [PXUIField(DisplayName = "Item", Enabled = false)]
+        public virtual string ItemDescription { get; set; }
+        #endregion
+
+        #region InventoryID (backing field — not displayed)
+        /// <summary>
+        /// Tracks which InventoryID is currently reflected in the header and grid.
+        /// Used by the graph extension to short-circuit re-loading when the user
+        /// clicks a different split of the same item.
+        /// </summary>
+        public abstract class inventoryID : BqlInt.Field<inventoryID> { }
+
+        [PXInt]
+        [PXUIField(DisplayName = "Inventory ID", Visible = false, Enabled = false)]
+        public virtual int? InventoryID { get; set; }
+        #endregion
+    }
+}]]></CDATA>
+    </Graph>
+
+    <Graph ClassName="SOPricingBreakTier" Source="#CDATA" IsNew="True" FileType="NewFile">
+        <CDATA name="Source"><![CDATA[using System;
+using PX.Data;
+using PX.Data.BQL;
+using PX.Objects.IN;
+
+namespace HeritageFabrics.SO
+{
+    /// <summary>
+    /// Unbound/projection DAC used exclusively as a view-model for the Break Pricing
+    /// panel on SO301000.  Rows are populated in-memory by SOOrderEntry_BreakPricing
+    /// by reading ARSalesPrice break-tier records for the inventory item that is
+    /// currently selected in the Document Details grid.
+    ///
+    /// Why unbound?
+    ///   • Break-price records already live in standard Acumatica tables (ARSalesPrice).
+    ///   • We need a *filtered, display-only* projection – no additional DB table.
+    ///   • PXVirtualDAC keeps the cache ephemeral and never triggers a persist.
+    ///
+    /// Column layout matches the panel grid:
+    ///   Tier | MinQty | MaxQty | UnitPrice | UOM
+    /// </summary>
+    [Serializable]
+    [PXCacheName("Break Pricing Tier")]
+    [PXVirtual]
+    public class SOPricingBreakTier : IBqlTable
+    {
+        #region TierOrder
+        /// <summary>
+        /// Display sequence (1-based). Drives grid sort order.
+        /// This is the key field – the cache uses it as the identity for each row.
+        /// </summary>
+        public abstract class tierOrder : BqlInt.Field<tierOrder> { }
+
+        [PXInt(IsKey = true)]
+        [PXUIField(DisplayName = "Tier", Enabled = false)]
+        public virtual int? TierOrder { get; set; }
+        #endregion
+
+        #region MinQty
+        /// <summary>
+        /// Minimum quantity (break-price lower bound), inclusive.
+        /// Sourced from ARSalesPrice.BreakQty.
+        /// </summary>
+        public abstract class minQty : BqlDecimal.Field<minQty> { }
+
+        [PXDecimal(4)]
+        [PXUIField(DisplayName = "Min Qty", Enabled = false)]
+        public virtual decimal? MinQty { get; set; }
+        #endregion
+
+        #region MaxQty
+        /// <summary>
+        /// Maximum quantity (break-price upper bound), exclusive.
+        /// Derived as the MinQty of the next tier minus one unit, or null for the last tier.
+        /// Displayed as "No Limit" when null via a custom formatting hook.
+        /// </summary>
+        public abstract class maxQty : BqlDecimal.Field<maxQty> { }
+
+        [PXDecimal(4)]
+        [PXUIField(DisplayName = "Max Qty", Enabled = false)]
+        public virtual decimal? MaxQty { get; set; }
+        #endregion
+
+        #region UnitPrice
+        /// <summary>
+        /// Price per unit of measure at this tier, in the order's currency.
+        /// Sourced from ARSalesPrice.SalesPrice.
+        /// </summary>
+        public abstract class unitPrice : BqlDecimal.Field<unitPrice> { }
+
+        [PXDecimal(4)]
+        [PXUIField(DisplayName = "Unit Price", Enabled = false)]
+        public virtual decimal? UnitPrice { get; set; }
+        #endregion
+
+        #region UOM
+        /// <summary>
+        /// Unit of measure for MinQty / MaxQty quantities and UnitPrice.
+        /// Sourced from ARSalesPrice.UOM.
+        /// </summary>
+        public abstract class uOM : BqlString.Field<uOM> { }
+
+        [PXString(6, IsUnicode = true)]
+        [PXUIField(DisplayName = "UOM", Enabled = false)]
+        public virtual string UOM { get; set; }
+        #endregion
+
+        #region InventoryID (hidden, used for cache filtering only)
+        /// <summary>
+        /// InventoryID of the currently-selected SO line item.
+        /// Not displayed in the grid; used by the graph extension to correlate
+        /// which item these tiers belong to so the cache is invalidated correctly
+        /// when the user selects a different line.
+        /// </summary>
+        public abstract class inventoryID : BqlInt.Field<inventoryID> { }
+
+        [PXInt]
+        [PXUIField(DisplayName = "Inventory ID", Visible = false, Enabled = false)]
+        public virtual int? InventoryID { get; set; }
+        #endregion
+
+        #region InventoryDescription (header display field — unbound)
+        /// <summary>
+        /// Human-readable item description used in the panel header label.
+        /// Populated alongside TierOrder rows by the graph extension.
+        /// The ASPX label references this via a separate PXFormView bound to a
+        /// PXFilter&lt;SOPricingBreakHeader&gt; view.
+        /// </summary>
+        public abstract class inventoryDescription : BqlString.Field<inventoryDescription> { }
+
+        [PXString(256, IsUnicode = true)]
+        [PXUIField(DisplayName = "Item Description", Visible = false, Enabled = false)]
+        public virtual string InventoryDescription { get; set; }
+        #endregion
+    }
+}]]></CDATA>
+    </Graph>
+
+    <Graph ClassName="SOOrderEntry_BreakPricing" Source="#CDATA" IsNew="True" FileType="NewFile">
+        <CDATA name="Source"><![CDATA[using System;
+using System.Collections;
+using System.Collections.Generic;
+using PX.Data;
+using PX.Data.BQL;
+using PX.Data.BQL.Fluent;
+using PX.Objects.AR;
+using PX.Objects.IN;
+using PX.Objects.SO;
+
+namespace HeritageFabrics.SO
+{
+    /// <summary>
+    /// Graph extension for SOOrderEntry that drives the Break Pricing panel on SO301000.
+    ///
+    /// Responsibilities
+    /// ────────────────
+    /// 1. Expose a PXFilter&lt;SOPricingBreakHeader&gt; view (header label data).
+    /// 2. Expose a PXSelectReadonly&lt;SOPricingBreakTier&gt; virtual delegate view (grid rows).
+    /// 3. React to SOLine row selection changes (RowSelected) and refresh both views.
+    /// 4. Query ARSalesPrice break tiers for the selected inventory item, sorted by qty.
+    /// 5. Derive MaxQty as (next tier's MinQty - epsilon), null for the last tier.
+    ///
+    /// Data source: ARSalesPrice
+    ///   • Filtered by: InventoryID, PriceType = 'B' (base price), not promotional.
+    ///   • Ordered by BreakQty ASC.
+    ///   • Shows the full publicly-visible break pricing ladder for visual reference.
+    ///
+    /// Acumatica version target: 2024 R2 (24.208)
+    /// </summary>
+    public class SOOrderEntry_BreakPricing : PXGraphExtension<SOOrderEntry>
+    {
+        public static bool IsActive() => true;
+
+        // ─────────────────────────────────────────────────────────────────────
+        // Views
+        // ─────────────────────────────────────────────────────────────────────
+
+        /// <summary>
+        /// Single-row filter driving the panel header label.
+        /// Bind the PXFormView on SO301000 to DataMember="BreakPricingHeader".
+        /// </summary>
+        public PXFilter<SOPricingBreakHeader> BreakPricingHeader;
+
+        /// <summary>
+        /// Delegate-backed virtual view returning break tier rows for the
+        /// currently-selected SOLine's InventoryID.
+        /// Bind the PXGrid on SO301000 to DataMember="BreakPricingTiers".
+        /// </summary>
+        public PXSelectReadonly<SOPricingBreakTier> BreakPricingTiers;
+
+        /// <summary>
+        /// Custom delegate for BreakPricingTiers. Acumatica calls this when the
+        /// grid needs to populate. We build the list in-memory from ARSalesPrice.
+        /// </summary>
+        protected virtual IEnumerable breakPricingTiers()
+        {
+            SOPricingBreakHeader header = BreakPricingHeader.Current;
+            if (header?.InventoryID == null)
+                yield break;
+
+            foreach (SOPricingBreakTier tier in LoadTiers(header.InventoryID.Value))
+                yield return tier;
+        }
+
+        // ─────────────────────────────────────────────────────────────────────
+        // Event Handlers
+        // ─────────────────────────────────────────────────────────────────────
+
+        /// <summary>
+        /// Fires whenever a row in the Details grid is highlighted / selected.
+        /// Refreshes the break pricing panel to match the focused SOLine.
+        /// </summary>
+        protected void _(Events.RowSelected<SOLine> e)
+        {
+            SOLine line = e.Row;
+            SOPricingBreakHeader header = BreakPricingHeader.Current
+                ?? new SOPricingBreakHeader();
+
+            // Short-circuit: same item as before → nothing to reload
+            if (line?.InventoryID != null && line.InventoryID == header.InventoryID)
+                return;
+
+            if (line?.InventoryID == null)
+            {
+                // No line selected — clear the panel
+                header.InventoryID = null;
+                header.ItemDescription = Messages.NoItemSelected;
+            }
+            else
+            {
+                int inventoryID = line.InventoryID.Value;
+                string description = ResolveItemDescription(inventoryID);
+
+                header.InventoryID = inventoryID;
+                header.ItemDescription = description;
+            }
+
+            BreakPricingHeader.Cache.Clear();
+            BreakPricingHeader.Cache.Insert(header);
+
+            // Force the tier grid to re-query
+            BreakPricingTiers.Cache.Clear();
+        }
+
+        // ─────────────────────────────────────────────────────────────────────
+        // Core data-loading helpers
+        // ─────────────────────────────────────────────────────────────────────
+
+        /// <summary>
+        /// Queries ARSalesPrice for all base-price break tiers for the given
+        /// InventoryID, ordered by BreakQty ascending, then builds the list of
+        /// SOPricingBreakTier view-model objects with derived MaxQty values.
+        /// </summary>
+        private List<SOPricingBreakTier> LoadTiers(int inventoryID)
+        {
+            var rawRows = SelectFrom<ARSalesPrice>
+                .Where<ARSalesPrice.inventoryID.IsEqual<@P.AsInt>
+                    .And<ARSalesPrice.priceType.IsEqual<ARPriceType.basePrice>>
+                    .And<ARSalesPrice.isPromotionalPrice.IsEqual<False>>>
+                .OrderBy<ARSalesPrice.breakQty.Asc>
+                .View.ReadOnly.Select(Base, inventoryID);
+
+            var tiers = new List<SOPricingBreakTier>();
+            var priceList = new List<ARSalesPrice>();
+            foreach (PXResult<ARSalesPrice> row in rawRows)
+                priceList.Add((ARSalesPrice)row);
+
+            for (int i = 0; i < priceList.Count; i++)
+            {
+                ARSalesPrice price = priceList[i];
+                int seq = i + 1;
+
+                // MaxQty = next tier's BreakQty; null for the last tier ("No Limit").
+                decimal? maxQty = null;
+                if (i + 1 < priceList.Count)
+                    maxQty = priceList[i + 1].BreakQty;
+
+                tiers.Add(new SOPricingBreakTier
+                {
+                    TierOrder    = seq,
+                    MinQty       = price.BreakQty,
+                    MaxQty       = maxQty,
+                    UnitPrice    = price.SalesPrice,
+                    UOM          = price.UOM,
+                    InventoryID  = inventoryID,
+                });
+            }
+
+            return tiers;
+        }
+
+        /// <summary>
+        /// Returns a display string "SKU – Description" for the panel header.
+        /// Falls back gracefully if the item record is not found.
+        /// </summary>
+        private string ResolveItemDescription(int inventoryID)
+        {
+            InventoryItem item = SelectFrom<InventoryItem>
+                .Where<InventoryItem.inventoryID.IsEqual<@P.AsInt>>
+                .View.ReadOnly.SelectSingleBound(Base, null, inventoryID);
+
+            if (item == null)
+                return Messages.NoItemSelected;
+
+            string cd    = item.InventoryCD?.Trim() ?? string.Empty;
+            string descr = item.Descr?.Trim()       ?? string.Empty;
+
+            if (string.IsNullOrEmpty(descr)) return cd;
+            return string.IsNullOrEmpty(cd) ? descr : $"{cd} \u2013 {descr}";
+        }
+
+        private static class Messages
+        {
+            public const string NoItemSelected = "(no item selected)";
+        }
+    }
+}]]></CDATA>
+    </Graph>
+
     <Graph ClassName="UserRecordsCacheCleanup" Source="#CDATA" IsNew="True" FileType="NewFile">
         <CDATA name="Source"><![CDATA[using System;
 using System.Collections.Generic;

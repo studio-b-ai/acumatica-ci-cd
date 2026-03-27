@@ -1,0 +1,338 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ╔══════════════════════════════════════════════════════════════════════════════╗
+  ║  SO301000 – Break Pricing Panel                                            ║
+  ║  Heritage Fabrics / Studio B  ·  Acumatica 2024 R2 (24.208)               ║
+  ║                                                                            ║
+  ║  HOW THIS FILE IS USED                                                     ║
+  ║  ─────────────────────────────────────────────────────────────────────────  ║
+  ║  This XML is the Acumatica Customization Project Editor representation of  ║
+  ║  the ASPX page delta for SO301000.aspx.  It must be placed under the      ║
+  ║  <Page path="~/pages/so/so301000.aspx"> node in project.xml.              ║
+  ║                                                                            ║
+  ║  The full ASPX markup for the panel (human-readable) is below as a        ║
+  ║  comment block for reference.  The Customization Editor renders and        ║
+  ║  injects the equivalent XML elements into the live page at publish time.  ║
+  ║                                                                            ║
+  ║  See REGISTRATION GUIDE at the bottom of this file.                       ║
+  ╚══════════════════════════════════════════════════════════════════════════════╝
+
+  ── EQUIVALENT ASPX MARKUP (for reference / manual merge) ──────────────────────
+
+  The following block represents the rendered ASPX that would appear in
+  ~/pages/so/so301000.aspx immediately ABOVE the <px:PXTab ID="tab"> element
+  (which contains the Document Details grid).  Insert this between the closing
+  </px:PXFormView> of the header form and the opening <px:PXTab> of the tabs.
+
+  ─────────────────────────────────────────────────────────────────────────────
+  <%-- ═══ Break Pricing Panel ══════════════════════════════════════════════ --%>
+  <px:PXSmartPanel ID="pnlBreakPricing"
+      runat="server"
+      Key="BreakPricingHeader"
+      AutoRepaint="True"
+      ContentLayout-SpacingSize="None"
+      style="margin-bottom:6px;">
+
+      <%-- ── Collapsible outer panel wrapper ─────────────────────────────── --%>
+      <px:PXLayoutRule runat="server" StartColumn="True" />
+
+      <%-- ── Panel container with collapsible header ──────────────────────── --%>
+      <px:PXPanel ID="panelBreakPricingOuter"
+          runat="server"
+          SkinID="Transparent"
+          ContentLayout-SpacingSize="None">
+
+          <%-- ── Header bar (collapsible toggle) ──────────────────────────── --%>
+          <Template>
+              <px:PXGroupBox ID="gbBreakPricing"
+                  runat="server"
+                  Caption="Break Pricing"
+                  DataMember="BreakPricingHeader"
+                  DataSourceID="ds"
+                  RenderStyle="Fieldset"
+                  CollapsibleBehavior="ServerSide"
+                  InitialExpandState="Expanded"
+                  ScreenID="SO301000"
+                  style="margin:0 0 6px 0; width:100%;">
+
+                  <Template>
+
+                      <%-- ── Header label: "Break Pricing for: {item}" ──────── --%>
+                      <px:PXFormView ID="frmBreakPricingHeader"
+                          runat="server"
+                          DataMember="BreakPricingHeader"
+                          DataSourceID="ds"
+                          SkinID="Transparent"
+                          TabIndex="1800">
+                          <Template>
+                              <px:PXLayoutRule runat="server"
+                                  StartColumn="True"
+                                  LabelsWidth="S"
+                                  ControlSize="XL" />
+                              <px:PXTextEdit ID="edBreakPricingItemDesc"
+                                  runat="server"
+                                  DataField="ItemDescription"
+                                  LabelID="lblBreakPricingItemDesc"
+                                  LabelWidth="120px"
+                                  Size="XL"
+                                  Enabled="False"
+                                  SuppressLabel="False">
+                                  <AutoCallBack Target="gridBreakTiers" Command="Refresh" />
+                              </px:PXTextEdit>
+                          </Template>
+                      </px:PXFormView>
+
+                      <%-- ── Tier grid ─────────────────────────────────────── --%>
+                      <px:PXGrid ID="gridBreakTiers"
+                          runat="server"
+                          DataMember="BreakPricingTiers"
+                          DataSourceID="ds"
+                          SkinID="ShortList"
+                          Height="120px"
+                          Width="100%"
+                          AllowPaging="False"
+                          AdjustPageSize="Auto"
+                          NoteIndicator="False"
+                          FilesIndicator="False"
+                          TabIndex="1810">
+
+                          <AutoSize Enabled="False" />
+
+                          <Mode
+                              AllowAddNew="False"
+                              AllowDelete="False"
+                              AllowUpdate="False" />
+
+                          <Levels>
+                              <px:PXGridLevel DataMember="BreakPricingTiers">
+                                  <Columns>
+                                      <%-- Tier / Level ─────────────────────── --%>
+                                      <px:PXGridColumn
+                                          DataField="TierOrder"
+                                          Width="50px"
+                                          TextAlign="Center" />
+
+                                      <%-- Min Qty ──────────────────────────── --%>
+                                      <px:PXGridColumn
+                                          DataField="MinQty"
+                                          Width="80px"
+                                          TextAlign="Right" />
+
+                                      <%-- Max Qty (null = "No Limit") ─────── --%>
+                                      <px:PXGridColumn
+                                          DataField="MaxQty"
+                                          Width="80px"
+                                          TextAlign="Right"
+                                          NullText="No Limit" />
+
+                                      <%-- Unit Price ───────────────────────── --%>
+                                      <px:PXGridColumn
+                                          DataField="UnitPrice"
+                                          Width="90px"
+                                          TextAlign="Right"
+                                          Format="Currency" />
+
+                                      <%-- UOM ──────────────────────────────── --%>
+                                      <px:PXGridColumn
+                                          DataField="UOM"
+                                          Width="60px" />
+                                  </Columns>
+                              </px:PXGridLevel>
+                          </Levels>
+
+                          <ActionBar Position="Top" DefaultAction="">
+                              <CustomItems />
+                          </ActionBar>
+
+                      </px:PXGrid>
+
+                  </Template>
+              </px:PXGroupBox>
+          </Template>
+      </px:PXPanel>
+
+  </px:PXSmartPanel>
+  ─────────────────────────────────────────────────────────────────────────────
+-->
+
+<!--
+  ── CUSTOMIZATION PROJECT EDITOR XML (project.xml delta) ─────────────────────
+
+  The block below is the exact XML you paste into the <Page path="~/pages/so/so301000.aspx">
+  element inside project.xml.  It instructs Acumatica's page-merger to inject the
+  PXSmartPanel above the tab strip at publish time.
+
+  NOTE: The Acumatica page XML format uses AddItem / InsertBefore directives to
+  place controls relative to existing page landmarks.  The tab strip on SO301000
+  has the stable ID "tab" (px:PXTab ID="tab").  We insert our panel before it.
+-->
+<Page path="~/pages/so/so301000.aspx">
+
+    <!--
+      ══════════════════════════════════════════════════════════════════════════
+      BREAK PRICING SMART PANEL
+      Inserted immediately above the tab strip (ID="tab") that contains the
+      Document Details grid.  Using InsertBefore ensures it survives Acumatica
+      version upgrades that re-order page controls.
+      ══════════════════════════════════════════════════════════════════════════
+    -->
+
+    <!-- 1. Outer collapsible smart panel bound to BreakPricingHeader view -->
+    <PXSmartPanel
+        ID="pnlBreakPricing"
+        ParentId="phG_tab"
+        InsertBefore="tab"
+        TypeFullName="PX.Web.UI.PXSmartPanel">
+        <Prop Key="Key"            Value="BreakPricingHeader" />
+        <Prop Key="AutoRepaint"    Value="True" />
+        <Prop Key="style"          Value="margin-bottom:6px;" />
+
+        <Children Key="ContentTemplate">
+
+            <!-- 2. GroupBox with collapsible header -->
+            <AddItem>
+                <PXGroupBox
+                    ID="gbBreakPricing"
+                    TypeFullName="PX.Web.UI.PXGroupBox">
+                    <Prop Key="Caption"               Value="Break Pricing" />
+                    <Prop Key="DataMember"            Value="BreakPricingHeader" />
+                    <Prop Key="DataSourceID"          Value="ds" />
+                    <Prop Key="RenderStyle"           Value="Fieldset" />
+                    <Prop Key="CollapsibleBehavior"   Value="ServerSide" />
+                    <Prop Key="InitialExpandState"    Value="Expanded" />
+                    <Prop Key="ScreenID"              Value="SO301000" />
+                    <Prop Key="style"                 Value="margin:0 0 6px 0; width:100%;" />
+
+                    <Children Key="Template">
+
+                        <!-- 3. Header FormView: "Break Pricing for: {item}" label -->
+                        <AddItem>
+                            <PXFormView
+                                ID="frmBreakPricingHeader"
+                                TypeFullName="PX.Web.UI.PXFormView">
+                                <Prop Key="DataMember"   Value="BreakPricingHeader" />
+                                <Prop Key="DataSourceID" Value="ds" />
+                                <Prop Key="SkinID"       Value="Transparent" />
+                                <Prop Key="TabIndex"     Value="1800" />
+
+                                <Children Key="Template">
+
+                                    <AddItem>
+                                        <PXLayoutRule TypeFullName="PX.Web.UI.PXLayoutRule">
+                                            <Prop Key="StartColumn"  Value="True" />
+                                            <Prop Key="LabelsWidth"  Value="S" />
+                                            <Prop Key="ControlSize"  Value="XL" />
+                                        </PXLayoutRule>
+                                    </AddItem>
+
+                                    <!-- Bound to SOPricingBreakHeader.ItemDescription -->
+                                    <AddItem>
+                                        <PXTextEdit
+                                            ID="edBreakPricingItemDesc"
+                                            TypeFullName="PX.Web.UI.PXTextEdit">
+                                            <Prop Key="DataField"   Value="ItemDescription" />
+                                            <Prop Key="LabelWidth"  Value="120px" />
+                                            <Prop Key="Size"        Value="XL" />
+                                            <Prop Key="Enabled"     Value="False" />
+                                        </PXTextEdit>
+                                    </AddItem>
+
+                                </Children>
+                            </PXFormView>
+                        </AddItem>
+
+                        <!-- 4. Read-only tier grid -->
+                        <AddItem>
+                            <PXGrid
+                                ID="gridBreakTiers"
+                                TypeFullName="PX.Web.UI.PXGrid">
+                                <Prop Key="DataMember"      Value="BreakPricingTiers" />
+                                <Prop Key="DataSourceID"    Value="ds" />
+                                <Prop Key="SkinID"          Value="ShortList" />
+                                <Prop Key="Height"          Value="120px" />
+                                <Prop Key="Width"           Value="100%" />
+                                <Prop Key="AllowPaging"     Value="False" />
+                                <Prop Key="AdjustPageSize"  Value="Auto" />
+                                <Prop Key="NoteIndicator"   Value="False" />
+                                <Prop Key="FilesIndicator"  Value="False" />
+                                <Prop Key="TabIndex"        Value="1810" />
+
+                                <Children Key="Mode">
+                                    <AddItem>
+                                        <PXGridMode TypeFullName="PX.Web.UI.PXGridMode">
+                                            <Prop Key="AllowAddNew" Value="False" />
+                                            <Prop Key="AllowDelete" Value="False" />
+                                            <Prop Key="AllowUpdate" Value="False" />
+                                        </PXGridMode>
+                                    </AddItem>
+                                </Children>
+
+                                <Children Key="Levels">
+                                    <AddItem>
+                                        <PXGridLevel
+                                            DataMember="BreakPricingTiers"
+                                            TypeFullName="PX.Web.UI.PXGridLevel">
+                                            <Children Key="Columns">
+
+                                                <!-- Col 1: Tier / Level -->
+                                                <AddItem>
+                                                    <PXGridColumn TypeFullName="PX.Web.UI.PXGridColumn">
+                                                        <Prop Key="DataField"  Value="TierOrder" />
+                                                        <Prop Key="Width"      Value="50px" />
+                                                        <Prop Key="TextAlign"  Value="Center" />
+                                                    </PXGridColumn>
+                                                </AddItem>
+
+                                                <!-- Col 2: Min Qty -->
+                                                <AddItem>
+                                                    <PXGridColumn TypeFullName="PX.Web.UI.PXGridColumn">
+                                                        <Prop Key="DataField"  Value="MinQty" />
+                                                        <Prop Key="Width"      Value="80px" />
+                                                        <Prop Key="TextAlign"  Value="Right" />
+                                                    </PXGridColumn>
+                                                </AddItem>
+
+                                                <!-- Col 3: Max Qty (null displays as "No Limit") -->
+                                                <AddItem>
+                                                    <PXGridColumn TypeFullName="PX.Web.UI.PXGridColumn">
+                                                        <Prop Key="DataField"  Value="MaxQty" />
+                                                        <Prop Key="Width"      Value="80px" />
+                                                        <Prop Key="TextAlign"  Value="Right" />
+                                                        <Prop Key="NullText"   Value="No Limit" />
+                                                    </PXGridColumn>
+                                                </AddItem>
+
+                                                <!-- Col 4: Unit Price -->
+                                                <AddItem>
+                                                    <PXGridColumn TypeFullName="PX.Web.UI.PXGridColumn">
+                                                        <Prop Key="DataField"  Value="UnitPrice" />
+                                                        <Prop Key="Width"      Value="90px" />
+                                                        <Prop Key="TextAlign"  Value="Right" />
+                                                        <Prop Key="Format"     Value="Currency" />
+                                                    </PXGridColumn>
+                                                </AddItem>
+
+                                                <!-- Col 5: UOM -->
+                                                <AddItem>
+                                                    <PXGridColumn TypeFullName="PX.Web.UI.PXGridColumn">
+                                                        <Prop Key="DataField"  Value="UOM" />
+                                                        <Prop Key="Width"      Value="60px" />
+                                                    </PXGridColumn>
+                                                </AddItem>
+
+                                            </Children>
+                                        </PXGridLevel>
+                                    </AddItem>
+                                </Children>
+
+                            </PXGrid>
+                        </AddItem>
+
+                    </Children>
+                </PXGroupBox>
+            </AddItem>
+
+        </Children>
+    </PXSmartPanel>
+
+</Page>
