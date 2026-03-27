@@ -508,4 +508,44 @@ namespace StudioB.Containers
 }
 ]]></CDATA>
     </Graph>
+    <Sql Name="AesthetikContainers_Columns_v1" Script="#CDATA">
+        <CDATA name="Script"><![CDATA[
+-- POOrder arrival + container fields
+IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('POOrder') AND name = 'UsrExpArrivalDate')
+  ALTER TABLE POOrder ADD UsrExpArrivalDate datetime NULL;
+IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('POOrder') AND name = 'UsrActArrivalDate')
+  ALTER TABLE POOrder ADD UsrActArrivalDate datetime NULL;
+IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('POOrder') AND name = 'UsrContainerRef')
+  ALTER TABLE POOrder ADD UsrContainerRef nvarchar(50) NULL;
+-- POLine arrival fields
+IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('POLine') AND name = 'UsrExpArrivalDate')
+  ALTER TABLE POLine ADD UsrExpArrivalDate datetime NULL;
+IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('POLine') AND name = 'UsrActArrivalDate')
+  ALTER TABLE POLine ADD UsrActArrivalDate datetime NULL;
+-- InventoryItem tariff + trade fields
+IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('InventoryItem') AND name = 'UsrHTSCode')
+  ALTER TABLE InventoryItem ADD UsrHTSCode nvarchar(12) NULL;
+IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('InventoryItem') AND name = 'UsrDutyRate')
+  ALTER TABLE InventoryItem ADD UsrDutyRate decimal(19,4) NULL;
+IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('InventoryItem') AND name = 'UsrCountryOfOrigin')
+  ALTER TABLE InventoryItem ADD UsrCountryOfOrigin nchar(2) NULL;
+IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('InventoryItem') AND name = 'UsrFiberContent')
+  ALTER TABLE InventoryItem ADD UsrFiberContent nvarchar(100) NULL;
+IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('InventoryItem') AND name = 'UsrPreferentialTariff')
+  ALTER TABLE InventoryItem ADD UsrPreferentialTariff bit NULL;
+IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('InventoryItem') AND name = 'UsrFreightClass')
+  ALTER TABLE InventoryItem ADD UsrFreightClass nvarchar(10) NULL;
+-- POReceiptLine landed cost fields
+IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('POReceiptLine') AND name = 'UsrActualDutyAmt')
+  ALTER TABLE POReceiptLine ADD UsrActualDutyAmt decimal(19,2) NULL;
+IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('POReceiptLine') AND name = 'UsrActualFreightAmt')
+  ALTER TABLE POReceiptLine ADD UsrActualFreightAmt decimal(19,2) NULL;
+IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('POReceiptLine') AND name = 'UsrBrokerageAmt')
+  ALTER TABLE POReceiptLine ADD UsrBrokerageAmt decimal(19,2) NULL;
+IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('POReceiptLine') AND name = 'UsrHTSCode')
+  ALTER TABLE POReceiptLine ADD UsrHTSCode nvarchar(12) NULL;
+IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('POReceiptLine') AND name = 'UsrCountryOfOrigin')
+  ALTER TABLE POReceiptLine ADD UsrCountryOfOrigin nchar(2) NULL;
+]]></CDATA>
+    </Sql>
 </Customization>
