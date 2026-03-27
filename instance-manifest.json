@@ -36,13 +36,12 @@
       "repo_dir": "Customization/AesthetikSchemaFix"
     },
     "AesthetikContainers": {
-      "category": "deprecated",
-      "level": null,
+      "category": "managed",
+      "level": 1,
       "owner": "studio-b-ai/acumatica-ci-cd",
-      "description": "DELETED 2026-03-26 — caused StockItem 500 errors. Container logic removed. DO NOT reimport.",
-      "published": false,
-      "repo_dir": null,
-      "incident": "2026-03-26 StockItemExt invalid columns (UsrHTSCode, UsrDutyRate, etc.)"
+      "description": "PO arrival dates, container tracking, trade compliance (StockItem tariff fields). <Sql> removed — columns created via [PXDB*] auto-create or manual SQL.",
+      "published": true,
+      "repo_dir": "Customization/AesthetikContainers"
     },
     "StudioBAuditTrail": {
       "category": "managed",
