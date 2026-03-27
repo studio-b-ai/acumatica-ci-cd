@@ -1,0 +1,434 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Customization level="3" description="AesthetikContainers — PO arrival dates, container tracking, vessel tracking. Replaces IIGCONTAINERMGMT + IIGHFContainerMods." product-version="24.208">
+    <Graph ClassName="POOrderExt" Source="#CDATA" IsNew="True" FileType="NewFile">
+        <CDATA name="Source"><![CDATA[using System;
+using PX.Data;
+using PX.Data.BQL;
+using PX.Objects.PO;
+
+namespace StudioB.Containers
+{
+    public sealed class POOrderExt : PXCacheExtension<POOrder>
+    {
+        public static bool IsActive() => true;
+        #region UsrExpArrivalDate
+        public abstract class usrExpArrivalDate : BqlDateTime.Field<usrExpArrivalDate> { }
+        [PXDBDate]
+        [PXUIField(DisplayName = "Exp. Arrival Date", Visibility = PXUIVisibility.SelectorVisible)]
+        public DateTime? UsrExpArrivalDate { get; set; }
+        #endregion
+        #region UsrActArrivalDate
+        public abstract class usrActArrivalDate : BqlDateTime.Field<usrActArrivalDate> { }
+        [PXDBDate]
+        [PXUIField(DisplayName = "Act. Arrival Date", Visibility = PXUIVisibility.SelectorVisible)]
+        public DateTime? UsrActArrivalDate { get; set; }
+        #endregion
+        #region UsrContainerRef
+        public abstract class usrContainerRef : BqlString.Field<usrContainerRef> { }
+        [PXDBString(50, IsUnicode = true)]
+        [PXUIField(DisplayName = "Container / BOL Ref")]
+        public string UsrContainerRef { get; set; }
+        #endregion
+    }
+}
+]]></CDATA>
+    </Graph>
+    <Graph ClassName="POLineExt" Source="#CDATA" IsNew="True" FileType="NewFile">
+        <CDATA name="Source"><![CDATA[using System;
+using PX.Data;
+using PX.Data.BQL;
+using PX.Objects.PO;
+
+namespace StudioB.Containers
+{
+    public sealed class POLineExt : PXCacheExtension<POLine>
+    {
+        public static bool IsActive() => true;
+        #region UsrExpArrivalDate
+        public abstract class usrExpArrivalDate : BqlDateTime.Field<usrExpArrivalDate> { }
+        [PXDBDate]
+        [PXUIField(DisplayName = "Exp. Arrival Date")]
+        public DateTime? UsrExpArrivalDate { get; set; }
+        #endregion
+        #region UsrActArrivalDate
+        public abstract class usrActArrivalDate : BqlDateTime.Field<usrActArrivalDate> { }
+        [PXDBDate]
+        [PXUIField(DisplayName = "Act. Arrival Date")]
+        public DateTime? UsrActArrivalDate { get; set; }
+        #endregion
+    }
+}
+]]></CDATA>
+    </Graph>
+    <Graph ClassName="InventoryAllocDetEnqResultExt" Source="#CDATA" IsNew="True" FileType="NewFile">
+        <CDATA name="Source"><![CDATA[using System;
+using PX.Data;
+using PX.Data.BQL;
+using PX.Objects.IN;
+
+namespace StudioB.Containers
+{
+    public sealed class InventoryAllocDetEnqResultExt : PXCacheExtension<InventoryAllocDetEnqResult>
+    {
+        public static bool IsActive() => true;
+
+        #region UsrExpArrivalDate
+        public abstract class usrExpArrivalDate : BqlDateTime.Field<usrExpArrivalDate> { }
+        [PXDate]
+        [PXUIField(DisplayName = "Exp. Arrival Date")]
+        public DateTime? UsrExpArrivalDate { get; set; }
+        #endregion
+    }
+}
+]]></CDATA>
+    </Graph>
+    <Graph ClassName="POOrderEntry_Extension" Source="#CDATA" IsNew="True" FileType="NewFile">
+        <CDATA name="Source"><![CDATA[using System;
+using PX.Data;
+using PX.Objects.PO;
+
+namespace StudioB.Containers
+{
+    public class POOrderEntry_Extension : PXGraphExtension<POOrderEntry>
+    {
+        public static bool IsActive() => true;
+
+        protected void _(Events.FieldDefaulting<POLine, POLineExt.usrExpArrivalDate> e)
+        {
+            if (e.Row == null) return;
+            POOrder header = Base.Document.Current;
+            if (header == null) return;
+            POOrderExt headerExt = header.GetExtension<POOrderExt>();
+            if (headerExt?.UsrExpArrivalDate != null)
+            {
+                e.NewValue = headerExt.UsrExpArrivalDate;
+                e.Cancel = true;
+            }
+        }
+
+        protected void _(Events.FieldUpdated<POOrder, POOrderExt.usrExpArrivalDate> e)
+        {
+            if (e.Row == null) return;
+            DateTime? oldValue = (DateTime?)e.OldValue;
+            DateTime? newValue = e.Row.GetExtension<POOrderExt>()?.UsrExpArrivalDate;
+            if (newValue == null) return;
+            if (oldValue == newValue) return;
+            foreach (POLine line in Base.Transactions.Select())
+            {
+                POLineExt lineExt = line.GetExtension<POLineExt>();
+                if (lineExt == null) continue;
+                bool isInherited = lineExt.UsrExpArrivalDate == null || lineExt.UsrExpArrivalDate == oldValue;
+                if (isInherited)
+                {
+                    lineExt.UsrExpArrivalDate = newValue;
+                    Base.Transactions.Update(line);
+                }
+            }
+        }
+    }
+}
+]]></CDATA>
+    </Graph>
+    <Graph ClassName="InventoryAllocDetEnq_Extension" Source="#CDATA" IsNew="True" FileType="NewFile">
+        <CDATA name="Source"><![CDATA[using System;
+using System.Collections.Generic;
+using PX.Data;
+using PX.Objects.IN;
+
+namespace StudioB.Containers
+{
+    public class InventoryAllocDetEnq_Extension : PXGraphExtension<InventoryAllocDetEnq>
+    {
+        public static bool IsActive() => true;
+
+        private readonly Dictionary<string, DateTime?> _dateCache
+            = new Dictionary<string, DateTime?>(StringComparer.OrdinalIgnoreCase);
+
+        /// <summary>
+        /// RowSelected fires for each visible row in the inquiry grid.
+        /// Populates the virtual UsrExpArrivalDate from the linked PO header.
+        /// Uses generic event syntax (guaranteed to wire up for extension fields).
+        /// </summary>
+        protected void _(Events.RowSelected<InventoryAllocDetEnqResult> e)
+        {
+            if (e.Row == null || string.IsNullOrEmpty(e.Row.RefNbr)) return;
+
+            string refNbr = e.Row.RefNbr.Trim();
+
+            // Skip if already populated
+            DateTime? current = (DateTime?)e.Cache.GetValue(e.Row, "UsrExpArrivalDate");
+            if (current != null) return;
+
+            DateTime? arrivalDate = LookupPOArrivalDate(refNbr);
+
+            if (arrivalDate != null)
+            {
+                e.Cache.SetValue(e.Row, "UsrExpArrivalDate", arrivalDate);
+            }
+        }
+
+        private DateTime? LookupPOArrivalDate(string refNbr)
+        {
+            if (_dateCache.TryGetValue(refNbr, out DateTime? cached))
+                return cached;
+
+            DateTime? arrivalDate = null;
+            try
+            {
+                // Explicit column names — avoids BQL extension field resolution
+                // issues that occur in foreign inquiry graphs
+                using (PXDataRecord rec = PXDatabase.SelectSingle<PX.Objects.PO.POOrder>(
+                    new PXDataField("UsrExpArrivalDate"),
+                    new PXDataFieldValue("OrderNbr", refNbr)))
+                {
+                    arrivalDate = rec?.GetDateTime(0);
+                }
+            }
+            catch (Exception ex)
+            {
+                PXTrace.WriteError(
+                    $"IN402000 UsrExpArrivalDate lookup error for RefNbr={refNbr}: {ex.Message}");
+            }
+
+            _dateCache[refNbr] = arrivalDate;
+            return arrivalDate;
+        }
+    }
+}
+]]></CDATA>
+    </Graph>
+    <Graph ClassName="ContainerDatePropagation" Source="#CDATA" IsNew="True" FileType="NewFile">
+        <CDATA name="Source"><![CDATA[using System;
+using System.Collections.Generic;
+using PX.Data;
+using PX.Objects.PO;
+
+namespace StudioB.Containers
+{
+    /// <summary>
+    /// Propagates container Expected Arrival Date to linked PO headers and lines.
+    /// Replaces IGCMPOLandedCostEntry_Extension (IIG dependency removed).
+    /// Wire to ContainerEntry.Persist override when container DACs are built.
+    /// </summary>
+    public static class ContainerDatePropagation
+    {
+        /// <summary>
+        /// Updates PO headers and lines with the container's expected arrival date.
+        /// </summary>
+        /// <param name="containerDate">The container's expected arrival date.</param>
+        /// <param name="poRefs">List of (OrderType, OrderNbr, LineNbr) tuples from container lines.</param>
+        public static void PropagateArrivalDate(
+            DateTime? containerDate,
+            List<Tuple<string, string, int?>> poRefs)
+        {
+            if (containerDate == null || poRefs == null || poRefs.Count == 0) return;
+
+            HashSet<string> updatedHeaders = new HashSet<string>();
+
+            foreach (var po in poRefs)
+            {
+                // Update PO Line
+                if (po.Item3 != null)
+                {
+                    PXDatabase.Update<POLine>(
+                        new PXDataFieldAssign<POLineExt.usrExpArrivalDate>(containerDate),
+                        new PXDataFieldRestrict<POLine.orderType>(po.Item1),
+                        new PXDataFieldRestrict<POLine.orderNbr>(po.Item2),
+                        new PXDataFieldRestrict<POLine.lineNbr>(po.Item3)
+                    );
+                }
+
+                // Update PO Header (once per unique PO)
+                string headerKey = po.Item1 + ":" + po.Item2;
+                if (!updatedHeaders.Contains(headerKey))
+                {
+                    PXDatabase.Update<POOrder>(
+                        new PXDataFieldAssign<POOrderExt.usrExpArrivalDate>(containerDate),
+                        new PXDataFieldRestrict<POOrder.orderType>(po.Item1),
+                        new PXDataFieldRestrict<POOrder.orderNbr>(po.Item2)
+                    );
+                    updatedHeaders.Add(headerKey);
+                }
+            }
+        }
+    }
+}
+]]></CDATA>
+    </Graph>
+    <Graph ClassName="StockItemExt" Source="#CDATA" IsNew="True" FileType="NewFile">
+        <CDATA name="Source"><![CDATA[using PX.Data;
+using PX.Objects.IN;
+
+namespace StudioB.Containers
+{
+    public sealed class StockItemExt : PXCacheExtension<InventoryItem>
+    {
+        public static bool IsActive() => true;
+        #region UsrHTSCode
+        public abstract class usrHTSCode : PX.Data.BQL.BqlString.Field<usrHTSCode> { }
+        [PXDBString(12, IsUnicode = true)]
+        [PXUIField(DisplayName = "HTS Code", Visibility = PXUIVisibility.SelectorVisible)]
+        public string UsrHTSCode { get; set; }
+        #endregion
+        #region UsrDutyRate
+        public abstract class usrDutyRate : PX.Data.BQL.BqlDecimal.Field<usrDutyRate> { }
+        [PXDBDecimal(4)]
+        [PXDefault(System.TypeCode.Decimal, "0.0000")]
+        [PXUIField(DisplayName = "Duty Rate %", Visibility = PXUIVisibility.SelectorVisible)]
+        public decimal? UsrDutyRate { get; set; }
+        #endregion
+        #region UsrCountryOfOrigin
+        public abstract class usrCountryOfOrigin : PX.Data.BQL.BqlString.Field<usrCountryOfOrigin> { }
+        [PXDBString(2, IsFixed = true, IsUnicode = true)]
+        [PXUIField(DisplayName = "Country of Origin", Visibility = PXUIVisibility.SelectorVisible)]
+        public string UsrCountryOfOrigin { get; set; }
+        #endregion
+        #region UsrFiberContent
+        public abstract class usrFiberContent : PX.Data.BQL.BqlString.Field<usrFiberContent> { }
+        [PXDBString(100, IsUnicode = true)]
+        [PXUIField(DisplayName = "Fiber Content", Visibility = PXUIVisibility.SelectorVisible)]
+        public string UsrFiberContent { get; set; }
+        #endregion
+        #region UsrPreferentialTariff
+        public abstract class usrPreferentialTariff : PX.Data.BQL.BqlBool.Field<usrPreferentialTariff> { }
+        [PXDBBool]
+        [PXDefault(false)]
+        [PXUIField(DisplayName = "Preferential Tariff")]
+        public bool? UsrPreferentialTariff { get; set; }
+        #endregion
+        #region UsrFreightClass
+        public abstract class usrFreightClass : PX.Data.BQL.BqlString.Field<usrFreightClass> { }
+        [PXDBString(10, IsUnicode = true)]
+        [PXDefault("70")]
+        [PXUIField(DisplayName = "Freight Class")]
+        public string UsrFreightClass { get; set; }
+        #endregion
+    }
+}
+]]></CDATA>
+    </Graph>
+    <Graph ClassName="POReceiptLineExt" Source="#CDATA" IsNew="True" FileType="NewFile">
+        <CDATA name="Source"><![CDATA[using PX.Data;
+using PX.Objects.PO;
+
+namespace StudioB.Containers
+{
+    public sealed class POReceiptLineExt : PXCacheExtension<POReceiptLine>
+    {
+        public static bool IsActive() => true;
+        #region UsrActualDutyAmt
+        public abstract class usrActualDutyAmt : PX.Data.BQL.BqlDecimal.Field<usrActualDutyAmt> { }
+        [PXDBDecimal(2)]
+        [PXDefault(System.TypeCode.Decimal, "0.00")]
+        [PXUIField(DisplayName = "Actual Duty", Visibility = PXUIVisibility.SelectorVisible)]
+        public decimal? UsrActualDutyAmt { get; set; }
+        #endregion
+        #region UsrActualFreightAmt
+        public abstract class usrActualFreightAmt : PX.Data.BQL.BqlDecimal.Field<usrActualFreightAmt> { }
+        [PXDBDecimal(2)]
+        [PXDefault(System.TypeCode.Decimal, "0.00")]
+        [PXUIField(DisplayName = "Freight Allocated", Visibility = PXUIVisibility.SelectorVisible)]
+        public decimal? UsrActualFreightAmt { get; set; }
+        #endregion
+        #region UsrBrokerageAmt
+        public abstract class usrBrokerageAmt : PX.Data.BQL.BqlDecimal.Field<usrBrokerageAmt> { }
+        [PXDBDecimal(2)]
+        [PXDefault(System.TypeCode.Decimal, "0.00")]
+        [PXUIField(DisplayName = "Brokerage", Visibility = PXUIVisibility.SelectorVisible)]
+        public decimal? UsrBrokerageAmt { get; set; }
+        #endregion
+        #region UsrLandedCostPerUnit
+        public abstract class usrLandedCostPerUnit : PX.Data.BQL.BqlDecimal.Field<usrLandedCostPerUnit> { }
+        [PXDecimal(4)]
+        [PXUIField(DisplayName = "Landed Cost/Unit", Enabled = false)]
+        public decimal? UsrLandedCostPerUnit { get; set; }
+        #endregion
+        #region UsrHTSCode
+        public abstract class usrHTSCode : PX.Data.BQL.BqlString.Field<usrHTSCode> { }
+        [PXDBString(12, IsUnicode = true)]
+        [PXUIField(DisplayName = "HTS Code", Enabled = false)]
+        public string UsrHTSCode { get; set; }
+        #endregion
+        #region UsrCountryOfOrigin
+        public abstract class usrCountryOfOrigin : PX.Data.BQL.BqlString.Field<usrCountryOfOrigin> { }
+        [PXDBString(2, IsFixed = true, IsUnicode = true)]
+        [PXUIField(DisplayName = "Origin", Enabled = false)]
+        public string UsrCountryOfOrigin { get; set; }
+        #endregion
+    }
+}
+]]></CDATA>
+    </Graph>
+    <Graph ClassName="POReceiptEntry_LandedCostExt" Source="#CDATA" IsNew="True" FileType="NewFile">
+        <CDATA name="Source"><![CDATA[using PX.Data;
+using PX.Objects.IN;
+using PX.Objects.PO;
+
+namespace StudioB.Containers
+{
+    public class POReceiptEntry_LandedCostExt : PXGraphExtension<POReceiptEntry>
+    {
+        public static bool IsActive() => true;
+
+        protected virtual void _(Events.RowInserted<POReceiptLine> e)
+        {
+            if (e.Row == null) return;
+            var lineExt = PXCache<POReceiptLine>.GetExtension<POReceiptLineExt>(e.Row);
+            if (lineExt == null) return;
+            var item = PXSelect<InventoryItem,
+                Where<InventoryItem.inventoryID, Equal<Required<InventoryItem.inventoryID>>>>
+                .Select(Base, e.Row.InventoryID);
+            if (item == null) return;
+            var itemExt = PXCache<InventoryItem>.GetExtension<StockItemExt>((InventoryItem)item);
+            if (itemExt == null) return;
+            lineExt.UsrHTSCode = itemExt.UsrHTSCode;
+            lineExt.UsrCountryOfOrigin = itemExt.UsrCountryOfOrigin;
+            if (itemExt.UsrDutyRate.GetValueOrDefault() > 0 && e.Row.ExtCost.GetValueOrDefault() > 0)
+            {
+                lineExt.UsrActualDutyAmt = e.Row.ExtCost.Value * (itemExt.UsrDutyRate.Value / 100m);
+            }
+            e.Cache.Update(e.Row);
+        }
+
+        protected virtual void _(Events.FieldUpdated<POReceiptLine, POReceiptLine.extCost> e)
+        {
+            if (e.Row == null) return;
+            var lineExt = PXCache<POReceiptLine>.GetExtension<POReceiptLineExt>(e.Row);
+            if (lineExt == null) return;
+            var item = PXSelect<InventoryItem,
+                Where<InventoryItem.inventoryID, Equal<Required<InventoryItem.inventoryID>>>>
+                .Select(Base, e.Row.InventoryID);
+            if (item == null) return;
+            var itemExt = PXCache<InventoryItem>.GetExtension<StockItemExt>((InventoryItem)item);
+            if (itemExt == null || itemExt.UsrDutyRate.GetValueOrDefault() == 0) return;
+            var oldExtCost = (decimal?)e.OldValue ?? 0m;
+            var oldAutoCalcDuty = oldExtCost * (itemExt.UsrDutyRate.Value / 100m);
+            if (lineExt.UsrActualDutyAmt == null ||
+                System.Math.Abs(lineExt.UsrActualDutyAmt.Value - System.Math.Round(oldAutoCalcDuty, 2)) < 0.01m)
+            {
+                lineExt.UsrActualDutyAmt = e.Row.ExtCost.GetValueOrDefault() * (itemExt.UsrDutyRate.Value / 100m);
+                lineExt.UsrActualDutyAmt = System.Math.Round(lineExt.UsrActualDutyAmt.Value, 2);
+            }
+        }
+
+        protected virtual void _(Events.RowSelected<POReceiptLine> e)
+        {
+            if (e.Row == null) return;
+            var lineExt = PXCache<POReceiptLine>.GetExtension<POReceiptLineExt>(e.Row);
+            if (lineExt == null) return;
+            decimal qty = e.Row.ReceiptQty.GetValueOrDefault();
+            if (qty == 0) qty = 1;
+            decimal unitCost = e.Row.UnitCost.GetValueOrDefault();
+            decimal totalLandedCosts =
+                lineExt.UsrActualDutyAmt.GetValueOrDefault() +
+                lineExt.UsrActualFreightAmt.GetValueOrDefault() +
+                lineExt.UsrBrokerageAmt.GetValueOrDefault();
+            decimal landedPerUnit = unitCost + (totalLandedCosts / qty);
+            e.Cache.SetValue<POReceiptLineExt.usrLandedCostPerUnit>(e.Row,
+                System.Math.Round(landedPerUnit, 4));
+        }
+    }
+}
+]]></CDATA>
+    </Graph>
+</Customization>
