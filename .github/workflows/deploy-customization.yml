@@ -310,9 +310,12 @@ jobs:
     needs: [build, qualify]
     runs-on: ubuntu-latest
     if: |
-      needs.qualify.outputs.needs_countdown == 'true' &&
-      github.event.inputs.countdown_complete != 'true' &&
-      github.event_name != 'pull_request'
+      github.event_name != 'pull_request' && (
+        (needs.qualify.outputs.needs_countdown == 'true' && github.event.inputs.countdown_complete != 'true') ||
+        github.event.inputs.force_qualify == 'true' ||
+        github.event.inputs.countdown_complete == 'true' ||
+        (needs.qualify.result == 'success' && needs.qualify.outputs.needs_countdown != 'true')
+      )
     steps:
       - uses: actions/checkout@v4
       - name: Determine target environment
