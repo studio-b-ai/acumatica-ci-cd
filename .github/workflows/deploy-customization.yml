@@ -403,9 +403,7 @@ jobs:
             echo "::error::No snapshot available — cannot rollback"
             curl -sf -X POST "${SLACK_WEBHOOK_URL}" \
               -H "Content-Type: application/json" \
-              -d '{"text":"ROLLBACK FAILED — no snapshot available
-Deploy: '"${PROJECT_NAME}"' @ '"${GITHUB_SHA::8}"'
-Manual restore required via SM204505"}'
+              -d '{"text":"ROLLBACK FAILED — no snapshot available\nDeploy: '"${PROJECT_NAME}"' @ '"${GITHUB_SHA::8}"'\nManual restore required via SM204505"}'
             exit 1
           fi
 
@@ -422,17 +420,11 @@ Manual restore required via SM204505"}'
           if [ ${ROLLBACK_VERIFY} -eq 0 ]; then
             curl -sf -X POST "${SLACK_WEBHOOK_URL}" \
               -H "Content-Type: application/json" \
-              -d '{"text":"Deploy ROLLED BACK — '"${PROJECT_NAME}"' -> production
-  Deploy: '"${GITHUB_SHA::8}"'
-  Rollback: snapshot restored + verified
-  Note: two app pool restarts occurred"}'
+              -d '{"text":"Deploy ROLLED BACK — '"${PROJECT_NAME}"' -> production\nDeploy: '"${GITHUB_SHA::8}"'\nRollback: snapshot restored + verified\nNote: two app pool restarts occurred"}'
           else
             curl -sf -X POST "${SLACK_WEBHOOK_URL}" \
               -H "Content-Type: application/json" \
-              -d '{"text":"ROLLBACK FAILED — verification did not pass
-Deploy: '"${PROJECT_NAME}"' @ '"${GITHUB_SHA::8}"'
-Artifact: '"${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"'
-Manual restore: download artifact -> SM204505 Import -> Publish"}'
+              -d '{"text":"ROLLBACK FAILED — verification did not pass\nDeploy: '"${PROJECT_NAME}"' @ '"${GITHUB_SHA::8}"'\nArtifact: '"${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"'\nManual restore: download artifact -> SM204505 Import -> Publish"}'
             exit 1
           fi
 
@@ -522,12 +514,7 @@ Manual restore: download artifact -> SM204505 Import -> Publish"}'
           if [ -n "${SLACK_WEBHOOK_URL}" ]; then
             curl -s -X POST "${SLACK_WEBHOOK_URL}" \
               -H "Content-Type: application/json" \
-              -d "{\"text\":\":x: *Acumatica Customization Deploy FAILED*
-Project: \`${PROJECT_NAME}\`
-Environment: \`${TARGET}\`
-Commit: \`${GITHUB_SHA::8}\`
-Actor: @${GITHUB_ACTOR}
-Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}\"}"
+              -d "{\"text\":\":x: *Acumatica Customization Deploy FAILED*\nProject: \`${PROJECT_NAME}\`\nEnvironment: \`${TARGET}\`\nCommit: \`${GITHUB_SHA::8}\`\nActor: @${GITHUB_ACTOR}\nRun: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}\"}"
           fi
 
       - name: Notify auto-remediation
@@ -545,8 +532,7 @@ Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}\"}"
           echo "| Package | \`${{ needs.build.outputs.package_name }}\` |" >> "$GITHUB_STEP_SUMMARY"
           echo "| Commit | \`${GITHUB_SHA::8}\` |" >> "$GITHUB_STEP_SUMMARY"
           echo "| Actor | @${GITHUB_ACTOR} |" >> "$GITHUB_STEP_SUMMARY"
-          SNAPSHOT_FILES=$(ls backups/*.zip 2>/dev/null | xargs -I{} basename {} | tr '
-' ', ' || echo "N/A")
+          SNAPSHOT_FILES=$(ls backups/*.zip 2>/dev/null | xargs -I{} basename {} | tr '\n' ', ' || echo "N/A")
           echo "| Snapshot | ${SNAPSHOT_FILES:-N/A} |" >> "$GITHUB_STEP_SUMMARY"
           if [[ "${TARGET}" == "production" && "${{ github.event.inputs.skip_countdown }}" != "true" && "${{ github.event.inputs.dry_run }}" != "true" ]]; then
             echo "| Countdown | 20-5-1 min warnings sent |" >> "$GITHUB_STEP_SUMMARY"
