@@ -310,6 +310,8 @@ jobs:
     needs: [build, qualify]
     runs-on: ubuntu-latest
     if: |
+      always() &&
+      needs.build.result == 'success' &&
       github.event_name != 'pull_request' && (
         (needs.qualify.outputs.needs_countdown == 'true' && github.event.inputs.countdown_complete != 'true') ||
         github.event.inputs.force_qualify == 'true' ||
