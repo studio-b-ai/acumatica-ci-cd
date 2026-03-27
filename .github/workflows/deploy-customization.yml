@@ -320,7 +320,6 @@ jobs:
       - name: Send 20-minute warning and schedule deploy
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.STUDIOB_SLACK_WEBHOOK_URL }}
-        env:
           ACUMATICA_URL: ${{ secrets.ACUMATICA_PROD_URL }}
           ACUMATICA_USERNAME: ${{ secrets.ACUMATICA_PROD_USERNAME }}
           ACUMATICA_PASSWORD: ${{ secrets.ACUMATICA_PROD_PASSWORD }}
@@ -659,9 +658,9 @@ jobs:
   # ──────────────────────────────────────────────
   post-deploy-validation:
     name: Trigger Runtime Tests
-    needs: deploy
+    needs: countdown-notify
     runs-on: ubuntu-latest
-    if: needs.deploy.result == 'success' && github.event_name != 'pull_request'
+    if: needs.countdown-notify.result == 'success' && github.event_name != 'pull_request'
 
     steps:
       - name: Checkout repository
