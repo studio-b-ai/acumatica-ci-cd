@@ -98,7 +98,7 @@ env:
   PROJECT_NAME: AesthetikWMS
   ALSO_PUBLISH: ${{ vars.ALSO_PUBLISH_PROJECTS || '' }}
   KNOWN_PROJECTS: "AesthetikWMS,AsthetikTheme"
-  ISV_PACKAGES: "IIGHFContainerMods,IIGGlobalContainerMgmt"
+  ISV_PACKAGES: ""  # IIG packages (IIGHFContainerMods, IIGGlobalContainerMgmt) removed — replaced by AesthetikContainers
 
 jobs:
   # ──────────────────────────────────────────────

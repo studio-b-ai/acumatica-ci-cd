@@ -3860,7 +3860,7 @@ namespace Aesthetik.WMS
     /// <summary>
     /// Creates the InventoryQuantityDetail Generic Inquiry via direct SQL.
     /// 9 tables with LEFT JOINs: InventoryItem + INSiteStatus + TemplateItem + POVendorInventory
-    ///   + WMSTLVendorLeadTimes + POLine + POOrder + IGCMPOLandedCostLine + IGCMPOLandedCost
+    ///   + WMSTLVendorLeadTimes + POLine + POOrder + UsrContainerPOLink + UsrContainer
     /// Shows stock items with warehouse qty, template, vendor, lead time, open PO, container info.
     /// OData exposed.
     /// </summary>
@@ -3920,8 +3920,8 @@ namespace Aesthetik.WMS
                         new[]{"WMSTLVendorLeadTimes","WMSTLVendorLeadTimes"},
                         new[]{"PX.Objects.PO.POLine","POLine"},
                         new[]{"PX.Objects.PO.POOrder","POOrder"},
-                        new[]{"IGCM.PO.IGCMPOLandedCostLine","IGCMPOLandedCostLine"},
-                        new[]{"IGCM.PO.IGCMPOLandedCost","IGCMPOLandedCost"}
+                        new[]{"StudioB.Containers.UsrContainerPOLink","UsrContainerPOLink"},
+                        new[]{"StudioB.Containers.UsrContainer","UsrContainer"}
                     };
                     foreach (var t in tables)
                         InsertFromTemplate(conn,"GITable",tplT,companyId,new Dictionary<string,string>{
@@ -3952,12 +3952,12 @@ namespace Aesthetik.WMS
                         // Join 6: POLine LEFT JOIN POOrder ON OrderType+OrderNbr
                         AddJoin(conn,tplRel,tplOn,designId,companyId,6,"POLine","POOrder","L",
                             new[]{new[]{"OrderType","E","OrderType"},new[]{"OrderNbr","E","OrderNbr"}});
-                        // Join 7: POLine LEFT JOIN IGCMPOLandedCostLine ON OrderType+OrderNbr+LineNbr
-                        AddJoin(conn,tplRel,tplOn,designId,companyId,7,"POLine","IGCMPOLandedCostLine","L",
-                            new[]{new[]{"OrderType","E","POOrderType"},new[]{"OrderNbr","E","PONbr"},new[]{"LineNbr","E","POLineNbr"}});
-                        // Join 8: IGCMPOLandedCostLine LEFT JOIN IGCMPOLandedCost ON RefNbr
-                        AddJoin(conn,tplRel,tplOn,designId,companyId,8,"IGCMPOLandedCostLine","IGCMPOLandedCost","L",
-                            new[]{new[]{"RefNbr","E","RefNbr"}});
+                        // Join 7: POLine LEFT JOIN UsrContainerPOLink ON OrderType+OrderNbr
+                        AddJoin(conn,tplRel,tplOn,designId,companyId,7,"POLine","UsrContainerPOLink","L",
+                            new[]{new[]{"OrderType","E","OrderType"},new[]{"OrderNbr","E","OrderNbr"}});
+                        // Join 8: UsrContainerPOLink LEFT JOIN UsrContainer ON ContainerID
+                        AddJoin(conn,tplRel,tplOn,designId,companyId,8,"UsrContainerPOLink","UsrContainer","L",
+                            new[]{new[]{"ContainerID","E","ContainerID"}});
                     }
                     WriteLog("[InvQtyGI] 8 joins created");
 
@@ -3977,8 +3977,8 @@ namespace Aesthetik.WMS
                         new[]{"POOrder","OrderNbr","100","PO Number","0","1"},
                         new[]{"POLine","OpenQty","80","Open Qty on PO","0","1"},
                         new[]{"POLine","UsrExpArrivalDate","100","Expected Arrival","0","1"},
-                        new[]{"IGCMPOLandedCostLine","ContainerNbr","100","Container Number","0","1"},
-                        new[]{"IGCMPOLandedCost","RefNbr","100","Container Trans#","0","1"}
+                        new[]{"UsrContainer","ContainerCD","100","Container Number","0","1"},
+                        new[]{"UsrContainer","Status","80","Container Status","0","1"}
                     };
                     for (int i=0; i<cols.Length; i++)
                         InsertFromTemplate(conn,"GIResult",tplR,companyId,MakeResultOverrides(designId,i+1,cols[i]));
