@@ -282,35 +282,63 @@ def validate(path: str, strict: bool = False, no_semantic: bool = False):
 
 
 def validate_customization_plugin_ban(class_name: str, code: str):
-    """HARD FAIL: CustomizationPlugin subclasses are banned.
+    """Check CustomizationPlugin for unsafe patterns.
 
-    Caused 3 production outages (2026-03-26, 2026-03-28 x2).
-    UpdateDatabase() runs at app pool init outside HTTP context.
-    WebConfigurationManager/HttpContext returns null -> NullReferenceException
-    -> TargetInvocationException -> every login HTTP 500 -> instance down.
+    CustomizationPlugin is SAFE when:
+    - Uses System.Configuration.ConfigurationManager (works in all contexts)
+    - Has null check on connection string
+    - Has try/catch around UpdateDatabase body
+    - Only references own code (no ISV/vendor package imports)
 
-    No exceptions. No "safe" implementations. Use [PXDB*] DAC attributes
-    or manual SQL via SM203510 instead.
+    CustomizationPlugin is DANGEROUS when:
+    - Uses System.Web.Configuration.WebConfigurationManager (null outside HTTP context)
+    - Uses HttpContext.Current (null during cloud maintenance)
+    - Missing null check on ConnectionStrings["ProjectX"]
+    - No try/catch (unhandled exception kills app pool)
+
+    The 2026-03-28 outage was caused by WebConfigurationManager, NOT by
+    CustomizationPlugin itself. AesthetikWMS uses CustomizationPlugin with
+    ConfigurationManager and has been stable in production.
     """
     # Strip comments to avoid false positives
     clean = re.sub(r"///.*$", "", code, flags=re.MULTILINE)
     clean = re.sub(r"//.*$", "", clean, flags=re.MULTILINE)
     clean = re.sub(r"/\*.*?\*/", "", clean, flags=re.DOTALL)
 
-    if re.search(r"class\s+\w+\s*:\s*CustomizationPlugin", clean):
+    if not re.search(r"class\s+\w+\s*:\s*CustomizationPlugin", clean):
+        return  # Not a CustomizationPlugin — skip
+
+    # HARD FAIL: WebConfigurationManager — crashes outside HTTP context
+    if "WebConfigurationManager" in clean:
         error(
-            f"{class_name}: BANNED — CustomizationPlugin subclass detected.\n"
-            f"         CustomizationPlugin.UpdateDatabase() crashes Acumatica Cloud at app pool init.\n"
-            f"         Caused 3 production outages (full instance down, every login HTTP 500).\n"
-            f"         This is a HARD FAILURE. No exceptions.\n"
-            f"         Use [PXDB*] DAC attributes for column creation, or manual SQL via SM203510."
+            f"{class_name}: BANNED — WebConfigurationManager in CustomizationPlugin.\n"
+            f"         WebConfigurationManager depends on HTTP context which is absent during\n"
+            f"         cloud maintenance app pool restarts. Use ConfigurationManager instead.\n"
+            f"         Root cause of 2026-03-28 production outage (14+ hours)."
         )
 
-    # Also catch indirect references that suggest plugin usage
-    if "CustomizationPlugin" in clean and "UpdateDatabase" in clean:
+    # HARD FAIL: HttpContext.Current — null during cloud maintenance
+    if "HttpContext.Current" in clean:
         error(
-            f"{class_name}: References CustomizationPlugin.UpdateDatabase() — BANNED.\n"
-            f"         See above. Remove all CustomizationPlugin references."
+            f"{class_name}: BANNED — HttpContext.Current in CustomizationPlugin.\n"
+            f"         HttpContext is null during app pool init (cloud maintenance).\n"
+            f"         Use ConfigurationManager.ConnectionStrings[\"ProjectX\"] instead."
+        )
+
+    # WARN: Missing null check on connection string
+    if "ConfigurationManager" in clean and ".ConnectionString" in clean:
+        if "== null" not in clean and "is null" not in clean:
+            warn(
+                f"{class_name}: CustomizationPlugin accesses .ConnectionString without null check.\n"
+                f"         Add: if (cs == null) {{ WriteLog(...); return; }}"
+            )
+
+    # WARN: Missing try/catch
+    if "UpdateDatabase" in clean and "catch" not in clean:
+        warn(
+            f"{class_name}: CustomizationPlugin.UpdateDatabase() has no try/catch.\n"
+            f"         Unhandled exceptions in UpdateDatabase() kill the entire app pool.\n"
+            f"         Wrap body in try/catch with WriteLog for error reporting."
         )
 
 
