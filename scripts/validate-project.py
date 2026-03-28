@@ -135,6 +135,17 @@ def validate(path: str, strict: bool = False, no_semantic: bool = False):
     if not table_elements:
         ok("No <Table> elements (columns auto-created by DAC attributes)")
 
+    # Collect ALL SQL text from <Sql> and <SqlScript> elements for cross-reference
+    all_sql_text = ""
+    for elem in root.findall(".//Sql"):
+        cdata = elem.find("CDATA")
+        if cdata is not None and cdata.text:
+            all_sql_text += cdata.text + "\n"
+    for elem in root.findall(".//SqlScript"):
+        cdata = elem.find("CDATA")
+        if cdata is not None and cdata.text:
+            all_sql_text += cdata.text + "\n"
+
     # Check 6: Validate <Graph> elements
     # Supports two formats:
     #   1. Inline CDATA: Source="#CDATA" with <CDATA> child containing C# code
@@ -169,6 +180,12 @@ def validate(path: str, strict: bool = False, no_semantic: bool = False):
                     error(f"<Graph ClassName=\"{class_name}\"> has empty CDATA (no C# code)")
                     continue
 
+                # CRITICAL: CustomizationPlugin ban (caused 3 production outages)
+                validate_customization_plugin_ban(class_name, code)
+
+                # CRITICAL: [PXDB*] fields must have matching SQL
+                validate_pxdb_has_sql(class_name, code, all_sql_text)
+
                 # Basic C# validation
                 validate_csharp(class_name, code, strict)
 
@@ -188,6 +205,13 @@ def validate(path: str, strict: bool = False, no_semantic: bool = False):
                 else:
                     # Read and validate the external .cs file
                     code = cs_path.read_text(encoding="utf-8")
+
+                    # CRITICAL: CustomizationPlugin ban
+                    validate_customization_plugin_ban(class_name, code)
+
+                    # CRITICAL: [PXDB*] fields must have matching SQL
+                    validate_pxdb_has_sql(class_name, code, all_sql_text)
+
                     validate_csharp(class_name, code, strict)
                     validate_extension_safety(class_name, code, strict)
                     validate_crm_dac_safety(class_name, code, strict)
@@ -255,6 +279,97 @@ def validate(path: str, strict: bool = False, no_semantic: bool = False):
         warnings.extend(sem_warnings)
 
     return len(errors) == 0
+
+
+def validate_customization_plugin_ban(class_name: str, code: str):
+    """HARD FAIL: CustomizationPlugin subclasses are banned.
+
+    Caused 3 production outages (2026-03-26, 2026-03-28 x2).
+    UpdateDatabase() runs at app pool init outside HTTP context.
+    WebConfigurationManager/HttpContext returns null -> NullReferenceException
+    -> TargetInvocationException -> every login HTTP 500 -> instance down.
+
+    No exceptions. No "safe" implementations. Use [PXDB*] DAC attributes
+    or manual SQL via SM203510 instead.
+    """
+    # Strip comments to avoid false positives
+    clean = re.sub(r"///.*$", "", code, flags=re.MULTILINE)
+    clean = re.sub(r"//.*$", "", clean, flags=re.MULTILINE)
+    clean = re.sub(r"/\*.*?\*/", "", clean, flags=re.DOTALL)
+
+    if re.search(r"class\s+\w+\s*:\s*CustomizationPlugin", clean):
+        error(
+            f"{class_name}: BANNED — CustomizationPlugin subclass detected.\n"
+            f"         CustomizationPlugin.UpdateDatabase() crashes Acumatica Cloud at app pool init.\n"
+            f"         Caused 3 production outages (full instance down, every login HTTP 500).\n"
+            f"         This is a HARD FAILURE. No exceptions.\n"
+            f"         Use [PXDB*] DAC attributes for column creation, or manual SQL via SM203510."
+        )
+
+    # Also catch indirect references that suggest plugin usage
+    if "CustomizationPlugin" in clean and "UpdateDatabase" in clean:
+        error(
+            f"{class_name}: References CustomizationPlugin.UpdateDatabase() — BANNED.\n"
+            f"         See above. Remove all CustomizationPlugin references."
+        )
+
+
+def validate_pxdb_has_sql(class_name: str, code: str, all_sql_text: str):
+    """HARD FAIL: [PXDBInt]/[PXDBString]/etc. fields in PXCacheExtension must have matching SQL.
+
+    If a PXCacheExtension declares [PXDB*] fields, Acumatica will query the underlying
+    SQL table for those columns. If the columns don't exist, EVERY login fails with
+    "Invalid column name" -> HTTP 500 -> unrecoverable deadlock (can't deploy fix
+    without login, can't login without fix).
+
+    Caused 14+ hour production outage on 2026-03-28 requiring Acumatica Cloud Support
+    server-side intervention.
+    """
+    # Strip comments
+    clean = re.sub(r"///.*$", "", code, flags=re.MULTILINE)
+    clean = re.sub(r"//.*$", "", clean, flags=re.MULTILINE)
+    clean = re.sub(r"/\*.*?\*/", "", clean, flags=re.DOTALL)
+
+    # Find PXCacheExtension declarations
+    ext_matches = re.finditer(r"class\s+(\w+)\s*:\s*PXCacheExtension<(\w+)>", clean)
+    for m in ext_matches:
+        ext_name = m.group(1)
+        base_dac = m.group(2)
+
+        # Extract the class body (rough — find matching braces)
+        start = m.end()
+        brace_count = 0
+        class_body = ""
+        for i, ch in enumerate(clean[start:], start):
+            if ch == "{":
+                brace_count += 1
+            elif ch == "}":
+                brace_count -= 1
+                if brace_count == 0:
+                    class_body = clean[start:i + 1]
+                    break
+
+        # Find all [PXDB*] fields in this extension
+        pxdb_fields = re.findall(
+            r"\[(PXDBInt|PXDBString|PXDBDecimal|PXDBBool|PXDBDate|PXDBDouble|PXDBFloat|PXDBLong|PXDBShort|PXDBByte|PXDBGuid)"
+            r"[^\]]*\]"
+            r".*?"
+            r"public\s+\w+\??\s+(Usr\w+)\s*\{",
+            class_body,
+            re.DOTALL,
+        )
+
+        for attr_type, field_name in pxdb_fields:
+            # Check if there's a matching ALTER TABLE ... ADD {field_name} in any SQL element
+            if field_name not in all_sql_text:
+                error(
+                    f"{class_name}: [{attr_type}] field '{field_name}' on PXCacheExtension<{base_dac}> "
+                    f"has NO matching SQL ALTER TABLE.\n"
+                    f"         Without a SQL column, this field causes 'Invalid column name' on EVERY login.\n"
+                    f"         This creates an UNRECOVERABLE DEADLOCK on Acumatica Cloud.\n"
+                    f"         Fix: Use [{attr_type.replace('PXDB', 'PX')}] (non-persisted) instead of [{attr_type}],\n"
+                    f"         OR add a <Sql> element: ALTER TABLE {{correct_table}} ADD {field_name} ..."
+                )
 
 
 def validate_csharp(class_name: str, code: str, strict: bool):
