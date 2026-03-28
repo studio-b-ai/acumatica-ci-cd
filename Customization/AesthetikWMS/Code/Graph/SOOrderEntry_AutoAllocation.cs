@@ -37,13 +37,16 @@ namespace HeritageFabrics.SO
             SOLine oldLine = e.OldRow;
             if (line == null) return;
 
-            // Only fire when InventoryID or SiteID changed
-            if (line.InventoryID == oldLine?.InventoryID
-                && line.SiteID == oldLine?.SiteID)
+            // Fire when InventoryID, SiteID, or OrderQty changed
+            bool invChanged = line.InventoryID != oldLine?.InventoryID;
+            bool siteChanged = line.SiteID != oldLine?.SiteID;
+            bool qtyChanged = line.OrderQty != oldLine?.OrderQty;
+            if (!invChanged && !siteChanged && !qtyChanged)
                 return;
 
-            // Gate: need both InventoryID and SiteID
+            // Gate: need InventoryID and a non-zero qty before allocating
             if (line.InventoryID == null) return;
+            if ((line.OrderQty ?? 0m) <= 0m) return;
 
             SOOrder order = Base.Document.Current;
             if (order == null) return;
