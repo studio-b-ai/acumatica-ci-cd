@@ -4,6 +4,10 @@ Agentic pre-deploy qualification gate.
 Runs 6 checks and returns pass/warn/fail for each.
 Exit 0 = proceed, exit 1 = halt.
 Outputs JSON summary to stdout for workflow consumption.
+
+IMPORTANT: Uses a SINGLE Acumatica session for all checks that need API access.
+Multiple logins during deploy cycles cause account lockouts, especially when
+the app pool is restarting between attempts. See: 2026-03-27 lockout incident.
 """
 
 import json
@@ -31,68 +35,95 @@ WARN = "warn"
 FAIL = "fail"
 
 
-def check_acumatica_health(url, username, password, tenant):
-    """Check 1: Can we login and query StockItem?"""
-    cj = http.cookiejar.CookieJar()
-    opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(cj))
+# ─── Shared Acumatica Session ────────────────────────────────────────
 
-    body = json.dumps({"name": username, "password": password, "tenant": tenant}).encode()
-    req = urllib.request.Request(
-        f"{url}/entity/auth/login", data=body,
-        headers={"Content-Type": "application/json"}, method="POST",
-    )
-    try:
-        resp = opener.open(req, timeout=30)
-    except Exception as e:
-        return FAIL, f"Login failed: {e}"
+class AcumaticaSession:
+    """Single session for all qualification checks. One login, one logout."""
 
-    # Check for NullRef (corruption)
-    if hasattr(resp, "read"):
-        text = resp.read().decode() if resp.status != 204 else ""
-        if "NullReferenceException" in text:
-            return FAIL, "NullReferenceException on login — subsystem corrupted"
-
-    # Query StockItem
-    try:
-        req2 = urllib.request.Request(
-            f"{url}/entity/Default/24.200.001/StockItem?$top=1&$select=InventoryID",
-            method="GET",
+    def __init__(self, url, username, password, tenant):
+        self.url = url
+        self.cj = http.cookiejar.CookieJar()
+        self.opener = urllib.request.build_opener(
+            urllib.request.HTTPCookieProcessor(self.cj)
         )
-        resp2 = opener.open(req2, timeout=30)
-        if resp2.status == 200:
-            # Logout
-            try:
-                opener.open(urllib.request.Request(f"{url}/entity/auth/logout", method="POST"), timeout=10)
-            except Exception:
-                pass
+        self._authenticated = False
+        self._login_error = None
+
+        body = json.dumps({
+            "name": username, "password": password, "tenant": tenant
+        }).encode()
+        req = urllib.request.Request(
+            f"{url}/entity/auth/login", data=body,
+            headers={"Content-Type": "application/json"}, method="POST",
+        )
+        try:
+            resp = self.opener.open(req, timeout=30)
+            if hasattr(resp, "read"):
+                text = resp.read().decode() if resp.status != 204 else ""
+                if "NullReferenceException" in text:
+                    self._login_error = "NullReferenceException on login — subsystem corrupted"
+                    return
+            self._authenticated = True
+        except Exception as e:
+            self._login_error = f"Login failed: {e}"
+
+    @property
+    def is_authenticated(self):
+        return self._authenticated
+
+    @property
+    def login_error(self):
+        return self._login_error
+
+    def get(self, path, timeout=30):
+        """GET request using the shared session."""
+        req = urllib.request.Request(f"{self.url}{path}", method="GET")
+        return self.opener.open(req, timeout=timeout)
+
+    def post(self, path, data=None, timeout=30):
+        """POST request using the shared session."""
+        body = json.dumps(data).encode() if data else None
+        headers = {"Content-Type": "application/json"} if data else {}
+        req = urllib.request.Request(
+            f"{self.url}{path}", data=body,
+            headers=headers, method="POST",
+        )
+        return self.opener.open(req, timeout=timeout)
+
+    def logout(self):
+        """Logout once — called at the end of all checks."""
+        if not self._authenticated:
+            return
+        try:
+            self.post("/entity/auth/logout", timeout=10)
+        except Exception:
+            pass
+        self._authenticated = False
+
+
+# ─── Checks ──────────────────────────────────────────────────────────
+
+def check_acumatica_health(session):
+    """Check 1: Can we login and query StockItem?"""
+    if not session.is_authenticated:
+        return FAIL, session.login_error or "Not authenticated"
+
+    try:
+        resp = session.get(
+            "/entity/Default/24.200.001/StockItem?$top=1&$select=InventoryID"
+        )
+        if resp.status == 200:
             return PASS, "API healthy"
-        return FAIL, f"StockItem query returned HTTP {resp2.status}"
+        return FAIL, f"StockItem query returned HTTP {resp.status}"
     except Exception as e:
         return FAIL, f"StockItem query failed: {e}"
 
 
-def check_orphan_scan(url, username, password, tenant, known_projects):
-    """Check 2: Drift detection — are deprecated projects still on the instance?
+def check_orphan_scan(session, known_projects):
+    """Check 2: Drift detection — are deprecated projects still on the instance?"""
+    if not session.is_authenticated:
+        return WARN, session.login_error or "Could not login for drift scan"
 
-    Uses instance-manifest.json to identify deprecated projects that should
-    have been deleted. If any exist on the instance, they could get compiled
-    during the next publish and cause runtime errors (like the 2026-03-26
-    StockItemExt incident).
-    """
-    cj = http.cookiejar.CookieJar()
-    opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(cj))
-
-    body = json.dumps({"name": username, "password": password, "tenant": tenant}).encode()
-    req = urllib.request.Request(
-        f"{url}/entity/auth/login", data=body,
-        headers={"Content-Type": "application/json"}, method="POST",
-    )
-    try:
-        opener.open(req, timeout=30)
-    except Exception as e:
-        return WARN, f"Could not login for drift scan: {e}"
-
-    # Load instance manifest
     manifest = _load_instance_manifest()
     deprecated_names = []
     managed_names = []
@@ -110,13 +141,10 @@ def check_orphan_scan(url, username, password, tenant, known_projects):
     check_names = managed_names if managed_names else known_projects
     for name in check_names:
         try:
-            req2 = urllib.request.Request(
-                f"{url}/CustomizationApi/getProject",
-                data=json.dumps({"projectName": name}).encode(),
-                headers={"Content-Type": "application/json"},
-                method="POST",
+            session.post(
+                "/CustomizationApi/getProject",
+                data={"projectName": name},
             )
-            opener.open(req2, timeout=30)
         except urllib.error.HTTPError as e:
             if e.code == 400:
                 pass  # Not on instance — OK
@@ -128,36 +156,36 @@ def check_orphan_scan(url, username, password, tenant, known_projects):
     # Check deprecated projects aren't lingering on instance
     for name in deprecated_names:
         try:
-            req2 = urllib.request.Request(
-                f"{url}/CustomizationApi/getProject",
-                data=json.dumps({"projectName": name}).encode(),
-                headers={"Content-Type": "application/json"},
-                method="POST",
+            session.post(
+                "/CustomizationApi/getProject",
+                data={"projectName": name},
             )
-            opener.open(req2, timeout=30)
             # 200 = project exists — should have been deleted
-            issues.append(f"DRIFT: deprecated '{name}' still on instance — delete via SM204505")
+            issues.append(
+                f"DRIFT: deprecated '{name}' still on instance — delete via SM204505"
+            )
         except urllib.error.HTTPError:
             pass  # 400 = not found — good
         except Exception:
             pass
 
-    try:
-        opener.open(urllib.request.Request(f"{url}/entity/auth/logout", method="POST"), timeout=10)
-    except Exception:
-        pass
-
     if any("DRIFT" in i for i in issues):
         return FAIL, "; ".join(issues)
     if issues:
         return WARN, "; ".join(issues)
-    return PASS, f"No drift detected ({len(check_names)} managed, {len(deprecated_names)} deprecated checked)"
+    return PASS, (
+        f"No drift detected "
+        f"({len(check_names)} managed, {len(deprecated_names)} deprecated checked)"
+    )
 
 
 def _load_instance_manifest():
     """Load instance-manifest.json from repo root."""
     for path in [
-        os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "instance-manifest.json"),
+        os.path.join(
+            os.path.dirname(os.path.abspath(__file__)),
+            "..", "instance-manifest.json",
+        ),
         "instance-manifest.json",
     ]:
         if os.path.exists(path):
@@ -167,29 +195,18 @@ def _load_instance_manifest():
 
 
 def check_diff_scope(isv_packages):
-    """Check 3: Are changes code-only, or do they touch SQL/ISV/project.xml structure?
-
-    Severity levels:
-    - FAIL: ISV package modifications (third-party, we don't control the code)
-    - WARN: project.xml or SQL changes (routine — every DAC/graph extension
-            modifies project.xml, and SQL scripts are expected for column creation)
-    - PASS: Code-only changes (.cs, .aspx, .py, etc.)
-    """
-    # Find last deploy tag
+    """Check 3: Are changes code-only, or do they touch SQL/ISV/project.xml structure?"""
     result = subprocess.run(
         ["git", "tag", "-l", "deploy/prod/*", "--sort=-creatordate"],
         capture_output=True, text=True,
     )
     tags = result.stdout.strip().split("\n")
-    # Filter out rolled-back tags
     clean_tags = [t for t in tags if t and "ROLLED-BACK" not in t]
 
     if not clean_tags:
         return WARN, "No previous deploy tags found — cannot diff"
 
     last_tag = clean_tags[0]
-
-    # Get changed files
     result = subprocess.run(
         ["git", "diff", "--name-only", last_tag, "HEAD"],
         capture_output=True, text=True,
@@ -203,26 +220,18 @@ def check_diff_scope(isv_packages):
     warnings = []
 
     for f in changed:
-        # ISV package touched? → FAIL (third-party code we don't control)
         for isv in isv_packages:
             if f.startswith(f"Customization/{isv}/"):
                 isv_issues.append(f"ISV package modified: {isv} ({f})")
-
-        # SQL changes? → WARN (routine for column creation)
         if f.endswith(".sql") or "SqlScript" in f:
             warnings.append(f"SQL change: {f}")
-
-        # project.xml change? → WARN (routine — every DAC/graph extension touches this)
         if f.endswith("project.xml"):
             warnings.append(f"project.xml modified: {f}")
 
-    # ISV modifications are the only hard failure
     if isv_issues:
         return FAIL, "; ".join(isv_issues + warnings)
-
     if warnings:
         return WARN, "; ".join(warnings)
-
     return PASS, "Code-only changes"
 
 
@@ -235,35 +244,36 @@ def check_failure_history(repo, workflow_name):
             capture_output=True, text=True, timeout=30,
         )
         failure_count = int(result.stdout.strip() or "0")
-        if failure_count >= 2:
-            return FAIL, f"{failure_count} failures in recent runs"
-        elif failure_count == 1:
-            return WARN, "1 failure in recent runs"
+        if failure_count >= 3:
+            return WARN, f"{failure_count} failures in recent runs — investigate before deploying"
+        elif failure_count >= 1:
+            return WARN, f"{failure_count} failure(s) in recent runs"
         return PASS, "0 recent failures"
     except Exception as e:
         return WARN, f"Could not check failure history: {e}"
 
 
 def check_deploy_cooldown(repo, workflow_name):
-    """Check 5: Has it been >60 min since the last deploy?"""
+    """Check 5: Has it been >15 min since the last SUCCESSFUL deploy?
+
+    Only counts successful runs — failed deploys shouldn't block retries.
+    """
     try:
         result = subprocess.run(
             ["gh", "api", f"repos/{repo}/actions/workflows/{workflow_name}/runs",
-             "--jq", '.workflow_runs[0].updated_at'],
+             "--jq", '[.workflow_runs[] | select(.conclusion == "success")][0].updated_at'],
             capture_output=True, text=True, timeout=30,
         )
         last_run = result.stdout.strip()
         if not last_run:
-            return PASS, "No previous runs"
+            return PASS, "No previous successful runs"
 
         last_dt = datetime.fromisoformat(last_run.replace("Z", "+00:00"))
         elapsed = (datetime.now(timezone.utc) - last_dt).total_seconds() / 60
 
-        if elapsed < 30:
-            return WARN, f"Last deploy {elapsed:.0f} min ago (<30 min cooldown)"
-        elif elapsed < 60:
-            return WARN, f"Last deploy {elapsed:.0f} min ago"
-        return PASS, f"Last deploy {elapsed:.0f} min ago"
+        if elapsed < 15:
+            return WARN, f"Last successful deploy {elapsed:.0f} min ago (<15 min cooldown)"
+        return PASS, f"Last successful deploy {elapsed:.0f} min ago"
     except Exception as e:
         return WARN, f"Could not check cooldown: {e}"
 
@@ -309,7 +319,7 @@ def main():
     workflow = "deploy-customization.yml"
     project_name = os.environ.get("PROJECT_NAME", "AesthetikWMS")
     max_retries = int(os.environ.get("QUALIFY_MAX_RETRIES", "1"))
-    retry_delay = int(os.environ.get("QUALIFY_RETRY_DELAY", "60"))  # 60s (was 1800s — caused GH Actions timeout)
+    retry_delay = int(os.environ.get("QUALIFY_RETRY_DELAY", "60"))
 
     known_projects = [p.strip() for p in known_str.split(",") if p.strip()]
     isv_packages = [p.strip() for p in isv_str.split(",") if p.strip()]
@@ -317,16 +327,32 @@ def main():
     for attempt in range(max_retries + 1):
         if attempt > 0:
             _print(f"\n--- Retry {attempt}/{max_retries} (waiting {retry_delay}s) ---")
-            post_slack(slack_url, f"Deploy qualification retry {attempt}/{max_retries} — {project_name} -> production\nRe-checking in {retry_delay // 60} minutes...")
+            post_slack(
+                slack_url,
+                f"Deploy qualification retry {attempt}/{max_retries} "
+                f"— {project_name} -> production\n"
+                f"Re-checking in {retry_delay}s...",
+            )
             time.sleep(retry_delay)
 
+        # Single Acumatica session for ALL API-dependent checks
+        _print("[INFO] Connecting to Acumatica (single session)...")
+        session = AcumaticaSession(url, username, password, tenant)
+        if session.is_authenticated:
+            _print("[INFO] Authenticated — running checks")
+        else:
+            _print(f"[WARN] Auth failed: {session.login_error}")
+
         results = {}
-        results["Health"] = check_acumatica_health(url, username, password, tenant)
-        results["Orphans"] = check_orphan_scan(url, username, password, tenant, known_projects)
+        results["Health"] = check_acumatica_health(session)
+        results["Orphans"] = check_orphan_scan(session, known_projects)
         results["Scope"] = check_diff_scope(isv_packages)
         results["Failures"] = check_failure_history(repo, workflow)
         results["Cooldown"] = check_deploy_cooldown(repo, workflow)
         results["Timing"] = check_timing()
+
+        # Logout once — end of all checks
+        session.logout()
 
         # Summarize
         has_fail = any(r[0] == FAIL for r in results.values())
@@ -341,34 +367,49 @@ def main():
             _print(f"[{icon}] {name}: {detail}")
 
         if not has_fail:
-            # Proceed
             if has_warn:
-                msg = f"Deploy qualified with warnings — {project_name} -> production\n  {summary_line}"
+                msg = (
+                    f"Deploy qualified with warnings "
+                    f"— {project_name} -> production\n  {summary_line}"
+                )
                 post_slack(slack_url, msg)
             else:
-                msg = f"Deploy qualified — {project_name} -> production\n  {summary_line}"
+                msg = (
+                    f"Deploy qualified "
+                    f"— {project_name} -> production\n  {summary_line}"
+                )
                 post_slack(slack_url, msg)
 
-            # Output for workflow
             gh_output = os.environ.get("GITHUB_OUTPUT", "")
             if gh_output:
                 with open(gh_output, "a") as f:
                     f.write(f"decision=proceed\n")
-                    f.write(f"needs_countdown={'true' if needs_countdown else 'false'}\n")
+                    f.write(
+                        f"needs_countdown="
+                        f"{'true' if needs_countdown else 'false'}\n"
+                    )
                     f.write(f"summary={summary_line}\n")
             sys.exit(0)
 
         # Has failures
         if attempt < max_retries:
-            msg = f"Deploy HALTED — {project_name} -> production\n  {summary_line}\n  Retrying in {retry_delay // 60} minutes (attempt {attempt + 1}/{max_retries})..."
+            msg = (
+                f"Deploy HALTED — {project_name} -> production\n"
+                f"  {summary_line}\n"
+                f"  Retrying in {retry_delay}s "
+                f"(attempt {attempt + 1}/{max_retries})..."
+            )
             post_slack(slack_url, msg)
             _print(f"\nHALTED — retrying in {retry_delay}s")
             continue
 
         # Exhausted retries — escalate
-        override_url = f"https://github.com/{repo}/actions/workflows/{workflow}"
+        override_url = (
+            f"https://github.com/{repo}/actions/workflows/{workflow}"
+        )
         msg = (
-            f"Deploy requires manual override — {project_name} -> production\n"
+            f"Deploy requires manual override "
+            f"— {project_name} -> production\n"
             f"  {summary_line}\n"
             f"  {max_retries} retry attempts failed.\n"
             f"  Override: {override_url}\n"

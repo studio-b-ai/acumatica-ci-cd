@@ -279,6 +279,7 @@ jobs:
     name: Pre-Deploy Qualification
     needs: build
     runs-on: ubuntu-latest
+    timeout-minutes: 5  # Hard cap — prevents runaway retries from blocking the runner
     if: github.event_name != 'pull_request' && github.event.inputs.force_qualify != 'true'
     outputs:
       decision: ${{ steps.qualify.outputs.decision }}
@@ -291,7 +292,9 @@ jobs:
           fetch-tags: true
       - name: Run qualification checks
         id: qualify
+        timeout-minutes: 4  # Must be less than job timeout
         env:
+          PYTHONUNBUFFERED: "1"
           ACUMATICA_URL: ${{ secrets.ACUMATICA_PROD_URL }}
           ACUMATICA_USERNAME: ${{ secrets.ACUMATICA_PROD_USERNAME }}
           ACUMATICA_PASSWORD: ${{ secrets.ACUMATICA_PROD_PASSWORD }}
