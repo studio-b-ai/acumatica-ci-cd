@@ -1179,11 +1179,6 @@ namespace StudioB.Containers
 }
 ]]></CDATA>
     </Graph>
-    <!-- NOTE: ContainerMaint ASPX screen (SB501000) must be created via Customization Project Editor.
-         ASPX File elements cause NullReferenceException on Customization API import (same class as DDL elements).
-         CSS File elements work fine (AesthetikTheme), but ASPX triggers NullRef during import.
-         Graph, DACs, and tables are all deployed. Only the visual page needs manual creation.
-         See: PR #71, deploy run 23694192480 (2026-03-28) -->
     <Page path="~/pages/po/po301000.aspx">
         <PXFormView ID="form" ParentId="phF_form" TypeFullName="PX.Web.UI.PXFormView">
             <Children Key="Template">
