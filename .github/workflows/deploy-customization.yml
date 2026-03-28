@@ -382,6 +382,14 @@ jobs:
           ACUMATICA_PASSWORD: ${{ secrets.ACUMATICA_PROD_PASSWORD }}
           ACUMATICA_TENANT: ${{ (steps.env.outputs.target == 'production') && secrets.ACUMATICA_PROD_TENANT || secrets.ACUMATICA_SANDBOX_TENANT }}
         run: |
+          # Skip smoke test on emergency deploys (force_qualify=true).
+          # Use case: Acumatica is DOWN because of a bad customization — we need to
+          # deploy the fix even though we cannot log in. deploy.py has its own retry
+          # logic that handles TargetInvocationException / API Login Limit.
+          if [ "${{ github.event.inputs.force_qualify }}" = "true" ]; then
+            echo "::warning::force_qualify=true — skipping pre-deploy smoke test (emergency deploy)"
+            exit 0
+          fi
           python -c "
           import sys; sys.path.insert(0, '.')
           from scripts.deploy import AcumaticaCustomizationClient
