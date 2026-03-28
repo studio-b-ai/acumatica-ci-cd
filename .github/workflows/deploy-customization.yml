@@ -341,6 +341,7 @@ jobs:
         run: pip install -r scripts/requirements.txt
       - name: Send 20-minute warning and schedule deploy
         id: snapshot
+        if: github.event.inputs.force_qualify != 'true'
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.STUDIOB_SLACK_WEBHOOK_URL }}
           ACUMATICA_URL: ${{ secrets.ACUMATICA_PROD_URL }}
