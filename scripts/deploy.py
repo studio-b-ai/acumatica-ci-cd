@@ -115,11 +115,19 @@ class AcumaticaCustomizationClient:
         - TargetInvocationException: Acumatica app pool crash/recovery cycle caused
           by a CustomizationPlugin.UpdateDatabase() failure. The app pool auto-restarts;
           retry until the recovery window is available (up to ~6 min).
+
+        Circuit breaker (AAR 2026-03-28):
+        - 3 consecutive IDENTICAL errors = abort immediately
+        - Prevents retry storms from exhausting API session limit
+        - Triggers auto-lockout via LOCKOUT_URL if configured
         """
         import time as _time
         payload = {"name": self.username, "password": self.password}
         if self.tenant:
             payload["tenant"] = self.tenant
+
+        consecutive_same_error = 0
+        last_error_sig = None
 
         for attempt in range(max_retries + 1):
             resp = self.session.post(
@@ -135,6 +143,59 @@ class AcumaticaCustomizationClient:
 
             is_login_limit = "API Login Limit" in resp.text
             is_app_pool_crash = "TargetInvocationException" in resp.text
+            is_invalid_column = "Invalid column name" in resp.text
+
+            # ── Circuit breaker: 3 consecutive identical errors = abort ──
+            # Prevents retry storms that compound outages (AAR 2026-03-28:
+            # 4 GHA runs × 12 retries + Railway services exhausted API sessions)
+            error_sig = f"{resp.status_code}:{resp.text[:200]}"
+            if error_sig == last_error_sig:
+                consecutive_same_error += 1
+            else:
+                consecutive_same_error = 1
+                last_error_sig = error_sig
+
+            if consecutive_same_error >= 3:
+                _log(
+                    f"CIRCUIT BREAKER: 3 consecutive identical errors. "
+                    f"Aborting to prevent retry storm.\n"
+                    f"  Error: {resp.text[:300]}",
+                    style="error",
+                )
+                # Auto-trigger Redis lockout if URL configured
+                lockout_url = os.environ.get("LOCKOUT_URL", "")
+                if lockout_url:
+                    try:
+                        import requests as _req
+                        _req.post(
+                            f"{lockout_url}/maintenance/start",
+                            json={"ttl": 3600, "reason": "Deploy circuit breaker — 3 consecutive identical login failures"},
+                            timeout=5,
+                        )
+                        _log("Auto-lockout enabled (1 hour)", style="warn")
+                    except Exception:
+                        pass
+                raise RuntimeError(
+                    f"CIRCUIT BREAKER TRIPPED: Login failed with same error 3 times. "
+                    f"Manual intervention required. Error: {resp.text[:300]}"
+                )
+
+            # ── Invalid column name = persistent failure, no retry ──
+            # This is the exact pattern from 2026-03-28: [PXDB*] field without
+            # SQL column. Retrying will NEVER fix it — only wastes sessions.
+            if is_invalid_column:
+                _log(
+                    f"FATAL: 'Invalid column name' in login response. "
+                    f"This is a persistent failure — retrying will not fix it.\n"
+                    f"  Error: {resp.text[:300]}",
+                    style="error",
+                )
+                raise RuntimeError(
+                    f"PERSISTENT LOGIN FAILURE — Invalid column name detected. "
+                    f"A [PXDB*] field references a column that doesn't exist. "
+                    f"Fix: unpublish the offending package via Acumatica Cloud Support. "
+                    f"Error: {resp.text[:500]}"
+                )
 
             if (is_login_limit or is_app_pool_crash) and attempt < max_retries:
                 wait = retry_delay * (attempt + 1)
