@@ -4417,8 +4417,5 @@ namespace HeritageFabrics.SO
 ]]></CDATA>
     </Graph>
 
-    <!-- CustomizationPlugin InventoryQuantityDetailKBSetup removed 2026-03-28:
-         Acumatica cloud import API rejects Unknown tag CustomizationPlugin.
-         The GI already exists on the instance; this one-time setup plugin is not needed. -->
 
 </Customization>
