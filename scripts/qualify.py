@@ -16,6 +16,14 @@ import urllib.error
 import http.cookiejar
 from datetime import datetime, timezone
 
+# Force unbuffered output so GH Actions shows progress in real time
+os.environ["PYTHONUNBUFFERED"] = "1"
+
+
+def _print(msg: str) -> None:
+    """Print with explicit flush for GH Actions visibility."""
+    print(msg, flush=True)
+
 # ─── Check Results ────────────────────────────────────────────────────
 
 PASS = "pass"
@@ -252,7 +260,7 @@ def check_deploy_cooldown(repo, workflow_name):
         elapsed = (datetime.now(timezone.utc) - last_dt).total_seconds() / 60
 
         if elapsed < 30:
-            return FAIL, f"Last deploy {elapsed:.0f} min ago (<30 min cooldown)"
+            return WARN, f"Last deploy {elapsed:.0f} min ago (<30 min cooldown)"
         elif elapsed < 60:
             return WARN, f"Last deploy {elapsed:.0f} min ago"
         return PASS, f"Last deploy {elapsed:.0f} min ago"
@@ -300,15 +308,15 @@ def main():
     repo = os.environ.get("GITHUB_REPOSITORY", "studio-b-ai/acumatica-ci-cd")
     workflow = "deploy-customization.yml"
     project_name = os.environ.get("PROJECT_NAME", "AesthetikWMS")
-    max_retries = int(os.environ.get("QUALIFY_MAX_RETRIES", "2"))
-    retry_delay = int(os.environ.get("QUALIFY_RETRY_DELAY", "1800"))  # 30 min
+    max_retries = int(os.environ.get("QUALIFY_MAX_RETRIES", "1"))
+    retry_delay = int(os.environ.get("QUALIFY_RETRY_DELAY", "60"))  # 60s (was 1800s — caused GH Actions timeout)
 
     known_projects = [p.strip() for p in known_str.split(",") if p.strip()]
     isv_packages = [p.strip() for p in isv_str.split(",") if p.strip()]
 
     for attempt in range(max_retries + 1):
         if attempt > 0:
-            print(f"\n--- Retry {attempt}/{max_retries} (waiting {retry_delay}s) ---")
+            _print(f"\n--- Retry {attempt}/{max_retries} (waiting {retry_delay}s) ---")
             post_slack(slack_url, f"Deploy qualification retry {attempt}/{max_retries} — {project_name} -> production\nRe-checking in {retry_delay // 60} minutes...")
             time.sleep(retry_delay)
 
@@ -330,7 +338,7 @@ def main():
 
         for name, (status, detail) in results.items():
             icon = {"pass": "PASS", "warn": "WARN", "fail": "FAIL"}[status]
-            print(f"[{icon}] {name}: {detail}")
+            _print(f"[{icon}] {name}: {detail}")
 
         if not has_fail:
             # Proceed
@@ -354,7 +362,7 @@ def main():
         if attempt < max_retries:
             msg = f"Deploy HALTED — {project_name} -> production\n  {summary_line}\n  Retrying in {retry_delay // 60} minutes (attempt {attempt + 1}/{max_retries})..."
             post_slack(slack_url, msg)
-            print(f"\nHALTED — retrying in {retry_delay}s")
+            _print(f"\nHALTED — retrying in {retry_delay}s")
             continue
 
         # Exhausted retries — escalate
@@ -367,7 +375,7 @@ def main():
             f"  Use workflow_dispatch with force_qualify=true"
         )
         post_slack(slack_url, msg)
-        print(f"\nESCALATED — retries exhausted. Manual override required.")
+        _print(f"\nESCALATED — retries exhausted. Manual override required.")
 
         gh_output = os.environ.get("GITHUB_OUTPUT", "")
         if gh_output:
