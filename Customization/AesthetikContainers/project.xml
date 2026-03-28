@@ -485,7 +485,7 @@ namespace StudioB.Containers
 
         #region UsrDefaultInTransitSiteID
         public abstract class usrDefaultInTransitSiteID : BqlInt.Field<usrDefaultInTransitSiteID> { }
-        [PXDBInt]
+        [PXInt]
         [PXUIField(DisplayName = "Default In-Transit Warehouse")]
         [PXSelector(typeof(Search<INSite.siteID, Where<INSite.active, Equal<True>>>),
             SubstituteKey = typeof(INSite.siteCD),
@@ -495,7 +495,7 @@ namespace StudioB.Containers
 
         #region UsrDefaultCarrierCode
         public abstract class usrDefaultCarrierCode : BqlString.Field<usrDefaultCarrierCode> { }
-        [PXDBString(20, IsUnicode = true)]
+        [PXString(20, IsUnicode = true)]
         [PXUIField(DisplayName = "Default Carrier")]
         [PXStringList(new string[] { "MAERSK", "CHR", "OTS", "OTHER" },
                        new string[] { "Maersk", "CH Robinson", "OTS", "Other" })]
@@ -972,10 +972,10 @@ IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('SOShipment
 IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('SOShipment') AND name = 'UsrContainerID')
   ALTER TABLE SOShipment ADD UsrContainerID int NULL;
 -- BAccount (Vendor) container defaults (replaces IIG UsrIGCMDefaultInTransitSiteID)
-IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('BAccount') AND name = 'UsrDefaultInTransitSiteID')
-  ALTER TABLE BAccount ADD UsrDefaultInTransitSiteID int NULL;
-IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('BAccount') AND name = 'UsrDefaultCarrierCode')
-  ALTER TABLE BAccount ADD UsrDefaultCarrierCode nvarchar(20) NULL;
+IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('EPEmployee_Vendor') AND name = 'UsrDefaultInTransitSiteID')
+  ALTER TABLE EPEmployee_Vendor ADD UsrDefaultInTransitSiteID int NULL;
+IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('EPEmployee_Vendor') AND name = 'UsrDefaultCarrierCode')
+  ALTER TABLE EPEmployee_Vendor ADD UsrDefaultCarrierCode nvarchar(20) NULL;
 ]]>
 -- ── Container Tracking Tables ────────────────────────────────────────
 IF OBJECT_ID('UsrContainer', 'U') IS NULL
