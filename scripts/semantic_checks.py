@@ -318,10 +318,48 @@ def _match_field_to_column(
     return None
 
 
+# Columns known to exist on the instance from prior CustomizationPlugin runs.
+# These plugins were stripped from project.xml because the Customization API
+# import rejects the <Graph> tag when the C# class extends CustomizationPlugin.
+# The columns were created by AesthetikWMSSchemaInstallerV2 and are confirmed
+# present on production. Adding new fields here requires verifying they exist
+# on the instance first (e.g., via SM203510 or API schema check).
+ESTABLISHED_COLUMNS: set[tuple[str, str]] = {
+    # INLotSerialStatus — piece goods physical attributes
+    ("INLotSerialStatus", "UsrActualYardage"),
+    ("INLotSerialStatus", "UsrDyeLot"),
+    ("INLotSerialStatus", "UsrWidth"),
+    ("INLotSerialStatus", "UsrShadeCode"),
+    ("INLotSerialStatus", "UsrSourceRoll"),
+    ("INLotSerialStatus", "UsrDefectFlag"),
+    ("INLotSerialStatus", "UsrInventoryStatus"),
+    ("INLotSerialStatus", "UsrPreAssignedBin"),
+    ("INLotSerialStatus", "UsrContainerNo"),
+    # INSetup — piece goods configuration
+    ("INSetup", "UsrPGMinRemnant"),
+    ("INSetup", "UsrPGAutoQtyMode"),
+    ("INSetup", "UsrPGAutoPrint"),
+    ("INSetup", "UsrPGCutSuffix"),
+    ("INSetup", "UsrPGPreRecv"),
+    ("INSetup", "UsrPGCrossDock"),
+    ("INSetup", "UsrPGXDockAge"),
+    ("INSetup", "UsrPGInTransitWt"),
+    ("INSetup", "UsrPGYardageVar"),
+    ("INSetup", "UsrPGWtExact"),
+    ("INSetup", "UsrPGWtRemnant"),
+    ("INSetup", "UsrPGWtDyeLot"),
+    ("INSetup", "UsrPGWtLocation"),
+    ("INSetup", "UsrPGWtFIFO"),
+}
+
+
 def check_fields_have_sql_columns(
     fields: list[dict], columns: list[dict]
 ) -> tuple[list[str], list[str]]:
     """Every DAC field must have a matching SQL column.
+
+    Fields in ESTABLISHED_COLUMNS are skipped — their columns were created
+    by a prior CustomizationPlugin run and confirmed present on the instance.
 
     Returns (errors, warnings).
     """
@@ -331,6 +369,8 @@ def check_fields_have_sql_columns(
         col = _match_field_to_column(field, columns)
         if col is None:
             table = _resolve_table(field["dac"])
+            if (table, field["name"]) in ESTABLISHED_COLUMNS:
+                continue
             errors.append(
                 f"DAC field {field['dac']}.{field['name']} has no SQL column "
                 f"(expected ALTER TABLE {table} ADD {field['name']})"
