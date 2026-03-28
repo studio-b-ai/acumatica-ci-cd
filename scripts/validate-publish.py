@@ -75,28 +75,51 @@ class AcumaticaSession:
             urllib.request.HTTPCookieProcessor(self.cookie_jar)
         )
 
-    def login(self):
+    def login(self, max_retries: int = 10, retry_delay: int = 20) -> bool:
+        """Authenticate, retrying on HTTP 500.
+
+        After a customization publish, Acumatica restarts its app pool.
+        The restart can take 30-120s — calling login() immediately returns HTTP 500.
+        Retry up to max_retries times so validation runs after recovery.
+        """
+        import time as _time
         body = {"name": self.username, "password": self.password}
         if self.tenant:
             body["tenant"] = self.tenant
         data = json.dumps(body).encode("utf-8")
-        req = urllib.request.Request(
-            f"{self.url}/entity/auth/login",
-            data=data,
-            headers={"Content-Type": "application/json"},
-            method="POST",
-        )
-        try:
-            resp = self.opener.open(req, timeout=30)
-            if resp.status in (200, 204):
-                return True
-        except urllib.error.HTTPError as e:
-            fail(f"Login failed: HTTP {e.code}")
-            return False
-        except Exception as e:
-            fail(f"Login failed: {e}")
-            return False
-        return True
+
+        for attempt in range(max_retries + 1):
+            req = urllib.request.Request(
+                f"{self.url}/entity/auth/login",
+                data=data,
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            try:
+                resp = self.opener.open(req, timeout=30)
+                if resp.status in (200, 204):
+                    return True
+            except urllib.error.HTTPError as e:
+                body_text = e.read().decode("utf-8") if e.fp else ""
+                is_recovering = e.code == 500 and (
+                    "TargetInvocationException" in body_text or "An error has occurred" in body_text
+                )
+                if is_recovering and attempt < max_retries:
+                    wait = retry_delay * (attempt + 1)
+                    warn(
+                        f"Acumatica restarting after publish (HTTP 500) — "
+                        f"attempt {attempt + 1}/{max_retries}, waiting {int(wait)}s"
+                    )
+                    _time.sleep(wait)
+                    continue
+                fail(f"Login failed: HTTP {e.code}")
+                return False
+            except Exception as e:
+                fail(f"Login failed: {e}")
+                return False
+
+        fail(f"Login failed after {max_retries} retries — Acumatica did not recover in time")
+        return False
 
     def logout(self):
         try:
