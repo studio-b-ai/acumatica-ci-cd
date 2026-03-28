@@ -159,7 +159,14 @@ def _load_instance_manifest():
 
 
 def check_diff_scope(isv_packages):
-    """Check 3: Are changes code-only, or do they touch SQL/ISV/project.xml structure?"""
+    """Check 3: Are changes code-only, or do they touch SQL/ISV/project.xml structure?
+
+    Severity levels:
+    - FAIL: ISV package modifications (third-party, we don't control the code)
+    - WARN: project.xml or SQL changes (routine — every DAC/graph extension
+            modifies project.xml, and SQL scripts are expected for column creation)
+    - PASS: Code-only changes (.cs, .aspx, .py, etc.)
+    """
     # Find last deploy tag
     result = subprocess.run(
         ["git", "tag", "-l", "deploy/prod/*", "--sort=-creatordate"],
@@ -184,24 +191,29 @@ def check_diff_scope(isv_packages):
     if not changed:
         return PASS, "No changes since last deploy"
 
-    issues = []
+    isv_issues = []
+    warnings = []
 
     for f in changed:
-        # ISV package touched?
+        # ISV package touched? → FAIL (third-party code we don't control)
         for isv in isv_packages:
             if f.startswith(f"Customization/{isv}/"):
-                issues.append(f"ISV package modified: {isv} ({f})")
+                isv_issues.append(f"ISV package modified: {isv} ({f})")
 
-        # SQL changes?
+        # SQL changes? → WARN (routine for column creation)
         if f.endswith(".sql") or "SqlScript" in f:
-            issues.append(f"SQL change: {f}")
+            warnings.append(f"SQL change: {f}")
 
-        # project.xml structure change (not just content)?
+        # project.xml change? → WARN (routine — every DAC/graph extension touches this)
         if f.endswith("project.xml"):
-            issues.append(f"project.xml modified: {f}")
+            warnings.append(f"project.xml modified: {f}")
 
-    if issues:
-        return FAIL, "; ".join(issues)
+    # ISV modifications are the only hard failure
+    if isv_issues:
+        return FAIL, "; ".join(isv_issues + warnings)
+
+    if warnings:
+        return WARN, "; ".join(warnings)
 
     return PASS, "Code-only changes"
 
