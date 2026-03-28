@@ -1261,4 +1261,7 @@ namespace StudioB.Containers
             </Children>
         </PXGridLevel>
     </Page>
+    <SiteMapNode ScreenID="SB501000" Title="Container Maintenance" Url="~/Pages/SB/SB501000.aspx" GraphType="AesthetikContainers.ContainerMaintPage" Icon="">
+        <Workspace>Container Tracking</Workspace>
+    </SiteMapNode>
 </Customization>
