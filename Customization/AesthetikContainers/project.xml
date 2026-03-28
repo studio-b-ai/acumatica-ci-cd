@@ -815,7 +815,8 @@ namespace StudioB.Containers
 ]]></CDATA>
     </Graph>
     <Graph ClassName="UsrContainerPOLink" Source="#CDATA" IsNew="True" FileType="NewFile">
-        <CDATA name="Source"><![CDATA[using PX.Data;
+        <CDATA name="Source"><![CDATA[using System;
+using PX.Data;
 using PX.Data.BQL;
 using PX.Objects.PO;
 
