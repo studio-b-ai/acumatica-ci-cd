@@ -56,6 +56,17 @@ namespace StudioB.Containers
         [PXUIField(DisplayName = "Act. Arrival Date")]
         public DateTime? UsrActArrivalDate { get; set; }
         #endregion
+        #region UsrQtyOnContainers
+        public abstract class usrQtyOnContainers : PX.Data.BQL.BqlDecimal.Field<usrQtyOnContainers> { }
+        /// <summary>
+        /// Virtual (non-persisted) field showing total quantity allocated to containers
+        /// for this PO line. Replaces IIG's IGCMQtyOnContainers.
+        /// Populated via RowSelected on POOrderEntry_Extension.
+        /// </summary>
+        [PXDecimal(4)]
+        [PXUIField(DisplayName = "Qty on Containers", Enabled = false)]
+        public decimal? UsrQtyOnContainers { get; set; }
+        #endregion
     }
 }
 ]]></CDATA>
@@ -84,6 +95,7 @@ namespace StudioB.Containers
     </Graph>
     <Graph ClassName="POOrderEntry_Extension" Source="#CDATA" IsNew="True" FileType="NewFile">
         <CDATA name="Source"><![CDATA[using System;
+using System.Collections.Generic;
 using PX.Data;
 using PX.Objects.PO;
 
@@ -92,6 +104,9 @@ namespace StudioB.Containers
     public class POOrderEntry_Extension : PXGraphExtension<POOrderEntry>
     {
         public static bool IsActive() => true;
+
+        // Cache container qty lookups per PO to avoid repeated queries
+        private Dictionary<string, decimal> _containerQtyCache;
 
         protected void _(Events.FieldDefaulting<POLine, POLineExt.usrExpArrivalDate> e)
         {
@@ -123,6 +138,58 @@ namespace StudioB.Containers
                     lineExt.UsrExpArrivalDate = newValue;
                     Base.Transactions.Update(line);
                 }
+            }
+        }
+
+        /// <summary>
+        /// Populates UsrQtyOnContainers (virtual) for each PO line.
+        /// Replaces IIG's IGCMQtyOnContainers field.
+        /// Queries UsrContainerPOLink to find matching container allocations.
+        /// </summary>
+        protected void _(Events.RowSelected<POLine> e)
+        {
+            if (e.Row == null) return;
+            POOrder header = Base.Document.Current;
+            if (header == null) return;
+
+            try
+            {
+                // Build cache on first line of each PO
+                string poKey = header.OrderType + ":" + header.OrderNbr;
+                if (_containerQtyCache == null || !_containerQtyCache.ContainsKey(poKey + ":loaded"))
+                {
+                    _containerQtyCache = new Dictionary<string, decimal>(StringComparer.OrdinalIgnoreCase);
+                    _containerQtyCache[poKey + ":loaded"] = 1;
+
+                    // Query all container links for this PO
+                    foreach (PXDataRecord rec in PXDatabase.SelectMulti<UsrContainerPOLink>(
+                        new PXDataField("LineNbr"),
+                        new PXDataField("OrderQty"),
+                        new PXDataFieldValue("OrderType", header.OrderType),
+                        new PXDataFieldValue("OrderNbr", header.OrderNbr)))
+                    {
+                        int? lineNbr = rec.GetInt32(0);
+                        if (lineNbr != null)
+                        {
+                            string lineKey = poKey + ":" + lineNbr;
+                            // Count container allocations per line
+                            if (_containerQtyCache.ContainsKey(lineKey))
+                                _containerQtyCache[lineKey] += 1;
+                            else
+                                _containerQtyCache[lineKey] = 1;
+                        }
+                    }
+                }
+
+                // Set virtual field
+                string key = poKey + ":" + e.Row.LineNbr;
+                decimal qty = 0;
+                _containerQtyCache.TryGetValue(key, out qty);
+                e.Cache.SetValue<POLineExt.usrQtyOnContainers>(e.Row, qty > 0 ? qty : (decimal?)null);
+            }
+            catch (Exception ex)
+            {
+                PXTrace.WriteError($"UsrQtyOnContainers error: {ex.Message}");
             }
         }
     }
@@ -918,10 +985,31 @@ namespace StudioB.Containers
         protected void _(Events.RowSelected<UsrContainer> e)
         {
             if (e.Row == null) return;
-            // Disable edit on delivered/cancelled containers
             bool isActive = e.Row.Status != "DELIVERED" && e.Row.Status != "CANCELLED";
             PXUIFieldAttribute.SetEnabled<UsrContainer.containerCD>(e.Cache, e.Row, string.IsNullOrEmpty(e.Row.ContainerCD));
             RefreshTracking.SetEnabled(isActive);
+        }
+        #endregion
+
+        #region Persist Override
+        public override void Persist()
+        {
+            UsrContainer container = Container.Current;
+            base.Persist();
+
+            // After save, propagate ETA to linked PO headers and lines
+            if (container?.ETA != null)
+            {
+                var poRefs = new System.Collections.Generic.List<Tuple<string, string, int?>>();
+                foreach (UsrContainerPOLink link in POLinks.Select())
+                {
+                    poRefs.Add(Tuple.Create(link.OrderType, link.OrderNbr, link.LineNbr));
+                }
+                if (poRefs.Count > 0)
+                {
+                    ContainerDatePropagation.PropagateArrivalDate(container.ETA, poRefs);
+                }
+            }
         }
         #endregion
     }
@@ -1106,8 +1194,34 @@ namespace StudioB.Containers
                         <Prop Key="Width" Value="120px" />
                     </PXGridColumn>
                 </AddItem>
+                <AddItem>
+                    <PXGridColumn TypeFullName="PX.Web.UI.PXGridColumn">
+                        <Prop Key="DataField" Value="UsrQtyOnContainers" />
+                        <Prop Key="Width" Value="120px" />
+                    </PXGridColumn>
+                </AddItem>
             </Children>
         </PXGridLevel>
+    </Page>
+    <Page path="~/pages/so/so302000.aspx">
+        <PXFormView ID="form" ParentId="phF_form" TypeFullName="PX.Web.UI.PXFormView">
+            <Children Key="Template">
+                <AddItem>
+                    <PXCheckBox TypeFullName="PX.Web.UI.PXCheckBox">
+                        <Prop Key="ID" Value="chkUsrIncludeInContainer" />
+                        <Prop Key="DataField" Value="UsrIncludeInContainer" />
+                        <Prop Key="CommitChanges" Value="True" />
+                    </PXCheckBox>
+                </AddItem>
+                <AddItem>
+                    <PXSelector TypeFullName="PX.Web.UI.PXSelector">
+                        <Prop Key="Virtual:ApplyStylesheetSkin" />
+                        <Prop Key="ID" Value="edUsrContainerID" />
+                        <Prop Key="DataField" Value="UsrContainerID" />
+                    </PXSelector>
+                </AddItem>
+            </Children>
+        </PXFormView>
     </Page>
     <Page path="~/pages/in/in402000.aspx">
         <PXGridLevel DataMember="ResultRecords" ParentId="phG_tab_Items#0_grid_Levels#0" TypeFullName="PX.Web.UI.PXGridLevel">
