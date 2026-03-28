@@ -393,9 +393,51 @@ jobs:
           sys.exit(0 if ok else 1)
           "
 
+      # ── Download built packages ──────────────────────────────────────
+      - name: Download package artifacts
+        if: success() && github.event.inputs.dry_run != 'true'
+        uses: actions/download-artifact@v4
+        with:
+          name: customization-package
+          path: dist/
+
+      # ── DEPLOY — Import + Publish to Acumatica ──────────────────────
+      - name: Import and publish customization
+        id: deploy
+        if: success() && github.event.inputs.dry_run != 'true'
+        env:
+          ACUMATICA_URL: ${{ (steps.env.outputs.target == 'production') && secrets.ACUMATICA_PROD_URL || secrets.ACUMATICA_SANDBOX_URL }}
+          ACUMATICA_USERNAME: ${{ secrets.ACUMATICA_PROD_USERNAME }}
+          ACUMATICA_PASSWORD: ${{ secrets.ACUMATICA_PROD_PASSWORD }}
+          ACUMATICA_TENANT: ${{ (steps.env.outputs.target == 'production') && secrets.ACUMATICA_PROD_TENANT || secrets.ACUMATICA_SANDBOX_TENANT }}
+        run: |
+          PACKAGE_FILE=$(ls dist/${PROJECT_NAME}_*.zip 2>/dev/null | head -1)
+          if [ -z "${PACKAGE_FILE}" ]; then
+            echo "::error::No package found in dist/ for ${PROJECT_NAME}"
+            exit 1
+          fi
+
+          # Build extra import flags for co-managed packages
+          EXTRA_FLAGS=""
+          for pkg in dist/*.zip; do
+            if [ "${pkg}" != "${PACKAGE_FILE}" ]; then
+              PKG_BASE=$(basename "${pkg}" .zip)
+              PKG_NAME=$(echo "${PKG_BASE}" | sed 's/_[0-9]\{8\}-[0-9]\{6\}$//')
+              EXTRA_FLAGS+=" --extra-import ${PKG_NAME}:${pkg}"
+            fi
+          done
+
+          echo "Deploying ${PACKAGE_FILE} to ${{ steps.env.outputs.target }}"
+          python scripts/deploy.py \
+            --project "${PROJECT_NAME}" \
+            --package "${PACKAGE_FILE}" \
+            --also-publish "${ALSO_PUBLISH}" \
+            ${EXTRA_FLAGS}
+
+      # ── Post-publish field validation ────────────────────────────────
       - name: Post-publish field validation
         id: verify
-        if: success() && github.event.inputs.dry_run != 'true'
+        if: steps.deploy.outcome == 'success'
         continue-on-error: true
         env:
           ACUMATICA_URL: ${{ (steps.env.outputs.target == 'production') && secrets.ACUMATICA_PROD_URL || secrets.ACUMATICA_SANDBOX_URL }}
@@ -408,7 +450,8 @@ jobs:
       - name: Auto-rollback on verification failure
         id: rollback
         if: |
-          (steps.verify.outcome == 'failure' || steps.smoke.outcome == 'failure') &&
+          steps.deploy.outcome == 'success' &&
+          steps.verify.outcome == 'failure' &&
           steps.env.outputs.target == 'production' &&
           github.event.inputs.dry_run != 'true'
         env:
