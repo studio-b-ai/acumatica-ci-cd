@@ -440,11 +440,36 @@ jobs:
           done
 
           echo "Deploying ${PACKAGE_FILE} to ${{ steps.env.outputs.target }}"
-          python scripts/deploy.py \
-            --project "${PROJECT_NAME}" \
-            --package "${PACKAGE_FILE}" \
-            --also-publish "${ALSO_PUBLISH}" \
-            ${EXTRA_FLAGS}
+
+          # Emergency path: use basic auth when session login is broken
+          if [ "${{ github.event.inputs.force_qualify }}" = "true" ]; then
+            echo "::warning::force_qualify=true — using basic auth emergency deploy (bypasses broken session login)"
+            # Unzip package to temp dir for the emergency script
+            mkdir -p /tmp/emergency-pkg
+            unzip -o "${PACKAGE_FILE}" -d /tmp/emergency-pkg/
+
+            # Also unzip extra packages
+            for pkg in dist/*.zip; do
+              if [ "${pkg}" != "${PACKAGE_FILE}" ]; then
+                PKG_BASE=$(basename "${pkg}" .zip)
+                PKG_NAME=$(echo "${PKG_BASE}" | sed 's/_[0-9]\{8\}-[0-9]\{6\}$//')
+                mkdir -p "/tmp/extra-${PKG_NAME}"
+                unzip -o "${pkg}" -d "/tmp/extra-${PKG_NAME}/"
+                PACKAGE_DIR="/tmp/extra-${PKG_NAME}" PROJECT_NAME="${PKG_NAME}" \
+                  python scripts/emergency-deploy-basic-auth.py
+              fi
+            done
+
+            PACKAGE_DIR=/tmp/emergency-pkg PROJECT_NAME="${PROJECT_NAME}" \
+              ALSO_PUBLISH_PROJECTS="${ALSO_PUBLISH}" \
+              python scripts/emergency-deploy-basic-auth.py
+          else
+            python scripts/deploy.py \
+              --project "${PROJECT_NAME}" \
+              --package "${PACKAGE_FILE}" \
+              --also-publish "${ALSO_PUBLISH}" \
+              ${EXTRA_FLAGS}
+          fi
 
       # ── Post-publish field validation ────────────────────────────────
       - name: Post-publish field validation
