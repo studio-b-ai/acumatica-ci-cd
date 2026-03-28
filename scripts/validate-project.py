@@ -349,6 +349,26 @@ def validate_pxdb_has_sql(class_name: str, code: str, all_sql_text: str):
                     class_body = clean[start:i + 1]
                     break
 
+        # HARD FAIL: [PXDB*] on Vendor extensions is always fatal.
+        # Vendor DAC generates phantom EPEmployee_Vendor SQL references
+        # that don't map to any real table. No ALTER TABLE can fix it.
+        # Confirmed by Acumatica Cloud Support 2026-03-28.
+        BANNED_PXDB_DACS = {"Vendor"}
+        if base_dac in BANNED_PXDB_DACS:
+            any_pxdb = re.search(
+                r"\[(PXDBInt|PXDBString|PXDBDecimal|PXDBBool|PXDBDate|PXDBDouble|PXDBFloat|PXDBLong|PXDBShort|PXDBByte|PXDBGuid)",
+                class_body,
+            )
+            if any_pxdb:
+                error(
+                    f"{class_name}: [PXDB*] field on PXCacheExtension<{base_dac}> is BANNED.\n"
+                    f"         {base_dac} DAC generates phantom SQL table references (EPEmployee_Vendor)\n"
+                    f"         that don't exist. No ALTER TABLE can fix this.\n"
+                    f"         Caused 14+ hour production outage on 2026-03-28.\n"
+                    f"         Fix: Use ONLY non-persisted attributes ([PXInt], [PXString], etc.)."
+                )
+                continue  # Skip per-field SQL check — entire extension is invalid
+
         # Find all [PXDB*] fields in this extension
         pxdb_fields = re.findall(
             r"\[(PXDBInt|PXDBString|PXDBDecimal|PXDBBool|PXDBDate|PXDBDouble|PXDBFloat|PXDBLong|PXDBShort|PXDBByte|PXDBGuid)"

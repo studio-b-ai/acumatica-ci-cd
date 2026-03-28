@@ -31,7 +31,10 @@ RESET = "\033[0m"
 DAC_TO_TABLE: dict[str, str] = {
     # Accounts
     "Customer": "BAccount",
-    "Vendor": "BAccount",
+    # DANGER: Vendor DAC generates phantom EPEmployee_Vendor SQL refs.
+    # [PXDB*] on PXCacheExtension<Vendor> = unrecoverable deadlock.
+    # Confirmed by Acumatica support 2026-03-28. See validate-project.py.
+    "Vendor": "BAccount",  # WARNING: [PXDB*] on Vendor is BANNED
     "BAccount": "BAccount",
     "EPEmployee": "BAccountR",
     # Inventory
