@@ -928,201 +928,6 @@ namespace StudioB.Containers
 }
 ]]></CDATA>
     </Graph>
-    <Graph ClassName="AesthetikContainersInstall" Source="#CDATA" IsNew="True" FileType="NewFile">
-        <CDATA name="Source"><![CDATA[using System;
-using System.Data;
-using System.Data.SqlClient;
-using PX.Data;
-using Customization;
-
-namespace StudioB.Containers
-{
-    /// <summary>
-    /// Customization plugin — creates SQL columns during publish via ADO.NET.
-    /// This is the ONLY reliable way to create columns on Acumatica Cloud.
-    /// [PXDB*] auto-create, SqlScript, and Sql elements all fail silently.
-    /// Acumatica calls UpdateDatabase() on every publish — idempotent via IF NOT EXISTS.
-    /// </summary>
-    public class AesthetikContainersInstall : CustomizationPlugin
-    {
-        public override void UpdateDatabase()
-        {
-            string connStr = System.Web.Configuration.WebConfigurationManager.ConnectionStrings["ProjectX"].ConnectionString;
-
-            using (var conn = new SqlConnection(connStr))
-            {
-                conn.Open();
-
-                // InventoryItem — trade compliance fields
-                EnsureColumn(conn, "InventoryItem", "UsrHTSCode", "nvarchar(12) NULL");
-                EnsureColumn(conn, "InventoryItem", "UsrDutyRate", "decimal(19,4) NULL DEFAULT 0.0000");
-                EnsureColumn(conn, "InventoryItem", "UsrCountryOfOrigin", "nchar(2) NULL");
-                EnsureColumn(conn, "InventoryItem", "UsrFiberContent", "nvarchar(100) NULL");
-                EnsureColumn(conn, "InventoryItem", "UsrPreferentialTariff", "bit NULL DEFAULT 0");
-                EnsureColumn(conn, "InventoryItem", "UsrFreightClass", "nvarchar(10) NULL DEFAULT '70'");
-
-                // POOrder — arrival date fields
-                EnsureColumn(conn, "POOrder", "UsrExpArrivalDate", "datetime NULL");
-                EnsureColumn(conn, "POOrder", "UsrActArrivalDate", "datetime NULL");
-                EnsureColumn(conn, "POOrder", "UsrContainerRef", "nvarchar(50) NULL");
-
-                // POLine — arrival date fields
-                EnsureColumn(conn, "POLine", "UsrExpArrivalDate", "datetime NULL");
-                EnsureColumn(conn, "POLine", "UsrActArrivalDate", "datetime NULL");
-
-                // POReceiptLine — landed cost fields
-                EnsureColumn(conn, "POReceiptLine", "UsrActualDutyAmt", "decimal(19,2) NULL DEFAULT 0.00");
-                EnsureColumn(conn, "POReceiptLine", "UsrActualFreightAmt", "decimal(19,2) NULL DEFAULT 0.00");
-                EnsureColumn(conn, "POReceiptLine", "UsrBrokerageAmt", "decimal(19,2) NULL DEFAULT 0.00");
-                EnsureColumn(conn, "POReceiptLine", "UsrHTSCode", "nvarchar(12) NULL");
-                EnsureColumn(conn, "POReceiptLine", "UsrCountryOfOrigin", "nchar(2) NULL");
-
-                // SOShipment — container consolidation (replaces IIG UsrIGCMIncludeInContainer)
-                EnsureColumn(conn, "SOShipment", "UsrIncludeInContainer", "bit NULL DEFAULT 0");
-                EnsureColumn(conn, "SOShipment", "UsrContainerID", "int NULL");
-
-                // BAccount (Vendor) — default in-transit warehouse + carrier (replaces IIG UsrIGCMDefaultInTransitSiteID)
-                EnsureColumn(conn, "BAccount", "UsrDefaultInTransitSiteID", "int NULL");
-                EnsureColumn(conn, "BAccount", "UsrDefaultCarrierCode", "nvarchar(20) NULL");
-
-                // ── Container Tracking Tables ──────────────────────────────
-                EnsureTable(conn, "UsrContainer", @"
-                    CompanyID int NOT NULL DEFAULT 0,
-                    ContainerID int IDENTITY(1,1) NOT NULL,
-                    ContainerCD nvarchar(20) NOT NULL,
-                    CarrierCode nvarchar(20) NOT NULL,
-                    BookingRef nvarchar(50) NULL,
-                    BillOfLading nvarchar(50) NULL,
-                    VesselName nvarchar(50) NULL,
-                    VesselIMO nvarchar(10) NULL,
-                    VoyageNbr nvarchar(30) NULL,
-                    PortOfLoading nvarchar(10) NULL,
-                    PortOfDischarge nvarchar(10) NULL,
-                    ETD datetime NULL,
-                    ATD datetime NULL,
-                    ETA datetime NULL,
-                    ATA datetime NULL,
-                    Status nvarchar(20) NOT NULL DEFAULT 'BOOKED',
-                    ContainerType nvarchar(10) NULL,
-                    SealNbr nvarchar(20) NULL,
-                    LastEventCode nvarchar(20) NULL,
-                    LastEventDate datetime NULL,
-                    LastSyncDate datetime NULL,
-                    NoteID uniqueidentifier NULL,
-                    CreatedByID uniqueidentifier NULL,
-                    CreatedByScreenID char(8) NULL,
-                    CreatedDateTime datetime NULL,
-                    LastModifiedByID uniqueidentifier NULL,
-                    LastModifiedByScreenID char(8) NULL,
-                    LastModifiedDateTime datetime NULL,
-                    tstamp timestamp NOT NULL,
-                    CONSTRAINT PK_UsrContainer PRIMARY KEY (CompanyID, ContainerID)
-                ");
-
-                EnsureTable(conn, "UsrContainerEvent", @"
-                    CompanyID int NOT NULL DEFAULT 0,
-                    EventID int IDENTITY(1,1) NOT NULL,
-                    ContainerID int NOT NULL,
-                    CarrierEventCode nvarchar(20) NOT NULL,
-                    NormalizedEventCode nvarchar(20) NOT NULL,
-                    EventDateTime datetime NOT NULL,
-                    EventClassifier nvarchar(10) NULL,
-                    LocationName nvarchar(100) NULL,
-                    LocationCode nvarchar(10) NULL,
-                    VesselName nvarchar(50) NULL,
-                    Description nvarchar(255) NULL,
-                    RawPayload nvarchar(MAX) NULL,
-                    CreatedDateTime datetime NOT NULL DEFAULT GETUTCDATE(),
-                    CONSTRAINT PK_UsrContainerEvent PRIMARY KEY (CompanyID, EventID)
-                ");
-
-                EnsureTable(conn, "UsrContainerPOLink", @"
-                    CompanyID int NOT NULL DEFAULT 0,
-                    LinkID int IDENTITY(1,1) NOT NULL,
-                    ContainerID int NOT NULL,
-                    OrderType nvarchar(2) NOT NULL DEFAULT 'RO',
-                    OrderNbr nvarchar(15) NOT NULL,
-                    LineNbr int NULL,
-                    CONSTRAINT PK_UsrContainerPOLink PRIMARY KEY (CompanyID, LinkID)
-                ");
-
-                // Indexes for container tracking
-                EnsureIndex(conn, "UsrContainer", "IX_UsrContainer_ContainerCD", "CompanyID, ContainerCD");
-                EnsureIndex(conn, "UsrContainer", "IX_UsrContainer_Status", "CompanyID, Status");
-                EnsureIndex(conn, "UsrContainerEvent", "IX_UsrContainerEvent_ContainerID", "CompanyID, ContainerID, EventDateTime DESC");
-                EnsureIndex(conn, "UsrContainerPOLink", "IX_UsrContainerPOLink_ContainerID", "CompanyID, ContainerID");
-                EnsureIndex(conn, "UsrContainerPOLink", "IX_UsrContainerPOLink_PO", "CompanyID, OrderType, OrderNbr");
-            }
-
-            WriteLog("AesthetikContainers: all columns and tables verified/created.");
-        }
-
-        private void EnsureColumn(SqlConnection conn, string table, string column, string definition)
-        {
-            string sql = string.Format(
-                "IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('{0}') AND name = '{1}') " +
-                "ALTER TABLE [{0}] ADD [{1}] {2};",
-                table, column, definition);
-
-            try
-            {
-                using (var cmd = new SqlCommand(sql, conn))
-                {
-                    cmd.ExecuteNonQuery();
-                }
-                WriteLog(string.Format("  Column {0}.{1} — OK", table, column));
-            }
-            catch (Exception ex)
-            {
-                WriteLog(string.Format("  Column {0}.{1} — FAILED: {2}", table, column, ex.Message));
-            }
-        }
-
-        private void EnsureTable(SqlConnection conn, string table, string columnDefs)
-        {
-            string sql = string.Format(
-                "IF OBJECT_ID('{0}', 'U') IS NULL CREATE TABLE [{0}] ({1});",
-                table, columnDefs);
-
-            try
-            {
-                using (var cmd = new SqlCommand(sql, conn))
-                {
-                    cmd.CommandTimeout = 60;
-                    cmd.ExecuteNonQuery();
-                }
-                WriteLog(string.Format("  Table {0} — OK", table));
-            }
-            catch (Exception ex)
-            {
-                WriteLog(string.Format("  Table {0} — FAILED: {1}", table, ex.Message));
-            }
-        }
-
-        private void EnsureIndex(SqlConnection conn, string table, string indexName, string columns)
-        {
-            string sql = string.Format(
-                "IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE object_id = OBJECT_ID('{0}') AND name = '{1}') " +
-                "CREATE NONCLUSTERED INDEX [{1}] ON [{0}] ({2});",
-                table, indexName, columns);
-
-            try
-            {
-                using (var cmd = new SqlCommand(sql, conn))
-                {
-                    cmd.ExecuteNonQuery();
-                }
-                WriteLog(string.Format("  Index {0}.{1} — OK", table, indexName));
-            }
-            catch (Exception ex)
-            {
-                WriteLog(string.Format("  Index {0}.{1} — FAILED: {2}", table, indexName, ex.Message));
-            }
-        }
-    }
-}
-]]></CDATA>
-    </Graph>
     <Sql Name="AesthetikContainers_Columns_v1" Script="#CDATA">
         <CDATA name="Script"><![CDATA[
 -- POOrder arrival + container fields
@@ -1171,6 +976,79 @@ IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('BAccount')
   ALTER TABLE BAccount ADD UsrDefaultInTransitSiteID int NULL;
 IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('BAccount') AND name = 'UsrDefaultCarrierCode')
   ALTER TABLE BAccount ADD UsrDefaultCarrierCode nvarchar(20) NULL;
-]]></CDATA>
+]]>
+-- ── Container Tracking Tables ────────────────────────────────────────
+IF OBJECT_ID('UsrContainer', 'U') IS NULL
+  CREATE TABLE [UsrContainer] (
+    CompanyID int NOT NULL DEFAULT 0,
+    ContainerID int IDENTITY(1,1) NOT NULL,
+    ContainerCD nvarchar(20) NOT NULL,
+    CarrierCode nvarchar(20) NOT NULL DEFAULT 'OTHER',
+    BookingRef nvarchar(50) NULL,
+    BillOfLading nvarchar(50) NULL,
+    VesselName nvarchar(50) NULL,
+    VesselIMO nvarchar(10) NULL,
+    VoyageNbr nvarchar(30) NULL,
+    PortOfLoading nvarchar(10) NULL,
+    PortOfDischarge nvarchar(10) NULL,
+    ETD datetime NULL,
+    ATD datetime NULL,
+    ETA datetime NULL,
+    ATA datetime NULL,
+    Status nvarchar(20) NOT NULL DEFAULT 'BOOKED',
+    ContainerType nvarchar(10) NULL,
+    SealNbr nvarchar(20) NULL,
+    LastEventCode nvarchar(20) NULL,
+    LastEventDate datetime NULL,
+    LastSyncDate datetime NULL,
+    NoteID uniqueidentifier NULL,
+    CreatedByID uniqueidentifier NULL,
+    CreatedByScreenID char(8) NULL,
+    CreatedDateTime datetime NULL,
+    LastModifiedByID uniqueidentifier NULL,
+    LastModifiedByScreenID char(8) NULL,
+    LastModifiedDateTime datetime NULL,
+    tstamp timestamp NOT NULL,
+    CONSTRAINT PK_UsrContainer PRIMARY KEY (CompanyID, ContainerID)
+  );
+IF OBJECT_ID('UsrContainerEvent', 'U') IS NULL
+  CREATE TABLE [UsrContainerEvent] (
+    CompanyID int NOT NULL DEFAULT 0,
+    EventID int IDENTITY(1,1) NOT NULL,
+    ContainerID int NOT NULL,
+    CarrierEventCode nvarchar(20) NOT NULL DEFAULT '',
+    NormalizedEventCode nvarchar(20) NOT NULL DEFAULT '',
+    EventDateTime datetime NOT NULL DEFAULT GETUTCDATE(),
+    EventClassifier nvarchar(10) NULL,
+    LocationName nvarchar(100) NULL,
+    LocationCode nvarchar(10) NULL,
+    VesselName nvarchar(50) NULL,
+    Description nvarchar(255) NULL,
+    RawPayload nvarchar(MAX) NULL,
+    CreatedDateTime datetime NOT NULL DEFAULT GETUTCDATE(),
+    CONSTRAINT PK_UsrContainerEvent PRIMARY KEY (CompanyID, EventID)
+  );
+IF OBJECT_ID('UsrContainerPOLink', 'U') IS NULL
+  CREATE TABLE [UsrContainerPOLink] (
+    CompanyID int NOT NULL DEFAULT 0,
+    LinkID int IDENTITY(1,1) NOT NULL,
+    ContainerID int NOT NULL,
+    OrderType nvarchar(2) NOT NULL DEFAULT 'RO',
+    OrderNbr nvarchar(15) NOT NULL DEFAULT '',
+    LineNbr int NULL,
+    CONSTRAINT PK_UsrContainerPOLink PRIMARY KEY (CompanyID, LinkID)
+  );
+-- Container tracking indexes
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE object_id = OBJECT_ID('UsrContainer') AND name = 'IX_UsrContainer_ContainerCD')
+  CREATE NONCLUSTERED INDEX [IX_UsrContainer_ContainerCD] ON [UsrContainer] (CompanyID, ContainerCD);
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE object_id = OBJECT_ID('UsrContainer') AND name = 'IX_UsrContainer_Status')
+  CREATE NONCLUSTERED INDEX [IX_UsrContainer_Status] ON [UsrContainer] (CompanyID, Status);
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE object_id = OBJECT_ID('UsrContainerEvent') AND name = 'IX_UsrContainerEvent_ContainerID')
+  CREATE NONCLUSTERED INDEX [IX_UsrContainerEvent_ContainerID] ON [UsrContainerEvent] (CompanyID, ContainerID, EventDateTime DESC);
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE object_id = OBJECT_ID('UsrContainerPOLink') AND name = 'IX_UsrContainerPOLink_ContainerID')
+  CREATE NONCLUSTERED INDEX [IX_UsrContainerPOLink_ContainerID] ON [UsrContainerPOLink] (CompanyID, ContainerID);
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE object_id = OBJECT_ID('UsrContainerPOLink') AND name = 'IX_UsrContainerPOLink_PO')
+  CREATE NONCLUSTERED INDEX [IX_UsrContainerPOLink_PO] ON [UsrContainerPOLink] (CompanyID, OrderType, OrderNbr);
+</CDATA>
     </Sql>
 </Customization>
