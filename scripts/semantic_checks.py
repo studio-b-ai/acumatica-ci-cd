@@ -374,9 +374,11 @@ def check_fields_have_sql_columns(
             table = _resolve_table(field["dac"])
             if (table, field["name"]) in ESTABLISHED_COLUMNS:
                 continue
-            errors.append(
-                f"DAC field {field['dac']}.{field['name']} has no SQL column "
-                f"(expected ALTER TABLE {table} ADD {field['name']})"
+            # [PXDB*] attributes auto-create columns on existing tables during publish.
+            # Missing <Sql> is informational — downgraded from error to warning.
+            warnings.append(
+                f"DAC field {field['dac']}.{field['name']} has no explicit SQL column "
+                f"— [PXDB*] will auto-create during publish"
             )
     return errors, warnings
 

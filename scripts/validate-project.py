@@ -343,15 +343,15 @@ def validate_customization_plugin_ban(class_name: str, code: str):
 
 
 def validate_pxdb_has_sql(class_name: str, code: str, all_sql_text: str):
-    """HARD FAIL: [PXDBInt]/[PXDBString]/etc. fields in PXCacheExtension must have matching SQL.
+    """Check [PXDB*] fields on PXCacheExtension DACs.
 
-    If a PXCacheExtension declares [PXDB*] fields, Acumatica will query the underlying
-    SQL table for those columns. If the columns don't exist, EVERY login fails with
-    "Invalid column name" -> HTTP 500 -> unrecoverable deadlock (can't deploy fix
-    without login, can't login without fix).
+    HARD FAIL only for BANNED_PXDB_DACS (Vendor → phantom EPEmployee_Vendor table).
+    For all other DACs, [PXDB*] attributes auto-create columns during publish on
+    existing tables, so missing <Sql> is a WARNING not an error.
 
-    Caused 14+ hour production outage on 2026-03-28 requiring Acumatica Cloud Support
-    server-side intervention.
+    Note: <Sql> elements are silently ignored during Customization API import.
+    CustomizationPlugin with ConfigurationManager is the correct DDL path for
+    new tables. [PXDB*] handles column creation on existing tables automatically.
     """
     # Strip comments
     clean = re.sub(r"///.*$", "", code, flags=re.MULTILINE)
@@ -408,15 +408,13 @@ def validate_pxdb_has_sql(class_name: str, code: str, all_sql_text: str):
         )
 
         for attr_type, field_name in pxdb_fields:
-            # Check if there's a matching ALTER TABLE ... ADD {field_name} in any SQL element
+            # [PXDB*] attributes auto-create columns on existing tables during publish.
+            # Missing <Sql> is informational — the columns WILL be created.
+            # Only warn so developers know to verify after publish.
             if field_name not in all_sql_text:
-                error(
+                warn(
                     f"{class_name}: [{attr_type}] field '{field_name}' on PXCacheExtension<{base_dac}> "
-                    f"has NO matching SQL ALTER TABLE.\n"
-                    f"         Without a SQL column, this field causes 'Invalid column name' on EVERY login.\n"
-                    f"         This creates an UNRECOVERABLE DEADLOCK on Acumatica Cloud.\n"
-                    f"         Fix: Use [{attr_type.replace('PXDB', 'PX')}] (non-persisted) instead of [{attr_type}],\n"
-                    f"         OR add a <Sql> element: ALTER TABLE {{correct_table}} ADD {field_name} ..."
+                    f"— no explicit <Sql> ALTER TABLE (columns auto-created by [PXDB*] during publish)"
                 )
 
 
