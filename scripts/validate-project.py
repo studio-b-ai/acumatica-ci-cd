@@ -141,10 +141,10 @@ def validate(path: str, strict: bool = False, no_semantic: bool = False):
     file_elements = root.findall(".//File")
     aspx_files_found = False
     for file_elem in file_elements:
-        path = file_elem.get("AppRelativePath", "")
-        if path.lower().endswith(".aspx") or path.lower().endswith(".aspx.cs"):
+        file_path_attr = file_elem.get("AppRelativePath", "")
+        if file_path_attr.lower().endswith(".aspx") or file_path_attr.lower().endswith(".aspx.cs"):
             error(
-                f"<File AppRelativePath=\"{path}\"> contains ASPX page.\n"
+                f"<File AppRelativePath=\"{file_path_attr}\"> contains ASPX page.\n"
                 f"         ASPX File elements cause NullReferenceException on Customization API import.\n"
                 f"         CSS files via <File> work fine, but ASPX pages crash the import.\n"
                 f"         Create new screens via Customization Project Editor instead.\n"
