@@ -107,26 +107,44 @@ class AcumaticaCustomizationClient:
             f"Database corruption detected in {context}. HALTED."
         )
 
-    def login(self) -> None:
-        """Authenticate and establish a session cookie."""
+    def login(self, max_retries: int = 6, retry_delay: float = 30.0) -> None:
+        """Authenticate and establish a session cookie.
+
+        Retries on API Login Limit (concurrent session cap) with backoff.
+        """
+        import time as _time
         payload = {"name": self.username, "password": self.password}
         if self.tenant:
             payload["tenant"] = self.tenant
 
-        resp = self.session.post(
-            f"{self.base_url}/entity/auth/login",
-            json=payload,
-            timeout=self.timeout,
-        )
+        for attempt in range(max_retries + 1):
+            resp = self.session.post(
+                f"{self.base_url}/entity/auth/login",
+                json=payload,
+                timeout=self.timeout,
+            )
 
-        if resp.status_code != 204:
+            if resp.status_code == 204:
+                self._authenticated = True
+                _log("Authenticated", style="ok")
+                return
+
+            # Retry on API Login Limit (concurrent session cap reached by other services)
+            is_login_limit = "API Login Limit" in resp.text
+            if is_login_limit and attempt < max_retries:
+                wait = retry_delay * (attempt + 1)
+                _log(
+                    f"  Login limit (attempt {attempt + 1}/{max_retries}) — "
+                    f"waiting {int(wait)}s for sessions to free up",
+                    style="warn",
+                )
+                _time.sleep(wait)
+                continue
+
             self._check_circuit_breaker(resp.text, "login")
             raise RuntimeError(
                 f"Login failed (HTTP {resp.status_code}): {resp.text[:500]}"
             )
-
-        self._authenticated = True
-        _log("Authenticated", style="ok")
 
     def logout(self) -> None:
         """Release the session."""
