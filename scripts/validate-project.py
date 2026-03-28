@@ -135,6 +135,27 @@ def validate(path: str, strict: bool = False, no_semantic: bool = False):
     if not table_elements:
         ok("No <Table> elements (columns auto-created by DAC attributes)")
 
+    # Check 5b: <File> elements with ASPX pages — NullReferenceException on import
+    # CSS files via <File> work fine (AesthetikTheme), but ASPX pages cause NullRef
+    # during Customization API import. Confirmed: PR #71, run 23694192480 (2026-03-28).
+    file_elements = root.findall(".//File")
+    aspx_files_found = False
+    for file_elem in file_elements:
+        path = file_elem.get("AppRelativePath", "")
+        if path.lower().endswith(".aspx") or path.lower().endswith(".aspx.cs"):
+            error(
+                f"<File AppRelativePath=\"{path}\"> contains ASPX page.\n"
+                f"         ASPX File elements cause NullReferenceException on Customization API import.\n"
+                f"         CSS files via <File> work fine, but ASPX pages crash the import.\n"
+                f"         Create new screens via Customization Project Editor instead.\n"
+                f"         See: PR #71, deploy run 23694192480 (2026-03-28)"
+            )
+            aspx_files_found = True
+    if file_elements and not aspx_files_found:
+        ok(f"Found {len(file_elements)} <File> element(s) (no ASPX pages)")
+    elif not file_elements:
+        pass  # No <File> elements — nothing to check
+
     # Collect ALL SQL text from <Sql> and <SqlScript> elements for cross-reference
     all_sql_text = ""
     for elem in root.findall(".//Sql"):
