@@ -58,11 +58,31 @@ namespace HeritageFabrics.SO
             string orderType = order.OrderType;
             if (orderType != "PC" && orderType != "FO") return;
 
-            // Already has a lot assigned — don't override manual selection
-            if (!string.IsNullOrEmpty(line.LotSerialNbr)) return;
-
             // Must be a PIECENBR item
             if (!IsPieceGoodsItem(line.InventoryID)) return;
+
+            // Already has a lot assigned — check if re-allocation needed
+            if (!string.IsNullOrEmpty(line.LotSerialNbr))
+            {
+                if (!qtyChanged) return; // Non-qty change — don't touch manual selection
+
+                // Qty increased beyond what the current bolt can cover:
+                // look up the assigned bolt's actual qty and compare
+                decimal newQty = line.OrderQty ?? 0m;
+                decimal oldQty = oldLine?.OrderQty ?? 0m;
+                if (newQty <= oldQty) return; // Qty decreased or unchanged — keep current bolt
+
+                decimal boltQty = GetBoltQty(line.InventoryID.Value, siteID.Value, line.LotSerialNbr);
+                if (boltQty > 0 && newQty <= boltQty * OvershipFactor) return; // Current bolt still covers it
+
+                // Clear the lot and re-allocate
+                PXTrace.WriteInformation(
+                    $"[AUTO-ALLOC] Ln{line.LineNbr}: qty increased {oldQty}→{newQty}, " +
+                    $"exceeds bolt {line.LotSerialNbr} ({boltQty}yd) — re-allocating");
+                Base.Transactions.Cache.SetValueExt<SOLine.lotSerialNbr>(line, null);
+                Base.Transactions.Update(line);
+                // Fall through to re-run allocation below
+            }
 
             // Collect already-assigned serials on this order
             var assignedSerials = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -259,6 +279,24 @@ namespace HeritageFabrics.SO
                 .OrderBy(c => c.ReceiptDate ?? DateTime.MaxValue)
                 .ThenByDescending(c => c.QtyOnHand)
                 .ToList();
+        }
+
+        /// <summary>
+        /// Look up the on-hand qty for a specific bolt (lot serial) at a site.
+        /// Returns 0 if not found.
+        /// </summary>
+        private decimal GetBoltQty(int inventoryID, int siteID, string lotSerialNbr)
+        {
+            foreach (PXResult<INLotSerialStatus> row in SelectFrom<INLotSerialStatus>
+                .Where<INLotSerialStatus.inventoryID.IsEqual<@P.AsInt>
+                    .And<INLotSerialStatus.siteID.IsEqual<@P.AsInt>>
+                    .And<INLotSerialStatus.lotSerialNbr.IsEqual<@P.AsString>>>
+                .View.ReadOnly.Select(Base, inventoryID, siteID, lotSerialNbr))
+            {
+                var status = (INLotSerialStatus)row;
+                return status.QtyOnHand ?? 0;
+            }
+            return 0;
         }
 
         private bool IsPieceGoodsItem(int? inventoryID)
