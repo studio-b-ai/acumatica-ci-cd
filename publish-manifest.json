@@ -3,11 +3,8 @@
   "entities": {
     "PurchaseOrder": {
       "screen": "PO301000",
-      "custom_fields": [
-        "custom.Document.UsrExpArrivalDate",
-        "custom.Document.UsrActArrivalDate",
-        "custom.Document.UsrContainerRef"
-      ]
+      "custom_fields": [],
+      "_note_containers": "UsrExpArrivalDate, UsrActArrivalDate, UsrContainerRef from AesthetikContainers — re-add after first successful publish"
     },
     "SalesOrder": {
       "screen": "SO301000",
@@ -24,14 +21,8 @@
     },
     "StockItem": {
       "screen": "IN202500",
-      "custom_fields": [
-        "custom.Document.UsrHTSCode",
-        "custom.Document.UsrDutyRate",
-        "custom.Document.UsrCountryOfOrigin",
-        "custom.Document.UsrFiberContent",
-        "custom.Document.UsrPreferentialTariff",
-        "custom.Document.UsrFreightClass"
-      ]
+      "custom_fields": [],
+      "_note_containers": "UsrHTSCode, UsrDutyRate, UsrCountryOfOrigin, UsrFiberContent, UsrPreferentialTariff, UsrFreightClass from AesthetikContainers — re-add after first successful publish"
     }
   },
   "sql_columns": [
