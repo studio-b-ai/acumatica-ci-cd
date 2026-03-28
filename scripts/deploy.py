@@ -107,10 +107,14 @@ class AcumaticaCustomizationClient:
             f"Database corruption detected in {context}. HALTED."
         )
 
-    def login(self, max_retries: int = 6, retry_delay: float = 30.0) -> None:
+    def login(self, max_retries: int = 12, retry_delay: float = 30.0) -> None:
         """Authenticate and establish a session cookie.
 
-        Retries on API Login Limit (concurrent session cap) with backoff.
+        Retries on:
+        - API Login Limit: concurrent session cap reached by Railway sync workers
+        - TargetInvocationException: Acumatica app pool crash/recovery cycle caused
+          by a CustomizationPlugin.UpdateDatabase() failure. The app pool auto-restarts;
+          retry until the recovery window is available (up to ~6 min).
         """
         import time as _time
         payload = {"name": self.username, "password": self.password}
@@ -129,19 +133,30 @@ class AcumaticaCustomizationClient:
                 _log("Authenticated", style="ok")
                 return
 
-            # Retry on API Login Limit (concurrent session cap reached by other services)
             is_login_limit = "API Login Limit" in resp.text
-            if is_login_limit and attempt < max_retries:
+            is_app_pool_crash = "TargetInvocationException" in resp.text
+
+            if (is_login_limit or is_app_pool_crash) and attempt < max_retries:
                 wait = retry_delay * (attempt + 1)
+                reason = (
+                    "app pool crash (Acumatica recovering — will retry)"
+                    if is_app_pool_crash
+                    else "login limit (sessions full — waiting for Railway workers)"
+                )
                 _log(
-                    f"  Login limit (attempt {attempt + 1}/{max_retries}) — "
-                    f"waiting {int(wait)}s for sessions to free up",
+                    f"  {reason}
+"
+                    f"  attempt {attempt + 1}/{max_retries} — waiting {int(wait)}s",
                     style="warn",
                 )
                 _time.sleep(wait)
                 continue
 
-            self._check_circuit_breaker(resp.text, "login")
+            # Circuit breaker: NullReferenceException outside app pool crash = DB corruption.
+            # TargetInvocationException already handled above — don't circuit-break for it.
+            if not is_app_pool_crash:
+                self._check_circuit_breaker(resp.text, "login")
+
             raise RuntimeError(
                 f"Login failed (HTTP {resp.status_code}): {resp.text[:500]}"
             )
