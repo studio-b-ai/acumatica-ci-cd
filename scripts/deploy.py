@@ -144,9 +144,7 @@ class AcumaticaCustomizationClient:
                     else "login limit (sessions full — waiting for Railway workers)"
                 )
                 _log(
-                    f"  {reason}
-"
-                    f"  attempt {attempt + 1}/{max_retries} — waiting {int(wait)}s",
+                    f"  {reason} (attempt {attempt + 1}/{max_retries}) — waiting {int(wait)}s",
                     style="warn",
                 )
                 _time.sleep(wait)
