@@ -3858,17 +3858,12 @@ namespace HeritageFabrics.IN
 ]]></CDATA>
     </Graph>
 
-    <Sql TableName="INItemXRef">
-        <Script><![CDATA[
-IF NOT EXISTS (
-    SELECT 1 FROM sys.columns
-    WHERE object_id = OBJECT_ID(N'INItemXRef')
-    AND name = 'UsrHFExpiryDate'
-)
-BEGIN
-    ALTER TABLE INItemXRef ADD UsrHFExpiryDate date NULL;
-END
-]]></Script>
+    <Sql Name="AesthetikWMS_INItemXRef_ExpiryDate_v1" Script="#CDATA">
+        <CDATA name="Script"><![CDATA[
+-- INItemXRef expiry date field (absorbed from WMSynergy ExpirationDateAtStockItems)
+IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('INItemXRef') AND name = 'UsrHFExpiryDate')
+  ALTER TABLE INItemXRef ADD UsrHFExpiryDate date NULL;
+]]></CDATA>
     </Sql>
 
 </Customization>
