@@ -1406,4 +1406,6 @@ namespace StudioB.Containers
             </Children>
         </PXGridLevel>
     </Page>
+    <File AppRelativePath="Pages\SB\SB501000.aspx" />
+    <File AppRelativePath="Pages\SB\SB501000.aspx.cs" />
 </Customization>
