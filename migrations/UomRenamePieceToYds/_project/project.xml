@@ -1,4 +1,4 @@
-<Customization level="0" description="ONE-TIME MIGRATION: Rename UOM PIECE to YDS across all tables. Unpublish after verification." product-version="24.208">
+<Customization level="0" description="ONE-TIME MIGRATION: Rename UOM PIECE to YDS across all tables. TRANSACTIONAL — all or nothing. Unpublish after verification." product-version="24.208">
     <Graph ClassName="UomRenamePieceToYds" Source="#CDATA" IsNew="True" FileType="NewFile">
         <CDATA name="Source"><![CDATA[using System;
 using Customization;
@@ -7,7 +7,7 @@ public class UomRenamePieceToYds : CustomizationPlugin
 {
     public override void UpdateDatabase()
     {
-        WriteLog("=== UomRenamePieceToYds: Starting UOM relabel PIECE → YDS ===");
+        WriteLog("=== UomRenamePieceToYds: Starting TRANSACTIONAL UOM relabel PIECE → YDS ===");
 
         var cs = System.Configuration.ConfigurationManager.ConnectionStrings["ProjectX"];
         if (cs == null)
@@ -17,129 +17,169 @@ public class UomRenamePieceToYds : CustomizationPlugin
         }
 
         string connStr = cs.ConnectionString + ";TrustServerCertificate=True";
-        int grandTotal = 0;
 
         using (var conn = new Microsoft.Data.SqlClient.SqlConnection(connStr))
         {
             conn.Open();
             WriteLog("Connected to database.");
 
-            // ============================================================
-            // SECTION 1: Core Item Configuration
-            // ============================================================
-            WriteLog("--- Section 1: Core Item Configuration ---");
-            grandTotal += SafeExec(conn, "UPDATE InventoryItem SET BaseUnit = 'YDS' WHERE BaseUnit = 'PIECE'", "InventoryItem.BaseUnit");
-            grandTotal += SafeExec(conn, "UPDATE InventoryItem SET SalesUnit = 'YDS' WHERE SalesUnit = 'PIECE'", "InventoryItem.SalesUnit");
-            grandTotal += SafeExec(conn, "UPDATE INItemClass SET BaseUnit = 'YDS' WHERE BaseUnit = 'PIECE'", "INItemClass.BaseUnit");
-            grandTotal += SafeExec(conn, "UPDATE INItemClass SET SalesUnit = 'YDS' WHERE SalesUnit = 'PIECE'", "INItemClass.SalesUnit");
+            // Pre-flight: count PIECE references for verification
+            int preCount = CountPiece(conn);
+            WriteLog($"Pre-flight: {preCount} total PIECE references found across core tables.");
+
+            if (preCount == 0)
+            {
+                WriteLog("No PIECE references found. Migration already applied or not needed. Exiting.");
+                return;
+            }
 
             // ============================================================
-            // SECTION 2: UOM Conversions
+            // ALL CHANGES IN ONE TRANSACTION — atomic rollback on failure
             // ============================================================
-            WriteLog("--- Section 2: UOM Conversions ---");
-            grandTotal += SafeExec(conn, "UPDATE INUnit SET FromUnit = 'YDS' WHERE FromUnit = 'PIECE'", "INUnit.FromUnit");
-            grandTotal += SafeExec(conn, "UPDATE INUnit SET ToUnit = 'YDS' WHERE ToUnit = 'PIECE'", "INUnit.ToUnit");
-            // Clean up self-referencing conversions (YDS → YDS with rate 1.0)
-            grandTotal += SafeExec(conn, "DELETE FROM INUnit WHERE FromUnit = 'YDS' AND ToUnit = 'YDS' AND UnitRate = 1", "INUnit.SelfRef.Cleanup");
+            using (var txn = conn.BeginTransaction())
+            {
+                try
+                {
+                    int grandTotal = 0;
 
-            // ============================================================
-            // SECTION 3: Inventory Transactions
-            // ============================================================
-            WriteLog("--- Section 3: Inventory Transactions ---");
-            grandTotal += SafeExec(conn, "UPDATE INTran SET UOM = 'YDS' WHERE UOM = 'PIECE'", "INTran.UOM");
-            grandTotal += SafeExec(conn, "UPDATE INTranSplit SET UOM = 'YDS' WHERE UOM = 'PIECE'", "INTranSplit.UOM");
+                    // SECTION 1: Core Item Configuration
+                    WriteLog("--- Section 1: Core Item Configuration ---");
+                    grandTotal += Exec(conn, txn, "UPDATE InventoryItem SET BaseUnit = 'YDS' WHERE BaseUnit = 'PIECE'", "InventoryItem.BaseUnit");
+                    grandTotal += Exec(conn, txn, "UPDATE InventoryItem SET SalesUnit = 'YDS' WHERE SalesUnit = 'PIECE'", "InventoryItem.SalesUnit");
+                    grandTotal += Exec(conn, txn, "UPDATE INItemClass SET BaseUnit = 'YDS' WHERE BaseUnit = 'PIECE'", "INItemClass.BaseUnit");
+                    grandTotal += Exec(conn, txn, "UPDATE INItemClass SET SalesUnit = 'YDS' WHERE SalesUnit = 'PIECE'", "INItemClass.SalesUnit");
 
-            // ============================================================
-            // SECTION 4: Sales Orders & Shipments
-            // ============================================================
-            WriteLog("--- Section 4: Sales Orders & Shipments ---");
-            grandTotal += SafeExec(conn, "UPDATE SOLine SET UOM = 'YDS' WHERE UOM = 'PIECE'", "SOLine.UOM");
-            grandTotal += SafeExec(conn, "UPDATE SOLineSplit SET UOM = 'YDS' WHERE UOM = 'PIECE'", "SOLineSplit.UOM");
-            grandTotal += SafeExec(conn, "UPDATE SOShipLine SET UOM = 'YDS' WHERE UOM = 'PIECE'", "SOShipLine.UOM");
-            grandTotal += SafeExec(conn, "UPDATE SOShipLineSplit SET UOM = 'YDS' WHERE UOM = 'PIECE'", "SOShipLineSplit.UOM");
-            grandTotal += SafeExec(conn, "UPDATE SOPackageDetailEx SET UOM = 'YDS' WHERE UOM = 'PIECE'", "SOPackageDetailEx.UOM");
+                    // SECTION 2: UOM Conversions
+                    WriteLog("--- Section 2: UOM Conversions ---");
+                    grandTotal += Exec(conn, txn, "UPDATE INUnit SET FromUnit = 'YDS' WHERE FromUnit = 'PIECE'", "INUnit.FromUnit");
+                    grandTotal += Exec(conn, txn, "UPDATE INUnit SET ToUnit = 'YDS' WHERE ToUnit = 'PIECE'", "INUnit.ToUnit");
+                    grandTotal += Exec(conn, txn, "DELETE FROM INUnit WHERE FromUnit = 'YDS' AND ToUnit = 'YDS' AND UnitRate = 1", "INUnit.SelfRef.Cleanup");
 
-            // ============================================================
-            // SECTION 5: Purchase Orders & Receipts
-            // ============================================================
-            WriteLog("--- Section 5: Purchase Orders & Receipts ---");
-            grandTotal += SafeExec(conn, "UPDATE POLine SET UOM = 'YDS' WHERE UOM = 'PIECE'", "POLine.UOM");
-            grandTotal += SafeExec(conn, "UPDATE POLineSplit SET UOM = 'YDS' WHERE UOM = 'PIECE'", "POLineSplit.UOM");
-            grandTotal += SafeExec(conn, "UPDATE POReceiptLine SET UOM = 'YDS' WHERE UOM = 'PIECE'", "POReceiptLine.UOM");
-            grandTotal += SafeExec(conn, "UPDATE POReceiptLineSplit SET UOM = 'YDS' WHERE UOM = 'PIECE'", "POReceiptLineSplit.UOM");
+                    // SECTION 3: Inventory Transactions
+                    WriteLog("--- Section 3: Inventory Transactions ---");
+                    grandTotal += SafeExec(conn, txn, "UPDATE INTran SET UOM = 'YDS' WHERE UOM = 'PIECE'", "INTran.UOM");
+                    grandTotal += SafeExec(conn, txn, "UPDATE INTranSplit SET UOM = 'YDS' WHERE UOM = 'PIECE'", "INTranSplit.UOM");
 
-            // ============================================================
-            // SECTION 6: AR / AP Transactions
-            // ============================================================
-            WriteLog("--- Section 6: AR / AP Transactions ---");
-            grandTotal += SafeExec(conn, "UPDATE ARTran SET UOM = 'YDS' WHERE UOM = 'PIECE'", "ARTran.UOM");
-            grandTotal += SafeExec(conn, "UPDATE APTran SET UOM = 'YDS' WHERE UOM = 'PIECE'", "APTran.UOM");
+                    // SECTION 4: Sales Orders & Shipments
+                    WriteLog("--- Section 4: Sales Orders & Shipments ---");
+                    grandTotal += SafeExec(conn, txn, "UPDATE SOLine SET UOM = 'YDS' WHERE UOM = 'PIECE'", "SOLine.UOM");
+                    grandTotal += SafeExec(conn, txn, "UPDATE SOLineSplit SET UOM = 'YDS' WHERE UOM = 'PIECE'", "SOLineSplit.UOM");
+                    grandTotal += SafeExec(conn, txn, "UPDATE SOShipLine SET UOM = 'YDS' WHERE UOM = 'PIECE'", "SOShipLine.UOM");
+                    grandTotal += SafeExec(conn, txn, "UPDATE SOShipLineSplit SET UOM = 'YDS' WHERE UOM = 'PIECE'", "SOShipLineSplit.UOM");
+                    grandTotal += SafeExec(conn, txn, "UPDATE SOPackageDetailEx SET UOM = 'YDS' WHERE UOM = 'PIECE'", "SOPackageDetailEx.UOM");
 
-            // ============================================================
-            // SECTION 7: Price Lists
-            // ============================================================
-            WriteLog("--- Section 7: Price Lists ---");
-            grandTotal += SafeExec(conn, "UPDATE ARSalesPrice SET UOM = 'YDS' WHERE UOM = 'PIECE'", "ARSalesPrice.UOM");
-            grandTotal += SafeExec(conn, "UPDATE APVendorPrice SET UOM = 'YDS' WHERE UOM = 'PIECE'", "APVendorPrice.UOM");
+                    // SECTION 5: Purchase Orders & Receipts
+                    WriteLog("--- Section 5: Purchase Orders & Receipts ---");
+                    grandTotal += SafeExec(conn, txn, "UPDATE POLine SET UOM = 'YDS' WHERE UOM = 'PIECE'", "POLine.UOM");
+                    grandTotal += SafeExec(conn, txn, "UPDATE POLineSplit SET UOM = 'YDS' WHERE UOM = 'PIECE'", "POLineSplit.UOM");
+                    grandTotal += SafeExec(conn, txn, "UPDATE POReceiptLine SET UOM = 'YDS' WHERE UOM = 'PIECE'", "POReceiptLine.UOM");
+                    grandTotal += SafeExec(conn, txn, "UPDATE POReceiptLineSplit SET UOM = 'YDS' WHERE UOM = 'PIECE'", "POReceiptLineSplit.UOM");
 
-            // ============================================================
-            // SECTION 8: Physical Inventory & Kits
-            // ============================================================
-            WriteLog("--- Section 8: Physical Inventory & Kits ---");
-            grandTotal += SafeExec(conn, "UPDATE INPIDetail SET UOM = 'YDS' WHERE UOM = 'PIECE'", "INPIDetail.UOM");
-            grandTotal += SafeExec(conn, "UPDATE INKitSpecStkDet SET UOM = 'YDS' WHERE UOM = 'PIECE'", "INKitSpecStkDet.UOM");
-            grandTotal += SafeExec(conn, "UPDATE INKitSpecNonStkDet SET UOM = 'YDS' WHERE UOM = 'PIECE'", "INKitSpecNonStkDet.UOM");
+                    // SECTION 6: AR / AP Transactions
+                    WriteLog("--- Section 6: AR / AP Transactions ---");
+                    grandTotal += SafeExec(conn, txn, "UPDATE ARTran SET UOM = 'YDS' WHERE UOM = 'PIECE'", "ARTran.UOM");
+                    grandTotal += SafeExec(conn, txn, "UPDATE APTran SET UOM = 'YDS' WHERE UOM = 'PIECE'", "APTran.UOM");
 
-            // ============================================================
-            // SECTION 9: Inventory Planning & Status (UOM references)
-            // ============================================================
-            WriteLog("--- Section 9: Inventory Planning & Status ---");
-            grandTotal += SafeExec(conn, "UPDATE INItemPlan SET UOM = 'YDS' WHERE UOM = 'PIECE'", "INItemPlan.UOM");
-            grandTotal += SafeExec(conn, "UPDATE INItemCustSalesStats SET BaseUOM = 'YDS' WHERE BaseUOM = 'PIECE'", "INItemCustSalesStats.BaseUOM");
+                    // SECTION 7: Price Lists
+                    WriteLog("--- Section 7: Price Lists ---");
+                    grandTotal += SafeExec(conn, txn, "UPDATE ARSalesPrice SET UOM = 'YDS' WHERE UOM = 'PIECE'", "ARSalesPrice.UOM");
+                    grandTotal += SafeExec(conn, txn, "UPDATE APVendorPrice SET UOM = 'YDS' WHERE UOM = 'PIECE'", "APVendorPrice.UOM");
 
-            // ============================================================
-            // SECTION 10: Lot/Serial Class Rename (PIECENBR → BLTNBR)
-            // ============================================================
-            WriteLog("--- Section 10: Lot/Serial Class Rename ---");
-            // Acumatica doesn't use DB-level FK constraints, so direct PK update should work
-            grandTotal += SafeExec(conn, "UPDATE InventoryItem SET LotSerClassID = 'BLTNBR' WHERE LotSerClassID = 'PIECENBR'", "InventoryItem.LotSerClassID");
-            grandTotal += SafeExec(conn, "UPDATE INItemClass SET LotSerClassID = 'BLTNBR' WHERE LotSerClassID = 'PIECENBR'", "INItemClass.LotSerClassID");
-            grandTotal += SafeExec(conn, "UPDATE INLotSerClassSegment SET LotSerClassID = 'BLTNBR' WHERE LotSerClassID = 'PIECENBR'", "INLotSerClassSegment.LotSerClassID");
-            grandTotal += SafeExec(conn, "UPDATE INLotSerClass SET LotSerClassID = 'BLTNBR' WHERE LotSerClassID = 'PIECENBR'", "INLotSerClass.LotSerClassID");
+                    // SECTION 8: Physical Inventory & Kits
+                    WriteLog("--- Section 8: Physical Inventory & Kits ---");
+                    grandTotal += SafeExec(conn, txn, "UPDATE INPIDetail SET UOM = 'YDS' WHERE UOM = 'PIECE'", "INPIDetail.UOM");
+                    grandTotal += SafeExec(conn, txn, "UPDATE INKitSpecStkDet SET UOM = 'YDS' WHERE UOM = 'PIECE'", "INKitSpecStkDet.UOM");
+                    grandTotal += SafeExec(conn, txn, "UPDATE INKitSpecNonStkDet SET UOM = 'YDS' WHERE UOM = 'PIECE'", "INKitSpecNonStkDet.UOM");
 
-            // ============================================================
-            // SECTION 11: Cleanup orphaned PIECE UOM definition
-            // ============================================================
-            WriteLog("--- Section 11: Cleanup ---");
-            // Only delete if no remaining references exist
-            grandTotal += SafeExec(conn, @"
-                IF NOT EXISTS (SELECT TOP 1 1 FROM InventoryItem WHERE BaseUnit = 'PIECE' OR SalesUnit = 'PIECE' OR PurchaseUnit = 'PIECE')
-                AND NOT EXISTS (SELECT TOP 1 1 FROM INUnit WHERE FromUnit = 'PIECE' OR ToUnit = 'PIECE')
-                    DELETE FROM CSUnit WHERE UnitID = 'PIECE'", "CSUnit.PIECE.Cleanup");
+                    // SECTION 9: Inventory Planning
+                    WriteLog("--- Section 9: Inventory Planning ---");
+                    grandTotal += SafeExec(conn, txn, "UPDATE INItemPlan SET UOM = 'YDS' WHERE UOM = 'PIECE'", "INItemPlan.UOM");
+                    grandTotal += SafeExec(conn, txn, "UPDATE INItemCustSalesStats SET BaseUOM = 'YDS' WHERE BaseUOM = 'PIECE'", "INItemCustSalesStats.BaseUOM");
 
-            WriteLog($"=== UomRenamePieceToYds: COMPLETE. {grandTotal} total rows affected. ===");
+                    // SECTION 10: Lot/Serial Class Rename (PIECENBR → BLTNBR)
+                    WriteLog("--- Section 10: Lot/Serial Class Rename ---");
+                    grandTotal += SafeExec(conn, txn, "UPDATE InventoryItem SET LotSerClassID = 'BLTNBR' WHERE LotSerClassID = 'PIECENBR'", "InventoryItem.LotSerClassID");
+                    grandTotal += SafeExec(conn, txn, "UPDATE INItemClass SET LotSerClassID = 'BLTNBR' WHERE LotSerClassID = 'PIECENBR'", "INItemClass.LotSerClassID");
+                    grandTotal += SafeExec(conn, txn, "UPDATE INLotSerClassSegment SET LotSerClassID = 'BLTNBR' WHERE LotSerClassID = 'PIECENBR'", "INLotSerClassSegment.LotSerClassID");
+                    grandTotal += SafeExec(conn, txn, "UPDATE INLotSerClass SET LotSerClassID = 'BLTNBR' WHERE LotSerClassID = 'PIECENBR'", "INLotSerClass.LotSerClassID");
+
+                    // SECTION 11: Cleanup orphaned PIECE UOM
+                    WriteLog("--- Section 11: Cleanup ---");
+                    SafeExec(conn, txn, @"
+                        IF NOT EXISTS (SELECT TOP 1 1 FROM InventoryItem WHERE BaseUnit = 'PIECE' OR SalesUnit = 'PIECE' OR PurchaseUnit = 'PIECE')
+                        AND NOT EXISTS (SELECT TOP 1 1 FROM INUnit WHERE FromUnit = 'PIECE' OR ToUnit = 'PIECE')
+                            DELETE FROM CSUnit WHERE UnitID = 'PIECE'", "CSUnit.PIECE.Cleanup");
+
+                    // ============================================================
+                    // COMMIT — all or nothing
+                    // ============================================================
+                    txn.Commit();
+                    WriteLog($"=== COMMITTED. {grandTotal} total rows affected. Migration successful. ===");
+
+                    // Post-flight: verify zero PIECE references remain
+                    int postCount = CountPiece(conn);
+                    WriteLog($"Post-flight: {postCount} PIECE references remaining (should be 0).");
+                }
+                catch (Exception ex)
+                {
+                    // ============================================================
+                    // ROLLBACK — undo everything on any failure
+                    // ============================================================
+                    WriteLog($"!!! CRITICAL ERROR: {ex.Message}");
+                    WriteLog("!!! ROLLING BACK ALL CHANGES. Database unchanged.");
+                    try { txn.Rollback(); } catch { }
+                    throw; // Re-throw so publish log shows the failure
+                }
+            }
         }
     }
 
-    private int SafeExec(Microsoft.Data.SqlClient.SqlConnection conn, string sql, string label)
+    /// <summary>Required exec — failure aborts transaction</summary>
+    private int Exec(Microsoft.Data.SqlClient.SqlConnection conn, Microsoft.Data.SqlClient.SqlTransaction txn, string sql, string label)
+    {
+        using (var cmd = conn.CreateCommand())
+        {
+            cmd.Transaction = txn;
+            cmd.CommandText = sql;
+            cmd.CommandTimeout = 300;
+            int rows = cmd.ExecuteNonQuery();
+            WriteLog($"  {label}: {rows} rows");
+            return rows;
+        }
+    }
+
+    /// <summary>Optional exec — table may not exist, skip gracefully</summary>
+    private int SafeExec(Microsoft.Data.SqlClient.SqlConnection conn, Microsoft.Data.SqlClient.SqlTransaction txn, string sql, string label)
+    {
+        try
+        {
+            return Exec(conn, txn, sql, label);
+        }
+        catch (Microsoft.Data.SqlClient.SqlException ex) when (ex.Number == 207 || ex.Number == 208)
+        {
+            // 207 = invalid column name, 208 = invalid object name
+            WriteLog($"  {label}: SKIPPED (table/column not found)");
+            return 0;
+        }
+    }
+
+    /// <summary>Count total PIECE references in core tables</summary>
+    private int CountPiece(Microsoft.Data.SqlClient.SqlConnection conn)
     {
         try
         {
             using (var cmd = conn.CreateCommand())
             {
-                cmd.CommandText = sql;
-                cmd.CommandTimeout = 300; // 5 min timeout for large tables
-                int rows = cmd.ExecuteNonQuery();
-                string status = rows > 0 ? $"{rows} rows" : "0 rows (no-op)";
-                WriteLog($"  {label}: {status}");
-                return rows;
+                cmd.CommandText = @"
+                    SELECT
+                        (SELECT COUNT(*) FROM InventoryItem WHERE BaseUnit = 'PIECE' OR SalesUnit = 'PIECE') +
+                        (SELECT COUNT(*) FROM INUnit WHERE FromUnit = 'PIECE' OR ToUnit = 'PIECE') +
+                        (SELECT COUNT(*) FROM INItemClass WHERE BaseUnit = 'PIECE' OR SalesUnit = 'PIECE')";
+                cmd.CommandTimeout = 60;
+                return (int)cmd.ExecuteScalar();
             }
         }
-        catch (Exception ex)
-        {
-            WriteLog($"  {label}: SKIPPED — {ex.Message}");
-            return 0;
-        }
+        catch { return -1; }
     }
 }
 ]]></CDATA>
