@@ -466,6 +466,15 @@ jobs:
           echo "Determined target environment: ${TARGET}"
       - name: Install Python dependencies
         run: pip install -r scripts/requirements.txt
+
+      - name: Pre-deploy smoke test
+        env:
+          ACUMATICA_URL: ${{ steps.env.outputs.target == 'production' && secrets.ACUMATICA_PROD_URL || secrets.ACUMATICA_STG_URL }}
+          ACUMATICA_USERNAME: ${{ steps.env.outputs.target == 'production' && secrets.ACUMATICA_PROD_USERNAME || secrets.ACUMATICA_STG_USERNAME }}
+          ACUMATICA_PASSWORD: ${{ steps.env.outputs.target == 'production' && secrets.ACUMATICA_PROD_PASSWORD || secrets.ACUMATICA_STG_PASSWORD }}
+          ACUMATICA_TENANT: ${{ steps.env.outputs.target == 'production' && secrets.ACUMATICA_PROD_TENANT || secrets.ACUMATICA_STG_TENANT }}
+        run: python scripts/smoke-test.py
+
       - name: Send 20-minute warning and schedule deploy
         id: snapshot
         if: github.event.inputs.force_qualify != 'true'
