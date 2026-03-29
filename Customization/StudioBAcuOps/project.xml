@@ -65,6 +65,12 @@ namespace StudioB.AcuOps
                     InsertSort(conn, designId, companyId, templateId);
                     InsertFilters(conn, designId, companyId, templateId);
 
+                    // Verify child row counts
+                    VerifyChildRows(conn, designId, companyId);
+
+                    // Dump all GIDesign columns for our GI to check for missing flags
+                    DumpDesignRow(conn, designId, companyId);
+
                     WriteLog("[StudioBAcuOps] GI '" + GI_NAME + "' setup complete");
                 }
             }
@@ -150,6 +156,73 @@ namespace StudioB.AcuOps
                 cmd.Parameters.AddWithValue("@ID", designId);
                 cmd.Parameters.AddWithValue("@Name", GI_NAME);
                 cmd.ExecuteNonQuery();
+            }
+        }
+
+        private void VerifyChildRows(SqlConnection conn, Guid designId, int companyId)
+        {
+            string[] tables = { "GITable", "GIResult", "GIWhere", "GISort", "GIFilter" };
+            foreach (var tbl in tables)
+            {
+                string sql = string.Format("SELECT COUNT(*) FROM {0} WHERE DesignID = @ID AND CompanyID = @CID", tbl);
+                using (var cmd = new SqlCommand(sql, conn))
+                {
+                    cmd.Parameters.AddWithValue("@ID", designId);
+                    cmd.Parameters.AddWithValue("@CID", companyId);
+                    int count = (int)cmd.ExecuteScalar();
+                    WriteLog(string.Format("  [VERIFY] {0}: {1} rows", tbl, count));
+                }
+            }
+        }
+
+        private void DumpDesignRow(SqlConnection conn, Guid designId, int companyId)
+        {
+            // Dump all column names and values for our GIDesign row
+            string sql = @"SELECT c.COLUMN_NAME, c.DATA_TYPE
+                FROM INFORMATION_SCHEMA.COLUMNS c
+                WHERE c.TABLE_NAME = 'GIDesign'
+                ORDER BY c.ORDINAL_POSITION";
+            var colNames = new System.Collections.Generic.List<string>();
+            using (var cmd = new SqlCommand(sql, conn))
+            {
+                using (var reader = cmd.ExecuteReader())
+                {
+                    while (reader.Read())
+                        colNames.Add(reader.GetString(0));
+                }
+            }
+            WriteLog("[DIAG] GIDesign has " + colNames.Count + " columns");
+
+            // Read our specific row
+            string sql2 = "SELECT * FROM GIDesign WHERE DesignID = @ID AND CompanyID = @CID";
+            using (var cmd2 = new SqlCommand(sql2, conn))
+            {
+                cmd2.Parameters.AddWithValue("@ID", designId);
+                cmd2.Parameters.AddWithValue("@CID", companyId);
+                using (var reader2 = cmd2.ExecuteReader())
+                {
+                    if (reader2.Read())
+                    {
+                        // Log key columns that might affect REST exposure
+                        for (int i = 0; i < reader2.FieldCount; i++)
+                        {
+                            string name = reader2.GetName(i);
+                            // Only log columns that look like they control behavior
+                            if (name.Contains("Expose") || name.Contains("OData") || name.Contains("Type")
+                                || name.Contains("Design") || name.Contains("Name") || name.Contains("Screen")
+                                || name.Contains("Access") || name.Contains("Endpoint") || name.Contains("Visible")
+                                || name.Contains("Published") || name.Contains("Status") || name.Contains("Module"))
+                            {
+                                object val = reader2.IsDBNull(i) ? "NULL" : reader2.GetValue(i);
+                                WriteLog(string.Format("[DIAG] GIDesign.{0} = {1}", name, val));
+                            }
+                        }
+                    }
+                    else
+                    {
+                        WriteLog("[DIAG] GIDesign row NOT FOUND!");
+                    }
+                }
             }
         }
 
