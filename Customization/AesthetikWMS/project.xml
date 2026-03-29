@@ -3664,4 +3664,211 @@ namespace HeritageFabrics.SO
 ]]></CDATA>
     </Graph>
 
+
+    <Graph ClassName="SOOrderEntry_DefaultQty" Source="#CDATA" IsNew="True" FileType="ExistingGraph">
+        <CDATA name="Source"><![CDATA[using System;
+using System.Collections.Generic;
+using PX.Data;
+using PX.Objects.IN;
+using PX.Objects.SO;
+
+namespace HeritageFabrics.SO
+{
+    /// <summary>
+    /// Absorbed from WMSynergy.DefaultQty.
+    /// When a lot/serial number is assigned on an SO line split, defaults the split
+    /// quantity to the available yardage on that lot at the selected warehouse.
+    /// </summary>
+    public class SOOrderEntry_DefaultQty : PXGraphExtension<PX.Objects.SO.SOOrderEntry>
+    {
+        public static bool IsActive() => true;
+
+        #region Event Handlers
+
+        protected virtual void _(Events.FieldUpdated<SOLineSplit, SOLineSplit.locationID> e)
+        {
+            if (e.Row == null) return;
+            var row = e.Row;
+
+            if (row.InventoryID == null || row.SiteID == null || row.LotSerialNbr == null)
+                return;
+
+            var lotStats = PXSelectReadonly<INSiteLotSerial,
+                Where<INSiteLotSerial.inventoryID, Equal<Required<INSiteLotSerial.inventoryID>>,
+                    And<INSiteLotSerial.siteID, Equal<Required<INSiteLotSerial.siteID>>,
+                    And<INSiteLotSerial.lotSerialNbr, Equal<Required<INSiteLotSerial.lotSerialNbr>>>>>>
+                .Select(Base, row.InventoryID, row.SiteID, row.LotSerialNbr);
+
+            decimal availableQty = 0m;
+            foreach (INSiteLotSerial stat in lotStats)
+                availableQty += stat.QtyAvail.GetValueOrDefault();
+
+            if (availableQty > 0)
+                e.Cache.SetValueExt<SOLineSplit.qty>(row, availableQty);
+        }
+
+        #endregion
+    }
+}
+]]></CDATA>
+    </Graph>
+
+    <Graph ClassName="SOOrderEntry_ForceLot" Source="#CDATA" IsNew="True" FileType="ExistingGraph">
+        <CDATA name="Source"><![CDATA[using PX.Data;
+using PX.Data.BQL;
+using PX.Data.BQL.Fluent;
+using PX.Objects.IN;
+using PX.Objects.SO;
+
+namespace HeritageFabrics.SO
+{
+    /// <summary>
+    /// Absorbed from WMSynergy.ForceLotSalesOrder.
+    /// Warns at persist time if an SO line lacks a lot/serial assignment
+    /// when the item has more than 25 units available at the warehouse.
+    /// This prevents open orders from shipping without lot traceability
+    /// on items that are in stock and ready to allocate.
+    /// </summary>
+    public class SOOrderEntry_ForceLot : PXGraphExtension<PX.Objects.SO.SOOrderEntry>
+    {
+        public static bool IsActive() => true;
+
+        #region Event Handlers
+
+        protected virtual void _(Events.RowPersisting<SOLine> e)
+        {
+            if (e.Row == null) return;
+            if (e.Operation != PXDBOperation.Insert && e.Operation != PXDBOperation.Update) return;
+
+            var line = e.Row;
+
+            INLotSerClass lotSerClass = PXSelectJoin<INLotSerClass,
+                InnerJoin<InventoryItem,
+                    On<InventoryItem.lotSerClassID, Equal<INLotSerClass.lotSerClassID>>>,
+                Where<InventoryItem.inventoryID, Equal<Required<InventoryItem.inventoryID>>>>
+                .Select(Base, line.InventoryID);
+
+            if (lotSerClass == null) return;
+
+            INSiteStatus itemStatus = PXSelect<INSiteStatus,
+                Where<INSiteStatus.inventoryID, Equal<Required<INSiteStatus.inventoryID>>,
+                    And<INSiteStatus.siteID, Equal<Required<INSiteStatus.siteID>>>>>
+                .Select(Base, line.InventoryID, line.SiteID);
+
+            if (itemStatus?.QtyAvail > 25)
+            {
+                bool hasLotSerial = PXSelect<SOLineSplit,
+                    Where<SOLineSplit.orderType, Equal<Required<SOLineSplit.orderType>>,
+                        And<SOLineSplit.orderNbr, Equal<Required<SOLineSplit.orderNbr>>,
+                        And<SOLineSplit.lineNbr, Equal<Required<SOLineSplit.lineNbr>>,
+                        And<SOLineSplit.lotSerialNbr, IsNotNull,
+                        And<SOLineSplit.lotSerialNbr, NotEqual<Required<SOLineSplit.lotSerialNbr>>>>>>>>
+                    .Select(Base, line.OrderType, line.OrderNbr, line.LineNbr, string.Empty).Count > 0;
+
+                if (!hasLotSerial)
+                {
+                    PXUIFieldAttribute.SetWarning<SOLine.inventoryID>(e.Cache, line,
+                        "Lot/Serial number must be selected if Qty Available > 25.");
+                }
+            }
+        }
+
+        #endregion
+    }
+}
+]]></CDATA>
+    </Graph>
+
+    <Graph ClassName="INItemXRefExt" Source="#CDATA" IsNew="True" FileType="NewFile">
+        <CDATA name="Source"><![CDATA[using System;
+using PX.Data;
+using PX.Objects.IN;
+
+namespace HeritageFabrics.IN
+{
+    /// <summary>
+    /// Absorbed from WMSynergy.ExpirationDateAtStockItems.
+    /// Adds an expiration date field to the Item Cross-Reference grid on Stock Items (IN202500).
+    /// Used to track vendor-assigned expiry dates per cross-reference entry
+    /// for compliance and receiving validation.
+    /// </summary>
+    public class INItemXRefExt : PXCacheExtension<PX.Objects.IN.INItemXRef>
+    {
+        public static bool IsActive() => true;
+
+        #region UsrHFExpiryDate
+        [PXDBDate]
+        [PXUIField(DisplayName = "Expiry Date")]
+        public virtual DateTime? UsrHFExpiryDate { get; set; }
+        public abstract class usrHFExpiryDate : PX.Data.BQL.BqlDateTime.Field<usrHFExpiryDate> { }
+        #endregion
+    }
+}
+]]></CDATA>
+    </Graph>
+
+    <Graph ClassName="InventorySummaryEnq_CutHangTag" Source="#CDATA" IsNew="True" FileType="ExistingGraph">
+        <CDATA name="Source"><![CDATA[using System.Collections;
+using System.Collections.Generic;
+using PX.Data;
+using PX.Data.BQL.Fluent;
+using PX.Objects.IN;
+
+namespace HeritageFabrics.IN
+{
+    /// <summary>
+    /// Absorbed from WMSynergy.HF.CutHangTagLabel.
+    /// Adds a Print Tag toolbar action to the Inventory Summary screen (IN401000).
+    /// Launches report WM302001 (Cut Hang Tag) pre-populated with the selected
+    /// inventory item, location, lot/serial number, and quantity on hand.
+    /// </summary>
+    public class InventorySummaryEnq_CutHangTag : PXGraphExtension<InventorySummaryEnq>
+    {
+        public static bool IsActive() => true;
+
+        #region Actions
+
+        public PXAction<InventorySummaryEnquiryResult> PrintTag;
+        public SelectFrom<InventorySummaryEnquiryResult>.View SummaryResult;
+
+        [PXButton(CommitChanges = true)]
+        [PXUIField(DisplayName = "Print Tag",
+            MapEnableRights = PXCacheRights.Select,
+            MapViewRights = PXCacheRights.Select)]
+        protected virtual IEnumerable printTag(PXAdapter adapter)
+        {
+            var row = SummaryResult.Current;
+            if (row != null)
+            {
+                var parameters = new Dictionary<string, string>
+                {
+                    ["InventoryID"] = row.InventoryID?.ToString(),
+                    ["LocationID"]  = row.LocationID?.ToString(),
+                    ["LotNbr"]      = row.LotSerialNbr,
+                    ["QTY"]         = ((decimal?)row.QtyOnHand)?.ToString("F2") ?? "0.00"
+                };
+                throw new PXReportRequiredException(parameters, "WM302001", "Print Hang Tag");
+            }
+            return adapter.Get();
+        }
+
+        #endregion
+    }
+}
+]]></CDATA>
+    </Graph>
+
+    <Sql TableName="INItemXRef">
+        <Script><![CDATA[
+IF NOT EXISTS (
+    SELECT 1 FROM sys.columns
+    WHERE object_id = OBJECT_ID(N'INItemXRef')
+    AND name = 'UsrHFExpiryDate'
+)
+BEGIN
+    ALTER TABLE INItemXRef ADD UsrHFExpiryDate date NULL;
+END
+]]></Script>
+    </Sql>
+
 </Customization>
