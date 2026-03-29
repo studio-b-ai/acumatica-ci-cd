@@ -1,0 +1,62 @@
+name: Scripts CI
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/**'
+  pull_request:
+    paths:
+      - 'scripts/**'
+
+jobs:
+  test:
+    name: Validate Python scripts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install -r scripts/requirements.txt pytest
+
+      - name: Syntax check all scripts
+        run: |
+          echo "Checking Python syntax..."
+          FAILED=0
+          for f in scripts/*.py; do
+            if ! python -m py_compile "$f"; then
+              echo "::error::Syntax error in $f"
+              FAILED=$((FAILED + 1))
+            fi
+          done
+          if [ $FAILED -gt 0 ]; then
+            echo "::error::$FAILED script(s) have syntax errors"
+            exit 1
+          fi
+          echo "All scripts pass syntax check"
+
+      - name: Run semantic checks tests
+        run: cd scripts && python -m pytest test_semantic_checks.py -v
+
+  notify:
+    name: Notify on failure
+    needs: [test]
+    if: failure() && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Notify auto-remediation
+        env:
+          WEBHOOK_ROUTER_URL: ${{ secrets.WEBHOOK_ROUTER_URL }}
+        run: |
+          if [ -z "${WEBHOOK_ROUTER_URL}" ]; then
+            echo "::warning::WEBHOOK_ROUTER_URL not set — skipping notification"
+            exit 0
+          fi
+          curl -sf -X POST "${WEBHOOK_ROUTER_URL}/webhook/github/ci-failure" \
+            -H "Content-Type: application/json" \
+            -d '{"repo":"${{ github.repository }}","runId":${{ github.run_id }},"sha":"${{ github.sha }}","branch":"${{ github.ref_name }}"}' \
+          || echo "::warning::Notification failed"
