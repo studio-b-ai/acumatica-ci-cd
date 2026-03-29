@@ -29,6 +29,8 @@ import urllib.request
 import urllib.error
 import http.cookiejar
 
+from validate_publish_gi import check_gi_health
+
 RED = "\033[91m"
 YELLOW = "\033[93m"
 GREEN = "\033[92m"
@@ -291,6 +293,14 @@ def main():
 
         # Validate SQL columns (best-effort)
         validate_sql_columns(session, sql_columns)
+
+        # GI subsystem health check
+        log("Checking GI subsystem health...")
+        gi_healthy = check_gi_health(session, args.url)
+        if gi_healthy:
+            ok("GI subsystem healthy — at least one GI probe responded")
+        else:
+            fail("GI subsystem unhealthy — all GI probes failed (possible PXGenericInqGrph corruption)")
 
     finally:
         session.logout()
