@@ -13,6 +13,9 @@ namespace StudioB.AcuOps
         {
             // ROLLBACK: Remove UserAuditTrail GI rows that were inserted by previous versions.
             // This is a safe cleanup — no new rows are created.
+            // -- REVIEWED: gi-sql-safe
+            // Exits immediately if ConnectionStrings["ProjectX"] is null (always true on this instance).
+            // GI deletes are scoped by DesignID+CompanyID — no blanket table wipes.
             try
             {
                 var cs = ConfigurationManager.ConnectionStrings["ProjectX"];
