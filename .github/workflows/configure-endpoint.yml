@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: 'Mode: schema-only, configure, verify, or grant-access'
+        description: 'Mode to run'
         required: true
         default: 'schema-only'
         type: choice
@@ -13,6 +13,7 @@ on:
           - configure
           - verify
           - grant-access
+          - discover-access-screens
 
 jobs:
   configure:
@@ -34,13 +35,20 @@ jobs:
           ACUMATICA_USERNAME: ${{ secrets.ACUMATICA_PROD_USERNAME }}
           ACUMATICA_PASSWORD: ${{ secrets.ACUMATICA_PROD_PASSWORD }}
           ACUMATICA_TENANT: ${{ secrets.ACUMATICA_PROD_TENANT }}
-        run: python scripts/configure-container-endpoint.py --${{ inputs.mode }}
+        run: |
+          if [ "${{ inputs.mode }}" = "discover-access-screens" ]; then
+            python scripts/configure-container-endpoint.py --schema
+          elif [ "${{ inputs.mode }}" = "grant-access" ]; then
+            python scripts/configure-container-endpoint.py --grant
+          else
+            python scripts/configure-container-endpoint.py --${{ inputs.mode }}
+          fi
 
-      - name: Upload schema artifact
-        if: inputs.mode == 'schema-only' || inputs.mode == 'grant-access'
+      - name: Upload schema artifacts
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: sm-schema
+          name: schemas
           path: /tmp/sm*.xml
           retention-days: 7
           if-no-files-found: ignore
