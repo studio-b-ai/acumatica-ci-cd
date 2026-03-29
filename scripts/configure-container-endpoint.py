@@ -168,7 +168,7 @@ def parse_and_print_schema(schema_xml):
 def verify_endpoint(session):
     """Check if ContainerTracking endpoint exists via REST API."""
     url = f"{BASE_URL}/entity/{ENDPOINT_NAME}/{ENDPOINT_VERSION}/UsrContainer"
-    resp = session.get(url, params={""$top": "1"})
+    resp = session.get(url, params={"$top": "1"})
     print(f"\nEndpoint check: GET {url}")
     print(f"Status: {resp.status_code}")
     if resp.status_code == 200:
