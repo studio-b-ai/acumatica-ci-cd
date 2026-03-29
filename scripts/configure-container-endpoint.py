@@ -1,15 +1,12 @@
 #!/usr/bin/env python3
 """
-Configure ContainerTracking REST endpoint fields via SOAP Screen API (SM207060).
+Configure ContainerTracking REST endpoint via SOAP Screen API.
 
-After the SiteMap GraphType is set (by CustomizationPlugin during publish),
-this script uses SOAP to navigate SM207060 and add field mappings for
-UsrContainer, UsrContainerEvent, and UsrContainerPOLink entities.
-
-Usage:
-    python configure-container-endpoint.py --schema-only   # Discover SM207060 fields
-    python configure-container-endpoint.py --configure      # Add field mappings
-    python configure-container-endpoint.py --verify         # Check endpoint exists
+Modes:
+    --schema-only   Discover SM207060 fields
+    --configure     Add field mappings (placeholder — fields auto-resolve from GraphType)
+    --verify        Check endpoint exists and responds
+    --grant-access  Grant API role access to SB501000 via SM201010
 
 Requires env vars: ACUMATICA_URL, ACUMATICA_USERNAME, ACUMATICA_PASSWORD, ACUMATICA_TENANT
 """
@@ -25,37 +22,17 @@ USERNAME = os.environ.get("ACUMATICA_USERNAME", os.environ.get("ACUMATICA_PROD_U
 PASSWORD = os.environ.get("ACUMATICA_PASSWORD", os.environ.get("ACUMATICA_PROD_PASSWORD", ""))
 TENANT = os.environ.get("ACUMATICA_TENANT", os.environ.get("ACUMATICA_PROD_TENANT", "Heritage Fabrics"))
 
-SOAP_URL = f"{BASE_URL}/Soap/SM207060.asmx"
 REST_LOGIN_URL = f"{BASE_URL}/entity/auth/login"
 REST_LOGOUT_URL = f"{BASE_URL}/entity/auth/logout"
 
 TNS = "http://www.acumatica.com/typed/"
 SOAP_NS = "http://schemas.xmlsoap.org/soap/envelope/"
 
-# Endpoint configuration
 ENDPOINT_NAME = "ContainerTracking"
 ENDPOINT_VERSION = "24.200.001"
 
-# UsrContainer fields to map (field name -> display name)
-USR_CONTAINER_FIELDS = [
-    "ContainerCD", "CarrierCode", "BookingRef", "BillOfLading",
-    "VesselName", "VesselIMO", "VoyageNbr",
-    "PortOfLoading", "PortOfDischarge",
-    "ETD", "ATD", "ETA", "ATA",
-    "Status", "ContainerType", "SealNbr",
-    "LastEventCode", "LastEventDate", "LastSyncDate",
-    "NoteID", "CreatedDateTime", "LastModifiedDateTime",
-]
-
-USR_CONTAINER_EVENT_FIELDS = [
-    "EventID", "ContainerID", "CarrierEventCode", "NormalizedEventCode",
-    "EventDateTime", "EventClassifier", "LocationName", "LocationCode",
-    "VesselName", "Description", "CreatedDateTime",
-]
-
-USR_CONTAINER_PO_LINK_FIELDS = [
-    "LinkID", "ContainerID", "OrderType", "OrderNbr", "LineNbr",
-]
+# Roles that need access to SB501000 for REST API
+TARGET_ROLES = ["Administrator", "API User"]
 
 
 def make_envelope(body_xml):
@@ -75,51 +52,40 @@ def soap_headers(action):
 
 
 def login_rest(session):
-    """Login via REST API to get session cookie (shared with SOAP)."""
     resp = session.post(REST_LOGIN_URL, json={
-        "name": USERNAME,
-        "password": PASSWORD,
-        "company": TENANT,
+        "name": USERNAME, "password": PASSWORD, "company": TENANT,
     })
     if resp.status_code != 204:
         print(f"REST Login failed: {resp.status_code}")
         print(resp.text[:500])
         sys.exit(1)
-    print(f"✓ Logged in as {USERNAME} to {TENANT}")
+    print(f"OK: REST Logged in")
 
 
 def logout_rest(session):
-    """Logout via REST API."""
     session.post(REST_LOGOUT_URL)
-    print("✓ Logged out")
+    print("OK: REST Logged out")
 
 
-def login_soap(session):
-    """Login via SOAP API."""
-    body = f"""<tns:Login>
-      <tns:name>{USERNAME}</tns:name>
-      <tns:password>{PASSWORD}</tns:password>
-      <tns:company>{TENANT}</tns:company>
-    </tns:Login>"""
-    resp = session.post(SOAP_URL, data=make_envelope(body), headers=soap_headers("Login"))
+def login_soap(session, soap_url):
+    body = f'<tns:Login><tns:name>{USERNAME}</tns:name><tns:password>{PASSWORD}</tns:password><tns:company>{TENANT}</tns:company></tns:Login>'
+    resp = session.post(soap_url, data=make_envelope(body), headers=soap_headers("Login"))
     if resp.status_code != 200:
         print(f"SOAP Login failed: {resp.status_code}")
         print(resp.text[:500])
         sys.exit(1)
-    print(f"✓ SOAP Logged in as {USERNAME}")
+    print(f"OK: SOAP Logged in")
 
 
-def logout_soap(session):
-    """Logout via SOAP API."""
+def logout_soap(session, soap_url):
     body = "<tns:Logout/>"
-    session.post(SOAP_URL, data=make_envelope(body), headers=soap_headers("Logout"))
-    print("✓ SOAP Logged out")
+    session.post(soap_url, data=make_envelope(body), headers=soap_headers("Logout"))
+    print("OK: SOAP Logged out")
 
 
-def get_schema(session):
-    """Get SM207060 screen schema to discover field names."""
+def get_schema(session, soap_url):
     body = "<tns:GetSchema/>"
-    resp = session.post(SOAP_URL, data=make_envelope(body), headers=soap_headers("GetSchema"))
+    resp = session.post(soap_url, data=make_envelope(body), headers=soap_headers("GetSchema"))
     if resp.status_code != 200:
         print(f"GetSchema failed: {resp.status_code}")
         print(resp.text[:1000])
@@ -128,20 +94,14 @@ def get_schema(session):
 
 
 def parse_and_print_schema(schema_xml):
-    """Parse SOAP GetSchema response and print container/field hierarchy."""
     root = ET.fromstring(schema_xml)
-
-    # Find GetSchemaResult element
     result = None
     for elem in root.iter():
         if elem.tag.endswith("GetSchemaResult"):
             result = elem
             break
-
     if result is None:
-        print("Could not find GetSchemaResult in response")
-        # Print raw XML for debugging
-        print("\n--- Raw Response (first 3000 chars) ---")
+        print("Could not find GetSchemaResult")
         print(schema_xml[:3000])
         return
 
@@ -151,12 +111,9 @@ def parse_and_print_schema(schema_xml):
         text = (elem.text or "").strip()
         prefix = "  " * indent
         line = f"{prefix}<{tag}"
-        if attrs:
-            line += f" {attrs}"
-        if text:
-            line += f"> {text}"
-        else:
-            line += ">"
+        if attrs: line += f" {attrs}"
+        if text: line += f"> {text}"
+        else: line += ">"
         print(line)
         for child in elem:
             print_element(child, indent + 1)
@@ -166,44 +123,87 @@ def parse_and_print_schema(schema_xml):
 
 
 def verify_endpoint(session):
-    """Check if ContainerTracking endpoint exists via REST API."""
-    url = f"{BASE_URL}/entity/{ENDPOINT_NAME}/{ENDPOINT_VERSION}/UsrContainer"
-    resp = session.get(url, params={"$top": "1"})
-    print(f"\nEndpoint check: GET {url}")
-    print(f"Status: {resp.status_code}")
-    if resp.status_code == 200:
-        data = resp.json()
-        print(f"✓ Endpoint working! Returned {len(data)} record(s)")
-        if data:
-            print(f"  Fields: {list(data[0].keys())[:10]}...")
-    elif resp.status_code == 500:
-        try:
-            err = resp.json()
-            print(f"✗ Error: {err.get('message', resp.text[:200])}")
-        except Exception:
-            print(f"✗ Error: {resp.text[:200]}")
-    else:
-        print(f"✗ Unexpected: {resp.text[:200]}")
+    entities = ["UsrContainer", "UsrContainerEvent", "UsrContainerPOLink"]
+    all_ok = True
+    for entity in entities:
+        url = f"{BASE_URL}/entity/{ENDPOINT_NAME}/{ENDPOINT_VERSION}/{entity}"
+        resp = session.get(url, params={"$top": "1"})
+        status_icon = "OK" if resp.status_code == 200 else "FAIL"
+        print(f"  {status_icon}: {entity} -> {resp.status_code}")
+        if resp.status_code == 200:
+            data = resp.json()
+            print(f"       Records: {len(data)}")
+            if data:
+                print(f"       Fields: {list(data[0].keys())[:8]}...")
+        elif resp.status_code == 403:
+            try:
+                err = resp.json()
+                print(f"       {err.get('message', '')}")
+            except Exception:
+                print(f"       {resp.text[:200]}")
+            all_ok = False
+        else:
+            print(f"       {resp.text[:200]}")
+            all_ok = False
+    return all_ok
 
 
-def submit_commands(session, commands):
-    """Submit SOAP commands to SM207060."""
-    cmd_xml = ""
-    for cmd in commands:
-        cmd_xml += "      <tns:Command>\n"
-        for key, val in cmd.items():
-            cmd_xml += f"        <tns:{key}>{val}</tns:{key}>\n"
-        cmd_xml += "      </tns:Command>\n"
+def grant_screen_access_via_soap(session):
+    """Grant access to SB501000 using SM201010 (Access Rights by Screen) SOAP API."""
+    soap_url = f"{BASE_URL}/Soap/SM201010.asmx"
+    print(f"\n=== Grant Access to SB501000 via SM201010 ===")
+    login_soap(session, soap_url)
 
-    body = f"""<tns:Submit>
+    # Step 1: Get schema to understand field names
+    print("\nStep 1: Getting SM201010 schema...")
+    schema = get_schema(session, soap_url)
+    if schema:
+        with open("/tmp/sm201010-schema.xml", "w") as f:
+            f.write(schema)
+        print("  Schema saved to /tmp/sm201010-schema.xml")
+
+        # Parse to find field names
+        root = ET.fromstring(schema)
+        result = None
+        for elem in root.iter():
+            if elem.tag.endswith("GetSchemaResult"):
+                result = elem
+                break
+
+        if result is not None:
+            # Print a condensed view of field names and object names
+            print("\n  Schema fields:")
+            for elem in result.iter():
+                tag = elem.tag.split("}")[-1] if "}" in elem.tag else elem.tag
+                if tag in ("FieldName", "ObjectName", "Value"):
+                    text = (elem.text or "").strip()
+                    if text:
+                        print(f"    {tag}: {text}")
+
+    # Step 2: Export current roles for SB501000
+    print("\nStep 2: Checking current access rights for SB501000...")
+    export_body = """<tns:Export>
     <tns:commands>
-{cmd_xml}    </tns:commands>
-  </tns:Submit>"""
+      <tns:Command><tns:FieldName>ScreenID</tns:FieldName><tns:ObjectName>Screen</tns:ObjectName><tns:Value>SB501000</tns:Value><tns:Commit>true</tns:Commit></tns:Command>
+      <tns:Command><tns:FieldName>RoleName</tns:FieldName><tns:ObjectName>Roles</tns:ObjectName></tns:Command>
+      <tns:Command><tns:FieldName>AccessRights</tns:FieldName><tns:ObjectName>Roles</tns:ObjectName></tns:Command>
+    </tns:commands>
+    <tns:topCount>50</tns:topCount>
+    <tns:includeHeaders>true</tns:includeHeaders>
+  </tns:Export>"""
 
-    resp = session.post(SOAP_URL, data=make_envelope(body), headers=soap_headers("Submit"))
-    if resp.status_code != 200:
-        print(f"Submit failed: {resp.status_code}")
-        # Extract fault string
+    resp = session.post(soap_url, data=make_envelope(export_body), headers=soap_headers("Export"))
+    print(f"  Export status: {resp.status_code}")
+    if resp.status_code == 200:
+        exp_root = ET.fromstring(resp.text)
+        for elem in exp_root.iter():
+            if elem.tag.endswith("ExportResult"):
+                for row in elem:
+                    values = [v.text or "" for v in row]
+                    print(f"    {' | '.join(values)}")
+                break
+    else:
+        # Try to extract fault
         try:
             fault_root = ET.fromstring(resp.text)
             for elem in fault_root.iter():
@@ -212,9 +212,37 @@ def submit_commands(session, commands):
                     break
         except Exception:
             pass
-        print(resp.text[:1000])
-        return False
-    return True
+        print(f"  Response: {resp.text[:1000]}")
+
+    # Step 3: Try to grant "Delete" (full) access for each target role
+    print(f"\nStep 3: Granting access for roles: {TARGET_ROLES}")
+    for role in TARGET_ROLES:
+        print(f"\n  Granting Delete access for role '{role}' on SB501000...")
+        submit_body = f"""<tns:Submit>
+    <tns:commands>
+      <tns:Command><tns:FieldName>ScreenID</tns:FieldName><tns:ObjectName>Screen</tns:ObjectName><tns:Value>SB501000</tns:Value><tns:Commit>true</tns:Commit></tns:Command>
+      <tns:Command><tns:FieldName>RoleName</tns:FieldName><tns:ObjectName>Roles</tns:ObjectName><tns:Value>{role}</tns:Value><tns:Commit>true</tns:Commit></tns:Command>
+      <tns:Command><tns:FieldName>AccessRights</tns:FieldName><tns:ObjectName>Roles</tns:ObjectName><tns:Value>Delete</tns:Value><tns:Commit>true</tns:Commit></tns:Command>
+      <tns:Command><tns:FieldName>Save</tns:FieldName><tns:ObjectName>Screen</tns:ObjectName></tns:Command>
+    </tns:commands>
+  </tns:Submit>"""
+
+        resp = session.post(soap_url, data=make_envelope(submit_body), headers=soap_headers("Submit"))
+        if resp.status_code == 200:
+            print(f"    OK: Access granted for '{role}'")
+        else:
+            print(f"    FAIL: {resp.status_code}")
+            try:
+                fault_root = ET.fromstring(resp.text)
+                for elem in fault_root.iter():
+                    if elem.tag.endswith("faultstring"):
+                        print(f"    Fault: {elem.text}")
+                        break
+            except Exception:
+                pass
+            print(f"    Response: {resp.text[:500]}")
+
+    logout_soap(session, soap_url)
 
 
 def main():
@@ -223,66 +251,59 @@ def main():
         sys.exit(1)
 
     mode = sys.argv[1] if len(sys.argv) > 1 else "--schema-only"
-
     session = requests.Session()
 
     try:
         if mode == "--schema-only":
+            soap_url = f"{BASE_URL}/Soap/SM207060.asmx"
             print(f"=== SM207060 Schema Discovery ===")
-            print(f"URL: {SOAP_URL}")
-            login_soap(session)
-            schema = get_schema(session)
+            print(f"URL: {soap_url}")
+            login_soap(session, soap_url)
+            schema = get_schema(session, soap_url)
             if schema:
                 parse_and_print_schema(schema)
-                # Save raw schema for analysis
                 with open("/tmp/sm207060-schema.xml", "w") as f:
                     f.write(schema)
                 print(f"\nRaw schema saved to /tmp/sm207060-schema.xml")
-            logout_soap(session)
+            logout_soap(session, soap_url)
 
         elif mode == "--verify":
             print(f"=== Verify ContainerTracking Endpoint ===")
             login_rest(session)
-            verify_endpoint(session)
+            ok = verify_endpoint(session)
             logout_rest(session)
+            if not ok:
+                print("\nEndpoint verification FAILED — some entities not accessible")
+                sys.exit(1)
+            else:
+                print("\nAll entities accessible!")
+
+        elif mode == "--grant-access":
+            grant_screen_access_via_soap(session)
+            # After granting, verify via REST
+            print("\n=== Verifying endpoint after access grant ===")
+            login_rest(session)
+            ok = verify_endpoint(session)
+            logout_rest(session)
+            if ok:
+                print("\nSUCCESS: All entities accessible!")
+            else:
+                print("\nWARNING: Some entities still not accessible. May need different role name.")
 
         elif mode == "--configure":
             print(f"=== Configure ContainerTracking Endpoint Fields ===")
-            print(f"This will add field mappings to SM207060 via SOAP.")
-            print(f"Endpoint: {ENDPOINT_NAME} {ENDPOINT_VERSION}")
-            login_soap(session)
-
-            # Step 1: Get schema to understand field names
-            print("\nStep 1: Getting SM207060 schema...")
-            schema = get_schema(session)
-            if schema:
-                with open("/tmp/sm207060-schema.xml", "w") as f:
-                    f.write(schema)
-                print("Schema saved. Proceeding with configuration...")
-
-            # Step 2: Navigate to the endpoint
-            # The exact commands depend on the schema field names.
-            # This will be populated after schema discovery.
-            print("\nStep 2: Navigate to ContainerTracking endpoint...")
-            print("NOTE: Field names must be populated from schema discovery.")
-            print("Run with --schema-only first, then update this script.")
-
-            logout_soap(session)
+            print(f"NOTE: Fields auto-resolve from GraphType. Use --grant-access instead.")
+            print(f"If fields need explicit mapping, use SM207060 Populate Fields via SOAP.")
 
         else:
             print(f"Unknown mode: {mode}")
-            print("Usage: configure-container-endpoint.py [--schema-only|--configure|--verify]")
+            print("Usage: configure-container-endpoint.py [--schema-only|--configure|--verify|--grant-access]")
             sys.exit(1)
 
     except Exception as e:
         print(f"ERROR: {e}")
-        try:
-            if mode.startswith("--schema") or mode == "--configure":
-                logout_soap(session)
-            else:
-                logout_rest(session)
-        except Exception:
-            pass
+        import traceback
+        traceback.print_exc()
         sys.exit(1)
 
 
