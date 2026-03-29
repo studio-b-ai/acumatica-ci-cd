@@ -90,6 +90,11 @@ on:
         required: false
         type: boolean
         default: false
+      skip_sandbox_force:
+        description: 'Force skip sandbox even for plugin changes (LOGGED, emergency only)'
+        required: false
+        type: boolean
+        default: false
 
 env:
   # HARDCODED — never use a mutable GitHub variable for the project name.
@@ -110,6 +115,7 @@ jobs:
     outputs:
       package_path: ${{ steps.package.outputs.path }}
       package_name: ${{ steps.package.outputs.name }}
+      plugin_changes: ${{ steps.plugin_check.outputs.plugin_changes }}
 
     steps:
       - name: Checkout repository
@@ -119,6 +125,17 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+
+      - name: Detect plugin changes
+        id: plugin_check
+        run: |
+          DIFF=$(git diff origin/main -- '*.xml' '*.cs' 2>/dev/null || true)
+          if echo "$DIFF" | grep -qiE '(CustomizationPlugin|UpdateDatabase|<Sql>|ExecuteSQL|SqlCommand)'; then
+            echo "plugin_changes=true" >> "$GITHUB_OUTPUT"
+            echo "::warning::CustomizationPlugin changes detected — sandbox gate is MANDATORY"
+          else
+            echo "plugin_changes=false" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Verify project folder exists
         run: |
@@ -320,7 +337,10 @@ jobs:
       needs.build.result == 'success' &&
       github.event_name != 'pull_request' &&
       github.event.inputs.force_qualify != 'true' &&
-      github.event.inputs.skip_sandbox != 'true' && (
+      (
+        github.event.inputs.skip_sandbox != 'true' ||
+        (needs.build.outputs.plugin_changes == 'true' && github.event.inputs.skip_sandbox_force != 'true')
+      ) && (
         needs.qualify.result == 'success' ||
         needs.qualify.result == 'skipped'
       )
@@ -329,6 +349,11 @@ jobs:
       cancel-in-progress: true
 
     steps:
+      - name: Log forced sandbox skip
+        if: github.event.inputs.skip_sandbox_force == 'true' && needs.build.outputs.plugin_changes == 'true'
+        run: |
+          echo "::error::SANDBOX GATE FORCE-SKIPPED for plugin changes by ${{ github.actor }}"
+
       - uses: actions/checkout@v4
 
       - name: Download package artifact
