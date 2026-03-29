@@ -135,24 +135,57 @@ def validate(path: str, strict: bool = False, no_semantic: bool = False):
     if not table_elements:
         ok("No <Table> elements (columns auto-created by DAC attributes)")
 
-    # Check 5b: <File> elements with ASPX pages — NullReferenceException on import
-    # CSS files via <File> work fine (AesthetikTheme), but ASPX pages cause NullRef
-    # during Customization API import. Confirmed: PR #71, run 23694192480 (2026-03-28).
+    # Check 5b: <File> elements — validate format and physical file existence
+    #
+    # Two formats exist:
+    #   CORRECT: <File AppRelativePath="Pages\SB\SB501000.aspx" /> (self-closing)
+    #     Physical file must exist in project directory. Packaged into zip by deploy.
+    #     Standard Acumatica format — used by all ISV packages.
+    #
+    #   WRONG: <File Path="..." Content="#CDATA"> or <File Path="..." Content="path">
+    #     Causes ArgumentNullException: entryName at ZipArchive.GetEntry during import.
+    #     Confirmed: PR #71 + #79, runs 23694192480, 23699240216 (2026-03-28).
     file_elements = root.findall(".//File")
-    aspx_files_found = False
+    aspx_count = 0
     for file_elem in file_elements:
-        file_path_attr = file_elem.get("AppRelativePath", "")
-        if file_path_attr.lower().endswith(".aspx") or file_path_attr.lower().endswith(".aspx.cs"):
+        app_rel = file_elem.get("AppRelativePath", "")
+        old_path = file_elem.get("Path", "")
+        old_content = file_elem.get("Content", "")
+
+        # HARD FAIL: Old Path/Content format — crashes on import
+        if old_path and old_content:
             error(
-                f"<File AppRelativePath=\"{file_path_attr}\"> contains ASPX page.\n"
-                f"         ASPX File elements cause NullReferenceException on Customization API import.\n"
-                f"         CSS files via <File> work fine, but ASPX pages crash the import.\n"
-                f"         Create new screens via Customization Project Editor instead.\n"
-                f"         See: PR #71, deploy run 23694192480 (2026-03-28)"
+                f"<File Path=\"{old_path}\" Content=\"{old_content}\"> uses WRONG format.\n"
+                f"         This causes ArgumentNullException on Customization API import.\n"
+                f"         Use: <File AppRelativePath=\"{old_path}\" /> with physical file in project dir.\n"
+                f"         See: PR #71, PR #79 (2026-03-28)"
             )
-            aspx_files_found = True
-    if file_elements and not aspx_files_found:
-        ok(f"Found {len(file_elements)} <File> element(s) (no ASPX pages)")
+            continue
+
+        # AppRelativePath format — correct. Verify physical file exists.
+        if app_rel:
+            # Normalize backslashes to forward slashes for filesystem check
+            rel_normalized = app_rel.replace("\\", "/")
+            physical_path = file_path.parent / rel_normalized
+            if not physical_path.exists():
+                error(
+                    f"<File AppRelativePath=\"{app_rel}\"> — physical file not found.\n"
+                    f"         Expected at: {physical_path}\n"
+                    f"         The file must exist in the project directory to be packaged into the zip."
+                )
+            else:
+                if app_rel.lower().endswith(".aspx") or app_rel.lower().endswith(".aspx.cs"):
+                    aspx_count += 1
+                ok(f"<File AppRelativePath=\"{app_rel}\"> — physical file exists")
+
+    if file_elements:
+        parts = []
+        if aspx_count:
+            parts.append(f"{aspx_count} ASPX")
+        non_aspx = len(file_elements) - aspx_count
+        if non_aspx:
+            parts.append(f"{non_aspx} other")
+        ok(f"Found {len(file_elements)} <File> element(s) ({', '.join(parts)})")
     elif not file_elements:
         pass  # No <File> elements — nothing to check
 
