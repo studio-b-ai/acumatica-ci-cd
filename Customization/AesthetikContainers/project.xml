@@ -1406,5 +1406,4 @@ namespace StudioB.Containers
             </Children>
         </PXGridLevel>
     </Page>
-    <File Path="Pages\SB\SB501000.aspx" Content="Pages\SB\SB501000.aspx" />
 </Customization>
