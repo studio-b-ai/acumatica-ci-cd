@@ -1214,50 +1214,78 @@ namespace StudioB.Containers
 
         private void DiagnoseAccessRights(SqlConnection conn, string screenID)
         {
-            WriteLog("[DIAG] === SiteMap Column Discovery ===");
+            WriteLog("[DIAG] === Deep Schema Discovery ===");
 
-            // 1. Discover actual SiteMap column names
-            string sql1 = "SELECT c.name, t.name as type_name, c.max_length FROM sys.columns c JOIN sys.types t ON c.system_type_id = t.system_type_id WHERE c.object_id = OBJECT_ID('SiteMap') ORDER BY c.column_id";
+            // 1. SMGraphPermission columns
+            string sql1 = "SELECT c.name, t.name as type_name, c.max_length FROM sys.columns c JOIN sys.types t ON c.system_type_id = t.system_type_id WHERE c.object_id = OBJECT_ID('SMGraphPermission') ORDER BY c.column_id";
             using (var cmd = new SqlCommand(sql1, conn))
             {
                 using (var rdr = cmd.ExecuteReader())
                 {
                     while (rdr.Read())
-                        WriteLog(string.Format("[DIAG] SiteMap col: {0} ({1}, {2})", rdr[0], rdr[1], rdr[2]));
+                        WriteLog(string.Format("[DIAG] SMGraphPermission col: {0} ({1}, {2})", rdr[0], rdr[1], rdr[2]));
                 }
             }
 
-            // 2. Show a sample row from a working screen
-            string sql2 = "SELECT TOP 1 * FROM SiteMap WHERE ScreenID = 'PO301000'";
+            // 2. Sample SMGraphPermission row for PO301000
+            string sql2 = "SELECT TOP 3 * FROM SMGraphPermission WHERE ScreenID = 'PO301000'";
             using (var cmd = new SqlCommand(sql2, conn))
             {
                 using (var rdr = cmd.ExecuteReader())
                 {
-                    if (rdr.Read())
+                    int rowN = 0;
+                    while (rdr.Read())
                     {
+                        rowN++;
                         for (int i = 0; i < rdr.FieldCount; i++)
-                            WriteLog(string.Format("[DIAG] PO301000.{0} = {1}", rdr.GetName(i), rdr.IsDBNull(i) ? "NULL" : rdr[i].ToString().Substring(0, System.Math.Min(100, rdr[i].ToString().Length))));
+                            WriteLog(string.Format("[DIAG] PO301000_GP[{0}].{1} = {2}", rowN, rdr.GetName(i), rdr.IsDBNull(i) ? "NULL" : rdr[i].ToString().Substring(0, System.Math.Min(100, rdr[i].ToString().Length))));
                     }
+                    if (rowN == 0) WriteLog("[DIAG] PO301000 NOT in SMGraphPermission");
                 }
             }
 
-            // 3. Check if SB501000 exists
-            string sql3 = "SELECT COUNT(*) FROM SiteMap WHERE ScreenID = @SID";
+            // 3. Check SB501000 in SMGraphPermission
+            string sql3 = "SELECT * FROM SMGraphPermission WHERE ScreenID = @SID";
             using (var cmd = new SqlCommand(sql3, conn))
             {
                 cmd.Parameters.AddWithValue("@SID", screenID);
-                int count = (int)cmd.ExecuteScalar();
-                WriteLog(string.Format("[DIAG] SB501000 rows in SiteMap: {0}", count));
+                using (var rdr = cmd.ExecuteReader())
+                {
+                    int rowN = 0;
+                    while (rdr.Read())
+                    {
+                        rowN++;
+                        for (int i = 0; i < rdr.FieldCount; i++)
+                            WriteLog(string.Format("[DIAG] SB501000_GP[{0}].{1} = {2}", rowN, rdr.GetName(i), rdr.IsDBNull(i) ? "NULL" : rdr[i].ToString().Substring(0, System.Math.Min(100, rdr[i].ToString().Length))));
+                    }
+                    WriteLog(string.Format("[DIAG] SB501000 in SMGraphPermission: {0} rows", rowN));
+                }
             }
 
-            // 4. Find access-related tables
-            string sql4 = "SELECT TOP 20 name FROM sys.tables WHERE name LIKE '%Access%' OR name LIKE '%Right%' OR name LIKE '%Permiss%' OR name LIKE '%Role%Site%' OR name LIKE '%Site%Role%' ORDER BY name";
+            // 4. Find all tables with 'Site' or 'Screen' or 'Node' in name
+            string sql4 = "SELECT name FROM sys.tables WHERE name LIKE '%SiteMap%' OR name LIKE '%Screen%' OR name LIKE '%Node%Graph%' OR name LIKE '%GraphType%' ORDER BY name";
             using (var cmd = new SqlCommand(sql4, conn))
             {
                 using (var rdr = cmd.ExecuteReader())
                 {
                     while (rdr.Read())
-                        WriteLog("[DIAG] AccessTable: " + rdr[0]);
+                        WriteLog("[DIAG] RelatedTable: " + rdr[0]);
+                }
+            }
+
+            // 5. SiteMap table — show ALL columns for SB501000 row if exists
+            string sql5 = "SELECT TOP 1 * FROM SiteMap WHERE ScreenID = @SID";
+            using (var cmd = new SqlCommand(sql5, conn))
+            {
+                cmd.Parameters.AddWithValue("@SID", screenID);
+                using (var rdr = cmd.ExecuteReader())
+                {
+                    if (rdr.Read())
+                    {
+                        for (int i = 0; i < rdr.FieldCount; i++)
+                            WriteLog(string.Format("[DIAG] SM_SB501000.{0} = {1}", rdr.GetName(i), rdr.IsDBNull(i) ? "NULL" : rdr[i].ToString().Substring(0, System.Math.Min(100, rdr[i].ToString().Length))));
+                    }
+                    else WriteLog("[DIAG] SB501000 NOT in SiteMap table");
                 }
             }
 
