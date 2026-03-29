@@ -24,7 +24,10 @@ namespace HeritageFabrics.SO
     /// </summary>
     public class SOOrderEntry_AutoAllocation : PXGraphExtension<SOOrderEntry>
     {
-        public static bool IsActive() => true;
+        // DISABLED 2026-03-28: openLineCntr aggregate corruption.
+        // Inserting SOLine rows inside RowUpdated desyncs the counter cache.
+        // Needs architectural fix before re-enabling.
+        public static bool IsActive() => false;
 
         private const string PieceGoodsClassID = "PIECENBR";
         private const decimal OvershipFactor = 1.20m;
