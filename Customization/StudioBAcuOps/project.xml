@@ -54,6 +54,11 @@ namespace StudioB.AcuOps
                         InsertDesign(conn, designId, companyId);
                     }
 
+                    // Dump NOT NULL columns for each GI table (diagnostic)
+                    string[] giTables = { "GITable", "GIResult", "GIWhere", "GISort", "GIFilter" };
+                    foreach (var tbl in giTables)
+                        DumpNotNullColumns(conn, tbl);
+
                     InsertTable(conn, designId, companyId, templateId);
                     InsertResults(conn, designId, companyId, templateId);
                     InsertWhereConditions(conn, designId, companyId, templateId);
@@ -148,14 +153,39 @@ namespace StudioB.AcuOps
             }
         }
 
+        private void DumpNotNullColumns(SqlConnection conn, string tableName)
+        {
+            string sql = @"SELECT COLUMN_NAME, DATA_TYPE, CHARACTER_MAXIMUM_LENGTH, COLUMNPROPERTY(OBJECT_ID(@TBL), COLUMN_NAME, 'IsIdentity') as IsIdentity
+                FROM INFORMATION_SCHEMA.COLUMNS
+                WHERE TABLE_NAME = @TBL AND IS_NULLABLE = 'NO'
+                ORDER BY ORDINAL_POSITION";
+            using (var cmd = new SqlCommand(sql, conn))
+            {
+                cmd.Parameters.AddWithValue("@TBL", tableName);
+                using (var reader = cmd.ExecuteReader())
+                {
+                    var cols = new System.Collections.Generic.List<string>();
+                    while (reader.Read())
+                    {
+                        string name = reader.GetString(0);
+                        string dtype = reader.GetString(1);
+                        int isIdent = reader.IsDBNull(3) ? 0 : reader.GetInt32(3);
+                        cols.Add(name + "(" + dtype + (isIdent == 1 ? ",IDENTITY" : "") + ")");
+                    }
+                    WriteLog("[DIAG] " + tableName + " NOT NULL cols: " + string.Join(", ", cols));
+                }
+            }
+        }
+
         private void InsertTable(SqlConnection conn, Guid designId, int companyId, Guid templateId)
         {
+            // GITable does NOT have RowID
             string sql = @"
                 INSERT INTO GITable (CompanyID, DesignID, Alias, Name, [Type],
-                    RowID, NoteID, CreatedByID, CreatedByScreenID, CreatedDateTime,
+                    NoteID, CreatedByID, CreatedByScreenID, CreatedDateTime,
                     LastModifiedByID, LastModifiedByScreenID, LastModifiedDateTime)
                 SELECT TOP 1 @CID, @ID, 'AuditHistory', 'PX.SM.AuditHistory', [Type],
-                    NEWID(), NEWID(), CreatedByID, 'SM208000', GETUTCDATE(),
+                    NEWID(), CreatedByID, 'SM208000', GETUTCDATE(),
                     LastModifiedByID, 'SM208000', GETUTCDATE()
                 FROM GITable WHERE DesignID = @TID AND CompanyID = @CID";
             using (var cmd = new SqlCommand(sql, conn))
