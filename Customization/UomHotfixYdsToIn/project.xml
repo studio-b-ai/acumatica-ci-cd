@@ -1,4 +1,4 @@
-<Customization level="0" description="Hotfix v3: restore YDS→IN INUnit conversion records for items sold by the inch" product-version="24.208">
+<Customization level="0" description="Hotfix v3: restore YDS→IN INUnit conversion records for FERNCREST-MEDLINE items (UnitRate=1, matches pre-migration behavior)" product-version="24.208">
     <CustomizationPlugin ClassName="UomHotfixYdsToIn" IsNew="True">
         <CDATA name="Source"><![CDATA[using System;
 using Customization;
@@ -8,11 +8,12 @@ public class UomHotfixYdsToIn : CustomizationPlugin
 {
     public override void UpdateDatabase()
     {
-        WriteLog("=== HOTFIX v3: Restoring YDS→IN conversion records ===");
+        WriteLog("=== HOTFIX v3: Restoring YDS→IN conversion records (FERNCREST-MEDLINE) ===");
 
-        // Step 1: Item-level YDS→IN (36 inches per yard)
+        // Item-level YDS→IN with UnitRate=1.
         // These existed as PIECE→IN before the UOM migration deleted all PIECE records.
-        // Items with SalesUnit='IN' are finished products spec'd and sold by the inch.
+        // UnitRate=1 restores pre-migration behavior (consultants had PIECE=YDS=IN at 1:1).
+        // Physical correction (UnitRate=36) deferred to a deliberate FERNCREST-MEDLINE pricing project.
         int ydsToIn = PXDatabase.Execute(@"
             INSERT INTO INUnit (
                 CompanyID, UnitType, ItemClassID, InventoryID,
@@ -22,7 +23,7 @@ public class UomHotfixYdsToIn : CustomizationPlugin
             )
             SELECT DISTINCT
                 i.CompanyID, 3, 0, i.InventoryID,
-                'YDS', 'IN', 36.0, 1.0, 'M',
+                'YDS', 'IN', 1.0, 1.0, 'M',
                 CAST('00000000-0000-0000-0000-000000000000' AS UNIQUEIDENTIFIER), 'IN209000', GETUTCDATE(),
                 CAST('00000000-0000-0000-0000-000000000000' AS UNIQUEIDENTIFIER), 'IN209000', GETUTCDATE()
             FROM InventoryItem i
@@ -38,8 +39,7 @@ public class UomHotfixYdsToIn : CustomizationPlugin
 
         WriteLog($"YDS→IN item-level: {ydsToIn} rows");
 
-        // Step 2: Item-level IN→IN self-conversion
-        // Each UOM on an item needs a self-conversion record.
+        // IN→IN self-conversion — required for each UOM that appears on an item.
         int inSelf = PXDatabase.Execute(@"
             INSERT INTO INUnit (
                 CompanyID, UnitType, ItemClassID, InventoryID,
