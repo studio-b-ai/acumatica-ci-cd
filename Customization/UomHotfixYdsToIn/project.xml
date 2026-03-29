@@ -1,4 +1,4 @@
-<Customization level="0" description="Hotfix v20: InventoryItem UOM field diagnostic + fix null SalesUnit" product-version="24.208">
+<Customization level="0" description="Hotfix v20b: InventoryItem SalesUnit/PurchaseUnit null fix + diagnostic" product-version="24.208">
     <Graph ClassName="UomHotfixInventoryItemUom" Source="#CDATA" IsNew="True" FileType="NewFile">
         <CDATA name="Source"><![CDATA[using System;
 using System.Configuration;
@@ -9,7 +9,7 @@ public class UomHotfixInventoryItemUom : CustomizationPlugin
 {
     public override void UpdateDatabase()
     {
-        WriteLog("TABLE === HOTFIX v20: InventoryItem UOM field diagnostic ===");
+        WriteLog("TABLE === HOTFIX v20b: InventoryItem UOM field fix ===");
         var cs = ConfigurationManager.ConnectionStrings["ProjectX"];
         if (cs == null) { WriteLog("TABLE no connection string"); return; }
         string connStr = cs.ConnectionString + ";TrustServerCertificate=True";
@@ -17,118 +17,125 @@ public class UomHotfixInventoryItemUom : CustomizationPlugin
         {
             conn.Open();
 
-            // 1. Check item 28065 specifically — BaseUnit, SalesUnit, PurchaseUnit
-            WriteLog("TABLE --- Item 28065 UOM fields ---");
+            // 1. Diagnostic — item 28065 before fix
+            WriteLog("TABLE --- Item 28065 BEFORE ---");
             try
             {
                 using (var cmd = new SqlCommand(
-                    "SELECT InventoryID, InventoryCD, BaseUnit, SalesUnit, PurchaseUnit, " +
-                    "ISNULL(BaseUnit,'(null)') AS BaseUnitDisplay, " +
-                    "ISNULL(SalesUnit,'(null)') AS SalesUnitDisplay, " +
-                    "ISNULL(PurchaseUnit,'(null)') AS PurchaseUnitDisplay " +
-                    "FROM InventoryItem WHERE InventoryID=28065 AND CompanyID=2", conn))
-                using (var rdr = cmd.ExecuteReader())
-                    while (rdr.Read())
-                        WriteLog("TABLE Item28065: CD=" + rdr["InventoryCD"] +
-                            " Base=" + rdr["BaseUnitDisplay"] +
-                            " Sales=" + rdr["SalesUnitDisplay"] +
-                            " Purchase=" + rdr["PurchaseUnitDisplay"]);
-            }
-            catch (Exception ex) { WriteLog("TABLE item 28065 error: " + ex.Message); }
-
-            // 2. Count items with null SalesUnit (CompanyID=2)
-            WriteLog("TABLE --- Null SalesUnit counts ---");
-            try
-            {
-                using (var cmd = new SqlCommand(
-                    "SELECT " +
-                    "  COUNT(*) AS TotalItems, " +
-                    "  SUM(CASE WHEN SalesUnit IS NULL OR SalesUnit='' THEN 1 ELSE 0 END) AS NullSalesUnit, " +
-                    "  SUM(CASE WHEN BaseUnit IS NULL OR BaseUnit='' THEN 1 ELSE 0 END) AS NullBaseUnit, " +
-                    "  SUM(CASE WHEN SalesUnit='YDS' THEN 1 ELSE 0 END) AS SalesUnitYDS, " +
-                    "  SUM(CASE WHEN SalesUnit='PIECE' THEN 1 ELSE 0 END) AS SalesUnitPIECE, " +
-                    "  SUM(CASE WHEN BaseUnit='YDS' THEN 1 ELSE 0 END) AS BaseUnitYDS, " +
-                    "  SUM(CASE WHEN BaseUnit='PIECE' THEN 1 ELSE 0 END) AS BaseUnitPIECE " +
-                    "FROM InventoryItem WHERE CompanyID=2 AND ItemStatus != 'IN'", conn))
-                using (var rdr = cmd.ExecuteReader())
-                    while (rdr.Read())
-                        WriteLog("TABLE UOMCounts: Total=" + rdr["TotalItems"] +
-                            " NullSalesUnit=" + rdr["NullSalesUnit"] +
-                            " NullBaseUnit=" + rdr["NullBaseUnit"] +
-                            " SalesYDS=" + rdr["SalesUnitYDS"] +
-                            " SalesPIECE=" + rdr["SalesUnitPIECE"] +
-                            " BaseYDS=" + rdr["BaseUnitYDS"] +
-                            " BasePIECE=" + rdr["BaseUnitPIECE"]);
-            }
-            catch (Exception ex) { WriteLog("TABLE null count error: " + ex.Message); }
-
-            // 3. Sample items with null SalesUnit (show first 10)
-            WriteLog("TABLE --- Items with null SalesUnit (sample) ---");
-            try
-            {
-                using (var cmd = new SqlCommand(
-                    "SELECT TOP 10 InventoryID, InventoryCD, " +
+                    "SELECT InventoryID, InventoryCD, " +
                     "ISNULL(BaseUnit,'(null)') AS Base, " +
                     "ISNULL(SalesUnit,'(null)') AS Sales, " +
                     "ISNULL(PurchaseUnit,'(null)') AS Purchase " +
-                    "FROM InventoryItem " +
-                    "WHERE (SalesUnit IS NULL OR SalesUnit='') AND CompanyID=2 AND ItemStatus != 'IN' " +
-                    "ORDER BY InventoryID", conn))
+                    "FROM InventoryItem WHERE InventoryID=28065 AND CompanyID=2", conn))
                 using (var rdr = cmd.ExecuteReader())
                     while (rdr.Read())
-                        WriteLog("TABLE NullSales: ID=" + rdr["InventoryID"] +
-                            " CD=" + rdr["InventoryCD"] +
+                        WriteLog("TABLE Before28065: CD=" + rdr["InventoryCD"] +
                             " Base=" + rdr["Base"] +
                             " Sales=" + rdr["Sales"] +
                             " Purchase=" + rdr["Purchase"]);
             }
-            catch (Exception ex) { WriteLog("TABLE null sales sample error: " + ex.Message); }
+            catch (Exception ex) { WriteLog("TABLE before-28065 error: " + ex.Message); }
 
-            // 4. Check if item 28065 has an INUnit item-level record at all
-            WriteLog("TABLE --- Item 28065 INUnit records (all types) ---");
+            // 2. Diagnostic — counts before fix
+            WriteLog("TABLE --- Counts BEFORE fix ---");
             try
             {
                 using (var cmd = new SqlCommand(
-                    "SELECT UnitType, ItemClassID, InventoryID, FromUnit, ToUnit, UnitMultDiv, " +
-                    "CAST(UnitRate AS VARCHAR(20)) AS Rate " +
-                    "FROM INUnit WHERE CompanyID=2 " +
-                    "AND (InventoryID=28065 OR (InventoryID=0 AND FromUnit IN ('YDS','PIECE'))) " +
-                    "ORDER BY UnitType, InventoryID, FromUnit", conn))
+                    "SELECT " +
+                    "  COUNT(*) AS Total, " +
+                    "  SUM(CASE WHEN SalesUnit IS NULL OR SalesUnit='' THEN 1 ELSE 0 END) AS NullSales, " +
+                    "  SUM(CASE WHEN PurchaseUnit IS NULL OR PurchaseUnit='' THEN 1 ELSE 0 END) AS NullPurchase, " +
+                    "  SUM(CASE WHEN SalesUnit='YDS' THEN 1 ELSE 0 END) AS SalesYDS, " +
+                    "  SUM(CASE WHEN SalesUnit='PIECE' THEN 1 ELSE 0 END) AS SalesPIECE, " +
+                    "  SUM(CASE WHEN BaseUnit='YDS' THEN 1 ELSE 0 END) AS BaseYDS, " +
+                    "  SUM(CASE WHEN BaseUnit='PIECE' THEN 1 ELSE 0 END) AS BasePIECE " +
+                    "FROM InventoryItem WHERE CompanyID=2 AND ItemStatus != 'IN'", conn))
                 using (var rdr = cmd.ExecuteReader())
                     while (rdr.Read())
-                        WriteLog("TABLE INUnit: Type=" + rdr["UnitType"] +
-                            " ClassID=" + rdr["ItemClassID"] +
-                            " InvID=" + rdr["InventoryID"] +
-                            " From=" + rdr["FromUnit"] +
-                            " To=" + rdr["ToUnit"] +
-                            " Mult=" + rdr["UnitMultDiv"] +
-                            " Rate=" + rdr["Rate"]);
+                        WriteLog("TABLE BeforeCounts: Total=" + rdr["Total"] +
+                            " NullSales=" + rdr["NullSales"] +
+                            " NullPurchase=" + rdr["NullPurchase"] +
+                            " SalesYDS=" + rdr["SalesYDS"] +
+                            " SalesPIECE=" + rdr["SalesPIECE"] +
+                            " BaseYDS=" + rdr["BaseYDS"] +
+                            " BasePIECE=" + rdr["BasePIECE"]);
             }
-            catch (Exception ex) { WriteLog("TABLE item 28065 INUnit error: " + ex.Message); }
+            catch (Exception ex) { WriteLog("TABLE before-counts error: " + ex.Message); }
 
-            // 5. Check INItemClass for item 28065 — what class is it in, and what BaseUnit does the class have?
-            WriteLog("TABLE --- INItemClass for item 28065 ---");
+            // 3. FIX — set SalesUnit = BaseUnit where SalesUnit is null/empty and BaseUnit is set
+            WriteLog("TABLE --- Applying SalesUnit fix ---");
             try
             {
                 using (var cmd = new SqlCommand(
-                    "SELECT ic.ItemClassID, ic.ItemClassCD, " +
-                    "ISNULL(ic.BaseUnit,'(null)') AS ClassBase, " +
-                    "COUNT(u.FromUnit) AS INUnitCount " +
-                    "FROM INItemClass ic " +
-                    "INNER JOIN InventoryItem ii ON ii.ItemClassID = ic.ItemClassID AND ii.CompanyID = ic.CompanyID " +
-                    "LEFT JOIN INUnit u ON u.CompanyID=ic.CompanyID AND u.UnitType=2 AND u.ItemClassID=ic.ItemClassID AND u.FromUnit='YDS' " +
-                    "WHERE ii.InventoryID=28065 AND ii.CompanyID=2 " +
-                    "GROUP BY ic.ItemClassID, ic.ItemClassCD, ic.BaseUnit", conn))
+                    "UPDATE InventoryItem " +
+                    "SET SalesUnit = BaseUnit " +
+                    "WHERE CompanyID=2 " +
+                    "AND (SalesUnit IS NULL OR SalesUnit='') " +
+                    "AND BaseUnit IS NOT NULL AND BaseUnit != ''", conn))
+                {
+                    int rows = cmd.ExecuteNonQuery();
+                    WriteLog("TABLE SalesUnit fix: " + rows + " rows updated");
+                }
+            }
+            catch (Exception ex) { WriteLog("TABLE salesunit-fix error: " + ex.Message); }
+
+            // 4. FIX — set PurchaseUnit = BaseUnit where PurchaseUnit is null/empty and BaseUnit is set
+            WriteLog("TABLE --- Applying PurchaseUnit fix ---");
+            try
+            {
+                using (var cmd = new SqlCommand(
+                    "UPDATE InventoryItem " +
+                    "SET PurchaseUnit = BaseUnit " +
+                    "WHERE CompanyID=2 " +
+                    "AND (PurchaseUnit IS NULL OR PurchaseUnit='') " +
+                    "AND BaseUnit IS NOT NULL AND BaseUnit != ''", conn))
+                {
+                    int rows = cmd.ExecuteNonQuery();
+                    WriteLog("TABLE PurchaseUnit fix: " + rows + " rows updated");
+                }
+            }
+            catch (Exception ex) { WriteLog("TABLE purchaseunit-fix error: " + ex.Message); }
+
+            // 5. Diagnostic — item 28065 AFTER fix
+            WriteLog("TABLE --- Item 28065 AFTER ---");
+            try
+            {
+                using (var cmd = new SqlCommand(
+                    "SELECT InventoryID, InventoryCD, " +
+                    "ISNULL(BaseUnit,'(null)') AS Base, " +
+                    "ISNULL(SalesUnit,'(null)') AS Sales, " +
+                    "ISNULL(PurchaseUnit,'(null)') AS Purchase " +
+                    "FROM InventoryItem WHERE InventoryID=28065 AND CompanyID=2", conn))
                 using (var rdr = cmd.ExecuteReader())
                     while (rdr.Read())
-                        WriteLog("TABLE ItemClass: ID=" + rdr["ItemClassID"] +
-                            " CD=" + rdr["ItemClassCD"] +
-                            " BaseUnit=" + rdr["ClassBase"] +
-                            " YDSUnitCount=" + rdr["INUnitCount"]);
+                        WriteLog("TABLE After28065: CD=" + rdr["InventoryCD"] +
+                            " Base=" + rdr["Base"] +
+                            " Sales=" + rdr["Sales"] +
+                            " Purchase=" + rdr["Purchase"]);
             }
-            catch (Exception ex) { WriteLog("TABLE itemclass error: " + ex.Message); }
+            catch (Exception ex) { WriteLog("TABLE after-28065 error: " + ex.Message); }
+
+            // 6. Diagnostic — counts after fix
+            WriteLog("TABLE --- Counts AFTER fix ---");
+            try
+            {
+                using (var cmd = new SqlCommand(
+                    "SELECT " +
+                    "  SUM(CASE WHEN SalesUnit IS NULL OR SalesUnit='' THEN 1 ELSE 0 END) AS NullSales, " +
+                    "  SUM(CASE WHEN PurchaseUnit IS NULL OR PurchaseUnit='' THEN 1 ELSE 0 END) AS NullPurchase, " +
+                    "  SUM(CASE WHEN SalesUnit='YDS' THEN 1 ELSE 0 END) AS SalesYDS, " +
+                    "  SUM(CASE WHEN BaseUnit='PIECE' THEN 1 ELSE 0 END) AS BasePIECE " +
+                    "FROM InventoryItem WHERE CompanyID=2 AND ItemStatus != 'IN'", conn))
+                using (var rdr = cmd.ExecuteReader())
+                    while (rdr.Read())
+                        WriteLog("TABLE AfterCounts: NullSales=" + rdr["NullSales"] +
+                            " NullPurchase=" + rdr["NullPurchase"] +
+                            " SalesYDS=" + rdr["SalesYDS"] +
+                            " BasePIECE=" + rdr["BasePIECE"]);
+            }
+            catch (Exception ex) { WriteLog("TABLE after-counts error: " + ex.Message); }
         }
-        WriteLog("TABLE === HOTFIX v20: done ===");
+        WriteLog("TABLE === HOTFIX v20b: done ===");
     }
 }]]></CDATA>
     </Graph>
