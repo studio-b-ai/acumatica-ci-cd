@@ -1158,6 +1158,7 @@ namespace StudioB.Containers
                     // This SQL approach sets GraphType directly without ASPX.
                     SetSiteMapGraphType(conn, "SB501000", "StudioB.Containers.ContainerMaint");
                     GrantScreenAccess(conn, "SB501000");
+                    DiagnoseAccessRights(conn, "SB501000");
                 }
 
                 WriteLog("[AesthetikContainers] All tables, columns, indexes, SiteMap, and access rights verified/created.");
@@ -1209,6 +1210,74 @@ namespace StudioB.Containers
                 int rows = cmd.ExecuteNonQuery();
                 WriteLog(string.Format("  GrantAccess {0} — {1} row(s) updated", screenID, rows));
             }
+        }
+
+        private void DiagnoseAccessRights(SqlConnection conn, string screenID)
+        {
+            WriteLog("[DIAG] === Access Rights Diagnostics for " + screenID + " ===");
+
+            // 1. Show SiteMap row for our screen
+            string sql1 = "SELECT TOP 1 CompanyID, ScreenID, Title, Graphtype, Accessrights, NodeID FROM SiteMap WHERE ScreenID = @SID ORDER BY CompanyID";
+            using (var cmd = new SqlCommand(sql1, conn))
+            {
+                cmd.Parameters.AddWithValue("@SID", screenID);
+                using (var rdr = cmd.ExecuteReader())
+                {
+                    while (rdr.Read())
+                        WriteLog(string.Format("[DIAG] SiteMap: CompanyID={0} ScreenID={1} Title={2} Graph={3} Access={4} NodeID={5}",
+                            rdr[0], rdr[1], rdr[2], rdr[3], rdr[4], rdr[5]));
+                    if (!rdr.HasRows) WriteLog("[DIAG] SiteMap: NO ROW FOUND for " + screenID);
+                }
+            }
+
+            // 2. Show SiteMap row for a known working screen (PO301000) for comparison
+            string sql2 = "SELECT TOP 1 CompanyID, ScreenID, Title, Graphtype, Accessrights FROM SiteMap WHERE ScreenID = 'PO301000' ORDER BY CompanyID";
+            using (var cmd = new SqlCommand(sql2, conn))
+            {
+                using (var rdr = cmd.ExecuteReader())
+                {
+                    while (rdr.Read())
+                        WriteLog(string.Format("[DIAG] Ref PO301000: CompanyID={0} Access={1} Graph={2}",
+                            rdr[0], rdr[4], rdr[3]));
+                }
+            }
+
+            // 3. Find tables with 'Role' and 'Access' or 'Right' in name
+            string sql3 = "SELECT name FROM sys.tables WHERE name LIKE '%Role%' AND (name LIKE '%Access%' OR name LIKE '%Right%' OR name LIKE '%Screen%' OR name LIKE '%Site%') ORDER BY name";
+            using (var cmd = new SqlCommand(sql3, conn))
+            {
+                using (var rdr = cmd.ExecuteReader())
+                {
+                    while (rdr.Read())
+                        WriteLog("[DIAG] Table: " + rdr[0]);
+                    if (!rdr.HasRows) WriteLog("[DIAG] No Role+Access/Right tables found");
+                }
+            }
+
+            // 4. Broader search for access-related tables
+            string sql4 = "SELECT TOP 20 name FROM sys.tables WHERE name LIKE '%Access%' OR name LIKE '%Right%' OR name LIKE '%Permiss%' ORDER BY name";
+            using (var cmd = new SqlCommand(sql4, conn))
+            {
+                using (var rdr = cmd.ExecuteReader())
+                {
+                    while (rdr.Read())
+                        WriteLog("[DIAG] AccessTable: " + rdr[0]);
+                }
+            }
+
+            // 5. Check all CompanyIDs in SiteMap for this screen
+            string sql5 = "SELECT CompanyID, Accessrights FROM SiteMap WHERE ScreenID = @SID";
+            using (var cmd = new SqlCommand(sql5, conn))
+            {
+                cmd.Parameters.AddWithValue("@SID", screenID);
+                using (var rdr = cmd.ExecuteReader())
+                {
+                    while (rdr.Read())
+                        WriteLog(string.Format("[DIAG] SiteMap CompanyID={0} Access={1}", rdr[0], rdr[1]));
+                }
+            }
+
+            WriteLog("[DIAG] === End Diagnostics ===");
         }
 
         private void EnsureColumn(SqlConnection conn, string table, string column, string definition)
