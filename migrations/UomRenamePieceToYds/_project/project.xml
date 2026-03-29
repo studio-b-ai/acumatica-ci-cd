@@ -1,0 +1,236 @@
+<Customization level="0" description="ONE-TIME MIGRATION: Rename UOM PIECE to YDS. Phase 1 = Heritage Test only. Phase 2 = all companies." product-version="24.208">
+    <Graph ClassName="UomRenamePieceToYds" Source="#CDATA" IsNew="True" FileType="NewFile">
+        <CDATA name="Source"><![CDATA[using System;
+using System.Collections.Generic;
+using Customization;
+
+public class UomRenamePieceToYds : CustomizationPlugin
+{
+    // ================================================================
+    // PHASE CONTROL
+    // Set to null to apply to ALL companies (Phase 2 — production).
+    // Set to a company name to scope migration to that company only.
+    // ================================================================
+    private const string TARGET_COMPANY = "Heritage Test";
+
+    public override void UpdateDatabase()
+    {
+        WriteLog("=== UomRenamePieceToYds: TRANSACTIONAL UOM relabel PIECE → YDS ===");
+        WriteLog($"Target: {(TARGET_COMPANY == null ? "ALL COMPANIES" : TARGET_COMPANY)}");
+
+        var cs = System.Configuration.ConfigurationManager.ConnectionStrings["ProjectX"];
+        if (cs == null) { WriteLog("ERROR: No connection string."); return; }
+
+        string connStr = cs.ConnectionString + ";TrustServerCertificate=True";
+
+        using (var conn = new Microsoft.Data.SqlClient.SqlConnection(connStr))
+        {
+            conn.Open();
+
+            // ─── Discover companies ───────────────────────────────
+            WriteLog("--- Discovering companies ---");
+            var companies = new Dictionary<string, int>();
+            using (var cmd = conn.CreateCommand())
+            {
+                cmd.CommandText = "SELECT CompanyID, LoginName FROM Company WHERE CompanyID > 0";
+                cmd.CommandTimeout = 30;
+                try
+                {
+                    using (var rdr = cmd.ExecuteReader())
+                    {
+                        while (rdr.Read())
+                        {
+                            int id = rdr.GetInt32(0);
+                            string name = rdr.IsDBNull(1) ? "(null)" : rdr.GetString(1);
+                            companies[name] = id;
+                            WriteLog($"  Found company: '{name}' → CompanyID={id}");
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    WriteLog($"  Company discovery failed: {ex.Message}");
+                    // Try CompanyCD instead of LoginName
+                    try
+                    {
+                        cmd.CommandText = "SELECT CompanyID, CompanyCD FROM Company WHERE CompanyID > 0";
+                        using (var rdr = cmd.ExecuteReader())
+                        {
+                            while (rdr.Read())
+                            {
+                                int id = rdr.GetInt32(0);
+                                string name = rdr.IsDBNull(1) ? "(null)" : rdr.GetString(1);
+                                companies[name] = id;
+                                WriteLog($"  Found company: '{name}' → CompanyID={id}");
+                            }
+                        }
+                    }
+                    catch (Exception ex2) { WriteLog($"  Fallback discovery also failed: {ex2.Message}"); }
+                }
+            }
+
+            // ─── Resolve target CompanyID ─────────────────────────
+            string companyFilter = "";
+            if (TARGET_COMPANY != null)
+            {
+                int targetId = -1;
+                foreach (var kvp in companies)
+                {
+                    if (kvp.Key.IndexOf(TARGET_COMPANY, StringComparison.OrdinalIgnoreCase) >= 0)
+                    {
+                        targetId = kvp.Value;
+                        WriteLog($"  Matched target: '{kvp.Key}' → CompanyID={targetId}");
+                        break;
+                    }
+                }
+                if (targetId < 0)
+                {
+                    WriteLog($"ERROR: Could not find company matching '{TARGET_COMPANY}'. Aborting.");
+                    WriteLog("Available companies: " + string.Join(", ", companies.Keys));
+                    return;
+                }
+                companyFilter = $" AND CompanyID = {targetId}";
+                WriteLog($"Scoping all UPDATEs to CompanyID={targetId}");
+            }
+            else
+            {
+                WriteLog("Running against ALL companies (Phase 2 — production).");
+            }
+
+            // ─── Pre-flight count ─────────────────────────────────
+            int preCount = CountPiece(conn, companyFilter);
+            WriteLog($"Pre-flight: {preCount} PIECE references in scope.");
+            if (preCount == 0)
+            {
+                WriteLog("No PIECE references found. Already migrated or nothing to do. Exiting.");
+                return;
+            }
+
+            // ─── BEGIN TRANSACTION ─────────────────────────────────
+            using (var txn = conn.BeginTransaction())
+            {
+                try
+                {
+                    int total = 0;
+
+                    // Section 1: Core Item Configuration
+                    WriteLog("--- Section 1: Core Item Configuration ---");
+                    total += Exec(conn, txn, $"UPDATE InventoryItem SET BaseUnit = 'YDS' WHERE BaseUnit = 'PIECE'{companyFilter}", "InventoryItem.BaseUnit");
+                    total += Exec(conn, txn, $"UPDATE InventoryItem SET SalesUnit = 'YDS' WHERE SalesUnit = 'PIECE'{companyFilter}", "InventoryItem.SalesUnit");
+                    total += Exec(conn, txn, $"UPDATE INItemClass SET BaseUnit = 'YDS' WHERE BaseUnit = 'PIECE'{companyFilter}", "INItemClass.BaseUnit");
+                    total += Exec(conn, txn, $"UPDATE INItemClass SET SalesUnit = 'YDS' WHERE SalesUnit = 'PIECE'{companyFilter}", "INItemClass.SalesUnit");
+
+                    // Section 2: UOM Conversions
+                    WriteLog("--- Section 2: UOM Conversions ---");
+                    total += Exec(conn, txn, $"UPDATE INUnit SET FromUnit = 'YDS' WHERE FromUnit = 'PIECE'{companyFilter}", "INUnit.FromUnit");
+                    total += Exec(conn, txn, $"UPDATE INUnit SET ToUnit = 'YDS' WHERE ToUnit = 'PIECE'{companyFilter}", "INUnit.ToUnit");
+                    total += Safe(conn, txn, $"DELETE FROM INUnit WHERE FromUnit = 'YDS' AND ToUnit = 'YDS' AND UnitRate = 1{companyFilter}", "INUnit.SelfRef.Cleanup");
+
+                    // Section 3: Inventory Transactions
+                    WriteLog("--- Section 3: Inventory Transactions ---");
+                    total += Safe(conn, txn, $"UPDATE INTran SET UOM = 'YDS' WHERE UOM = 'PIECE'{companyFilter}", "INTran.UOM");
+                    total += Safe(conn, txn, $"UPDATE INTranSplit SET UOM = 'YDS' WHERE UOM = 'PIECE'{companyFilter}", "INTranSplit.UOM");
+
+                    // Section 4: Sales Orders & Shipments
+                    WriteLog("--- Section 4: Sales Orders & Shipments ---");
+                    total += Safe(conn, txn, $"UPDATE SOLine SET UOM = 'YDS' WHERE UOM = 'PIECE'{companyFilter}", "SOLine.UOM");
+                    total += Safe(conn, txn, $"UPDATE SOLineSplit SET UOM = 'YDS' WHERE UOM = 'PIECE'{companyFilter}", "SOLineSplit.UOM");
+                    total += Safe(conn, txn, $"UPDATE SOShipLine SET UOM = 'YDS' WHERE UOM = 'PIECE'{companyFilter}", "SOShipLine.UOM");
+                    total += Safe(conn, txn, $"UPDATE SOShipLineSplit SET UOM = 'YDS' WHERE UOM = 'PIECE'{companyFilter}", "SOShipLineSplit.UOM");
+                    total += Safe(conn, txn, $"UPDATE SOPackageDetailEx SET UOM = 'YDS' WHERE UOM = 'PIECE'{companyFilter}", "SOPackageDetailEx.UOM");
+
+                    // Section 5: Purchase Orders & Receipts
+                    WriteLog("--- Section 5: Purchase Orders & Receipts ---");
+                    total += Safe(conn, txn, $"UPDATE POLine SET UOM = 'YDS' WHERE UOM = 'PIECE'{companyFilter}", "POLine.UOM");
+                    total += Safe(conn, txn, $"UPDATE POLineSplit SET UOM = 'YDS' WHERE UOM = 'PIECE'{companyFilter}", "POLineSplit.UOM");
+                    total += Safe(conn, txn, $"UPDATE POReceiptLine SET UOM = 'YDS' WHERE UOM = 'PIECE'{companyFilter}", "POReceiptLine.UOM");
+                    total += Safe(conn, txn, $"UPDATE POReceiptLineSplit SET UOM = 'YDS' WHERE UOM = 'PIECE'{companyFilter}", "POReceiptLineSplit.UOM");
+
+                    // Section 6: AR / AP Transactions
+                    WriteLog("--- Section 6: AR / AP Transactions ---");
+                    total += Safe(conn, txn, $"UPDATE ARTran SET UOM = 'YDS' WHERE UOM = 'PIECE'{companyFilter}", "ARTran.UOM");
+                    total += Safe(conn, txn, $"UPDATE APTran SET UOM = 'YDS' WHERE UOM = 'PIECE'{companyFilter}", "APTran.UOM");
+
+                    // Section 7: Price Lists
+                    WriteLog("--- Section 7: Price Lists ---");
+                    total += Safe(conn, txn, $"UPDATE ARSalesPrice SET UOM = 'YDS' WHERE UOM = 'PIECE'{companyFilter}", "ARSalesPrice.UOM");
+                    total += Safe(conn, txn, $"UPDATE APVendorPrice SET UOM = 'YDS' WHERE UOM = 'PIECE'{companyFilter}", "APVendorPrice.UOM");
+
+                    // Section 8: Physical Inventory & Kits
+                    WriteLog("--- Section 8: Physical Inventory & Kits ---");
+                    total += Safe(conn, txn, $"UPDATE INPIDetail SET UOM = 'YDS' WHERE UOM = 'PIECE'{companyFilter}", "INPIDetail.UOM");
+                    total += Safe(conn, txn, $"UPDATE INKitSpecStkDet SET UOM = 'YDS' WHERE UOM = 'PIECE'{companyFilter}", "INKitSpecStkDet.UOM");
+                    total += Safe(conn, txn, $"UPDATE INKitSpecNonStkDet SET UOM = 'YDS' WHERE UOM = 'PIECE'{companyFilter}", "INKitSpecNonStkDet.UOM");
+
+                    // Section 9: Inventory Planning
+                    WriteLog("--- Section 9: Inventory Planning ---");
+                    total += Safe(conn, txn, $"UPDATE INItemPlan SET UOM = 'YDS' WHERE UOM = 'PIECE'{companyFilter}", "INItemPlan.UOM");
+                    total += Safe(conn, txn, $"UPDATE INItemCustSalesStats SET BaseUOM = 'YDS' WHERE BaseUOM = 'PIECE'{companyFilter}", "INItemCustSalesStats.BaseUOM");
+
+                    // Section 10: Lot/Serial Class Rename (PIECENBR → BLTNBR)
+                    WriteLog("--- Section 10: Lot/Serial Class Rename ---");
+                    total += Safe(conn, txn, $"UPDATE InventoryItem SET LotSerClassID = 'BLTNBR' WHERE LotSerClassID = 'PIECENBR'{companyFilter}", "InventoryItem.LotSerClassID");
+                    total += Safe(conn, txn, $"UPDATE INItemClass SET LotSerClassID = 'BLTNBR' WHERE LotSerClassID = 'PIECENBR'{companyFilter}", "INItemClass.LotSerClassID");
+                    total += Safe(conn, txn, $"UPDATE INLotSerClassSegment SET LotSerClassID = 'BLTNBR' WHERE LotSerClassID = 'PIECENBR'{companyFilter}", "INLotSerClassSegment.LotSerClassID");
+                    total += Safe(conn, txn, $"UPDATE INLotSerClass SET LotSerClassID = 'BLTNBR' WHERE LotSerClassID = 'PIECENBR'{companyFilter}", "INLotSerClass.LotSerClassID");
+
+                    // Section 11: Cleanup
+                    WriteLog("--- Section 11: Cleanup ---");
+                    Safe(conn, txn, $@"
+                        IF NOT EXISTS (SELECT TOP 1 1 FROM InventoryItem WHERE (BaseUnit = 'PIECE' OR SalesUnit = 'PIECE' OR PurchaseUnit = 'PIECE'){companyFilter})
+                        AND NOT EXISTS (SELECT TOP 1 1 FROM INUnit WHERE (FromUnit = 'PIECE' OR ToUnit = 'PIECE'){companyFilter})
+                            DELETE FROM CSUnit WHERE UnitID = 'PIECE'{companyFilter}", "CSUnit.PIECE.Cleanup");
+
+                    // ─── COMMIT ───────────────────────────────────
+                    txn.Commit();
+                    WriteLog($"=== COMMITTED. {total} total rows affected. ===");
+
+                    // Post-flight
+                    int postCount = CountPiece(conn, companyFilter);
+                    WriteLog($"Post-flight: {postCount} PIECE references remaining (should be 0).");
+                    if (postCount > 0)
+                        WriteLog("WARNING: Some PIECE references remain. Check publish log for SKIPPED tables.");
+                }
+                catch (Exception ex)
+                {
+                    WriteLog($"!!! ERROR: {ex.Message}");
+                    WriteLog("!!! ROLLING BACK. Database unchanged.");
+                    try { txn.Rollback(); } catch { }
+                    throw;
+                }
+            }
+        }
+    }
+
+    private int Exec(Microsoft.Data.SqlClient.SqlConnection c, Microsoft.Data.SqlClient.SqlTransaction t, string sql, string label)
+    {
+        using (var cmd = c.CreateCommand()) { cmd.Transaction = t; cmd.CommandText = sql; cmd.CommandTimeout = 300; int r = cmd.ExecuteNonQuery(); WriteLog($"  {label}: {r} rows"); return r; }
+    }
+
+    private int Safe(Microsoft.Data.SqlClient.SqlConnection c, Microsoft.Data.SqlClient.SqlTransaction t, string sql, string label)
+    {
+        try { return Exec(c, t, sql, label); }
+        catch (Microsoft.Data.SqlClient.SqlException ex) when (ex.Number == 207 || ex.Number == 208) { WriteLog($"  {label}: SKIPPED (table/column not found)"); return 0; }
+    }
+
+    private int CountPiece(Microsoft.Data.SqlClient.SqlConnection c, string filter)
+    {
+        try
+        {
+            using (var cmd = c.CreateCommand())
+            {
+                cmd.CommandText = $@"
+                    SELECT
+                        (SELECT COUNT(*) FROM InventoryItem WHERE (BaseUnit = 'PIECE' OR SalesUnit = 'PIECE'){filter}) +
+                        (SELECT COUNT(*) FROM INUnit WHERE (FromUnit = 'PIECE' OR ToUnit = 'PIECE'){filter}) +
+                        (SELECT COUNT(*) FROM INItemClass WHERE (BaseUnit = 'PIECE' OR SalesUnit = 'PIECE'){filter})";
+                cmd.CommandTimeout = 60;
+                return (int)cmd.ExecuteScalar();
+            }
+        }
+        catch { return -1; }
+    }
+}
+]]></CDATA>
+    </Graph>
+</Customization>

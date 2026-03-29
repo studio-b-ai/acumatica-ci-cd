@@ -1,0 +1,81 @@
+<Customization level="0" description="ROLLBACK: Reverse UOM rename YDS back to PIECE. Use only if migration causes issues." product-version="24.208">
+    <Graph ClassName="UomRollbackYdsToPiece" Source="#CDATA" IsNew="True" FileType="NewFile">
+        <CDATA name="Source"><![CDATA[using System;
+using Customization;
+
+public class UomRollbackYdsToPiece : CustomizationPlugin
+{
+    public override void UpdateDatabase()
+    {
+        WriteLog("=== UomRollbackYdsToPiece: ROLLING BACK YDS → PIECE ===");
+
+        var cs = System.Configuration.ConfigurationManager.ConnectionStrings["ProjectX"];
+        if (cs == null) { WriteLog("ERROR: No connection string."); return; }
+
+        string connStr = cs.ConnectionString + ";TrustServerCertificate=True";
+        using (var conn = new Microsoft.Data.SqlClient.SqlConnection(connStr))
+        {
+            conn.Open();
+            using (var txn = conn.BeginTransaction())
+            {
+                try
+                {
+                    int total = 0;
+
+                    // Reverse: Core items
+                    total += Exec(conn, txn, "UPDATE InventoryItem SET BaseUnit = 'PIECE' WHERE BaseUnit = 'YDS' AND PurchaseUnit = 'YDS'", "InventoryItem.BaseUnit");
+                    total += Exec(conn, txn, "UPDATE InventoryItem SET SalesUnit = 'PIECE' WHERE SalesUnit = 'YDS' AND PurchaseUnit = 'YDS'", "InventoryItem.SalesUnit");
+                    total += Exec(conn, txn, "UPDATE INItemClass SET BaseUnit = 'PIECE' WHERE BaseUnit = 'YDS' AND PurchaseUOM = 'YDS' AND ClassID != 'FERNCREST-MEDLINE'", "INItemClass.BaseUnit");
+                    total += Exec(conn, txn, "UPDATE INItemClass SET SalesUnit = 'PIECE' WHERE SalesUnit = 'YDS' AND PurchaseUOM = 'YDS' AND ClassID != 'FERNCREST-MEDLINE'", "INItemClass.SalesUnit");
+
+                    // Reverse: UOM conversions
+                    total += Safe(conn, txn, "UPDATE INUnit SET FromUnit = 'PIECE' WHERE FromUnit = 'YDS' AND ToUnit = 'YDS'", "INUnit.FromUnit");
+
+                    // Reverse: Transactions
+                    total += Safe(conn, txn, "UPDATE INTran SET UOM = 'PIECE' WHERE UOM = 'YDS'", "INTran.UOM");
+                    total += Safe(conn, txn, "UPDATE INTranSplit SET UOM = 'PIECE' WHERE UOM = 'YDS'", "INTranSplit.UOM");
+                    total += Safe(conn, txn, "UPDATE SOLine SET UOM = 'PIECE' WHERE UOM = 'YDS'", "SOLine.UOM");
+                    total += Safe(conn, txn, "UPDATE SOLineSplit SET UOM = 'PIECE' WHERE UOM = 'YDS'", "SOLineSplit.UOM");
+                    total += Safe(conn, txn, "UPDATE SOShipLine SET UOM = 'PIECE' WHERE UOM = 'YDS'", "SOShipLine.UOM");
+                    total += Safe(conn, txn, "UPDATE SOShipLineSplit SET UOM = 'PIECE' WHERE UOM = 'YDS'", "SOShipLineSplit.UOM");
+                    total += Safe(conn, txn, "UPDATE POLine SET UOM = 'PIECE' WHERE UOM = 'YDS'", "POLine.UOM");
+                    total += Safe(conn, txn, "UPDATE POReceiptLine SET UOM = 'PIECE' WHERE UOM = 'YDS'", "POReceiptLine.UOM");
+                    total += Safe(conn, txn, "UPDATE ARTran SET UOM = 'PIECE' WHERE UOM = 'YDS'", "ARTran.UOM");
+                    total += Safe(conn, txn, "UPDATE APTran SET UOM = 'PIECE' WHERE UOM = 'YDS'", "APTran.UOM");
+                    total += Safe(conn, txn, "UPDATE ARSalesPrice SET UOM = 'PIECE' WHERE UOM = 'YDS'", "ARSalesPrice.UOM");
+                    total += Safe(conn, txn, "UPDATE APVendorPrice SET UOM = 'PIECE' WHERE UOM = 'YDS'", "APVendorPrice.UOM");
+                    total += Safe(conn, txn, "UPDATE INPIDetail SET UOM = 'PIECE' WHERE UOM = 'YDS'", "INPIDetail.UOM");
+                    total += Safe(conn, txn, "UPDATE INItemPlan SET UOM = 'PIECE' WHERE UOM = 'YDS'", "INItemPlan.UOM");
+
+                    // Reverse: LotSerClass
+                    total += Safe(conn, txn, "UPDATE InventoryItem SET LotSerClassID = 'PIECENBR' WHERE LotSerClassID = 'BLTNBR'", "InventoryItem.LotSerClassID");
+                    total += Safe(conn, txn, "UPDATE INItemClass SET LotSerClassID = 'PIECENBR' WHERE LotSerClassID = 'BLTNBR'", "INItemClass.LotSerClassID");
+                    total += Safe(conn, txn, "UPDATE INLotSerClassSegment SET LotSerClassID = 'PIECENBR' WHERE LotSerClassID = 'BLTNBR'", "INLotSerClassSegment.LotSerClassID");
+                    total += Safe(conn, txn, "UPDATE INLotSerClass SET LotSerClassID = 'PIECENBR' WHERE LotSerClassID = 'BLTNBR'", "INLotSerClass.LotSerClassID");
+
+                    txn.Commit();
+                    WriteLog($"=== ROLLBACK COMMITTED. {total} rows reverted. ===");
+                }
+                catch (Exception ex)
+                {
+                    WriteLog($"!!! ROLLBACK FAILED: {ex.Message}");
+                    try { txn.Rollback(); } catch { }
+                    throw;
+                }
+            }
+        }
+    }
+
+    private int Exec(Microsoft.Data.SqlClient.SqlConnection c, Microsoft.Data.SqlClient.SqlTransaction t, string sql, string l)
+    {
+        using (var cmd = c.CreateCommand()) { cmd.Transaction = t; cmd.CommandText = sql; cmd.CommandTimeout = 300; int r = cmd.ExecuteNonQuery(); WriteLog($"  {l}: {r} rows"); return r; }
+    }
+
+    private int Safe(Microsoft.Data.SqlClient.SqlConnection c, Microsoft.Data.SqlClient.SqlTransaction t, string sql, string l)
+    {
+        try { return Exec(c, t, sql, l); } catch (Microsoft.Data.SqlClient.SqlException ex) when (ex.Number == 207 || ex.Number == 208) { WriteLog($"  {l}: SKIPPED"); return 0; }
+    }
+}
+]]></CDATA>
+    </Graph>
+</Customization>
