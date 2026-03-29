@@ -1,0 +1,71 @@
+<Customization level="0" description="Hotfix v3: restore YDS→IN INUnit conversion records for items sold by the inch" product-version="24.208">
+    <CustomizationPlugin ClassName="UomHotfixYdsToIn" IsNew="True">
+        <CDATA name="Source"><![CDATA[using System;
+using Customization;
+using PX.Data;
+
+public class UomHotfixYdsToIn : CustomizationPlugin
+{
+    public override void UpdateDatabase()
+    {
+        WriteLog("=== HOTFIX v3: Restoring YDS→IN conversion records ===");
+
+        // Step 1: Item-level YDS→IN (36 inches per yard)
+        // These existed as PIECE→IN before the UOM migration deleted all PIECE records.
+        // Items with SalesUnit='IN' are finished products spec'd and sold by the inch.
+        int ydsToIn = PXDatabase.Execute(@"
+            INSERT INTO INUnit (
+                CompanyID, UnitType, ItemClassID, InventoryID,
+                FromUnit, ToUnit, UnitRate, PriceAdjustmentMultiplier, UnitMultDiv,
+                CreatedByID, CreatedByScreenID, CreatedDateTime,
+                LastModifiedByID, LastModifiedByScreenID, LastModifiedDateTime
+            )
+            SELECT DISTINCT
+                i.CompanyID, 3, 0, i.InventoryID,
+                'YDS', 'IN', 36.0, 1.0, 'M',
+                CAST('00000000-0000-0000-0000-000000000000' AS UNIQUEIDENTIFIER), 'IN209000', GETUTCDATE(),
+                CAST('00000000-0000-0000-0000-000000000000' AS UNIQUEIDENTIFIER), 'IN209000', GETUTCDATE()
+            FROM InventoryItem i
+            WHERE i.SalesUnit = 'IN'
+            AND NOT EXISTS (
+                SELECT 1 FROM INUnit u
+                WHERE u.CompanyID = i.CompanyID
+                AND u.UnitType = 3
+                AND u.InventoryID = i.InventoryID
+                AND u.FromUnit = 'YDS'
+                AND u.ToUnit = 'IN'
+            )");
+
+        WriteLog($"YDS→IN item-level: {ydsToIn} rows");
+
+        // Step 2: Item-level IN→IN self-conversion
+        // Each UOM on an item needs a self-conversion record.
+        int inSelf = PXDatabase.Execute(@"
+            INSERT INTO INUnit (
+                CompanyID, UnitType, ItemClassID, InventoryID,
+                FromUnit, ToUnit, UnitRate, PriceAdjustmentMultiplier, UnitMultDiv,
+                CreatedByID, CreatedByScreenID, CreatedDateTime,
+                LastModifiedByID, LastModifiedByScreenID, LastModifiedDateTime
+            )
+            SELECT DISTINCT
+                i.CompanyID, 3, 0, i.InventoryID,
+                'IN', 'IN', 1.0, 1.0, 'M',
+                CAST('00000000-0000-0000-0000-000000000000' AS UNIQUEIDENTIFIER), 'IN209000', GETUTCDATE(),
+                CAST('00000000-0000-0000-0000-000000000000' AS UNIQUEIDENTIFIER), 'IN209000', GETUTCDATE()
+            FROM InventoryItem i
+            WHERE i.SalesUnit = 'IN'
+            AND NOT EXISTS (
+                SELECT 1 FROM INUnit u
+                WHERE u.CompanyID = i.CompanyID
+                AND u.UnitType = 3
+                AND u.InventoryID = i.InventoryID
+                AND u.FromUnit = 'IN'
+                AND u.ToUnit = 'IN'
+            )");
+
+        WriteLog($"IN→IN self-conv item-level: {inSelf} rows");
+        WriteLog($"=== COMMITTED. {ydsToIn + inSelf} total records restored. ===");
+    }
+}]]></CDATA>
+    </CustomizationPlugin>
+</Customization>
