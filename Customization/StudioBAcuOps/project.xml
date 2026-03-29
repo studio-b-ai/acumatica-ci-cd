@@ -257,11 +257,11 @@ namespace StudioB.AcuOps
                 string sql = @"
                     INSERT INTO GIWhere (CompanyID, DesignID, LineNbr, IsActive, OpenBrackets,
                         DataFieldName, Condition, IsExpression, Value1, CloseBrackets, Operation,
-                        CreatedByID, CreatedByScreenID, CreatedDateTime,
+                        NoteID, CreatedByID, CreatedByScreenID, CreatedDateTime,
                         LastModifiedByID, LastModifiedByScreenID, LastModifiedDateTime)
                     SELECT TOP 1 @CID, @ID, @LineNbr, 1, 0,
                         @DataFieldName, @Condition, 0, @Value1, 0, @Operation,
-                        CreatedByID, 'SM208000', GETUTCDATE(),
+                        NEWID(), CreatedByID, 'SM208000', GETUTCDATE(),
                         LastModifiedByID, 'SM208000', GETUTCDATE()
                     FROM GIWhere WHERE DesignID = @TID AND CompanyID = @CID";
                 using (var cmd = new SqlCommand(sql, conn))
@@ -284,10 +284,10 @@ namespace StudioB.AcuOps
         {
             string sql = @"
                 INSERT INTO GISort (CompanyID, DesignID, LineNbr, IsActive, DataFieldName, SortOrder,
-                    CreatedByID, CreatedByScreenID, CreatedDateTime,
+                    NoteID, CreatedByID, CreatedByScreenID, CreatedDateTime,
                     LastModifiedByID, LastModifiedByScreenID, LastModifiedDateTime)
                 SELECT TOP 1 @CID, @ID, 1, 1, 'AuditHistory.ChangeDate', 1,
-                    CreatedByID, 'SM208000', GETUTCDATE(),
+                    NEWID(), CreatedByID, 'SM208000', GETUTCDATE(),
                     LastModifiedByID, 'SM208000', GETUTCDATE()
                 FROM GISort WHERE DesignID = @TID AND CompanyID = @CID";
             using (var cmd = new SqlCommand(sql, conn))
@@ -314,11 +314,11 @@ namespace StudioB.AcuOps
                 string sql = @"
                     INSERT INTO GIFilter (CompanyID, DesignID, LineNbr, IsActive, Name, FieldName, DisplayName,
                         ColSpan, Required, DefaultValue, DataType, IsExpression,
-                        CreatedByID, CreatedByScreenID, CreatedDateTime,
+                        NoteID, CreatedByID, CreatedByScreenID, CreatedDateTime,
                         LastModifiedByID, LastModifiedByScreenID, LastModifiedDateTime)
                     SELECT TOP 1 @CID, @ID, @LineNbr, 1, @FieldName, @FieldName, @DisplayName,
                         1, 0, '', @DataType, 0,
-                        CreatedByID, 'SM208000', GETUTCDATE(),
+                        NEWID(), CreatedByID, 'SM208000', GETUTCDATE(),
                         LastModifiedByID, 'SM208000', GETUTCDATE()
                     FROM GIFilter WHERE DesignID = @TID AND CompanyID = @CID";
                 using (var cmd = new SqlCommand(sql, conn))
