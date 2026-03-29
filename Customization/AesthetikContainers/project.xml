@@ -1156,9 +1156,9 @@ namespace StudioB.Containers
                     // fields via Populate Fields. ASPX file delivery via <File>
                     // causes NullRef on import (confirmed PR #71, 2026-03-28).
                     // This SQL approach sets GraphType directly without ASPX.
+                    DiagnoseAccessRights(conn, "SB501000");
                     SetSiteMapGraphType(conn, "SB501000", "StudioB.Containers.ContainerMaint");
                     GrantScreenAccess(conn, "SB501000");
-                    DiagnoseAccessRights(conn, "SB501000");
                 }
 
                 WriteLog("[AesthetikContainers] All tables, columns, indexes, SiteMap, and access rights verified/created.");
