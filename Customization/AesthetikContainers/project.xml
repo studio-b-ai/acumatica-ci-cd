@@ -1157,9 +1157,10 @@ namespace StudioB.Containers
                     // causes NullRef on import (confirmed PR #71, 2026-03-28).
                     // This SQL approach sets GraphType directly without ASPX.
                     SetSiteMapGraphType(conn, "SB501000", "StudioB.Containers.ContainerMaint");
+                    GrantScreenAccess(conn, "SB501000");
                 }
 
-                WriteLog("[AesthetikContainers] All tables, columns, indexes, and SiteMap verified/created.");
+                WriteLog("[AesthetikContainers] All tables, columns, indexes, SiteMap, and access rights verified/created.");
             }
             catch (Exception ex)
             {
@@ -1171,19 +1172,43 @@ namespace StudioB.Containers
 
         private void SetSiteMapGraphType(SqlConnection conn, string screenID, string graphType)
         {
-            // Update GraphType on existing SiteMap entry (created via Customization Project Editor)
+            // UPSERT SiteMap entry: INSERT if missing, UPDATE GraphType if blank
             string sql = @"
-                IF EXISTS (SELECT 1 FROM SiteMap WHERE ScreenID = @ScreenID)
+                IF NOT EXISTS (SELECT 1 FROM SiteMap WHERE ScreenID = @ScreenID AND CompanyID = 0)
+                BEGIN
+                    INSERT INTO SiteMap (CompanyID, NodeID, ScreenID, Title, Url, Graphtype, Icon, Expanded, Accessrights)
+                    VALUES (0, NEWID(), @ScreenID, @Title, @Url, @GraphType, '', 0, 'F')
+                END
+                ELSE
                 BEGIN
                     UPDATE SiteMap SET Graphtype = @GraphType
-                    WHERE ScreenID = @ScreenID AND (Graphtype IS NULL OR Graphtype = '')
+                    WHERE ScreenID = @ScreenID AND CompanyID = 0 AND (Graphtype IS NULL OR Graphtype = '')
                 END";
             using (var cmd = new SqlCommand(sql, conn))
             {
                 cmd.Parameters.AddWithValue("@ScreenID", screenID);
                 cmd.Parameters.AddWithValue("@GraphType", graphType);
+                cmd.Parameters.AddWithValue("@Title", "Container Maintenance");
+                cmd.Parameters.AddWithValue("@Url", "~/Pages/SB/SB501000.aspx");
                 int rows = cmd.ExecuteNonQuery();
-                WriteLog(string.Format("  SiteMap {0} GraphType={1} — {2} row(s) updated", screenID, graphType, rows));
+                WriteLog(string.Format("  SiteMap {0} GraphType={1} — {2} row(s) affected", screenID, graphType, rows));
+            }
+        }
+
+        private void GrantScreenAccess(SqlConnection conn, string screenID)
+        {
+            // Grant full access to all roles that have Administrator-level access
+            // In Acumatica, access rights are stored per-node in SiteMap.
+            // Setting Accessrights = 'F' (Full) on the SiteMap row grants access to all.
+            // Alternatively, we set it to '' (empty) which means inherited = allowed.
+            string sql = @"
+                UPDATE SiteMap SET Accessrights = ''
+                WHERE ScreenID = @ScreenID AND CompanyID = 0";
+            using (var cmd = new SqlCommand(sql, conn))
+            {
+                cmd.Parameters.AddWithValue("@ScreenID", screenID);
+                int rows = cmd.ExecuteNonQuery();
+                WriteLog(string.Format("  GrantAccess {0} — {1} row(s) updated", screenID, rows));
             }
         }
 
