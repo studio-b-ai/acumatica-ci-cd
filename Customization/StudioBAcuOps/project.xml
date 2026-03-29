@@ -110,10 +110,10 @@ namespace StudioB.AcuOps
         private void InsertDesign(SqlConnection conn, Guid designId, int companyId)
         {
             string sql = @"
-                INSERT INTO GIDesign (CompanyID, DesignID, Name, ScreenID, FilterColCount, PageSize,
+                INSERT INTO GIDesign (CompanyID, DesignID, Name, FilterColCount, PageSize,
                     ExportTop, NewRecordCreationEnabled, MassDeleteEnabled, AutoConfirmDelete,
                     MassRecordsUpdateEnabled, MassActionsOnRecordsEnabled, ExposeViaOData, ExposeViaMobile)
-                VALUES (@CID, @ID, @Name, 'GI000000', 4, 200, 0, 0, 0, 0, 0, 0, 1, 0)";
+                VALUES (@CID, @ID, @Name, 4, 200, 0, 0, 0, 0, 0, 0, 1, 0)";
             using (var cmd = new SqlCommand(sql, conn))
             {
                 cmd.Parameters.AddWithValue("@CID", companyId);
