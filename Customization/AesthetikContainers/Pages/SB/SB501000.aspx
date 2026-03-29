@@ -35,7 +35,7 @@
                 <Template>
                     <px:PXGrid ID="gridEvents" runat="server" DataSourceID="ds" Width="100%" SkinID="Details">
                         <Levels>
-                            <px:PXGridLevel DataMember="ContainerEvents">
+                            <px:PXGridLevel DataMember="Events">
                                 <Columns>
                                     <px:PXGridColumn DataField="EventDateTime" Width="130" />
                                     <px:PXGridColumn DataField="NormalizedEventCode" Width="120" />
@@ -52,7 +52,7 @@
                 <Template>
                     <px:PXGrid ID="gridPOLinks" runat="server" DataSourceID="ds" Width="100%" SkinID="Details">
                         <Levels>
-                            <px:PXGridLevel DataMember="ContainerPOLinks">
+                            <px:PXGridLevel DataMember="POLinks">
                                 <Columns>
                                     <px:PXGridColumn DataField="OrderType" Width="70" />
                                     <px:PXGridColumn DataField="OrderNbr" Width="100" />
