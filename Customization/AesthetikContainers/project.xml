@@ -1135,15 +1135,55 @@ namespace StudioB.Containers
                     // SOShipment container fields
                     EnsureColumn(conn, "SOShipment", "UsrIncludeInContainer", "bit NULL DEFAULT 0");
                     EnsureColumn(conn, "SOShipment", "UsrContainerID", "int NULL");
+
+                    // ── InventoryItem tariff/customs fields ────────────────────
+                    EnsureColumn(conn, "InventoryItem", "UsrHTSCode", "nvarchar(30) NULL");
+                    EnsureColumn(conn, "InventoryItem", "UsrDutyRate", "decimal(25,4) NULL");
+                    EnsureColumn(conn, "InventoryItem", "UsrCountryOfOrigin", "nvarchar(2) NULL");
+                    EnsureColumn(conn, "InventoryItem", "UsrFiberContent", "nvarchar(100) NULL");
+                    EnsureColumn(conn, "InventoryItem", "UsrPreferentialTariff", "bit NULL");
+                    EnsureColumn(conn, "InventoryItem", "UsrFreightClass", "nvarchar(15) NULL");
+
+                    // ── POReceiptLine landed cost fields ───────────────────────
+                    EnsureColumn(conn, "POReceiptLine", "UsrActualDutyAmt", "decimal(25,4) NULL");
+                    EnsureColumn(conn, "POReceiptLine", "UsrActualFreightAmt", "decimal(25,4) NULL");
+                    EnsureColumn(conn, "POReceiptLine", "UsrBrokerageAmt", "decimal(25,4) NULL");
+                    EnsureColumn(conn, "POReceiptLine", "UsrHTSCode", "nvarchar(30) NULL");
+                    EnsureColumn(conn, "POReceiptLine", "UsrCountryOfOrigin", "nvarchar(2) NULL");
+
+                    // ── SiteMap GraphType for SB501000 ────────────────────────
+                    // Sets the GraphType so SM207060 can discover ContainerMaint
+                    // fields via Populate Fields. ASPX file delivery via <File>
+                    // causes NullRef on import (confirmed PR #71, 2026-03-28).
+                    // This SQL approach sets GraphType directly without ASPX.
+                    SetSiteMapGraphType(conn, "SB501000", "StudioB.Containers.ContainerMaint");
                 }
 
-                WriteLog("[AesthetikContainers] All tables, columns, and indexes verified/created.");
+                WriteLog("[AesthetikContainers] All tables, columns, indexes, and SiteMap verified/created.");
             }
             catch (Exception ex)
             {
                 WriteLog("[AesthetikContainers] ERROR: " + ex.GetType().FullName + ": " + ex.Message);
                 if (ex.InnerException != null)
                     WriteLog("[AesthetikContainers] Inner: " + ex.InnerException.Message);
+            }
+        }
+
+        private void SetSiteMapGraphType(SqlConnection conn, string screenID, string graphType)
+        {
+            // Update GraphType on existing SiteMap entry (created via Customization Project Editor)
+            string sql = @"
+                IF EXISTS (SELECT 1 FROM SiteMap WHERE ScreenID = @ScreenID)
+                BEGIN
+                    UPDATE SiteMap SET Graphtype = @GraphType
+                    WHERE ScreenID = @ScreenID AND (Graphtype IS NULL OR Graphtype = '')
+                END";
+            using (var cmd = new SqlCommand(sql, conn))
+            {
+                cmd.Parameters.AddWithValue("@ScreenID", screenID);
+                cmd.Parameters.AddWithValue("@GraphType", graphType);
+                int rows = cmd.ExecuteNonQuery();
+                WriteLog(string.Format("  SiteMap {0} GraphType={1} — {2} row(s) updated", screenID, graphType, rows));
             }
         }
 
