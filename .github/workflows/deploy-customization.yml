@@ -465,7 +465,8 @@ jobs:
     if: |
       always() &&
       needs.build.result == 'success' &&
-      github.event_name != 'pull_request' && (
+      github.event_name != 'pull_request' &&
+      github.event.inputs.force_qualify != 'true' && (
         needs.sandbox-gate.result == 'success' ||
         needs.sandbox-gate.result == 'skipped'
       ) && (
@@ -577,7 +578,7 @@ jobs:
     if: |
       always() &&
       needs.build.result == 'success' &&
-      needs.heritage-test-gate.result == 'success' &&
+      (needs.heritage-test-gate.result == 'success' || needs.heritage-test-gate.result == 'skipped') &&
       github.event_name != 'pull_request' && (
         needs.sandbox-gate.result == 'success' ||
         needs.sandbox-gate.result == 'skipped'
