@@ -1,0 +1,44 @@
+name: Configure REST Endpoint
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'Mode: schema-only, configure, or verify'
+        required: true
+        default: 'schema-only'
+        type: choice
+        options:
+          - schema-only
+          - configure
+          - verify
+
+jobs:
+  configure:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install requests
+
+      - name: Run endpoint configuration
+        env:
+          ACUMATICA_URL: ${{ secrets.ACUMATICA_PROD_URL }}
+          ACUMATICA_USERNAME: ${{ secrets.ACUMATICA_PROD_USERNAME }}
+          ACUMATICA_PASSWORD: ${{ secrets.ACUMATICA_PROD_PASSWORD }}
+          ACUMATICA_TENANT: ${{ secrets.ACUMATICA_PROD_TENANT }}
+        run: python scripts/configure-container-endpoint.py --${{ inputs.mode }}
+
+      - name: Upload schema artifact
+        if: inputs.mode == 'schema-only'
+        uses: actions/upload-artifact@v4
+        with:
+          name: sm207060-schema
+          path: /tmp/sm207060-schema.xml
+          retention-days: 7
