@@ -9,12 +9,11 @@ namespace StudioB.AcuOps
 {
     /// <summary>
     /// Creates the UserAuditTrail Generic Inquiry via direct SQL.
-    /// GI XML files are silently ignored for new GIs (fabricated GUIDs
-    /// don't match any existing GIDesign record). This plugin inserts
-    /// directly into GIDesign/GITable/GIResult/GIWhere/GISort/GIFilter tables.
+    /// All INSERT statements use INSERT...SELECT from a template GI row
+    /// to inherit NOT NULL column defaults that vary across Acumatica versions.
     ///
     /// Queried by: webhook-router daily-audit worker via REST API
-    ///   GET /entity/Default/24.200.001/UserAuditTrail?FromDate=...&ToDate=...
+    ///   GET /entity/Default/24.200.001/UserAuditTrail?FromDate=...&amp;ToDate=...
     /// </summary>
     public class UserAuditTrailGISetup : CustomizationPlugin
     {
@@ -32,11 +31,13 @@ namespace StudioB.AcuOps
                 {
                     conn.Open();
 
-                    // Detect CompanyID from current tenant
                     int companyId = GetCompanyId(conn);
                     WriteLog(string.Format("[StudioBAcuOps] CompanyID = {0}", companyId));
 
-                    // Check if GI already exists
+                    // Find a template GI to clone child rows from
+                    Guid templateId = GetTemplateDesignId(conn, companyId);
+                    WriteLog("[StudioBAcuOps] Template DesignID = " + templateId);
+
                     Guid? existingId = FindGI(conn, GI_NAME, companyId);
                     Guid designId;
 
@@ -53,11 +54,11 @@ namespace StudioB.AcuOps
                         InsertDesign(conn, designId, companyId);
                     }
 
-                    InsertTable(conn, designId, companyId);
-                    InsertResults(conn, designId, companyId);
-                    InsertWhereConditions(conn, designId, companyId);
-                    InsertSort(conn, designId, companyId);
-                    InsertFilters(conn, designId, companyId);
+                    InsertTable(conn, designId, companyId, templateId);
+                    InsertResults(conn, designId, companyId, templateId);
+                    InsertWhereConditions(conn, designId, companyId, templateId);
+                    InsertSort(conn, designId, companyId, templateId);
+                    InsertFilters(conn, designId, companyId, templateId);
 
                     WriteLog("[StudioBAcuOps] GI '" + GI_NAME + "' setup complete");
                 }
@@ -72,12 +73,27 @@ namespace StudioB.AcuOps
 
         private int GetCompanyId(SqlConnection conn)
         {
-            // Use the same pattern as Acumatica: read CompanyID from the current session context
-            // Fallback to 2 (Heritage Fabrics tenant) if session context unavailable
             using (var cmd = new SqlCommand("SELECT TOP 1 CompanyID FROM GIDesign WHERE Name = 'InventoryAllocationDetail'", conn))
             {
                 var result = cmd.ExecuteScalar();
                 return result != null && result != DBNull.Value ? Convert.ToInt32(result) : 2;
+            }
+        }
+
+        private Guid GetTemplateDesignId(SqlConnection conn, int companyId)
+        {
+            // Find a GI that has child rows in GITable — we clone structure from it
+            string sql = @"SELECT TOP 1 t.DesignID
+                FROM GITable t
+                INNER JOIN GIDesign d ON d.DesignID = t.DesignID AND d.CompanyID = t.CompanyID
+                WHERE t.CompanyID = @CID";
+            using (var cmd = new SqlCommand(sql, conn))
+            {
+                cmd.Parameters.AddWithValue("@CID", companyId);
+                var result = cmd.ExecuteScalar();
+                if (result == null || result == DBNull.Value)
+                    throw new Exception("No template GI found — cannot clone child row defaults");
+                return (Guid)result;
             }
         }
 
@@ -109,8 +125,6 @@ namespace StudioB.AcuOps
 
         private void InsertDesign(SqlConnection conn, Guid designId, int companyId)
         {
-            // Clone from an existing GI row to inherit all NOT NULL column defaults,
-            // then override the columns we care about.
             string sql = @"
                 INSERT INTO GIDesign (
                     CompanyID, DesignID, Name, FilterColCount, PageSize,
@@ -134,24 +148,27 @@ namespace StudioB.AcuOps
             }
         }
 
-        private void InsertTable(SqlConnection conn, Guid designId, int companyId)
+        private void InsertTable(SqlConnection conn, Guid designId, int companyId, Guid templateId)
         {
+            // Clone a template GITable row, override DesignID + our table info
             string sql = @"
-                INSERT INTO GITable (CompanyID, DesignID, Alias, Name)
-                VALUES (@CID, @ID, 'AuditHistory', 'PX.SM.AuditHistory')";
+                INSERT INTO GITable (CompanyID, DesignID, Alias, Name, [Type])
+                SELECT TOP 1 @CID, @ID, 'AuditHistory', 'PX.SM.AuditHistory', [Type]
+                FROM GITable WHERE DesignID = @TID AND CompanyID = @CID";
             using (var cmd = new SqlCommand(sql, conn))
             {
                 cmd.Parameters.AddWithValue("@CID", companyId);
                 cmd.Parameters.AddWithValue("@ID", designId);
+                cmd.Parameters.AddWithValue("@TID", templateId);
                 cmd.ExecuteNonQuery();
             }
+            WriteLog("  Inserted GITable row (AuditHistory)");
         }
 
-        private void InsertResults(SqlConnection conn, Guid designId, int companyId)
+        private void InsertResults(SqlConnection conn, Guid designId, int companyId, Guid templateId)
         {
             var columns = new object[][]
             {
-                // LineNbr, Field, Caption, Width, SortOrder, FastFilter
                 new object[] { 1, "ScreenID",       "Screen ID",       100, 2, 1 },
                 new object[] { 2, "Operation",       "Operation",        80, 3, 1 },
                 new object[] { 3, "ChangeDate",      "Change Date",     160, 1, 1 },
@@ -165,15 +182,18 @@ namespace StudioB.AcuOps
 
             foreach (var col in columns)
             {
+                // Clone template row, override our specific columns
                 string sql = @"
                     INSERT INTO GIResult (CompanyID, DesignID, LineNbr, SortOrder, IsActive, ObjectName, Field,
-                        SchemaField, Width, IsVisible, DefaultNav, QuickFilter, FastFilter, Caption)
-                    VALUES (@CID, @ID, @LineNbr, @SortOrder, 1, 'AuditHistory', @Field,
-                        NULL, @Width, 1, @DefaultNav, 0, @FastFilter, @Caption)";
+                        SchemaField, Width, IsVisible, DefaultNav, QuickFilter, FastFilter, Caption, [Style])
+                    SELECT TOP 1 @CID, @ID, @LineNbr, @SortOrder, 1, 'AuditHistory', @Field,
+                        NULL, @Width, 1, @DefaultNav, 0, @FastFilter, @Caption, [Style]
+                    FROM GIResult WHERE DesignID = @TID AND CompanyID = @CID";
                 using (var cmd = new SqlCommand(sql, conn))
                 {
                     cmd.Parameters.AddWithValue("@CID", companyId);
                     cmd.Parameters.AddWithValue("@ID", designId);
+                    cmd.Parameters.AddWithValue("@TID", templateId);
                     cmd.Parameters.AddWithValue("@LineNbr", col[0]);
                     cmd.Parameters.AddWithValue("@Field", col[1]);
                     cmd.Parameters.AddWithValue("@Caption", col[2]);
@@ -184,14 +204,13 @@ namespace StudioB.AcuOps
                     cmd.ExecuteNonQuery();
                 }
             }
+            WriteLog("  Inserted " + columns.Length + " GIResult rows");
         }
 
-        private void InsertWhereConditions(SqlConnection conn, Guid designId, int companyId)
+        private void InsertWhereConditions(SqlConnection conn, Guid designId, int companyId, Guid templateId)
         {
-            // WHERE: ScreenID = @ScreenFilter AND ChangeDate >= @FromDate AND ChangeDate <= @ToDate
             var conditions = new object[][]
             {
-                // LineNbr, DataFieldName, Condition, Value1, Operation
                 new object[] { 1, "AuditHistory.ScreenID",   "E ", "@ScreenFilter", "A" },
                 new object[] { 2, "AuditHistory.ChangeDate", "GE", "@FromDate",      "A" },
                 new object[] { 3, "AuditHistory.ChangeDate", "LE", "@ToDate",         "A" },
@@ -202,11 +221,14 @@ namespace StudioB.AcuOps
                 string sql = @"
                     INSERT INTO GIWhere (CompanyID, DesignID, LineNbr, IsActive, OpenBrackets,
                         DataFieldName, Condition, IsExpression, Value1, CloseBrackets, Operation)
-                    VALUES (@CID, @ID, @LineNbr, 1, 0, @DataFieldName, @Condition, 0, @Value1, 0, @Operation)";
+                    SELECT TOP 1 @CID, @ID, @LineNbr, 1, 0,
+                        @DataFieldName, @Condition, 0, @Value1, 0, @Operation
+                    FROM GIWhere WHERE DesignID = @TID AND CompanyID = @CID";
                 using (var cmd = new SqlCommand(sql, conn))
                 {
                     cmd.Parameters.AddWithValue("@CID", companyId);
                     cmd.Parameters.AddWithValue("@ID", designId);
+                    cmd.Parameters.AddWithValue("@TID", templateId);
                     cmd.Parameters.AddWithValue("@LineNbr", cond[0]);
                     cmd.Parameters.AddWithValue("@DataFieldName", cond[1]);
                     cmd.Parameters.AddWithValue("@Condition", cond[2]);
@@ -215,28 +237,31 @@ namespace StudioB.AcuOps
                     cmd.ExecuteNonQuery();
                 }
             }
+            WriteLog("  Inserted " + conditions.Length + " GIWhere rows");
         }
 
-        private void InsertSort(SqlConnection conn, Guid designId, int companyId)
+        private void InsertSort(SqlConnection conn, Guid designId, int companyId, Guid templateId)
         {
             string sql = @"
                 INSERT INTO GISort (CompanyID, DesignID, LineNbr, IsActive, DataFieldName, SortOrder)
-                VALUES (@CID, @ID, 1, 1, 'AuditHistory.ChangeDate', 1)"; // 1 = Descending
+                SELECT TOP 1 @CID, @ID, 1, 1, 'AuditHistory.ChangeDate', 1
+                FROM GISort WHERE DesignID = @TID AND CompanyID = @CID";
             using (var cmd = new SqlCommand(sql, conn))
             {
                 cmd.Parameters.AddWithValue("@CID", companyId);
                 cmd.Parameters.AddWithValue("@ID", designId);
+                cmd.Parameters.AddWithValue("@TID", templateId);
                 cmd.ExecuteNonQuery();
             }
+            WriteLog("  Inserted GISort row");
         }
 
-        private void InsertFilters(SqlConnection conn, Guid designId, int companyId)
+        private void InsertFilters(SqlConnection conn, Guid designId, int companyId, Guid templateId)
         {
             var filters = new object[][]
             {
-                // LineNbr, FieldName, DisplayName, DataType
-                new object[] { 1, "ScreenFilter", "Screen ID", 6 }, // 6 = string
-                new object[] { 2, "FromDate",     "From Date",  5 }, // 5 = datetime
+                new object[] { 1, "ScreenFilter", "Screen ID", 6 },
+                new object[] { 2, "FromDate",     "From Date",  5 },
                 new object[] { 3, "ToDate",       "To Date",    5 },
             };
 
@@ -245,11 +270,13 @@ namespace StudioB.AcuOps
                 string sql = @"
                     INSERT INTO GIFilter (CompanyID, DesignID, LineNbr, IsActive, FieldName, DisplayName,
                         ColSpan, Required, DefaultValue, DataType)
-                    VALUES (@CID, @ID, @LineNbr, 1, @FieldName, @DisplayName, 1, 0, '', @DataType)";
+                    SELECT TOP 1 @CID, @ID, @LineNbr, 1, @FieldName, @DisplayName, 1, 0, '', @DataType
+                    FROM GIFilter WHERE DesignID = @TID AND CompanyID = @CID";
                 using (var cmd = new SqlCommand(sql, conn))
                 {
                     cmd.Parameters.AddWithValue("@CID", companyId);
                     cmd.Parameters.AddWithValue("@ID", designId);
+                    cmd.Parameters.AddWithValue("@TID", templateId);
                     cmd.Parameters.AddWithValue("@LineNbr", filter[0]);
                     cmd.Parameters.AddWithValue("@FieldName", filter[1]);
                     cmd.Parameters.AddWithValue("@DisplayName", filter[2]);
@@ -257,6 +284,7 @@ namespace StudioB.AcuOps
                     cmd.ExecuteNonQuery();
                 }
             }
+            WriteLog("  Inserted " + filters.Length + " GIFilter rows");
         }
     }
 }]]></CDATA>
