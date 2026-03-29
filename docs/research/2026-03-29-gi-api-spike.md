@@ -59,7 +59,34 @@ with one data source (PX.Objects.IN.InventoryItem), captured all network traffic
 
 ## Spike 4: Callable Plugin Endpoint
 
-**Status:** PENDING — background research agent investigating.
+**Method:** Codebase-wide search for custom REST endpoint patterns, contract API mapping,
+and GI management graph references.
+
+**Findings:**
+
+1. **CustomizationPlugin cannot expose a REST endpoint.** `UpdateDatabase()` is a one-way
+   lifecycle hook invoked only during publish. It is not callable externally.
+
+2. **No custom REST handler patterns found** in the entire codebase. Searched for:
+   `ServiceGate`, `ICustomEndpoint`, `WebMethod`, `PXRestHandler`, `RestService`,
+   `[PXHidden]`, `ServiceRegistration` — all returned zero results.
+
+3. **PXGraph extensions are NOT REST-callable.** The codebase contains graph extensions
+   (e.g., `ARInvoiceEntry_PayLink_Extension`, `POOrderEntry_Extension`) but these are
+   UI-bound with `RowSelected` event handlers and `PXAction` definitions. They are not
+   exposed through the contract-based REST API (`/entity/...`).
+
+4. **No references to GenericInquiryDesignMaint or PXGenericInqGrph** found in the codebase.
+   These are internal Acumatica framework classes — not accessible from customization code.
+
+5. **Contract-based API is entity-specific.** The REST API uses `/entity/{endpoint}/{version}/{EntityName}`
+   patterns. Custom graph methods cannot be mapped to these patterns without Acumatica framework changes.
+
+**Conclusion — Spike 4:**
+- **Go/No-Go for callable plugin endpoint: NO-GO.**
+- A CustomizationPlugin is a deployment artifact, not a bidirectional endpoint.
+- AcuDev cannot trigger GI creation inside Acumatica's runtime on-demand without a publish cycle
+  (unless browser automation is used as a fallback).
 
 ---
 
