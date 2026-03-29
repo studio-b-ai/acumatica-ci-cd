@@ -109,17 +109,22 @@ namespace StudioB.AcuOps
 
         private void InsertDesign(SqlConnection conn, Guid designId, int companyId)
         {
-            // GIDesign requires audit columns (CreatedByID, LastModifiedByID, etc.)
-            // Use a known system GUID for CreatedByID (admin user placeholder)
+            // Clone from an existing GI row to inherit all NOT NULL column defaults,
+            // then override the columns we care about.
             string sql = @"
-                INSERT INTO GIDesign (CompanyID, DesignID, Name, FilterColCount, PageSize,
+                INSERT INTO GIDesign (
+                    CompanyID, DesignID, Name, FilterColCount, PageSize,
                     ExportTop, NewRecordCreationEnabled, MassDeleteEnabled, AutoConfirmDelete,
                     MassRecordsUpdateEnabled, MassActionsOnRecordsEnabled, ExposeViaOData, ExposeViaMobile,
-                    CreatedByID, CreatedByScreenID, CreatedDateTime,
+                    NoteID, CreatedByID, CreatedByScreenID, CreatedDateTime,
                     LastModifiedByID, LastModifiedByScreenID, LastModifiedDateTime)
-                VALUES (@CID, @ID, @Name, 4, 200, 0, 0, 0, 0, 0, 0, 1, 0,
-                    '00000000-0000-0000-0000-000000000001', 'SM208000', GETUTCDATE(),
-                    '00000000-0000-0000-0000-000000000001', 'SM208000', GETUTCDATE())";
+                SELECT TOP 1
+                    @CID, @ID, @Name, 4, 200,
+                    0, 0, 0, 0,
+                    0, 0, 1, 0,
+                    NEWID(), CreatedByID, 'SM208000', GETUTCDATE(),
+                    LastModifiedByID, 'SM208000', GETUTCDATE()
+                FROM GIDesign WHERE CompanyID = @CID";
             using (var cmd = new SqlCommand(sql, conn))
             {
                 cmd.Parameters.AddWithValue("@CID", companyId);
