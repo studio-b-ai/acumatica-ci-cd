@@ -353,6 +353,15 @@ def validate(path: str, strict: bool = False, no_semantic: bool = False):
     return len(errors) == 0
 
 
+GI_SQL_PATTERN = re.compile(
+    r"(?:INSERT\s+INTO|DELETE\s+FROM|UPDATE|DROP\s+TABLE|TRUNCATE\s+TABLE|ALTER\s+TABLE)"
+    r"\s+GI\w*",
+    re.IGNORECASE,
+)
+
+GI_SQL_REVIEW_MARKER = "-- REVIEWED: gi-sql-safe"
+
+
 def validate_gi_sql(class_name: str, code: str):
     """Block direct SQL statements targeting GI (Generic Inquiry) tables.
 
@@ -366,18 +375,10 @@ def validate_gi_sql(class_name: str, code: str):
     If the SQL is intentional and has been reviewed, add the comment:
         -- REVIEWED: gi-sql-safe
     """
-    # If the code contains the explicit review marker, skip the check
-    if "-- REVIEWED: gi-sql-safe" in code:
+    if GI_SQL_REVIEW_MARKER in code:
         return
 
-    # Detect destructive SQL targeting GI tables (case-insensitive, flexible whitespace)
-    gi_sql_pattern = re.compile(
-        r"(?:INSERT\s+INTO|DELETE\s+FROM|UPDATE|DROP\s+TABLE|TRUNCATE\s+TABLE|ALTER\s+TABLE)"
-        r"\s+GI\w*",
-        re.IGNORECASE,
-    )
-
-    match = gi_sql_pattern.search(code)
+    match = GI_SQL_PATTERN.search(code)
     if match:
         error(
             f"{class_name}: Direct SQL against GI table detected: \"{match.group()}\"\n"
