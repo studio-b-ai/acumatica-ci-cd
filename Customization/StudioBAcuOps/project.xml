@@ -1,0 +1,254 @@
+<Customization level="1" description="Studio B AcuOps — platform-level tooling: audit trail GI, monitoring GIs, ops infrastructure" product-version="24.208">
+    <Graph ClassName="UserAuditTrailGISetup" Source="#CDATA" IsNew="True" FileType="NewFile">
+        <CDATA name="Source"><![CDATA[using System;
+using System.Configuration;
+using System.Data.SqlClient;
+using Customization;
+
+namespace StudioB.AcuOps
+{
+    /// <summary>
+    /// Creates the UserAuditTrail Generic Inquiry via direct SQL.
+    /// GI XML files are silently ignored for new GIs (fabricated GUIDs
+    /// don't match any existing GIDesign record). This plugin inserts
+    /// directly into GIDesign/GITable/GIResult/GIWhere/GISort/GIFilter tables.
+    ///
+    /// Queried by: webhook-router daily-audit worker via REST API
+    ///   GET /entity/Default/24.200.001/UserAuditTrail?FromDate=...&ToDate=...
+    /// </summary>
+    public class UserAuditTrailGISetup : CustomizationPlugin
+    {
+        private const string GI_NAME = "UserAuditTrail";
+
+        public override void UpdateDatabase()
+        {
+            try
+            {
+                var cs = ConfigurationManager.ConnectionStrings["ProjectX"];
+                if (cs == null) { WriteLog("[StudioBAcuOps] No connection string — skipping"); return; }
+                string connStr = cs.ConnectionString + ";TrustServerCertificate=True";
+
+                using (var conn = new SqlConnection(connStr))
+                {
+                    conn.Open();
+
+                    // Detect CompanyID from current tenant
+                    int companyId = GetCompanyId(conn);
+                    WriteLog(string.Format("[StudioBAcuOps] CompanyID = {0}", companyId));
+
+                    // Check if GI already exists
+                    Guid? existingId = FindGI(conn, GI_NAME, companyId);
+                    Guid designId;
+
+                    if (existingId.HasValue)
+                    {
+                        designId = existingId.Value;
+                        WriteLog("[StudioBAcuOps] GI '" + GI_NAME + "' exists (DesignID=" + designId + ") — rebuilding child rows");
+                        ClearChildren(conn, designId, companyId);
+                    }
+                    else
+                    {
+                        designId = Guid.NewGuid();
+                        WriteLog("[StudioBAcuOps] Creating GI '" + GI_NAME + "' (DesignID=" + designId + ")");
+                        InsertDesign(conn, designId, companyId);
+                    }
+
+                    InsertTable(conn, designId, companyId);
+                    InsertResults(conn, designId, companyId);
+                    InsertWhereConditions(conn, designId, companyId);
+                    InsertSort(conn, designId, companyId);
+                    InsertFilters(conn, designId, companyId);
+
+                    WriteLog("[StudioBAcuOps] GI '" + GI_NAME + "' setup complete");
+                }
+            }
+            catch (Exception ex)
+            {
+                WriteLog("[StudioBAcuOps] ERROR: " + ex.GetType().FullName + ": " + ex.Message);
+                if (ex.InnerException != null)
+                    WriteLog("[StudioBAcuOps] Inner: " + ex.InnerException.Message);
+            }
+        }
+
+        private int GetCompanyId(SqlConnection conn)
+        {
+            // Use the same pattern as Acumatica: read CompanyID from the current session context
+            // Fallback to 2 (Heritage Fabrics tenant) if session context unavailable
+            using (var cmd = new SqlCommand("SELECT TOP 1 CompanyID FROM GIDesign WHERE Name = 'InventoryAllocationDetail'", conn))
+            {
+                var result = cmd.ExecuteScalar();
+                return result != null && result != DBNull.Value ? Convert.ToInt32(result) : 2;
+            }
+        }
+
+        private Guid? FindGI(SqlConnection conn, string name, int companyId)
+        {
+            using (var cmd = new SqlCommand("SELECT DesignID FROM GIDesign WHERE Name = @Name AND CompanyID = @CID", conn))
+            {
+                cmd.Parameters.AddWithValue("@Name", name);
+                cmd.Parameters.AddWithValue("@CID", companyId);
+                var result = cmd.ExecuteScalar();
+                return result != null && result != DBNull.Value ? (Guid?)result : null;
+            }
+        }
+
+        private void ClearChildren(SqlConnection conn, Guid designId, int companyId)
+        {
+            string[] tables = { "GITable", "GIResult", "GIWhere", "GISort", "GIFilter", "GIRelation", "GIOn", "GIGroupBy" };
+            foreach (var table in tables)
+            {
+                using (var cmd = new SqlCommand(string.Format("DELETE FROM {0} WHERE DesignID = @ID AND CompanyID = @CID", table), conn))
+                {
+                    cmd.Parameters.AddWithValue("@ID", designId);
+                    cmd.Parameters.AddWithValue("@CID", companyId);
+                    int rows = cmd.ExecuteNonQuery();
+                    if (rows > 0) WriteLog("  Cleared " + rows + " rows from " + table);
+                }
+            }
+        }
+
+        private void InsertDesign(SqlConnection conn, Guid designId, int companyId)
+        {
+            string sql = @"
+                INSERT INTO GIDesign (CompanyID, DesignID, Name, ScreenID, FilterColCount, PageSize,
+                    ExportTop, NewRecordCreationEnabled, MassDeleteEnabled, AutoConfirmDelete,
+                    MassRecordsUpdateEnabled, MassActionsOnRecordsEnabled, ExposeViaOData, ExposeViaMobile)
+                VALUES (@CID, @ID, @Name, 'GI000000', 4, 200, 0, 0, 0, 0, 0, 0, 1, 0)";
+            using (var cmd = new SqlCommand(sql, conn))
+            {
+                cmd.Parameters.AddWithValue("@CID", companyId);
+                cmd.Parameters.AddWithValue("@ID", designId);
+                cmd.Parameters.AddWithValue("@Name", GI_NAME);
+                cmd.ExecuteNonQuery();
+            }
+        }
+
+        private void InsertTable(SqlConnection conn, Guid designId, int companyId)
+        {
+            string sql = @"
+                INSERT INTO GITable (CompanyID, DesignID, Alias, Name)
+                VALUES (@CID, @ID, 'AuditHistory', 'PX.SM.AuditHistory')";
+            using (var cmd = new SqlCommand(sql, conn))
+            {
+                cmd.Parameters.AddWithValue("@CID", companyId);
+                cmd.Parameters.AddWithValue("@ID", designId);
+                cmd.ExecuteNonQuery();
+            }
+        }
+
+        private void InsertResults(SqlConnection conn, Guid designId, int companyId)
+        {
+            var columns = new object[][]
+            {
+                // LineNbr, Field, Caption, Width, SortOrder, FastFilter
+                new object[] { 1, "ScreenID",       "Screen ID",       100, 2, 1 },
+                new object[] { 2, "Operation",       "Operation",        80, 3, 1 },
+                new object[] { 3, "ChangeDate",      "Change Date",     160, 1, 1 },
+                new object[] { 4, "TableName",       "Table Name",      140, 4, 1 },
+                new object[] { 5, "BatchID",         "Batch ID",         80, 5, 0 },
+                new object[] { 6, "ChangeID",        "Change ID",        80, 6, 0 },
+                new object[] { 7, "CombinedKey",     "Record Keys",     200, 7, 0 },
+                new object[] { 8, "ModifiedFields",  "Modified Fields",  300, 8, 0 },
+                new object[] { 9, "UserID",          "User",            140, 0, 1 },
+            };
+
+            foreach (var col in columns)
+            {
+                string sql = @"
+                    INSERT INTO GIResult (CompanyID, DesignID, LineNbr, SortOrder, IsActive, ObjectName, Field,
+                        SchemaField, Width, IsVisible, DefaultNav, QuickFilter, FastFilter, Caption)
+                    VALUES (@CID, @ID, @LineNbr, @SortOrder, 1, 'AuditHistory', @Field,
+                        NULL, @Width, 1, @DefaultNav, 0, @FastFilter, @Caption)";
+                using (var cmd = new SqlCommand(sql, conn))
+                {
+                    cmd.Parameters.AddWithValue("@CID", companyId);
+                    cmd.Parameters.AddWithValue("@ID", designId);
+                    cmd.Parameters.AddWithValue("@LineNbr", col[0]);
+                    cmd.Parameters.AddWithValue("@Field", col[1]);
+                    cmd.Parameters.AddWithValue("@Caption", col[2]);
+                    cmd.Parameters.AddWithValue("@Width", col[3]);
+                    cmd.Parameters.AddWithValue("@SortOrder", col[4]);
+                    cmd.Parameters.AddWithValue("@DefaultNav", (int)col[0] == 1 ? 1 : 0);
+                    cmd.Parameters.AddWithValue("@FastFilter", col[5]);
+                    cmd.ExecuteNonQuery();
+                }
+            }
+        }
+
+        private void InsertWhereConditions(SqlConnection conn, Guid designId, int companyId)
+        {
+            // WHERE: ScreenID = @ScreenFilter AND ChangeDate >= @FromDate AND ChangeDate <= @ToDate
+            var conditions = new object[][]
+            {
+                // LineNbr, DataFieldName, Condition, Value1, Operation
+                new object[] { 1, "AuditHistory.ScreenID",   "E ", "@ScreenFilter", "A" },
+                new object[] { 2, "AuditHistory.ChangeDate", "GE", "@FromDate",      "A" },
+                new object[] { 3, "AuditHistory.ChangeDate", "LE", "@ToDate",         "A" },
+            };
+
+            foreach (var cond in conditions)
+            {
+                string sql = @"
+                    INSERT INTO GIWhere (CompanyID, DesignID, LineNbr, IsActive, OpenBrackets,
+                        DataFieldName, Condition, IsExpression, Value1, CloseBrackets, Operation)
+                    VALUES (@CID, @ID, @LineNbr, 1, 0, @DataFieldName, @Condition, 0, @Value1, 0, @Operation)";
+                using (var cmd = new SqlCommand(sql, conn))
+                {
+                    cmd.Parameters.AddWithValue("@CID", companyId);
+                    cmd.Parameters.AddWithValue("@ID", designId);
+                    cmd.Parameters.AddWithValue("@LineNbr", cond[0]);
+                    cmd.Parameters.AddWithValue("@DataFieldName", cond[1]);
+                    cmd.Parameters.AddWithValue("@Condition", cond[2]);
+                    cmd.Parameters.AddWithValue("@Value1", cond[3]);
+                    cmd.Parameters.AddWithValue("@Operation", cond[4]);
+                    cmd.ExecuteNonQuery();
+                }
+            }
+        }
+
+        private void InsertSort(SqlConnection conn, Guid designId, int companyId)
+        {
+            string sql = @"
+                INSERT INTO GISort (CompanyID, DesignID, LineNbr, IsActive, DataFieldName, SortOrder)
+                VALUES (@CID, @ID, 1, 1, 'AuditHistory.ChangeDate', 1)"; // 1 = Descending
+            using (var cmd = new SqlCommand(sql, conn))
+            {
+                cmd.Parameters.AddWithValue("@CID", companyId);
+                cmd.Parameters.AddWithValue("@ID", designId);
+                cmd.ExecuteNonQuery();
+            }
+        }
+
+        private void InsertFilters(SqlConnection conn, Guid designId, int companyId)
+        {
+            var filters = new object[][]
+            {
+                // LineNbr, FieldName, DisplayName, DataType
+                new object[] { 1, "ScreenFilter", "Screen ID", 6 }, // 6 = string
+                new object[] { 2, "FromDate",     "From Date",  5 }, // 5 = datetime
+                new object[] { 3, "ToDate",       "To Date",    5 },
+            };
+
+            foreach (var filter in filters)
+            {
+                string sql = @"
+                    INSERT INTO GIFilter (CompanyID, DesignID, LineNbr, IsActive, FieldName, DisplayName,
+                        ColSpan, Required, DefaultValue, DataType)
+                    VALUES (@CID, @ID, @LineNbr, 1, @FieldName, @DisplayName, 1, 0, '', @DataType)";
+                using (var cmd = new SqlCommand(sql, conn))
+                {
+                    cmd.Parameters.AddWithValue("@CID", companyId);
+                    cmd.Parameters.AddWithValue("@ID", designId);
+                    cmd.Parameters.AddWithValue("@LineNbr", filter[0]);
+                    cmd.Parameters.AddWithValue("@FieldName", filter[1]);
+                    cmd.Parameters.AddWithValue("@DisplayName", filter[2]);
+                    cmd.Parameters.AddWithValue("@DataType", filter[3]);
+                    cmd.ExecuteNonQuery();
+                }
+            }
+        }
+    }
+}]]></CDATA>
+    </Graph>
+
+</Customization>
