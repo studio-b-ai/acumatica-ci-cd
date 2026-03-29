@@ -530,6 +530,55 @@ def validate_csharp(class_name: str, code: str, strict: bool):
                 f"(e.g., 'usr{bql_class[3:]}')"
             )
 
+    # CRITICAL: Detect Base.Transactions.Insert/Update inside RowUpdated/RowInserted handlers
+    # This desyncs SOOrder.openLineCntr and other PXDBCount aggregates.
+    # Caused "data corruption state detected" production incident 2026-03-28.
+    # Safe alternative: use Persist() override for batch child row manipulation.
+    code_no_comments = re.sub(r"///.*$", "", code, flags=re.MULTILINE)
+    code_no_comments = re.sub(r"//.*$", "", code_no_comments, flags=re.MULTILINE)
+    code_no_comments = re.sub(r"/\*.*?\*/", "", code_no_comments, flags=re.DOTALL)
+
+    # Find RowUpdated/RowInserted handler bodies
+    for event_match in re.finditer(
+        r"(Events\.Row(?:Updated|Inserted)<(\w+)>.*?\{)",
+        code_no_comments,
+        re.DOTALL,
+    ):
+        event_type = "RowUpdated" if "Updated" in event_match.group(1) else "RowInserted"
+        dac_name = event_match.group(2)
+        # Extract the handler body (rough — find matching braces)
+        start = event_match.end()
+        brace_count = 1
+        handler_body = ""
+        for i, ch in enumerate(code_no_comments[start:], start):
+            if ch == "{":
+                brace_count += 1
+            elif ch == "}":
+                brace_count -= 1
+                if brace_count == 0:
+                    handler_body = code_no_comments[start:i]
+                    break
+
+        if not handler_body:
+            continue
+
+        # Check for dangerous patterns inside the handler
+        if "Base.Transactions.Insert" in handler_body or "Transactions.Insert(new" in handler_body:
+            error(
+                f"{class_name}: Base.Transactions.Insert() inside {event_type}<{dac_name}> handler.\n"
+                f"         Inserting child rows inside row events desyncs PXDBCount aggregates\n"
+                f"         (openLineCntr, lineCntr). Caused 'data corruption state detected' 2026-03-28.\n"
+                f"         Fix: Move row insertion to Persist() override or PXAction."
+            )
+
+        if re.search(r"Base\.Transactions\.(?:Cache\.)?Update\(", handler_body):
+            warn(
+                f"{class_name}: Base.Transactions.Update() inside {event_type}<{dac_name}> handler.\n"
+                f"         Calling Update on the view inside a row event causes re-entrant event loops\n"
+                f"         and can desync aggregate counters. Use e.Cache.SetValue() instead,\n"
+                f"         or move logic to Persist() override."
+            )
+
     if strict:
         # Check for PXUIField on all PXDBx fields
         pxdb_fields = re.findall(r"\[PXDB\w+[^\]]*\]\s*\n\s*(?!\[PXUIField)", code)
