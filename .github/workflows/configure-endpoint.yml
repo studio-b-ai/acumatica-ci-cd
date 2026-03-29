@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: 'Mode: schema-only, configure, or verify'
+        description: 'Mode: schema-only, configure, verify, or grant-access'
         required: true
         default: 'schema-only'
         type: choice
@@ -12,6 +12,7 @@ on:
           - schema-only
           - configure
           - verify
+          - grant-access
 
 jobs:
   configure:
@@ -36,9 +37,10 @@ jobs:
         run: python scripts/configure-container-endpoint.py --${{ inputs.mode }}
 
       - name: Upload schema artifact
-        if: inputs.mode == 'schema-only'
+        if: inputs.mode == 'schema-only' || inputs.mode == 'grant-access'
         uses: actions/upload-artifact@v4
         with:
-          name: sm207060-schema
-          path: /tmp/sm207060-schema.xml
+          name: sm-schema
+          path: /tmp/sm*.xml
           retention-days: 7
+          if-no-files-found: ignore
