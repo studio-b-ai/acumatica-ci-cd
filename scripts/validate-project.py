@@ -249,6 +249,9 @@ def validate(path: str, strict: bool = False, no_semantic: bool = False):
                 # CRITICAL: CustomizationPlugin ban (caused 3 production outages)
                 validate_customization_plugin_ban(class_name, code)
 
+                # CRITICAL: Destructive GI SQL detection (AAR 2026-03-29)
+                validate_gi_sql(class_name, code)
+
                 # CRITICAL: [PXDB*] fields must have matching SQL
                 validate_pxdb_has_sql(class_name, code, all_sql_text)
 
@@ -274,6 +277,9 @@ def validate(path: str, strict: bool = False, no_semantic: bool = False):
 
                     # CRITICAL: CustomizationPlugin ban
                     validate_customization_plugin_ban(class_name, code)
+
+                    # CRITICAL: Destructive GI SQL detection (AAR 2026-03-29)
+                    validate_gi_sql(class_name, code)
 
                     # CRITICAL: [PXDB*] fields must have matching SQL
                     validate_pxdb_has_sql(class_name, code, all_sql_text)
@@ -345,6 +351,42 @@ def validate(path: str, strict: bool = False, no_semantic: bool = False):
         warnings.extend(sem_warnings)
 
     return len(errors) == 0
+
+
+def validate_gi_sql(class_name: str, code: str):
+    """Block direct SQL statements targeting GI (Generic Inquiry) tables.
+
+    INSERT, DELETE, UPDATE, DROP, TRUNCATE, and ALTER against GI* tables
+    are extremely dangerous — they bypass Acumatica's GI engine and can
+    corrupt the GI metadata, bricking screens that depend on Generic Inquiries.
+
+    On 2026-03-29 a CustomizationPlugin that ran INSERT INTO GIDesign/GIFilter/etc.
+    took production down for 45 minutes. This check prevents that at build time.
+
+    If the SQL is intentional and has been reviewed, add the comment:
+        -- REVIEWED: gi-sql-safe
+    """
+    # If the code contains the explicit review marker, skip the check
+    if "-- REVIEWED: gi-sql-safe" in code:
+        return
+
+    # Detect destructive SQL targeting GI tables (case-insensitive, flexible whitespace)
+    gi_sql_pattern = re.compile(
+        r"(?:INSERT\s+INTO|DELETE\s+FROM|UPDATE|DROP\s+TABLE|TRUNCATE\s+TABLE|ALTER\s+TABLE)"
+        r"\s+GI\w*",
+        re.IGNORECASE,
+    )
+
+    match = gi_sql_pattern.search(code)
+    if match:
+        error(
+            f"{class_name}: Direct SQL against GI table detected: \"{match.group()}\"\n"
+            f"         Direct SQL against GI* tables (GIDesign, GIFilter, GIWhere, GISort, etc.)\n"
+            f"         corrupts Generic Inquiry metadata and can brick the instance.\n"
+            f"         Root cause of 2026-03-29 production outage (45 min down).\n"
+            f"         Fix: Use the GI screen (SM208000) or Acumatica GI API instead.\n"
+            f"         If reviewed and intentional, add: -- REVIEWED: gi-sql-safe"
+        )
 
 
 def validate_customization_plugin_ban(class_name: str, code: str):
