@@ -1,0 +1,71 @@
+<Customization level="0" description="Hotfix v3: restore YDS→IN INUnit conversion records for FERNCREST-MEDLINE items (UnitRate=1, matches pre-migration behavior)" product-version="24.208">
+    <CustomizationPlugin ClassName="UomHotfixYdsToIn" IsNew="True">
+        <CDATA name="Source"><![CDATA[using System;
+using Customization;
+using PX.Data;
+
+public class UomHotfixYdsToIn : CustomizationPlugin
+{
+    public override void UpdateDatabase()
+    {
+        WriteLog("=== HOTFIX v3: Restoring YDS→IN conversion records (FERNCREST-MEDLINE) ===");
+
+        // Item-level YDS→IN with UnitRate=1.
+        // These existed as PIECE→IN before the UOM migration deleted all PIECE records.
+        // UnitRate=1 restores pre-migration behavior (consultants had PIECE=YDS=IN at 1:1).
+        // Physical correction (UnitRate=36) deferred to a deliberate FERNCREST-MEDLINE pricing project.
+        int ydsToIn = PXDatabase.Execute(@"
+            INSERT INTO INUnit (
+                CompanyID, UnitType, ItemClassID, InventoryID,
+                FromUnit, ToUnit, UnitRate, PriceAdjustmentMultiplier, UnitMultDiv,
+                CreatedByID, CreatedByScreenID, CreatedDateTime,
+                LastModifiedByID, LastModifiedByScreenID, LastModifiedDateTime
+            )
+            SELECT DISTINCT
+                i.CompanyID, 3, 0, i.InventoryID,
+                'YDS', 'IN', 1.0, 1.0, 'M',
+                CAST('00000000-0000-0000-0000-000000000000' AS UNIQUEIDENTIFIER), 'IN209000', GETUTCDATE(),
+                CAST('00000000-0000-0000-0000-000000000000' AS UNIQUEIDENTIFIER), 'IN209000', GETUTCDATE()
+            FROM InventoryItem i
+            WHERE i.SalesUnit = 'IN'
+            AND NOT EXISTS (
+                SELECT 1 FROM INUnit u
+                WHERE u.CompanyID = i.CompanyID
+                AND u.UnitType = 3
+                AND u.InventoryID = i.InventoryID
+                AND u.FromUnit = 'YDS'
+                AND u.ToUnit = 'IN'
+            )");
+
+        WriteLog($"YDS→IN item-level: {ydsToIn} rows");
+
+        // IN→IN self-conversion — required for each UOM that appears on an item.
+        int inSelf = PXDatabase.Execute(@"
+            INSERT INTO INUnit (
+                CompanyID, UnitType, ItemClassID, InventoryID,
+                FromUnit, ToUnit, UnitRate, PriceAdjustmentMultiplier, UnitMultDiv,
+                CreatedByID, CreatedByScreenID, CreatedDateTime,
+                LastModifiedByID, LastModifiedByScreenID, LastModifiedDateTime
+            )
+            SELECT DISTINCT
+                i.CompanyID, 3, 0, i.InventoryID,
+                'IN', 'IN', 1.0, 1.0, 'M',
+                CAST('00000000-0000-0000-0000-000000000000' AS UNIQUEIDENTIFIER), 'IN209000', GETUTCDATE(),
+                CAST('00000000-0000-0000-0000-000000000000' AS UNIQUEIDENTIFIER), 'IN209000', GETUTCDATE()
+            FROM InventoryItem i
+            WHERE i.SalesUnit = 'IN'
+            AND NOT EXISTS (
+                SELECT 1 FROM INUnit u
+                WHERE u.CompanyID = i.CompanyID
+                AND u.UnitType = 3
+                AND u.InventoryID = i.InventoryID
+                AND u.FromUnit = 'IN'
+                AND u.ToUnit = 'IN'
+            )");
+
+        WriteLog($"IN→IN self-conv item-level: {inSelf} rows");
+        WriteLog($"=== COMMITTED. {ydsToIn + inSelf} total records restored. ===");
+    }
+}]]></CDATA>
+    </CustomizationPlugin>
+</Customization>
