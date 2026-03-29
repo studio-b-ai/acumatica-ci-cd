@@ -31,3 +31,4 @@ venv/
 # Secrets (never commit)
 .env
 *.env.local
+!hotfix-packages/*.zip
