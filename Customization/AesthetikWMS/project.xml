@@ -3441,37 +3441,53 @@ namespace HeritageFabrics.SO
                     continue;
                 }
 
-                // Sort bolts FIFO, then largest
-                var sorted = SortBolts(bolts);
-
-                // Allocate bolts up to overship cap
+                // Strategy: prefer single bolt that covers the full request
+                // 1. Tightest fit >= requestedQty within overship cap, then FIFO
+                // 2. Fall back to multi-bolt FIFO if no single bolt works
                 decimal totalAllocated = 0m;
                 var assignedBolts = new List<BoltCandidate>();
 
-                foreach (var bolt in sorted)
+                // Try single bolt first: >= requestedQty, <= maxQty, tightest fit, then FIFO
+                var singleBolt = bolts
+                    .Where(b => b.QtyOnHand >= requestedQty && b.QtyOnHand <= maxQty)
+                    .OrderBy(b => b.QtyOnHand)                       // tightest fit first
+                    .ThenBy(b => b.ReceiptDate ?? DateTime.MaxValue)  // then FIFO
+                    .FirstOrDefault();
+
+                if (singleBolt != null)
                 {
-                    if (totalAllocated >= requestedQty) break;
-
-                    // Check overship cap
-                    if (totalAllocated + bolt.QtyOnHand > maxQty)
+                    assignedBolts.Add(singleBolt);
+                    usedSerials.Add(singleBolt.LotSerialNbr);
+                    totalAllocated = singleBolt.QtyOnHand;
+                }
+                else
+                {
+                    // Multi-bolt fallback: FIFO, accumulate up to overship cap
+                    var sorted = SortBolts(bolts);
+                    foreach (var bolt in sorted)
                     {
-                        // Try to find a smaller bolt that fits
-                        var fit = sorted.FirstOrDefault(b =>
-                            !usedSerials.Contains(b.LotSerialNbr) &&
-                            !assignedBolts.Any(a => a.LotSerialNbr == b.LotSerialNbr) &&
-                            b.QtyOnHand <= (maxQty - totalAllocated) &&
-                            b.QtyOnHand > 0);
-                        if (fit == null) break;
+                        if (totalAllocated >= requestedQty) break;
 
-                        assignedBolts.Add(fit);
-                        usedSerials.Add(fit.LotSerialNbr);
-                        totalAllocated += fit.QtyOnHand;
-                    }
-                    else
-                    {
-                        assignedBolts.Add(bolt);
-                        usedSerials.Add(bolt.LotSerialNbr);
-                        totalAllocated += bolt.QtyOnHand;
+                        if (totalAllocated + bolt.QtyOnHand > maxQty)
+                        {
+                            // Try to find a smaller bolt that fits the remaining cap
+                            var fit = sorted.FirstOrDefault(b =>
+                                !usedSerials.Contains(b.LotSerialNbr) &&
+                                !assignedBolts.Any(a => a.LotSerialNbr == b.LotSerialNbr) &&
+                                b.QtyOnHand <= (maxQty - totalAllocated) &&
+                                b.QtyOnHand > 0);
+                            if (fit == null) break;
+
+                            assignedBolts.Add(fit);
+                            usedSerials.Add(fit.LotSerialNbr);
+                            totalAllocated += fit.QtyOnHand;
+                        }
+                        else
+                        {
+                            assignedBolts.Add(bolt);
+                            usedSerials.Add(bolt.LotSerialNbr);
+                            totalAllocated += bolt.QtyOnHand;
+                        }
                     }
                 }
 
