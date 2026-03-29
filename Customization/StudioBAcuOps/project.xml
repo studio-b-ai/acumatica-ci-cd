@@ -150,10 +150,14 @@ namespace StudioB.AcuOps
 
         private void InsertTable(SqlConnection conn, Guid designId, int companyId, Guid templateId)
         {
-            // Clone a template GITable row, override DesignID + our table info
+            // Clone ALL columns from template GITable row, override only DesignID/Alias/Name
             string sql = @"
-                INSERT INTO GITable (CompanyID, DesignID, Alias, Name, [Type])
-                SELECT TOP 1 @CID, @ID, 'AuditHistory', 'PX.SM.AuditHistory', [Type]
+                INSERT INTO GITable (CompanyID, DesignID, Alias, Name, [Type],
+                    NoteID, CreatedByID, CreatedByScreenID, CreatedDateTime,
+                    LastModifiedByID, LastModifiedByScreenID, LastModifiedDateTime)
+                SELECT TOP 1 @CID, @ID, 'AuditHistory', 'PX.SM.AuditHistory', [Type],
+                    NEWID(), CreatedByID, 'SM208000', GETUTCDATE(),
+                    LastModifiedByID, 'SM208000', GETUTCDATE()
                 FROM GITable WHERE DesignID = @TID AND CompanyID = @CID";
             using (var cmd = new SqlCommand(sql, conn))
             {
@@ -182,12 +186,15 @@ namespace StudioB.AcuOps
 
             foreach (var col in columns)
             {
-                // Clone template row, override our specific columns
                 string sql = @"
                     INSERT INTO GIResult (CompanyID, DesignID, LineNbr, SortOrder, IsActive, ObjectName, Field,
-                        SchemaField, Width, IsVisible, DefaultNav, QuickFilter, FastFilter, Caption, [Style])
+                        SchemaField, Width, IsVisible, DefaultNav, QuickFilter, FastFilter, Caption,
+                        NoteID, CreatedByID, CreatedByScreenID, CreatedDateTime,
+                        LastModifiedByID, LastModifiedByScreenID, LastModifiedDateTime)
                     SELECT TOP 1 @CID, @ID, @LineNbr, @SortOrder, 1, 'AuditHistory', @Field,
-                        NULL, @Width, 1, @DefaultNav, 0, @FastFilter, @Caption, [Style]
+                        NULL, @Width, 1, @DefaultNav, 0, @FastFilter, @Caption,
+                        NEWID(), CreatedByID, 'SM208000', GETUTCDATE(),
+                        LastModifiedByID, 'SM208000', GETUTCDATE()
                     FROM GIResult WHERE DesignID = @TID AND CompanyID = @CID";
                 using (var cmd = new SqlCommand(sql, conn))
                 {
@@ -220,9 +227,13 @@ namespace StudioB.AcuOps
             {
                 string sql = @"
                     INSERT INTO GIWhere (CompanyID, DesignID, LineNbr, IsActive, OpenBrackets,
-                        DataFieldName, Condition, IsExpression, Value1, CloseBrackets, Operation)
+                        DataFieldName, Condition, IsExpression, Value1, CloseBrackets, Operation,
+                        NoteID, CreatedByID, CreatedByScreenID, CreatedDateTime,
+                        LastModifiedByID, LastModifiedByScreenID, LastModifiedDateTime)
                     SELECT TOP 1 @CID, @ID, @LineNbr, 1, 0,
-                        @DataFieldName, @Condition, 0, @Value1, 0, @Operation
+                        @DataFieldName, @Condition, 0, @Value1, 0, @Operation,
+                        NEWID(), CreatedByID, 'SM208000', GETUTCDATE(),
+                        LastModifiedByID, 'SM208000', GETUTCDATE()
                     FROM GIWhere WHERE DesignID = @TID AND CompanyID = @CID";
                 using (var cmd = new SqlCommand(sql, conn))
                 {
@@ -243,8 +254,12 @@ namespace StudioB.AcuOps
         private void InsertSort(SqlConnection conn, Guid designId, int companyId, Guid templateId)
         {
             string sql = @"
-                INSERT INTO GISort (CompanyID, DesignID, LineNbr, IsActive, DataFieldName, SortOrder)
-                SELECT TOP 1 @CID, @ID, 1, 1, 'AuditHistory.ChangeDate', 1
+                INSERT INTO GISort (CompanyID, DesignID, LineNbr, IsActive, DataFieldName, SortOrder,
+                    NoteID, CreatedByID, CreatedByScreenID, CreatedDateTime,
+                    LastModifiedByID, LastModifiedByScreenID, LastModifiedDateTime)
+                SELECT TOP 1 @CID, @ID, 1, 1, 'AuditHistory.ChangeDate', 1,
+                    NEWID(), CreatedByID, 'SM208000', GETUTCDATE(),
+                    LastModifiedByID, 'SM208000', GETUTCDATE()
                 FROM GISort WHERE DesignID = @TID AND CompanyID = @CID";
             using (var cmd = new SqlCommand(sql, conn))
             {
@@ -269,8 +284,12 @@ namespace StudioB.AcuOps
             {
                 string sql = @"
                     INSERT INTO GIFilter (CompanyID, DesignID, LineNbr, IsActive, FieldName, DisplayName,
-                        ColSpan, Required, DefaultValue, DataType)
-                    SELECT TOP 1 @CID, @ID, @LineNbr, 1, @FieldName, @DisplayName, 1, 0, '', @DataType
+                        ColSpan, Required, DefaultValue, DataType,
+                        NoteID, CreatedByID, CreatedByScreenID, CreatedDateTime,
+                        LastModifiedByID, LastModifiedByScreenID, LastModifiedDateTime)
+                    SELECT TOP 1 @CID, @ID, @LineNbr, 1, @FieldName, @DisplayName, 1, 0, '', @DataType,
+                        NEWID(), CreatedByID, 'SM208000', GETUTCDATE(),
+                        LastModifiedByID, 'SM208000', GETUTCDATE()
                     FROM GIFilter WHERE DesignID = @TID AND CompanyID = @CID";
                 using (var cmd = new SqlCommand(sql, conn))
                 {
