@@ -1177,7 +1177,7 @@ namespace StudioB.Containers
                 IF NOT EXISTS (SELECT 1 FROM SiteMap WHERE ScreenID = @ScreenID AND CompanyID = 0)
                 BEGIN
                     INSERT INTO SiteMap (CompanyID, NodeID, ScreenID, Title, Url, Graphtype, Icon, Expanded, Accessrights)
-                    VALUES (0, NEWID(), @ScreenID, @Title, @Url, @GraphType, '', 0, 'F')
+                    VALUES (0, NEWID(), @ScreenID, @Title, @Url, @GraphType, '', 0, 'G')
                 END
                 ELSE
                 BEGIN
@@ -1197,12 +1197,11 @@ namespace StudioB.Containers
 
         private void GrantScreenAccess(SqlConnection conn, string screenID)
         {
-            // Grant full access to all roles that have Administrator-level access
-            // In Acumatica, access rights are stored per-node in SiteMap.
-            // Setting Accessrights = 'F' (Full) on the SiteMap row grants access to all.
-            // Alternatively, we set it to '' (empty) which means inherited = allowed.
+            // Grant access to all roles by setting Accessrights = 'G' (Granted).
+            // 'F' = Forbidden (default for new screens), '' = Inherited (still denied),
+            // 'G' = Granted to all roles.
             string sql = @"
-                UPDATE SiteMap SET Accessrights = ''
+                UPDATE SiteMap SET Accessrights = 'G'
                 WHERE ScreenID = @ScreenID AND CompanyID = 0";
             using (var cmd = new SqlCommand(sql, conn))
             {
