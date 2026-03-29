@@ -162,21 +162,33 @@ def validate(path: str, strict: bool = False, no_semantic: bool = False):
             )
             continue
 
-        # AppRelativePath format — correct. Verify physical file exists.
+        # AppRelativePath format — correct. Two sub-formats:
+        #   1. Inline CDATA: Source="#CDATA" with <CDATA> child (e.g., CSS themes)
+        #      No physical file needed — content is embedded in project.xml.
+        #   2. Physical file: Self-closing <File AppRelativePath="..." />
+        #      Physical file must exist in project directory for zip packaging.
         if app_rel:
-            # Normalize backslashes to forward slashes for filesystem check
-            rel_normalized = app_rel.replace("\\", "/")
-            physical_path = file_path.parent / rel_normalized
-            if not physical_path.exists():
-                error(
-                    f"<File AppRelativePath=\"{app_rel}\"> — physical file not found.\n"
-                    f"         Expected at: {physical_path}\n"
-                    f"         The file must exist in the project directory to be packaged into the zip."
-                )
+            source_attr = file_elem.get("Source", "")
+            has_cdata = file_elem.find("CDATA") is not None
+
+            if source_attr == "#CDATA" and has_cdata:
+                # Inline content — no physical file needed
+                ok(f"<File AppRelativePath=\"{app_rel}\"> — inline CDATA content")
             else:
-                if app_rel.lower().endswith(".aspx") or app_rel.lower().endswith(".aspx.cs"):
-                    aspx_count += 1
-                ok(f"<File AppRelativePath=\"{app_rel}\"> — physical file exists")
+                # Physical file reference — verify it exists
+                rel_normalized = app_rel.replace("\\", "/")
+                physical_path = file_path.parent / rel_normalized
+                if not physical_path.exists():
+                    error(
+                        f"<File AppRelativePath=\"{app_rel}\"> — physical file not found.\n"
+                        f"         Expected at: {physical_path}\n"
+                        f"         The file must exist in the project directory to be packaged into the zip."
+                    )
+                else:
+                    ok(f"<File AppRelativePath=\"{app_rel}\"> — physical file exists")
+
+            if app_rel.lower().endswith(".aspx") or app_rel.lower().endswith(".aspx.cs"):
+                aspx_count += 1
 
     if file_elements:
         parts = []
