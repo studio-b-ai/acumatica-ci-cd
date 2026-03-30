@@ -8,11 +8,13 @@ Catches common format errors that cause silent failures or NullReferenceExceptio
 Usage:
     python validate-project.py Customization/_project/project.xml
     python validate-project.py --strict Customization/_project/project.xml
+    python validate-project.py --validate-zip dist/AesthetikWMS_20260329.zip
 """
 
 import os
 import sys
 import re
+import zipfile as _zipfile
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
@@ -83,9 +85,19 @@ def validate(path: str, strict: bool = False, no_semantic: bool = False):
     ok("Root element is <Customization>")
 
     # Check 2: level attribute
+    # HARD FAIL on empty string — causes NullReferenceException in SM204505 XML parser.
+    # Root cause of 2026-03-29 UOM migration outage rollback failure:
+    # the rollback zip had level="" and Acumatica rejected it at upload time.
     level = root.get("level")
     if level is None:
         warn("Missing 'level' attribute on <Customization> (should be \"0\")")
+    elif level == "":
+        error(
+            "Empty level=\"\" attribute on <Customization> root element.\n"
+            "         Acumatica SM204505 XML parser throws NullReferenceException on empty level=\"\".\n"
+            "         Fix: change <Customization level=\"\" ...> to <Customization level=\"0\" ...>\n"
+            "         Root cause of failed rollback upload during 2026-03-29 UOM migration outage."
+        )
     else:
         ok(f"level=\"{level}\"")
 
@@ -454,7 +466,7 @@ def validate_customization_plugin_ban(class_name: str, code: str):
 def validate_pxdb_has_sql(class_name: str, code: str, all_sql_text: str):
     """Check [PXDB*] fields on PXCacheExtension DACs.
 
-    HARD FAIL only for BANNED_PXDB_DACS (Vendor → phantom EPEmployee_Vendor table).
+    HARD FAIL only for BANNED_PXDB_DACS (Vendor -> phantom EPEmployee_Vendor table).
     For all other DACs, [PXDB*] attributes auto-create columns during publish on
     existing tables, so missing <Sql> is a WARNING not an error.
 
@@ -785,24 +797,111 @@ def validate_crm_dac_safety(class_name: str, code: str, strict: bool):
             )
 
 
+def validate_zip(zip_path: str) -> bool:
+    """Validate a .zip package before upload to Acumatica SM204505.
+
+    Catches packaging bugs that cause NullReferenceException on import.
+    Three guards:
+      1. Internal filename must be 'project.xml' (not 'rollback-project.xml' etc.)
+      2. <Customization level=""> must not be empty — use level="0"
+      3. Package must contain at least one <Graph> or <Sql> element
+
+    Root cause of 2026-03-29 rollback failure: the rollback zip had wrong
+    internal filename AND level="" — both caught by this check.
+    """
+    zpath = Path(zip_path)
+    if not zpath.exists():
+        error(f"Zip file not found: {zip_path}")
+        return False
+
+    try:
+        with _zipfile.ZipFile(str(zpath), "r") as zf:
+            names = zf.namelist()
+
+            # Guard 1: project.xml must be the internal filename (at zip root)
+            # Bug: `zip -j rollback-project.xml` creates wrong internal name 'rollback-project.xml'
+            # Acumatica requires the file to be named exactly 'project.xml' inside the zip.
+            if "project.xml" not in names:
+                root_xmls = [n for n in names if n.endswith(".xml") and "/" not in n]
+                error(
+                    f"Zip does not contain 'project.xml' as internal filename.\n"
+                    f"         Found XML files at root: {root_xmls or '(none)'}\n"
+                    f"         All files: {names[:10]}\n"
+                    f"         This causes NullReferenceException on Acumatica SM204505 import.\n"
+                    f"         Root cause: packaging with 'zip -j <other-name>.xml' creates wrong internal name.\n"
+                    f"         Fix: Use scripts/package.sh instead of raw zip commands.\n"
+                    f"         Root cause of 2026-03-29 rollback upload failure."
+                )
+                return False
+            ok("Internal filename is 'project.xml' (Acumatica import-safe)")
+
+            # Guard 2: Read project.xml from the zip and check level attribute
+            content = zf.read("project.xml").decode("utf-8", errors="replace")
+
+            level_match = re.search(r'<Customization[^>]+level="([^"]*)"', content)
+            if not level_match:
+                warn("No 'level' attribute found in zipped project.xml")
+            elif level_match.group(1) == "":
+                error(
+                    f"Zipped project.xml has empty level=\"\" attribute.\n"
+                    f"         Acumatica SM204505 XML parser throws NullReferenceException on empty level.\n"
+                    f"         Fix: Change <Customization level=\"\" ...> to <Customization level=\"0\" ...>\n"
+                    f"         Root cause of 2026-03-29 UOM migration rollback upload failure."
+                )
+            else:
+                ok(f"level=\"{level_match.group(1)}\" in zipped project.xml")
+
+            # Guard 3: Must have at least one <Graph> or <Sql> element
+            has_graph = bool(re.search(r"<Graph\s", content))
+            has_sql = bool(re.search(r"<Sql\s", content))
+            if not has_graph and not has_sql:
+                warn("Zipped project.xml has no <Graph> or <Sql> elements — package may be empty")
+            else:
+                elements = []
+                if has_graph:
+                    elements.append("<Graph>")
+                if has_sql:
+                    elements.append("<Sql>")
+                ok(f"Package contains code/SQL elements: {', '.join(elements)}")
+
+    except _zipfile.BadZipFile as e:
+        error(f"Not a valid zip file: {e}")
+        return False
+    except Exception as e:
+        error(f"Zip validation error: {e}")
+        return False
+
+    return len(errors) == 0
+
+
 def main():
     strict = "--strict" in sys.argv
     no_semantic = "--no-semantic" in sys.argv
+    validate_zip_flag = "--validate-zip" in sys.argv
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
 
     if not args:
-        print("Usage: python validate-project.py [--strict] [--no-semantic] <project.xml>")
+        print("Usage: python validate-project.py [--strict] [--no-semantic] [--validate-zip] <project.xml or package.zip>")
         print()
         print("Validates Acumatica customization project XML format.")
-        print("  --strict       Enable additional warnings for best practices")
-        print("  --no-semantic  Skip semantic cross-reference checks")
+        print("  --strict        Enable additional warnings for best practices")
+        print("  --no-semantic   Skip semantic cross-reference checks")
+        print("  --validate-zip  Validate a .zip package (internal filename, level attr, content)")
+        print()
+        print("Zip mode is auto-detected from .zip extension, or forced with --validate-zip.")
         sys.exit(1)
 
     path = args[0]
-    print(f"Validating: {path}")
-    print("=" * 60)
 
-    success = validate(path, strict, no_semantic=no_semantic)
+    # Auto-detect zip mode based on file extension or explicit flag
+    if validate_zip_flag or path.lower().endswith(".zip"):
+        print(f"Validating zip: {path}")
+        print("=" * 60)
+        success = validate_zip(path)
+    else:
+        print(f"Validating: {path}")
+        print("=" * 60)
+        success = validate(path, strict, no_semantic=no_semantic)
 
     print("=" * 60)
     if success:
