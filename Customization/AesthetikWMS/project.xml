@@ -3887,7 +3887,7 @@ public class UomUnitConversionRestore : CustomizationPlugin
 
     public override void UpdateDatabase()
     {
-        WriteLog("TABLE === UomUnitConversionRestore v5: DELETE+INSERT (clean slate) ===");
+        WriteLog("TABLE === UomUnitConversionRestore v6: CompanyMask fix ===");
         var cs = System.Configuration.ConfigurationManager.ConnectionStrings["ProjectX"];
         if (cs == null) { WriteLog("TABLE UomUnitConversionRestore: ERROR: No connection string."); return; }
         string connStr = cs.ConnectionString;
@@ -3895,14 +3895,10 @@ public class UomUnitConversionRestore : CustomizationPlugin
         {
             conn.Open();
 
-            // DIAGNOSTIC: dump INUnit state BEFORE any changes
-            Diag(conn, null, "SELECT COUNT(*) FROM INUnit", "Total INUnit records");
-            Diag(conn, null, "SELECT COUNT(*) FROM INUnit WHERE FromUnit='YDS' AND ToUnit='YDS'", "YDS self-ref total");
-            Diag(conn, null, "SELECT UnitType, COUNT(*) AS cnt FROM INUnit WHERE FromUnit='YDS' AND ToUnit='YDS' GROUP BY UnitType", "YDS self-ref by UnitType");
-            Diag(conn, null, "SELECT COUNT(*) FROM InventoryItem WHERE BaseUnit='YDS'", "Items with BaseUnit=YDS");
-            Diag(conn, null, "SELECT COUNT(DISTINCT CompanyID) FROM InventoryItem WHERE BaseUnit='YDS'", "Distinct CompanyIDs");
-            Diag(conn, null, "SELECT TOP 3 CompanyID, InventoryID, BaseUnit, SalesUnit, PurchaseUnit FROM InventoryItem WHERE BaseUnit='YDS' ORDER BY InventoryID", "Sample items");
-            Diag(conn, null, "SELECT TOP 5 CompanyID, UnitType, ItemClassID, InventoryID, FromUnit, ToUnit, UnitRate, DeletedDatabaseRecord FROM INUnit WHERE FromUnit='YDS' AND ToUnit='YDS' ORDER BY UnitType, InventoryID", "Sample YDS INUnit");
+            // DIAGNOSTIC: check CompanyMask on existing non-YDS records vs our YDS records
+            Diag(conn, null, "SELECT TOP 3 CompanyID, UnitType, FromUnit, ToUnit, CONVERT(VARCHAR(100), CompanyMask, 1) AS Mask FROM INUnit WHERE FromUnit != 'YDS' AND CompanyMask IS NOT NULL ORDER BY CompanyID", "Working records CompanyMask");
+            Diag(conn, null, "SELECT TOP 3 CompanyID, UnitType, FromUnit, ToUnit, CONVERT(VARCHAR(100), CompanyMask, 1) AS Mask FROM INUnit WHERE FromUnit = 'YDS' AND ToUnit = 'YDS' ORDER BY CompanyID", "YDS records CompanyMask");
+            Diag(conn, null, "SELECT COUNT(*) FROM INUnit WHERE FromUnit='YDS' AND ToUnit='YDS' AND (CompanyMask IS NULL OR CompanyMask = 0x00)", "YDS with NULL/zero CompanyMask");
 
             using (var txn = conn.BeginTransaction())
             {
@@ -3910,50 +3906,59 @@ public class UomUnitConversionRestore : CustomizationPlugin
                 {
                     int total = 0;
 
-                    // Step 0: Nuke ALL old wrong records (UnitType=1 with InventoryID>0 from v1-v3)
-                    total += Run(conn, txn, "DELETE FROM INUnit WHERE UnitType = 1 AND InventoryID > 0", "Cleanup.v1v3.Wrong");
+                    // Step 0: cleanup old wrong v1-v3 records
+                    total += Run(conn, txn, "DELETE FROM INUnit WHERE UnitType = 1 AND InventoryID > 0", "Cleanup.v1v3");
 
-                    // Step 1: DELETE all YDS self-refs then re-insert clean.
-                    // This bypasses ghost/soft-deleted records that block NOT EXISTS.
+                    // Step 1: DELETE all YDS self-refs (clean slate)
                     WriteLog("TABLE UomUnitConversionRestore: --- DELETE all YDS->YDS self-refs ---");
                     total += Run(conn, txn,
                         "DELETE FROM INUnit WHERE FromUnit = 'YDS' AND ToUnit = 'YDS' AND UnitRate = 1",
                         "Delete.AllYdsSelfRefs");
 
-                    // Step 2: Insert Global (UnitType=1) — one per CompanyID
-                    WriteLog("TABLE UomUnitConversionRestore: --- INSERT Global (UnitType=1) ---");
+                    // Get a valid CompanyMask from existing INUnit records for each CompanyID.
+                    // CompanyMask is a VarBinary(32) bitmask that controls multi-tenant visibility.
+                    // Without it, records are invisible to Acumatica's ORM query layer.
+
+                    // Step 2: Global (UnitType=1) — one per CompanyID, with CompanyMask
+                    WriteLog("TABLE UomUnitConversionRestore: --- INSERT Global (UnitType=1) with CompanyMask ---");
                     total += Run(conn, txn, @"
-                        INSERT INTO INUnit (CompanyID, UnitType, ItemClassID, InventoryID, FromUnit, ToUnit,
+                        INSERT INTO INUnit (CompanyID, CompanyMask, UnitType, ItemClassID, InventoryID, FromUnit, ToUnit,
                             UnitRate, PriceAdjustmentMultiplier, UnitMultDiv,
                             CreatedByID, CreatedByScreenID, CreatedDateTime,
                             LastModifiedByID, LastModifiedByScreenID, LastModifiedDateTime)
-                        SELECT DISTINCT i.CompanyID, 1, 0, 0, 'YDS', 'YDS', 1.0, 1.0, 'M',
+                        SELECT DISTINCT i.CompanyID,
+                            (SELECT TOP 1 u2.CompanyMask FROM INUnit u2 WHERE u2.CompanyID = i.CompanyID AND u2.CompanyMask IS NOT NULL),
+                            1, 0, 0, 'YDS', 'YDS', 1.0, 1.0, 'M',
                             CAST('00000000-0000-0000-0000-000000000000' AS UNIQUEIDENTIFIER), 'IN209000', GETUTCDATE(),
                             CAST('00000000-0000-0000-0000-000000000000' AS UNIQUEIDENTIFIER), 'IN209000', GETUTCDATE()
                         FROM InventoryItem i WHERE i.BaseUnit = 'YDS'
                         GROUP BY i.CompanyID", "Insert.Global");
 
-                    // Step 3: Insert Item-class (UnitType=2) — one per CompanyID+ItemClassID
-                    WriteLog("TABLE UomUnitConversionRestore: --- INSERT Item-class (UnitType=2) ---");
+                    // Step 3: Item-class (UnitType=2) — one per CompanyID+ItemClassID
+                    WriteLog("TABLE UomUnitConversionRestore: --- INSERT Item-class (UnitType=2) with CompanyMask ---");
                     total += Run(conn, txn, @"
-                        INSERT INTO INUnit (CompanyID, UnitType, ItemClassID, InventoryID, FromUnit, ToUnit,
+                        INSERT INTO INUnit (CompanyID, CompanyMask, UnitType, ItemClassID, InventoryID, FromUnit, ToUnit,
                             UnitRate, PriceAdjustmentMultiplier, UnitMultDiv,
                             CreatedByID, CreatedByScreenID, CreatedDateTime,
                             LastModifiedByID, LastModifiedByScreenID, LastModifiedDateTime)
-                        SELECT DISTINCT ic.CompanyID, 2, ic.ItemClassID, 0, 'YDS', 'YDS', 1.0, 1.0, 'M',
+                        SELECT DISTINCT ic.CompanyID,
+                            (SELECT TOP 1 u2.CompanyMask FROM INUnit u2 WHERE u2.CompanyID = ic.CompanyID AND u2.CompanyMask IS NOT NULL),
+                            2, ic.ItemClassID, 0, 'YDS', 'YDS', 1.0, 1.0, 'M',
                             CAST('00000000-0000-0000-0000-000000000000' AS UNIQUEIDENTIFIER), 'IN209000', GETUTCDATE(),
                             CAST('00000000-0000-0000-0000-000000000000' AS UNIQUEIDENTIFIER), 'IN209000', GETUTCDATE()
                         FROM INItemClass ic WHERE ic.BaseUnit = 'YDS'",
                         "Insert.ItemClass");
 
-                    // Step 4: Insert Item-level (UnitType=3) — one per CompanyID+InventoryID
-                    WriteLog("TABLE UomUnitConversionRestore: --- INSERT Item-level (UnitType=3) ---");
+                    // Step 4: Item-level (UnitType=3) — one per CompanyID+InventoryID
+                    WriteLog("TABLE UomUnitConversionRestore: --- INSERT Item-level (UnitType=3) with CompanyMask ---");
                     total += Run(conn, txn, @"
-                        INSERT INTO INUnit (CompanyID, UnitType, ItemClassID, InventoryID, FromUnit, ToUnit,
+                        INSERT INTO INUnit (CompanyID, CompanyMask, UnitType, ItemClassID, InventoryID, FromUnit, ToUnit,
                             UnitRate, PriceAdjustmentMultiplier, UnitMultDiv,
                             CreatedByID, CreatedByScreenID, CreatedDateTime,
                             LastModifiedByID, LastModifiedByScreenID, LastModifiedDateTime)
-                        SELECT DISTINCT i.CompanyID, 3, 0, i.InventoryID, 'YDS', 'YDS', 1.0, 1.0, 'M',
+                        SELECT DISTINCT i.CompanyID,
+                            (SELECT TOP 1 u2.CompanyMask FROM INUnit u2 WHERE u2.CompanyID = i.CompanyID AND u2.CompanyMask IS NOT NULL),
+                            3, 0, i.InventoryID, 'YDS', 'YDS', 1.0, 1.0, 'M',
                             CAST('00000000-0000-0000-0000-000000000000' AS UNIQUEIDENTIFIER), 'IN209000', GETUTCDATE(),
                             CAST('00000000-0000-0000-0000-000000000000' AS UNIQUEIDENTIFIER), 'IN209000', GETUTCDATE()
                         FROM InventoryItem i WHERE i.BaseUnit = 'YDS'",
@@ -3970,9 +3975,10 @@ public class UomUnitConversionRestore : CustomizationPlugin
                 }
             }
 
-            // DIAGNOSTIC: dump state AFTER changes
-            Diag(conn, null, "SELECT UnitType, COUNT(*) AS cnt FROM INUnit WHERE FromUnit='YDS' AND ToUnit='YDS' GROUP BY UnitType", "AFTER YDS self-ref by UnitType");
-            Diag(conn, null, "SELECT TOP 5 CompanyID, UnitType, ItemClassID, InventoryID, FromUnit, ToUnit, DeletedDatabaseRecord FROM INUnit WHERE UnitType=3 AND FromUnit='YDS' ORDER BY InventoryID", "AFTER sample UnitType=3");
+            // DIAGNOSTIC: verify CompanyMask is set on new records
+            Diag(conn, null, "SELECT UnitType, COUNT(*) AS cnt FROM INUnit WHERE FromUnit='YDS' AND ToUnit='YDS' GROUP BY UnitType", "AFTER counts by UnitType");
+            Diag(conn, null, "SELECT TOP 3 CompanyID, UnitType, InventoryID, CONVERT(VARCHAR(100), CompanyMask, 1) AS Mask FROM INUnit WHERE UnitType=3 AND FromUnit='YDS' ORDER BY InventoryID", "AFTER UnitType=3 CompanyMask");
+            Diag(conn, null, "SELECT COUNT(*) FROM INUnit WHERE FromUnit='YDS' AND ToUnit='YDS' AND (CompanyMask IS NULL OR CompanyMask = 0x00)", "AFTER NULL/zero CompanyMask count");
         }
     }
 
