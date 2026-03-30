@@ -450,6 +450,24 @@ def validate_customization_plugin_ban(class_name: str, code: str):
             f"         Wrap body in try/catch with WriteLog for error reporting."
         )
 
+    # HARD FAIL: Raw SQL DELETE on INUnit — destroys UOM conversion records
+    if re.search(r"DELETE\s+.*\bINUnit\b", clean, re.IGNORECASE):
+        error(
+            f"{class_name}: BANNED — DELETE FROM INUnit in CustomizationPlugin.\n"
+            f"         Deleting INUnit records breaks UOM validation for ALL sales orders.\n"
+            f"         Root cause of 2026-03-29 P0 outage (30+ hours, snapshot restore required).\n"
+            f"         Use PXDatabase.Delete<INUnit>() via BQL instead of raw SQL DELETE."
+        )
+
+    # HARD FAIL: Raw SQL INSERT into INUnit — records invisible to ORM
+    if re.search(r"INSERT\s+INTO\s+\bINUnit\b", clean, re.IGNORECASE):
+        error(
+            f"{class_name}: BANNED — INSERT INTO INUnit in CustomizationPlugin.\n"
+            f"         Raw SQL INSERT creates records invisible to Acumatica's BQL/ORM layer\n"
+            f"         even with correct CompanyMask. Use PXDatabase.Insert<INUnit>() instead.\n"
+            f"         Root cause of 8 failed fix attempts during 2026-03-30 P0 restore."
+        )
+
 
 def validate_pxdb_has_sql(class_name: str, code: str, all_sql_text: str):
     """Check [PXDB*] fields on PXCacheExtension DACs.
