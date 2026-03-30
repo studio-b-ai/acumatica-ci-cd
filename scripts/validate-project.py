@@ -450,22 +450,69 @@ def validate_customization_plugin_ban(class_name: str, code: str):
             f"         Wrap body in try/catch with WriteLog for error reporting."
         )
 
-    # HARD FAIL: Raw SQL DELETE on INUnit — destroys UOM conversion records
-    if re.search(r"DELETE\s+.*\bINUnit\b", clean, re.IGNORECASE):
+    # ── Destructive SQL guard ──────────────────────────────────────────
+    # UpdateDatabase() must be additive and idempotent only.
+    # ALTER TABLE ADD (with IF NOT EXISTS), INSERT (with idempotency check),
+    # and CREATE TABLE (with IF NOT EXISTS) are safe.
+    # DELETE, UPDATE, DROP, and TRUNCATE are destructive and cannot be
+    # rolled back by redeploying the previous package.
+    #
+    # The 2026-03-29 P0 outage was caused by DELETE FROM INUnit.
+    # Package rollback re-publishes old code but does NOT undo SQL changes.
+    # Destructive data operations require a separate, manually-approved
+    # migration project — never the CI/CD auto-publish pipeline.
+
+    # Collapse C# string concatenation so SQL spanning multiple lines is
+    # matched as a single string.  e.g.:
+    #   "UPDATE InventoryItem " +
+    #   "SET SalesUnit = BaseUnit "
+    # becomes:
+    #   "UPDATE InventoryItem SET SalesUnit = BaseUnit "
+    sql_flat = re.sub(r'"\s*\+\s*\n\s*"', " ", clean)
+
+    # HARD FAIL: DELETE FROM — destroys data that package rollback cannot restore
+    delete_match = re.search(r"\bDELETE\s+(?:FROM\s+)?(\w+)", sql_flat, re.IGNORECASE)
+    if delete_match:
+        table = delete_match.group(1)
         error(
-            f"{class_name}: BANNED — DELETE FROM INUnit in CustomizationPlugin.\n"
-            f"         Deleting INUnit records breaks UOM validation for ALL sales orders.\n"
-            f"         Root cause of 2026-03-29 P0 outage (30+ hours, snapshot restore required).\n"
-            f"         Use PXDatabase.Delete<INUnit>() via BQL instead of raw SQL DELETE."
+            f"{class_name}: BANNED — DELETE FROM {table} in CustomizationPlugin.\n"
+            f"         UpdateDatabase() must be additive only. DELETE cannot be undone by\n"
+            f"         package rollback — the old package's UpdateDatabase() doesn't know\n"
+            f"         to re-INSERT the deleted rows.\n"
+            f"         If this is a data migration, use a separate one-time project with\n"
+            f"         a pre-tested rollback plan."
         )
 
-    # HARD FAIL: Raw SQL INSERT into INUnit — records invisible to ORM
-    if re.search(r"INSERT\s+INTO\s+\bINUnit\b", clean, re.IGNORECASE):
+    # HARD FAIL: UPDATE ... SET — mutates data that package rollback cannot restore
+    # Exception: SiteMap updates are standard for custom screen registration
+    # and are owned by the customization (safe to re-run on rollback).
+    SAFE_UPDATE_TABLES = {"SiteMap"}
+    for update_match in re.finditer(r"\bUPDATE\s+(\w+)\s+SET\b", sql_flat, re.IGNORECASE):
+        table = update_match.group(1)
+        if table in SAFE_UPDATE_TABLES:
+            continue
         error(
-            f"{class_name}: BANNED — INSERT INTO INUnit in CustomizationPlugin.\n"
-            f"         Raw SQL INSERT creates records invisible to Acumatica's BQL/ORM layer\n"
-            f"         even with correct CompanyMask. Use PXDatabase.Insert<INUnit>() instead.\n"
-            f"         Root cause of 8 failed fix attempts during 2026-03-30 P0 restore."
+            f"{class_name}: BANNED — UPDATE {table} SET in CustomizationPlugin.\n"
+            f"         UpdateDatabase() must be additive only. UPDATE cannot be undone by\n"
+            f"         package rollback — the old package doesn't know the previous values.\n"
+            f"         If this is a data migration, use a separate one-time project with\n"
+            f"         a pre-tested rollback plan."
+        )
+
+    # HARD FAIL: DROP TABLE — destroys structure that package rollback cannot restore
+    if re.search(r"\bDROP\s+TABLE\b", sql_flat, re.IGNORECASE):
+        error(
+            f"{class_name}: BANNED — DROP TABLE in CustomizationPlugin.\n"
+            f"         UpdateDatabase() must be additive only. DROP TABLE destroys data\n"
+            f"         and structure that cannot be restored by package rollback."
+        )
+
+    # HARD FAIL: TRUNCATE TABLE — destroys data that package rollback cannot restore
+    if re.search(r"\bTRUNCATE\s+TABLE\b", sql_flat, re.IGNORECASE):
+        error(
+            f"{class_name}: BANNED — TRUNCATE TABLE in CustomizationPlugin.\n"
+            f"         UpdateDatabase() must be additive only. TRUNCATE destroys all rows\n"
+            f"         and cannot be restored by package rollback."
         )
 
 
