@@ -3868,164 +3868,142 @@ IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('INItemXRef
 
     <Graph ClassName="UomUnitConversionRestore" Source="#CDATA" IsNew="True" FileType="NewFile">
         <CDATA name="Source"><![CDATA[using System;
-using System.Collections.Generic;
-using PX.Data;
-using PX.Objects.IN;
+using System.Configuration;
+using System.Data.SqlClient;
+using Customization;
 
-namespace Aesthetik.WMS
+public class UomUnitConversionRestore : CustomizationPlugin
 {
-    /// <summary>
-    /// Emergency CustomizationPlugin: Restore missing INUnit self-reference records.
-    ///
-    /// ROOT CAUSE — 2026-03-29 P0 outage:
-    ///   The UomRenamePieceToYds migration updated InventoryItem.BaseUnit from PIECE→YDS
-    ///   but wiped all item-level INUnit records (UnitType=1). Without a BaseUnit→BaseUnit
-    ///   self-reference in INUnit, Acumatica fires INUnitAttribute.UnitVerifying(unit=null)
-    ///   on every Sales Order line, blocking all order entry and modification.
-    ///
-    /// FIX:
-    ///   For every active InventoryItem, insert missing INUnit records:
-    ///     1. BaseUnit→BaseUnit (self-reference, Rate=1.0, MultiDiv=M) — required for all UOM validation
-    ///     2. SalesUnit→BaseUnit (if SalesUnit ≠ BaseUnit, e.g. IN→YDS at Rate=36)
-    ///     3. PurchaseUnit→BaseUnit (if PurchaseUnit ≠ BaseUnit and ≠ SalesUnit)
-    ///
-    /// IDEMPOTENT: Checks PXDatabase.Exists before every insert. Safe to re-publish.
-    ///
-    /// SEE: memory/context/aar-2026-03-29-uom-migration-outage.md
-    /// </summary>
-    public class UomUnitConversionRestore : CustomizationPlugin
+    // Root cause of 2026-03-29 P0 outage:
+    // UomRenamePieceToYds migration wiped all item-level INUnit records (UnitType=1).
+    // Without BaseUnit->BaseUnit self-references, UnitVerifying(unit=null) fires on
+    // every SO line, blocking all order entry. This plugin restores them.
+    //
+    // Runs at publish time. IDEMPOTENT (NOT EXISTS guard). Safe to re-publish.
+    // See: memory/context/aar-2026-03-29-uom-migration-outage.md
+
+    public override void UpdateDatabase()
     {
-        // Known conversion rates (FromUnit → ToUnit = Rate with MultiDiv=M)
-        // Source: INUnit.xml from 2026-03-23 database snapshot (pre-outage)
-        // For any unknown pair the plugin logs a warning and skips (safe — does NOT default 1.0
-        // for unknown conversions, because a wrong rate is worse than a missing record).
-        private static readonly Dictionary<(string from, string to), decimal> KnownRates =
-            new Dictionary<(string from, string to), decimal>
-            {
-                { ("YDS",   "YDS"),   1.0m  },
-                { ("EA",    "EA"),    1.0m  },
-                { ("IN",    "IN"),    1.0m  },
-                { ("CUT",   "CUT"),   1.0m  },
-                { ("PIECE", "PIECE"), 1.0m  },
-                { ("FT",    "FT"),    1.0m  },
-                { ("LBS",   "LBS"),   1.0m  },
-                { ("IN",    "YDS"),   36.0m },  // 36 inches per yard
-                { ("FT",    "YDS"),   3.0m  },  // 3 feet per yard
-            };
+        WriteLog("UomUnitConversionRestore: starting INUnit self-reference restore...");
+        var cs = ConfigurationManager.ConnectionStrings["ProjectX"];
+        if (cs == null) { WriteLog("UomUnitConversionRestore: no ProjectX connection string — skipping"); return; }
+        string connStr = cs.ConnectionString + ";TrustServerCertificate=True";
 
-        public override void UpdateDatabase()
+        try
         {
-            try
+            using (var conn = new SqlConnection(connStr))
             {
-                int selfRefsInserted  = 0;
-                int convRefsInserted  = 0;
-                int skippedUnknown    = 0;
+                conn.Open();
 
-                WriteLog("UomUnitConversionRestore: starting INUnit self-reference restore...");
-
-                PXDataRecord[] items = PXDatabase.SelectMulti<InventoryItem>(
-                    new PXDataField<InventoryItem.inventoryID>(),
-                    new PXDataField<InventoryItem.baseUnit>(),
-                    new PXDataField<InventoryItem.salesUnit>(),
-                    new PXDataField<InventoryItem.purchaseUnit>(),
-                    new PXDataFieldValue<InventoryItem.deletedDatabaseRecord>(false)
-                );
-
-                foreach (PXDataRecord item in items)
+                // Diagnostic: count before
+                int beforeCount = 0;
+                try
                 {
-                    int?   inventoryID = item.GetInt32(0);
-                    string baseUnit    = item.GetString(1);
-                    string salesUnit   = item.GetString(2);
-                    string purchUnit   = item.GetString(3);
-
-                    if (inventoryID == null || string.IsNullOrEmpty(baseUnit)) continue;
-
-                    // 1. BaseUnit→BaseUnit self-reference (mandatory for all UOM validation)
-                    EnsureConversion(inventoryID.Value, baseUnit, baseUnit,
-                        ref selfRefsInserted, ref skippedUnknown);
-
-                    // 2. SalesUnit→BaseUnit (if different)
-                    if (!string.IsNullOrEmpty(salesUnit) && salesUnit != baseUnit)
-                    {
-                        EnsureConversion(inventoryID.Value, salesUnit, baseUnit,
-                            ref convRefsInserted, ref skippedUnknown);
-
-                        // SalesUnit self-reference (needed for SalesUnit validation)
-                        EnsureConversion(inventoryID.Value, salesUnit, salesUnit,
-                            ref selfRefsInserted, ref skippedUnknown);
-                    }
-
-                    // 3. PurchaseUnit→BaseUnit (if different from both BaseUnit and SalesUnit)
-                    if (!string.IsNullOrEmpty(purchUnit)
-                        && purchUnit != baseUnit
-                        && purchUnit != salesUnit)
-                    {
-                        EnsureConversion(inventoryID.Value, purchUnit, baseUnit,
-                            ref convRefsInserted, ref skippedUnknown);
-
-                        // PurchaseUnit self-reference
-                        EnsureConversion(inventoryID.Value, purchUnit, purchUnit,
-                            ref selfRefsInserted, ref skippedUnknown);
-                    }
+                    using (var cmd = new SqlCommand(
+                        "SELECT COUNT(*) FROM INUnit WHERE UnitType=1", conn))
+                        beforeCount = (int)cmd.ExecuteScalar();
+                    WriteLog("UomUnitConversionRestore: item-level INUnit records before fix: " + beforeCount);
                 }
+                catch (Exception ex) { WriteLog("UomUnitConversionRestore: diagnostic error: " + ex.Message); }
 
-                WriteLog(
-                    $"UomUnitConversionRestore: COMPLETE — " +
-                    $"self-refs inserted: {selfRefsInserted}, " +
-                    $"conversions inserted: {convRefsInserted}, " +
-                    $"unknown pairs skipped: {skippedUnknown}."
-                );
+                // Step 1: Insert missing BaseUnit->BaseUnit self-references
+                // Every item must have a record where FromUnit=ToUnit=BaseUnit, Rate=1
+                int selfRefsInserted = 0;
+                try
+                {
+                    using (var cmd = new SqlCommand(
+                        "INSERT INTO INUnit " +
+                        "    (UnitType, ItemClassID, InventoryID, FromUnit, ToUnit, " +
+                        "     UnitMultDiv, UnitRate, PriceAdjustmentMultiplier, " +
+                        "     CreatedByID, CreatedByScreenID, CreatedDateTime, " +
+                        "     LastModifiedByID, LastModifiedByScreenID, LastModifiedDateTime) " +
+                        "SELECT " +
+                        "    1, 0, i.InventoryID, i.BaseUnit, i.BaseUnit, " +
+                        "    'M', 1.000000, 1.000000, " +
+                        "    ISNULL((SELECT TOP 1 CreatedByID FROM INUnit WHERE UnitType=3), " +
+                        "           '00000000-0000-0000-0000-000000000000'), " +
+                        "    'IN202500', GETUTCDATE(), " +
+                        "    ISNULL((SELECT TOP 1 CreatedByID FROM INUnit WHERE UnitType=3), " +
+                        "           '00000000-0000-0000-0000-000000000000'), " +
+                        "    'IN202500', GETUTCDATE() " +
+                        "FROM InventoryItem i " +
+                        "WHERE i.DeletedDatabaseRecord = 0 " +
+                        "  AND i.BaseUnit IS NOT NULL AND i.BaseUnit != '' " +
+                        "  AND NOT EXISTS ( " +
+                        "    SELECT 1 FROM INUnit u " +
+                        "    WHERE u.UnitType = 1 " +
+                        "      AND u.InventoryID = i.InventoryID " +
+                        "      AND u.FromUnit = i.BaseUnit " +
+                        "      AND u.ToUnit = i.BaseUnit " +
+                        "  )", conn))
+                        selfRefsInserted = cmd.ExecuteNonQuery();
+                    WriteLog("UomUnitConversionRestore: BaseUnit self-refs inserted: " + selfRefsInserted);
+                }
+                catch (Exception ex) { WriteLog("UomUnitConversionRestore: self-ref insert error: " + ex.Message); }
+
+                // Step 2: Insert missing SalesUnit->BaseUnit conversions
+                // Items with SalesUnit=IN and BaseUnit=YDS need IN->YDS at Rate=36
+                int convRefsInserted = 0;
+                try
+                {
+                    using (var cmd = new SqlCommand(
+                        "INSERT INTO INUnit " +
+                        "    (UnitType, ItemClassID, InventoryID, FromUnit, ToUnit, " +
+                        "     UnitMultDiv, UnitRate, PriceAdjustmentMultiplier, " +
+                        "     CreatedByID, CreatedByScreenID, CreatedDateTime, " +
+                        "     LastModifiedByID, LastModifiedByScreenID, LastModifiedDateTime) " +
+                        "SELECT " +
+                        "    1, 0, i.InventoryID, i.SalesUnit, i.BaseUnit, " +
+                        "    'M', " +
+                        "    CASE WHEN i.SalesUnit='IN' AND i.BaseUnit='YDS' THEN 36.000000 " +
+                        "         WHEN i.SalesUnit='FT' AND i.BaseUnit='YDS' THEN 3.000000 " +
+                        "         ELSE 1.000000 END, " +
+                        "    1.000000, " +
+                        "    ISNULL((SELECT TOP 1 CreatedByID FROM INUnit WHERE UnitType=3), " +
+                        "           '00000000-0000-0000-0000-000000000000'), " +
+                        "    'IN202500', GETUTCDATE(), " +
+                        "    ISNULL((SELECT TOP 1 CreatedByID FROM INUnit WHERE UnitType=3), " +
+                        "           '00000000-0000-0000-0000-000000000000'), " +
+                        "    'IN202500', GETUTCDATE() " +
+                        "FROM InventoryItem i " +
+                        "WHERE i.DeletedDatabaseRecord = 0 " +
+                        "  AND i.SalesUnit IS NOT NULL AND i.SalesUnit != '' " +
+                        "  AND i.BaseUnit IS NOT NULL AND i.BaseUnit != '' " +
+                        "  AND i.SalesUnit != i.BaseUnit " +
+                        "  AND NOT EXISTS ( " +
+                        "    SELECT 1 FROM INUnit u " +
+                        "    WHERE u.UnitType = 1 " +
+                        "      AND u.InventoryID = i.InventoryID " +
+                        "      AND u.FromUnit = i.SalesUnit " +
+                        "      AND u.ToUnit = i.BaseUnit " +
+                        "  )", conn))
+                        convRefsInserted = cmd.ExecuteNonQuery();
+                    WriteLog("UomUnitConversionRestore: SalesUnit conversions inserted: " + convRefsInserted);
+                }
+                catch (Exception ex) { WriteLog("UomUnitConversionRestore: conversion insert error: " + ex.Message); }
+
+                // Diagnostic: count after
+                try
+                {
+                    int afterCount = 0;
+                    using (var cmd = new SqlCommand(
+                        "SELECT COUNT(*) FROM INUnit WHERE UnitType=1", conn))
+                        afterCount = (int)cmd.ExecuteScalar();
+                    WriteLog("UomUnitConversionRestore: item-level INUnit records after fix: " + afterCount);
+                }
+                catch (Exception ex) { WriteLog("UomUnitConversionRestore: post-diagnostic error: " + ex.Message); }
             }
-            catch (Exception ex)
-            {
-                WriteLog($"UomUnitConversionRestore: FAILED — {ex.GetType().Name}: {ex.Message}");
-                throw;
-            }
+            WriteLog("UomUnitConversionRestore: COMPLETE.");
         }
-
-        private void EnsureConversion(
-            int inventoryID, string fromUnit, string toUnit,
-            ref int insertCount, ref int skipCount)
+        catch (Exception ex)
         {
-            // Check existence before insert (idempotent)
-            bool exists = PXDatabase.Exists<INUnit>(
-                new PXDataFieldValue<INUnit.unitType>((short)INUnitType.InventoryItem),
-                new PXDataFieldValue<INUnit.inventoryID>(inventoryID),
-                new PXDataFieldValue<INUnit.fromUnit>(fromUnit),
-                new PXDataFieldValue<INUnit.toUnit>(toUnit)
-            );
-
-            if (exists) return;
-
-            // Look up the conversion rate — skip unknown pairs with a warning
-            // (wrong rate is worse than a missing record)
-            if (!KnownRates.TryGetValue((fromUnit, toUnit), out decimal rate))
-            {
-                WriteLog(
-                    $"UomUnitConversionRestore: SKIP — unknown conversion " +
-                    $"{fromUnit}→{toUnit} for InventoryID {inventoryID}. " +
-                    $"Add rate to KnownRates and re-publish."
-                );
-                skipCount++;
-                return;
-            }
-
-            PXDatabase.Insert<INUnit>(
-                new PXDataFieldAssign<INUnit.unitType>((short)INUnitType.InventoryItem),
-                new PXDataFieldAssign<INUnit.itemClassID>(0),
-                new PXDataFieldAssign<INUnit.inventoryID>(inventoryID),
-                new PXDataFieldAssign<INUnit.fromUnit>(fromUnit),
-                new PXDataFieldAssign<INUnit.toUnit>(toUnit),
-                new PXDataFieldAssign<INUnit.unitMultDiv>(INUnitMultDiv.Multiply),
-                new PXDataFieldAssign<INUnit.unitRate>(rate),
-                new PXDataFieldAssign<INUnit.priceAdjustmentMultiplier>(1.0m)
-            );
-
-            insertCount++;
+            WriteLog("UomUnitConversionRestore: FAILED — " + ex.GetType().Name + ": " + ex.Message);
+            throw;
         }
     }
 }
 ]]></CDATA>
     </Graph>
+
 
 </Customization>
