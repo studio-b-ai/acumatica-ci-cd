@@ -3887,7 +3887,7 @@ public class UomUnitConversionRestore : CustomizationPlugin
 
     public override void UpdateDatabase()
     {
-        WriteLog("TABLE === UomUnitConversionRestore v7: DATALENGTH + COALESCE fallback ===");
+        WriteLog("TABLE === UomUnitConversionRestore v8: DEFAULT CompanyMask + deep diag ===");
         var cs = System.Configuration.ConfigurationManager.ConnectionStrings["ProjectX"];
         if (cs == null) { WriteLog("TABLE UomUnitConversionRestore: ERROR: No connection string."); return; }
         string connStr = cs.ConnectionString;
@@ -3895,9 +3895,18 @@ public class UomUnitConversionRestore : CustomizationPlugin
         {
             conn.Open();
 
-            // DIAGNOSTIC: show what masks exist before we touch anything
-            Diag(conn, null, "SELECT CompanyID, CONVERT(VARCHAR(100), CompanyMask, 1) AS Mask, DATALENGTH(CompanyMask) AS MaskLen, COUNT(*) AS cnt FROM INUnit WHERE CompanyMask IS NOT NULL AND DATALENGTH(CompanyMask) > 0 GROUP BY CompanyID, CompanyMask ORDER BY CompanyID", "BEFORE valid masks by CompanyID");
-            Diag(conn, null, "SELECT COUNT(*) AS bad FROM INUnit WHERE FromUnit='YDS' AND ToUnit='YDS' AND (CompanyMask IS NULL OR DATALENGTH(CompanyMask) = 0)", "BEFORE YDS with empty mask");
+            // DEEP DIAGNOSTIC: What does the DB see for item 28065?
+            Diag(conn, null, "SELECT InventoryID, InventoryCD, BaseUnit, SalesUnit, PurchaseUnit FROM InventoryItem WHERE InventoryCD LIKE '%28065%' AND CompanyID = 2", "Item28065 config");
+            Diag(conn, null, @"SELECT u.UnitType, u.ItemClassID, u.InventoryID, u.FromUnit, u.ToUnit, u.UnitRate,
+                CONVERT(VARCHAR(100), u.CompanyMask, 1) AS Mask, DATALENGTH(u.CompanyMask) AS MaskLen
+                FROM INUnit u INNER JOIN InventoryItem i ON i.InventoryID = u.InventoryID AND i.CompanyID = u.CompanyID
+                WHERE i.InventoryCD LIKE '%28065%' AND u.CompanyID = 2", "Item28065 INUnit records");
+            // Check what DEFAULT CompanyMask would be
+            Diag(conn, null, "SELECT dbo.CompanyMaskReadOnly() AS ReadOnlyMask, CONVERT(VARCHAR(100), dbo.CompanyMaskReadOnly(), 1) AS ReadOnlyHex, DATALENGTH(dbo.CompanyMaskReadOnly()) AS Len", "CompanyMaskReadOnly default");
+            // Check a WORKING non-YDS conversion for comparison
+            Diag(conn, null, "SELECT TOP 3 UnitType, FromUnit, ToUnit, UnitRate, CONVERT(VARCHAR(100), CompanyMask, 1) AS Mask FROM INUnit WHERE CompanyID = 2 AND FromUnit != 'YDS' AND ToUnit != 'YDS' ORDER BY UnitType", "Working non-YDS conversions");
+            // Check global UnitType=1 for YDS
+            Diag(conn, null, "SELECT * FROM INUnit WHERE CompanyID = 2 AND UnitType = 1 AND FromUnit = 'YDS'", "Global YDS UnitType=1");
 
             using (var txn = conn.BeginTransaction())
             {
@@ -3905,34 +3914,29 @@ public class UomUnitConversionRestore : CustomizationPlugin
                 {
                     int total = 0;
 
-                    // Step 0: cleanup old wrong v1-v3 records (UnitType=1 with InventoryID > 0 is invalid)
+                    // Step 0: cleanup old wrong v1-v3 records
                     total += Run(conn, txn, "DELETE FROM INUnit WHERE UnitType = 1 AND InventoryID > 0", "Cleanup.v1v3");
 
-                    // Step 1: DELETE all YDS self-refs (clean slate — reinsert with correct CompanyMask)
+                    // Step 1: DELETE all YDS self-refs (clean slate)
                     WriteLog("TABLE UomUnitConversionRestore: --- DELETE all YDS->YDS self-refs ---");
                     total += Run(conn, txn,
                         "DELETE FROM INUnit WHERE FromUnit = 'YDS' AND ToUnit = 'YDS' AND UnitRate = 1",
                         "Delete.AllYdsSelfRefs");
 
-                    // CompanyMask fix: v6 used IS NOT NULL but 0x (empty binary) passes that check.
-                    // v7: DATALENGTH > 0 filters empty binary. COALESCE fallback to 0xAAAA
-                    // (observed working mask for CompanyID 2 and 3) if no valid mask found.
-                    string maskExpr = @"COALESCE(
-                            (SELECT TOP 1 u2.CompanyMask FROM INUnit u2
-                             WHERE u2.CompanyID = src.CompanyID
-                               AND u2.CompanyMask IS NOT NULL
-                               AND DATALENGTH(u2.CompanyMask) > 0),
-                            0xAAAA)";
+                    // v8: OMIT CompanyMask from INSERT — let SQL Server DEFAULT handle it.
+                    // The DEFAULT is dbo.CompanyMaskReadOnly() which computes the correct
+                    // tenant visibility mask. Previous versions explicitly set CompanyMask
+                    // by copying from other records, but if the function returns something
+                    // different, the ORM might not see our records.
 
-                    // Step 2: Global (UnitType=1) — one per CompanyID
-                    WriteLog("TABLE UomUnitConversionRestore: --- INSERT Global (UnitType=1) ---");
+                    // Step 2: Global (UnitType=1) — one per CompanyID, DEFAULT CompanyMask
+                    WriteLog("TABLE UomUnitConversionRestore: --- INSERT Global (UnitType=1) with DEFAULT mask ---");
                     total += Run(conn, txn, @"
-                        INSERT INTO INUnit (CompanyID, CompanyMask, UnitType, ItemClassID, InventoryID, FromUnit, ToUnit,
+                        INSERT INTO INUnit (CompanyID, UnitType, ItemClassID, InventoryID, FromUnit, ToUnit,
                             UnitRate, PriceAdjustmentMultiplier, UnitMultDiv,
                             CreatedByID, CreatedByScreenID, CreatedDateTime,
                             LastModifiedByID, LastModifiedByScreenID, LastModifiedDateTime)
                         SELECT DISTINCT src.CompanyID,
-                            " + maskExpr + @",
                             1, 0, 0, 'YDS', 'YDS', 1.0, 1.0, 'M',
                             CAST('00000000-0000-0000-0000-000000000000' AS UNIQUEIDENTIFIER), 'IN209000', GETUTCDATE(),
                             CAST('00000000-0000-0000-0000-000000000000' AS UNIQUEIDENTIFIER), 'IN209000', GETUTCDATE()
@@ -3940,14 +3944,13 @@ public class UomUnitConversionRestore : CustomizationPlugin
                         GROUP BY src.CompanyID", "Insert.Global");
 
                     // Step 3: Item-class (UnitType=2) — one per CompanyID+ItemClassID
-                    WriteLog("TABLE UomUnitConversionRestore: --- INSERT Item-class (UnitType=2) ---");
+                    WriteLog("TABLE UomUnitConversionRestore: --- INSERT Item-class (UnitType=2) with DEFAULT mask ---");
                     total += Run(conn, txn, @"
-                        INSERT INTO INUnit (CompanyID, CompanyMask, UnitType, ItemClassID, InventoryID, FromUnit, ToUnit,
+                        INSERT INTO INUnit (CompanyID, UnitType, ItemClassID, InventoryID, FromUnit, ToUnit,
                             UnitRate, PriceAdjustmentMultiplier, UnitMultDiv,
                             CreatedByID, CreatedByScreenID, CreatedDateTime,
                             LastModifiedByID, LastModifiedByScreenID, LastModifiedDateTime)
                         SELECT DISTINCT src.CompanyID,
-                            " + maskExpr + @",
                             2, src.ItemClassID, 0, 'YDS', 'YDS', 1.0, 1.0, 'M',
                             CAST('00000000-0000-0000-0000-000000000000' AS UNIQUEIDENTIFIER), 'IN209000', GETUTCDATE(),
                             CAST('00000000-0000-0000-0000-000000000000' AS UNIQUEIDENTIFIER), 'IN209000', GETUTCDATE()
@@ -3955,14 +3958,13 @@ public class UomUnitConversionRestore : CustomizationPlugin
                         "Insert.ItemClass");
 
                     // Step 4: Item-level (UnitType=3) — one per CompanyID+InventoryID
-                    WriteLog("TABLE UomUnitConversionRestore: --- INSERT Item-level (UnitType=3) ---");
+                    WriteLog("TABLE UomUnitConversionRestore: --- INSERT Item-level (UnitType=3) with DEFAULT mask ---");
                     total += Run(conn, txn, @"
-                        INSERT INTO INUnit (CompanyID, CompanyMask, UnitType, ItemClassID, InventoryID, FromUnit, ToUnit,
+                        INSERT INTO INUnit (CompanyID, UnitType, ItemClassID, InventoryID, FromUnit, ToUnit,
                             UnitRate, PriceAdjustmentMultiplier, UnitMultDiv,
                             CreatedByID, CreatedByScreenID, CreatedDateTime,
                             LastModifiedByID, LastModifiedByScreenID, LastModifiedDateTime)
                         SELECT DISTINCT src.CompanyID,
-                            " + maskExpr + @",
                             3, 0, src.InventoryID, 'YDS', 'YDS', 1.0, 1.0, 'M',
                             CAST('00000000-0000-0000-0000-000000000000' AS UNIQUEIDENTIFIER), 'IN209000', GETUTCDATE(),
                             CAST('00000000-0000-0000-0000-000000000000' AS UNIQUEIDENTIFIER), 'IN209000', GETUTCDATE()
@@ -3980,10 +3982,18 @@ public class UomUnitConversionRestore : CustomizationPlugin
                 }
             }
 
-            // AFTER diagnostics — verify zero bad masks
+            // AFTER diagnostics
             Diag(conn, null, "SELECT UnitType, COUNT(*) AS cnt FROM INUnit WHERE FromUnit='YDS' AND ToUnit='YDS' GROUP BY UnitType ORDER BY UnitType", "AFTER counts by UnitType");
-            Diag(conn, null, "SELECT CompanyID, CONVERT(VARCHAR(100), CompanyMask, 1) AS Mask, DATALENGTH(CompanyMask) AS MaskLen, COUNT(*) AS cnt FROM INUnit WHERE FromUnit='YDS' AND ToUnit='YDS' GROUP BY CompanyID, CompanyMask ORDER BY CompanyID", "AFTER YDS masks by CompanyID");
-            Diag(conn, null, "SELECT COUNT(*) AS bad FROM INUnit WHERE FromUnit='YDS' AND ToUnit='YDS' AND (CompanyMask IS NULL OR DATALENGTH(CompanyMask) = 0)", "AFTER bad mask count (MUST BE 0)");
+            // Compare our new records mask vs what DEFAULT gave us
+            Diag(conn, null, @"SELECT TOP 3 CompanyID, UnitType, InventoryID,
+                CONVERT(VARCHAR(100), CompanyMask, 1) AS Mask, DATALENGTH(CompanyMask) AS MaskLen
+                FROM INUnit WHERE FromUnit='YDS' AND ToUnit='YDS' AND CompanyID = 2 ORDER BY UnitType", "AFTER new YDS masks CompanyID=2");
+            Diag(conn, null, "SELECT COUNT(*) AS bad FROM INUnit WHERE FromUnit='YDS' AND ToUnit='YDS' AND (CompanyMask IS NULL OR DATALENGTH(CompanyMask) = 0)", "AFTER bad mask count");
+            // Verify item 28065 specifically
+            Diag(conn, null, @"SELECT u.UnitType, u.ItemClassID, u.InventoryID, u.FromUnit, u.ToUnit,
+                CONVERT(VARCHAR(100), u.CompanyMask, 1) AS Mask, DATALENGTH(u.CompanyMask) AS MaskLen
+                FROM INUnit u INNER JOIN InventoryItem i ON i.InventoryID = u.InventoryID AND i.CompanyID = u.CompanyID
+                WHERE i.InventoryCD LIKE '%28065%' AND u.CompanyID = 2 AND u.FromUnit = 'YDS'", "AFTER Item28065 YDS records");
         }
     }
 
