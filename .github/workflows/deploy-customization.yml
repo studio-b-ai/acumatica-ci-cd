@@ -20,6 +20,7 @@
 #                                     (VAR packages, Shopify connector, etc.) for conflict detection
 #   MAINTENANCE_NOTIFY_RECIPIENTS   - Comma-separated emails for maintenance countdown notifications
 #   MAINTENANCE_NOTIFY_SENDER       - Sender email for notifications (default: kevin@heritagefabrics.com)
+#   ACUMATICA_TEST_TENANT           - Heritage Test tenant name (required for Heritage Test gate)
 #
 # Optional GitHub Secrets (for email notifications via Microsoft Graph API):
 #   AZURE_TENANT_ID       - Entra tenant ID
@@ -76,7 +77,7 @@ on:
         type: boolean
         default: false
       force_qualify:
-        description: 'Skip qualification checks (emergency override)'
+        description: 'Skip qualification checks (emergency override — does NOT bypass Heritage Test for migration packages)'
         required: false
         type: boolean
         default: false
@@ -116,6 +117,8 @@ jobs:
       package_path: ${{ steps.package.outputs.path }}
       package_name: ${{ steps.package.outputs.name }}
       plugin_changes: ${{ steps.plugin_check.outputs.plugin_changes }}
+      # AAR 2026-03-29: migration packages cannot bypass Heritage Test even with force_qualify=true
+      migration_package: ${{ steps.migration_check.outputs.migration_package }}
 
     steps:
       - name: Checkout repository
@@ -135,6 +138,22 @@ jobs:
             echo "::warning::CustomizationPlugin changes detected — sandbox gate is MANDATORY"
           else
             echo "plugin_changes=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Detect migration package
+        id: migration_check
+        run: |
+          # AAR 2026-03-29: Migration packages (UOM renames, INUnit rebuilds) require
+          # Heritage Test gate even if force_qualify=true — these packages mutate
+          # inventory conversion tables. The 2026-03-29 outage was caused by deploying
+          # a UOM migration to production without Heritage Test validation.
+          # force_qualify=true DOES NOT bypass this gate for migration packages.
+          MIGRATION_PATTERNS="UomRename|UomMigration|UomHotfix|INUnitRestore|UomRollback|RenamePiece|RenameYds"
+          if grep -rqiE "(${MIGRATION_PATTERNS})" "Customization/${PROJECT_NAME}/project.xml" 2>/dev/null; then
+            echo "migration_package=true" >> "$GITHUB_OUTPUT"
+            echo "::warning::Migration package detected — Heritage Test gate is MANDATORY (force_qualify=true does NOT bypass this gate)"
+          else
+            echo "migration_package=false" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Verify project folder exists
@@ -224,20 +243,20 @@ jobs:
       - name: Package customization project
         id: package
         run: |
-          TIMESTAMP=$(date +%Y%m%d-%H%M%S)
-          PACKAGE_NAME="${PROJECT_NAME}_${TIMESTAMP}.zip"
-          PACKAGE_PATH="dist/${PACKAGE_NAME}"
-
+          # AAR 2026-03-29: MANDATORY — use package.sh, which runs validate-project.py
+          # --strict BEFORE creating the zip, then --validate-zip AFTER.
+          # Raw `zip` bypasses ALL validation. Root cause of 20+ blind hotfix iterations
+          # during the UOM migration outage that broke production for several hours.
           mkdir -p dist
+          bash scripts/package.sh "${PROJECT_NAME}" dist/
 
-          cd Customization/${PROJECT_NAME}
-          zip -r "../../${PACKAGE_PATH}" . \
-            -x "*.DS_Store" \
-            -x "__MACOSX/*" \
-            -x "*.user" \
-            -x "bin/*" \
-            -x "obj/*"
-          cd ../..
+          # Discover the zip created by package.sh
+          PACKAGE_PATH=$(ls dist/${PROJECT_NAME}_*.zip 2>/dev/null | sort -r | head -1)
+          if [ -z "${PACKAGE_PATH}" ]; then
+            echo "::error::package.sh did not produce a zip in dist/ — validation failed, no zip created"
+            exit 1
+          fi
+          PACKAGE_NAME=$(basename "${PACKAGE_PATH}")
 
           # Include compiled DLLs if they exist
           if [ -d "Customization/bin/Release" ]; then
@@ -247,7 +266,7 @@ jobs:
           fi
 
           FILESIZE=$(du -h "${PACKAGE_PATH}" | cut -f1)
-          echo "Packaged: ${PACKAGE_NAME} (${FILESIZE})"
+          echo "Package ready: ${PACKAGE_NAME} (${FILESIZE})"
 
           echo "path=${PACKAGE_PATH}" >> "$GITHUB_OUTPUT"
           echo "name=${PACKAGE_NAME}" >> "$GITHUB_OUTPUT"
@@ -256,7 +275,6 @@ jobs:
         env:
           ALSO_PUBLISH: ${{ vars.ALSO_PUBLISH_PROJECTS || '' }}
         run: |
-          TIMESTAMP=$(date +%Y%m%d-%H%M%S)
           # Only package directories that appear in ALSO_PUBLISH_PROJECTS
           # This prevents importing deprecated packages (AesthetikERP, StudioBPORelations)
           for dir in Customization/*/; do
@@ -270,15 +288,17 @@ jobs:
               continue
             fi
             if [ -f "${dir}project.xml" ]; then
-              EXTRA_ZIP="dist/${dirname}_${TIMESTAMP}.zip"
-              cd "${dir}"
-              zip -r "../../${EXTRA_ZIP}" . \
-                -x "*.DS_Store" \
-                -x "__MACOSX/*" \
-                -x "*.user"
-              cd ../..
-              FILESIZE=$(du -h "${EXTRA_ZIP}" | cut -f1)
-              echo "Extra package: ${dirname} (${FILESIZE})"
+              # AAR 2026-03-29: use package.sh — NOT raw zip — for all extra packages too.
+              # Every package that gets imported goes through the same validation gates.
+              bash scripts/package.sh "${dirname}" dist/
+              EXTRA_ZIP=$(ls "dist/${dirname}_"*.zip 2>/dev/null | sort -r | head -1)
+              if [ -n "${EXTRA_ZIP}" ]; then
+                FILESIZE=$(du -h "${EXTRA_ZIP}" | cut -f1)
+                echo "Extra package: ${dirname} (${FILESIZE})"
+              else
+                echo "::error::package.sh did not produce a zip for extra project ${dirname}"
+                exit 1
+              fi
             fi
           done
 
@@ -316,14 +336,15 @@ jobs:
           ACUMATICA_USERNAME: ${{ secrets.ACUMATICA_PROD_USERNAME }}
           ACUMATICA_PASSWORD: ${{ secrets.ACUMATICA_PROD_PASSWORD }}
           ACUMATICA_TENANT: ${{ secrets.ACUMATICA_PROD_TENANT }}
+          # AAR 2026-03-29: qualify.py Check 7 verifies Heritage Test is accessible
+          # before allowing production deploy. Requires this var to be set.
+          ACUMATICA_TEST_TENANT: ${{ vars.ACUMATICA_TEST_TENANT }}
           SLACK_WEBHOOK_URL: ${{ secrets.STUDIOB_SLACK_WEBHOOK_URL }}
           KNOWN_PROJECTS: ${{ env.KNOWN_PROJECTS }}
           ISV_PACKAGES: ${{ env.ISV_PACKAGES }}
           PROJECT_NAME: ${{ env.PROJECT_NAME }}
         run: python scripts/qualify.py
 
-  # ──────────────────────────────────────────────
-  # Job 3: Countdown — offloaded to webhook-router
   # ──────────────────────────────────────────────
   # Job 3: Sandbox — Publish + smoke test before production (AAR 2026-03-28)
   # ──────────────────────────────────────────────
@@ -456,6 +477,11 @@ jobs:
 
   # ──────────────────────────────────────────────
   # Job 3b: Heritage Test — Hard gate on prod instance test tenant (pre-prod validation)
+  #
+  # AAR 2026-03-29: This gate is MANDATORY for migration packages.
+  # The UOM migration outage was caused by deploying directly to production
+  # without Heritage Test validation. Migration packages cannot bypass this gate
+  # even with force_qualify=true — see migration_package output from build job.
   # ──────────────────────────────────────────────
   heritage-test-gate:
     name: Heritage Test Publish Gate
@@ -466,7 +492,7 @@ jobs:
       always() &&
       needs.build.result == 'success' &&
       github.event_name != 'pull_request' &&
-      github.event.inputs.force_qualify != 'true' && (
+      (github.event.inputs.force_qualify != 'true' || needs.build.outputs.migration_package == 'true') && (
         needs.sandbox-gate.result == 'success' ||
         needs.sandbox-gate.result == 'skipped'
       ) && (
@@ -478,6 +504,14 @@ jobs:
       cancel-in-progress: true
 
     steps:
+      - name: Block force_qualify bypass for migration packages
+        if: needs.build.outputs.migration_package == 'true' && github.event.inputs.force_qualify == 'true'
+        run: |
+          echo "::error::force_qualify=true CANNOT bypass Heritage Test gate for migration packages."
+          echo "::error::AAR 2026-03-29: Skipping Heritage Test for UOM migration caused a multi-hour production outage."
+          echo "::error::This gate is running despite force_qualify=true. Fix Heritage Test first, then deploy."
+          echo "::error::Actor: ${{ github.actor }} | Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+
       - uses: actions/checkout@v4
 
       - name: Download package artifact
@@ -562,6 +596,10 @@ jobs:
           echo "Validates publish on the production instance Heritage Test tenant" >> "$GITHUB_STEP_SUMMARY"
           echo "before deploying to the production tenant. **Hard gate — failure blocks prod.**" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
+          if [ "${{ needs.build.outputs.migration_package }}" = "true" ]; then
+            echo "⚠️ **Migration package** — this gate cannot be bypassed with \`force_qualify=true\`." >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+          fi
           echo "| Step | Result |" >> "$GITHUB_STEP_SUMMARY"
           echo "|------|--------|" >> "$GITHUB_STEP_SUMMARY"
           echo "| Deploy | \`${{ steps.deploy.outcome || 'n/a' }}\` |" >> "$GITHUB_STEP_SUMMARY"
@@ -650,10 +688,6 @@ jobs:
           ACUMATICA_PASSWORD: ${{ secrets.ACUMATICA_PROD_PASSWORD }}
           ACUMATICA_TENANT: ${{ (steps.env.outputs.target == 'production') && secrets.ACUMATICA_PROD_TENANT || secrets.ACUMATICA_SANDBOX_TENANT }}
         run: |
-          # Skip smoke test on emergency deploys (force_qualify=true).
-          # Use case: Acumatica is DOWN because of a bad customization — we need to
-          # deploy the fix even though we cannot log in. deploy.py has its own retry
-          # logic that handles TargetInvocationException / API Login Limit.
           if [ "${{ github.event.inputs.force_qualify }}" = "true" ]; then
             echo "::warning::force_qualify=true — skipping pre-deploy smoke test (emergency deploy)"
             exit 0
@@ -696,7 +730,6 @@ jobs:
             exit 1
           fi
 
-          # Build extra import flags for co-managed packages
           EXTRA_FLAGS=""
           for pkg in dist/*.zip; do
             if [ "${pkg}" != "${PACKAGE_FILE}" ]; then
@@ -708,14 +741,11 @@ jobs:
 
           echo "Deploying ${PACKAGE_FILE} to ${{ steps.env.outputs.target }}"
 
-          # Emergency path: use basic auth when session login is broken
           if [ "${{ github.event.inputs.force_qualify }}" = "true" ]; then
             echo "::warning::force_qualify=true — using basic auth emergency deploy (bypasses broken session login)"
-            # Unzip package to temp dir for the emergency script
             mkdir -p /tmp/emergency-pkg
             unzip -o "${PACKAGE_FILE}" -d /tmp/emergency-pkg/
 
-            # Also unzip extra packages
             for pkg in dist/*.zip; do
               if [ "${pkg}" != "${PACKAGE_FILE}" ]; then
                 PKG_BASE=$(basename "${pkg}" .zip)
@@ -780,7 +810,6 @@ jobs:
             --package "${SNAPSHOT}" \
             --also-publish "${ALSO_PUBLISH}"
 
-          # Post-rollback verification
           python scripts/validate-publish.py --manifest publish-manifest.json
           ROLLBACK_VERIFY=$?
 
@@ -872,8 +901,6 @@ jobs:
             ${{ steps.hours.outputs.after_hours == 'true' && '--skip-email' || '' }}
 
       # ── Auto-lockout on deploy failure (AAR 2026-03-28 Guard 5) ──────
-      # Prevents Railway services from hammering a broken Acumatica instance
-      # while the deploy failure is being investigated.
       - name: Auto-lockout on deploy failure
         if: failure() && steps.deploy.outcome == 'failure' && steps.env.outputs.target == 'production'
         continue-on-error: true
@@ -885,7 +912,6 @@ jobs:
             --max-time 5 || echo "Lockout endpoint unreachable — manual lockout may be needed"
           echo "::warning::Auto-lockout enabled for 1 hour. Clear with POST /maintenance/end when resolved."
 
-      # Notify Slack on deploy failure
       - name: Slack notification on failure
         if: failure()
         env:
@@ -980,9 +1006,6 @@ jobs:
             fi
           done
 
-          # Sandbox only co-publishes extra packages we just imported —
-          # deploy.py prepends PROJECT_NAME automatically, so don't include it here.
-          # No ISV/vendor packages, no projects not in test company.
           python scripts/deploy.py \
             --project "${PROJECT_NAME}" \
             --package "${PACKAGE_FILE}" \
