@@ -3868,7 +3868,7 @@ IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('INItemXRef
 
     <Graph ClassName="UomUnitConversionRestore" Source="#CDATA" IsNew="True" FileType="NewFile">
         <CDATA name="Source"><![CDATA[using System;
-using Microsoft.Data.SqlClient;
+using System.Data.SqlClient;
 using Customization;
 
 public class UomUnitConversionRestore : CustomizationPlugin
@@ -3882,6 +3882,7 @@ public class UomUnitConversionRestore : CustomizationPlugin
     // omitted CompanyID — making records invisible to Acumatica's company-filtered
     // queries. INUnit.UnitType: 1=global/company, 2=item-class, 3=item-level.
     // All WriteLog calls use TABLE prefix so they appear in deploy.py CI logs.
+    // Uses System.Data.SqlClient (Cloud-compatible; Microsoft.Data.SqlClient blocked by validator).
     // See: memory/context/aar-2026-03-29-uom-migration-outage.md
 
     public override void UpdateDatabase()
@@ -3889,8 +3890,8 @@ public class UomUnitConversionRestore : CustomizationPlugin
         WriteLog("TABLE === UomUnitConversionRestore v4: starting ===");
         var cs = System.Configuration.ConfigurationManager.ConnectionStrings["ProjectX"];
         if (cs == null) { WriteLog("TABLE UomUnitConversionRestore: ERROR: No connection string."); return; }
-        string connStr = cs.ConnectionString + ";TrustServerCertificate=True";
-        using (var conn = new Microsoft.Data.SqlClient.SqlConnection(connStr))
+        string connStr = cs.ConnectionString;
+        using (var conn = new System.Data.SqlClient.SqlConnection(connStr))
         {
             conn.Open();
             using (var txn = conn.BeginTransaction())
@@ -3949,7 +3950,7 @@ public class UomUnitConversionRestore : CustomizationPlugin
         }
     }
 
-    private int Run(Microsoft.Data.SqlClient.SqlConnection c, Microsoft.Data.SqlClient.SqlTransaction t, string sql, string label)
+    private int Run(System.Data.SqlClient.SqlConnection c, System.Data.SqlClient.SqlTransaction t, string sql, string label)
     {
         using (var cmd = c.CreateCommand()) { cmd.Transaction = t; cmd.CommandText = sql; cmd.CommandTimeout = 300; int r = cmd.ExecuteNonQuery(); WriteLog("TABLE UomUnitConversionRestore: " + label + ": " + r + " rows"); return r; }
     }
