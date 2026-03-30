@@ -252,6 +252,9 @@ def validate(path: str, strict: bool = False, no_semantic: bool = False):
                 # CRITICAL: Destructive GI SQL detection (AAR 2026-03-29)
                 validate_gi_sql(class_name, code)
 
+                # CRITICAL: Destructive INUnit SQL detection (AAR 2026-03-28)
+                validate_inunit_sql(class_name, code)
+
                 # CRITICAL: [PXDB*] fields must have matching SQL
                 validate_pxdb_has_sql(class_name, code, all_sql_text)
 
@@ -387,6 +390,46 @@ def validate_gi_sql(class_name: str, code: str):
             f"         Root cause of 2026-03-29 production outage (45 min down).\n"
             f"         Fix: Use the GI screen (SM208000) or Acumatica GI API instead.\n"
             f"         If reviewed and intentional, add: -- REVIEWED: gi-sql-safe"
+        )
+
+
+INUNIT_SQL_PATTERN = re.compile(
+    r"(?:DELETE\s+FROM|INSERT\s+INTO)\s+INUnit",
+    re.IGNORECASE,
+)
+
+INUNIT_SQL_REVIEW_MARKER = "-- REVIEWED: inunit-sql-safe"
+
+
+def validate_inunit_sql(class_name: str, code: str):
+    """Block DELETE FROM INUnit and INSERT INTO INUnit in CustomizationPlugins.
+
+    Raw SQL INSERT into INUnit creates records invisible to Acumatica's ORM.
+    Raw SQL DELETE from INUnit destroys self-conversion records that items
+    depend on, breaking inventory operations with no way to restore via SQL.
+
+    On 2026-03-28 a UOM migration deleted INUnit self-conversions. Eight
+    attempts to restore them via raw SQL INSERT all failed — records existed
+    in the database but were invisible to BQL. Production was restored from
+    snapshot.
+
+    UPDATE statements against INUnit are allowed (for renaming UOM codes).
+
+    If the SQL is intentional and has been reviewed, add the comment:
+        -- REVIEWED: inunit-sql-safe
+    """
+    if INUNIT_SQL_REVIEW_MARKER in code:
+        return
+
+    match = INUNIT_SQL_PATTERN.search(code)
+    if match:
+        error(
+            f"{class_name}: Destructive SQL against INUnit detected: \"{match.group()}\"\n"
+            f"         DELETE FROM INUnit destroys self-conversion records that items depend on.\n"
+            f"         INSERT INTO INUnit creates ORM-invisible records.\n"
+            f"         Root cause of 2026-03-28 production outage (restored from snapshot).\n"
+            f"         Fix: Use PXDatabase.Insert<INUnit>() or the Unit Conversions screen (IN209000).\n"
+            f"         If reviewed and intentional, add: -- REVIEWED: inunit-sql-safe"
         )
 
 
