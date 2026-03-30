@@ -3664,6 +3664,208 @@ namespace HeritageFabrics.SO
 ]]></CDATA>
     </Graph>
 
+
+    <Graph ClassName="SOOrderEntry_DefaultQty" Source="#CDATA" IsNew="True" FileType="ExistingGraph">
+        <CDATA name="Source"><![CDATA[using System;
+using System.Collections.Generic;
+using PX.Data;
+using PX.Objects.IN;
+using PX.Objects.SO;
+
+namespace HeritageFabrics.SO
+{
+    /// <summary>
+    /// Absorbed from WMSynergy.DefaultQty.
+    /// When a lot/serial number is assigned on an SO line split, defaults the split
+    /// quantity to the available yardage on that lot at the selected warehouse.
+    /// </summary>
+    public class SOOrderEntry_DefaultQty : PXGraphExtension<PX.Objects.SO.SOOrderEntry>
+    {
+        public static bool IsActive() => true;
+
+        #region Event Handlers
+
+        protected virtual void _(Events.FieldUpdated<SOLineSplit, SOLineSplit.locationID> e)
+        {
+            if (e.Row == null) return;
+            var row = e.Row;
+
+            if (row.InventoryID == null || row.SiteID == null || row.LotSerialNbr == null)
+                return;
+
+            var lotStats = PXSelectReadonly<INSiteLotSerial,
+                Where<INSiteLotSerial.inventoryID, Equal<Required<INSiteLotSerial.inventoryID>>,
+                    And<INSiteLotSerial.siteID, Equal<Required<INSiteLotSerial.siteID>>,
+                    And<INSiteLotSerial.lotSerialNbr, Equal<Required<INSiteLotSerial.lotSerialNbr>>>>>>
+                .Select(Base, row.InventoryID, row.SiteID, row.LotSerialNbr);
+
+            decimal availableQty = 0m;
+            foreach (INSiteLotSerial stat in lotStats)
+                availableQty += stat.QtyAvail.GetValueOrDefault();
+
+            if (availableQty > 0)
+                e.Cache.SetValueExt<SOLineSplit.qty>(row, availableQty);
+        }
+
+        #endregion
+    }
+}
+]]></CDATA>
+    </Graph>
+
+    <Graph ClassName="SOOrderEntry_ForceLot" Source="#CDATA" IsNew="True" FileType="ExistingGraph">
+        <CDATA name="Source"><![CDATA[using PX.Data;
+using PX.Data.BQL;
+using PX.Data.BQL.Fluent;
+using PX.Objects.IN;
+using PX.Objects.SO;
+
+namespace HeritageFabrics.SO
+{
+    /// <summary>
+    /// Absorbed from WMSynergy.ForceLotSalesOrder.
+    /// Warns at persist time if an SO line lacks a lot/serial assignment
+    /// when the item has more than 25 units available at the warehouse.
+    /// This prevents open orders from shipping without lot traceability
+    /// on items that are in stock and ready to allocate.
+    /// </summary>
+    public class SOOrderEntry_ForceLot : PXGraphExtension<PX.Objects.SO.SOOrderEntry>
+    {
+        public static bool IsActive() => true;
+
+        #region Event Handlers
+
+        protected virtual void _(Events.RowPersisting<SOLine> e)
+        {
+            if (e.Row == null) return;
+            if (e.Operation != PXDBOperation.Insert && e.Operation != PXDBOperation.Update) return;
+
+            var line = e.Row;
+
+            INLotSerClass lotSerClass = PXSelectJoin<INLotSerClass,
+                InnerJoin<InventoryItem,
+                    On<InventoryItem.lotSerClassID, Equal<INLotSerClass.lotSerClassID>>>,
+                Where<InventoryItem.inventoryID, Equal<Required<InventoryItem.inventoryID>>>>
+                .Select(Base, line.InventoryID);
+
+            if (lotSerClass == null) return;
+
+            INSiteStatus itemStatus = PXSelect<INSiteStatus,
+                Where<INSiteStatus.inventoryID, Equal<Required<INSiteStatus.inventoryID>>,
+                    And<INSiteStatus.siteID, Equal<Required<INSiteStatus.siteID>>>>>
+                .Select(Base, line.InventoryID, line.SiteID);
+
+            if (itemStatus?.QtyAvail > 25)
+            {
+                bool hasLotSerial = PXSelect<SOLineSplit,
+                    Where<SOLineSplit.orderType, Equal<Required<SOLineSplit.orderType>>,
+                        And<SOLineSplit.orderNbr, Equal<Required<SOLineSplit.orderNbr>>,
+                        And<SOLineSplit.lineNbr, Equal<Required<SOLineSplit.lineNbr>>,
+                        And<SOLineSplit.lotSerialNbr, IsNotNull,
+                        And<SOLineSplit.lotSerialNbr, NotEqual<Required<SOLineSplit.lotSerialNbr>>>>>>>>
+                    .Select(Base, line.OrderType, line.OrderNbr, line.LineNbr, string.Empty).Count > 0;
+
+                if (!hasLotSerial)
+                {
+                    PXUIFieldAttribute.SetWarning<SOLine.inventoryID>(e.Cache, line,
+                        "Lot/Serial number must be selected if Qty Available > 25.");
+                }
+            }
+        }
+
+        #endregion
+    }
+}
+]]></CDATA>
+    </Graph>
+
+    <Graph ClassName="INItemXRefExt" Source="#CDATA" IsNew="True" FileType="NewFile">
+        <CDATA name="Source"><![CDATA[using System;
+using PX.Data;
+using PX.Objects.IN;
+
+namespace HeritageFabrics.IN
+{
+    /// <summary>
+    /// Absorbed from WMSynergy.ExpirationDateAtStockItems.
+    /// Adds an expiration date field to the Item Cross-Reference grid on Stock Items (IN202500).
+    /// Used to track vendor-assigned expiry dates per cross-reference entry
+    /// for compliance and receiving validation.
+    /// </summary>
+    public class INItemXRefExt : PXCacheExtension<PX.Objects.IN.INItemXRef>
+    {
+        public static bool IsActive() => true;
+
+        #region UsrHFExpiryDate
+        [PXDBDate]
+        [PXUIField(DisplayName = "Expiry Date")]
+        public virtual DateTime? UsrHFExpiryDate { get; set; }
+        public abstract class usrHFExpiryDate : PX.Data.BQL.BqlDateTime.Field<usrHFExpiryDate> { }
+        #endregion
+    }
+}
+]]></CDATA>
+    </Graph>
+
+    <Graph ClassName="InventorySummaryEnq_CutHangTag" Source="#CDATA" IsNew="True" FileType="ExistingGraph">
+        <CDATA name="Source"><![CDATA[using System.Collections;
+using System.Collections.Generic;
+using PX.Data;
+using PX.Data.BQL.Fluent;
+using PX.Objects.IN;
+
+namespace HeritageFabrics.IN
+{
+    /// <summary>
+    /// Absorbed from WMSynergy.HF.CutHangTagLabel.
+    /// Adds a Print Tag toolbar action to the Inventory Summary screen (IN401000).
+    /// Launches report WM302001 (Cut Hang Tag) pre-populated with the selected
+    /// inventory item, location, lot/serial number, and quantity on hand.
+    /// </summary>
+    public class InventorySummaryEnq_CutHangTag : PXGraphExtension<InventorySummaryEnq>
+    {
+        public static bool IsActive() => true;
+
+        #region Actions
+
+        public PXAction<InventorySummaryEnquiryResult> PrintTag;
+        public SelectFrom<InventorySummaryEnquiryResult>.View SummaryResult;
+
+        [PXButton(CommitChanges = true)]
+        [PXUIField(DisplayName = "Print Tag",
+            MapEnableRights = PXCacheRights.Select,
+            MapViewRights = PXCacheRights.Select)]
+        protected virtual IEnumerable printTag(PXAdapter adapter)
+        {
+            var row = SummaryResult.Current;
+            if (row != null)
+            {
+                var parameters = new Dictionary<string, string>
+                {
+                    ["InventoryID"] = row.InventoryID?.ToString(),
+                    ["LocationID"]  = row.LocationID?.ToString(),
+                    ["LotNbr"]      = row.LotSerialNbr,
+                    ["QTY"]         = ((decimal?)row.QtyOnHand)?.ToString("F2") ?? "0.00"
+                };
+                throw new PXReportRequiredException(parameters, "WM302001", "Print Hang Tag");
+            }
+            return adapter.Get();
+        }
+
+        #endregion
+    }
+}
+]]></CDATA>
+    </Graph>
+
+    <Sql Name="AesthetikWMS_INItemXRef_ExpiryDate_v1" Script="#CDATA">
+        <CDATA name="Script"><![CDATA[
+-- INItemXRef expiry date field (absorbed from WMSynergy ExpirationDateAtStockItems)
+IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('INItemXRef') AND name = 'UsrHFExpiryDate')
+  ALTER TABLE INItemXRef ADD UsrHFExpiryDate date NULL;
+]]></CDATA>
+    </Sql>
+
     <Graph ClassName="UomUnitConversionRestore" Source="#CDATA" IsNew="True" FileType="NewFile">
         <CDATA name="Source"><![CDATA[using System;
 using System.Collections.Generic;
@@ -3683,18 +3885,20 @@ namespace Aesthetik.WMS
     ///
     /// FIX:
     ///   For every active InventoryItem, insert missing INUnit records:
-    ///     1. BaseUnit→BaseUnit (self-reference, Rate=1.0, MultiDiv=M)
-    ///     2. SalesUnit→BaseUnit (if SalesUnit != BaseUnit, e.g. IN->YDS at Rate=36)
-    ///     3. PurchaseUnit→BaseUnit (if PurchaseUnit differs)
+    ///     1. BaseUnit→BaseUnit (self-reference, Rate=1.0, MultiDiv=M) — required for all UOM validation
+    ///     2. SalesUnit→BaseUnit (if SalesUnit ≠ BaseUnit, e.g. IN→YDS at Rate=36)
+    ///     3. PurchaseUnit→BaseUnit (if PurchaseUnit ≠ BaseUnit and ≠ SalesUnit)
     ///
     /// IDEMPOTENT: Checks PXDatabase.Exists before every insert. Safe to re-publish.
-    /// See: memory/context/aar-2026-03-29-uom-migration-outage.md
+    ///
+    /// SEE: memory/context/aar-2026-03-29-uom-migration-outage.md
     /// </summary>
     public class UomUnitConversionRestore : CustomizationPlugin
     {
-        // Known conversion rates (FromUnit -> ToUnit = Rate, MultiDiv=M)
+        // Known conversion rates (FromUnit → ToUnit = Rate with MultiDiv=M)
         // Source: INUnit.xml from 2026-03-23 database snapshot (pre-outage)
-        // Unknown pairs are SKIPPED with a log warning — wrong rate is worse than missing record.
+        // For any unknown pair the plugin logs a warning and skips (safe — does NOT default 1.0
+        // for unknown conversions, because a wrong rate is worse than a missing record).
         private static readonly Dictionary<(string from, string to), decimal> KnownRates =
             new Dictionary<(string from, string to), decimal>
             {
@@ -3705,17 +3909,17 @@ namespace Aesthetik.WMS
                 { ("PIECE", "PIECE"), 1.0m  },
                 { ("FT",    "FT"),    1.0m  },
                 { ("LBS",   "LBS"),   1.0m  },
-                { ("IN",    "YDS"),   36.0m },
-                { ("FT",    "YDS"),   3.0m  },
+                { ("IN",    "YDS"),   36.0m },  // 36 inches per yard
+                { ("FT",    "YDS"),   3.0m  },  // 3 feet per yard
             };
 
         public override void UpdateDatabase()
         {
             try
             {
-                int selfRefsInserted = 0;
-                int convRefsInserted = 0;
-                int skippedUnknown   = 0;
+                int selfRefsInserted  = 0;
+                int convRefsInserted  = 0;
+                int skippedUnknown    = 0;
 
                 WriteLog("UomUnitConversionRestore: starting INUnit self-reference restore...");
 
@@ -3736,21 +3940,22 @@ namespace Aesthetik.WMS
 
                     if (inventoryID == null || string.IsNullOrEmpty(baseUnit)) continue;
 
-                    // 1. BaseUnit->BaseUnit self-reference (required for all UOM validation)
+                    // 1. BaseUnit→BaseUnit self-reference (mandatory for all UOM validation)
                     EnsureConversion(inventoryID.Value, baseUnit, baseUnit,
                         ref selfRefsInserted, ref skippedUnknown);
 
-                    // 2. SalesUnit->BaseUnit (if different)
+                    // 2. SalesUnit→BaseUnit (if different)
                     if (!string.IsNullOrEmpty(salesUnit) && salesUnit != baseUnit)
                     {
                         EnsureConversion(inventoryID.Value, salesUnit, baseUnit,
                             ref convRefsInserted, ref skippedUnknown);
 
+                        // SalesUnit self-reference (needed for SalesUnit validation)
                         EnsureConversion(inventoryID.Value, salesUnit, salesUnit,
                             ref selfRefsInserted, ref skippedUnknown);
                     }
 
-                    // 3. PurchaseUnit->BaseUnit (if different from both)
+                    // 3. PurchaseUnit→BaseUnit (if different from both BaseUnit and SalesUnit)
                     if (!string.IsNullOrEmpty(purchUnit)
                         && purchUnit != baseUnit
                         && purchUnit != salesUnit)
@@ -3758,21 +3963,22 @@ namespace Aesthetik.WMS
                         EnsureConversion(inventoryID.Value, purchUnit, baseUnit,
                             ref convRefsInserted, ref skippedUnknown);
 
+                        // PurchaseUnit self-reference
                         EnsureConversion(inventoryID.Value, purchUnit, purchUnit,
                             ref selfRefsInserted, ref skippedUnknown);
                     }
                 }
 
                 WriteLog(
-                    "UomUnitConversionRestore: COMPLETE — " +
-                    "self-refs inserted: " + selfRefsInserted + ", " +
-                    "conversions inserted: " + convRefsInserted + ", " +
-                    "unknown pairs skipped: " + skippedUnknown + "."
+                    $"UomUnitConversionRestore: COMPLETE — " +
+                    $"self-refs inserted: {selfRefsInserted}, " +
+                    $"conversions inserted: {convRefsInserted}, " +
+                    $"unknown pairs skipped: {skippedUnknown}."
                 );
             }
             catch (Exception ex)
             {
-                WriteLog("UomUnitConversionRestore: FAILED — " + ex.GetType().Name + ": " + ex.Message);
+                WriteLog($"UomUnitConversionRestore: FAILED — {ex.GetType().Name}: {ex.Message}");
                 throw;
             }
         }
@@ -3781,6 +3987,7 @@ namespace Aesthetik.WMS
             int inventoryID, string fromUnit, string toUnit,
             ref int insertCount, ref int skipCount)
         {
+            // Check existence before insert (idempotent)
             bool exists = PXDatabase.Exists<INUnit>(
                 new PXDataFieldValue<INUnit.unitType>((short)INUnitType.InventoryItem),
                 new PXDataFieldValue<INUnit.inventoryID>(inventoryID),
@@ -3790,11 +3997,14 @@ namespace Aesthetik.WMS
 
             if (exists) return;
 
+            // Look up the conversion rate — skip unknown pairs with a warning
+            // (wrong rate is worse than a missing record)
             if (!KnownRates.TryGetValue((fromUnit, toUnit), out decimal rate))
             {
                 WriteLog(
-                    "UomUnitConversionRestore: SKIP unknown " + fromUnit + "->" + toUnit +
-                    " for InventoryID " + inventoryID + ". Add rate to KnownRates and re-publish."
+                    $"UomUnitConversionRestore: SKIP — unknown conversion " +
+                    $"{fromUnit}→{toUnit} for InventoryID {inventoryID}. " +
+                    $"Add rate to KnownRates and re-publish."
                 );
                 skipCount++;
                 return;

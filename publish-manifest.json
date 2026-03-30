@@ -35,12 +35,14 @@
     {"table": "SOShipment", "columns": ["UsrIncludeInContainer", "UsrContainerID"]},
     {"table": "UsrContainer", "columns": ["ContainerCD", "CarrierCode", "Status", "ETA", "ATA"]},
     {"table": "UsrContainerEvent", "columns": ["ContainerID", "NormalizedEventCode", "EventDateTime"]},
-    {"table": "UsrContainerPOLink", "columns": ["ContainerID", "OrderType", "OrderNbr"]}
+    {"table": "UsrContainerPOLink", "columns": ["ContainerID", "OrderType", "OrderNbr"]},
+    {"table": "INItemXRef", "columns": ["UsrHFExpiryDate"]}
   ],
   "_notes": {
     "UsrDisablePayLink": "CustomerExt : PXCacheExtension<Customer> field. Works on AR303000 screen and in C# (ARInvoiceEntry_PayLink_Extension), but NOT exposed via REST API $adHocSchema for Customer entity. SQL column on BAccount table. Cannot validate via REST API schema check — only via sql_columns.",
     "UsrHubSpotDealId": "SOOrderExt in AesthetikWMS package. DAC field requires ALTER TABLE on SOOrder — created via CustomizationPlugin in AesthetikWMS.",
     "UsrComplianceHold_REMOVED": "Removed from validation — columns need manual creation via SM203510 and are not reliably present. Re-add when confirmed live.",
-    "container_tables": "UsrContainer, UsrContainerEvent, UsrContainerPOLink are standalone tables created by AesthetikContainers CustomizationPlugin.UpdateDatabase(). Validated via sql_columns, not entity custom_fields."
+    "container_tables": "UsrContainer, UsrContainerEvent, UsrContainerPOLink are standalone tables created by AesthetikContainers CustomizationPlugin.UpdateDatabase(). Validated via sql_columns, not entity custom_fields.",
+    "UsrHFExpiryDate": "INItemXRefExt : PXCacheExtension<INItemXRef>. Absorbed from WMSynergy ExpirationDateAtStockItems. Tracks vendor-assigned expiry dates on Item Cross-Reference grid (IN202500). Column created via <Sql> element in AesthetikWMS."
   }
 }

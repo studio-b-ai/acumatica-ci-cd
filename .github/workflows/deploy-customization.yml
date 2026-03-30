@@ -90,6 +90,11 @@ on:
         required: false
         type: boolean
         default: false
+      skip_sandbox_force:
+        description: 'Force skip sandbox even for plugin changes (LOGGED, emergency only)'
+        required: false
+        type: boolean
+        default: false
 
 env:
   # HARDCODED — never use a mutable GitHub variable for the project name.
@@ -97,7 +102,7 @@ env:
   # See: 2026-03-22 incident — AesthetikWMSv2/v3 orphans blocked all deploys.
   PROJECT_NAME: AesthetikWMS
   ALSO_PUBLISH: ${{ vars.ALSO_PUBLISH_PROJECTS || '' }}
-  KNOWN_PROJECTS: "AesthetikWMS,AsthetikTheme"
+  KNOWN_PROJECTS: "AesthetikWMS,AsthetikTheme,StudioBAcuOps"
   ISV_PACKAGES: ""  # IIG packages (IIGHFContainerMods, IIGGlobalContainerMgmt) removed — replaced by AesthetikContainers
 
 jobs:
@@ -110,6 +115,7 @@ jobs:
     outputs:
       package_path: ${{ steps.package.outputs.path }}
       package_name: ${{ steps.package.outputs.name }}
+      plugin_changes: ${{ steps.plugin_check.outputs.plugin_changes }}
 
     steps:
       - name: Checkout repository
@@ -119,6 +125,17 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+
+      - name: Detect plugin changes
+        id: plugin_check
+        run: |
+          DIFF=$(git diff origin/main -- '*.xml' '*.cs' 2>/dev/null || true)
+          if echo "$DIFF" | grep -qiE '(CustomizationPlugin|UpdateDatabase|<Sql>|ExecuteSQL|SqlCommand)'; then
+            echo "plugin_changes=true" >> "$GITHUB_OUTPUT"
+            echo "::warning::CustomizationPlugin changes detected — sandbox gate is MANDATORY"
+          else
+            echo "plugin_changes=false" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Verify project folder exists
         run: |
@@ -320,7 +337,10 @@ jobs:
       needs.build.result == 'success' &&
       github.event_name != 'pull_request' &&
       github.event.inputs.force_qualify != 'true' &&
-      github.event.inputs.skip_sandbox != 'true' && (
+      (
+        github.event.inputs.skip_sandbox != 'true' ||
+        (needs.build.outputs.plugin_changes == 'true' && github.event.inputs.skip_sandbox_force != 'true')
+      ) && (
         needs.qualify.result == 'success' ||
         needs.qualify.result == 'skipped'
       )
@@ -329,6 +349,11 @@ jobs:
       cancel-in-progress: true
 
     steps:
+      - name: Log forced sandbox skip
+        if: github.event.inputs.skip_sandbox_force == 'true' && needs.build.outputs.plugin_changes == 'true'
+        run: |
+          echo "::error::SANDBOX GATE FORCE-SKIPPED for plugin changes by ${{ github.actor }}"
+
       - uses: actions/checkout@v4
 
       - name: Download package artifact
@@ -430,15 +455,130 @@ jobs:
           fi
 
   # ──────────────────────────────────────────────
+  # Job 3b: Heritage Test — Hard gate on prod instance test tenant (pre-prod validation)
+  # ──────────────────────────────────────────────
+  heritage-test-gate:
+    name: Heritage Test Publish Gate
+    needs: [build, qualify, sandbox-gate]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    if: |
+      always() &&
+      needs.build.result == 'success' &&
+      github.event_name != 'pull_request' &&
+      github.event.inputs.force_qualify != 'true' && (
+        needs.sandbox-gate.result == 'success' ||
+        needs.sandbox-gate.result == 'skipped'
+      ) && (
+        needs.qualify.result == 'success' ||
+        needs.qualify.result == 'skipped'
+      )
+    concurrency:
+      group: heritage-test-publish
+      cancel-in-progress: true
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download package artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: customization-package
+          path: dist/
+
+      - name: Install Python dependencies
+        run: pip install -r scripts/requirements.txt
+
+      - name: Deploy to Heritage Test
+        id: deploy
+        run: |
+          PACKAGE_FILE=$(ls dist/${PROJECT_NAME}_*.zip 2>/dev/null | head -1)
+          if [ -z "${PACKAGE_FILE}" ]; then
+            PACKAGE_FILE=$(ls dist/*.zip | head -1)
+          fi
+
+          EXTRA_FLAGS=""
+          HT_COPUBLISH=""
+          for pkg in dist/*.zip; do
+            if [ "${pkg}" != "${PACKAGE_FILE}" ]; then
+              PKG_BASE=$(basename "${pkg}" .zip)
+              PKG_NAME=$(echo "${PKG_BASE}" | sed 's/_[0-9]\{8\}-[0-9]\{6\}$//')
+              EXTRA_FLAGS+=" --extra-import ${PKG_NAME}:${pkg}"
+              if [ -n "${HT_COPUBLISH}" ]; then
+                HT_COPUBLISH+=",${PKG_NAME}"
+              else
+                HT_COPUBLISH="${PKG_NAME}"
+              fi
+            fi
+          done
+
+          python scripts/deploy.py \
+            --url "${{ secrets.ACUMATICA_URL }}" \
+            --username "${{ secrets.ACUMATICA_USERNAME }}" \
+            --password "${{ secrets.ACUMATICA_PASSWORD }}" \
+            --tenant "${{ vars.ACUMATICA_TEST_TENANT }}" \
+            --project "${PROJECT_NAME}" \
+            --package "${PACKAGE_FILE}" \
+            --also-publish "${HT_COPUBLISH}" \
+            ${EXTRA_FLAGS}
+
+      - name: Validate Heritage Test
+        id: verify
+        run: |
+          python scripts/validate-publish.py \
+            --url "${{ secrets.ACUMATICA_URL }}" \
+            --username "${{ secrets.ACUMATICA_USERNAME }}" \
+            --password "${{ secrets.ACUMATICA_PASSWORD }}" \
+            --tenant "${{ vars.ACUMATICA_TEST_TENANT }}" \
+            --manifest publish-manifest.json
+
+      - name: Post-publish login smoke test
+        id: smoke
+        run: |
+          python -c "
+          import sys, os
+          sys.path.insert(0, '.')
+          from scripts.deploy import AcumaticaCustomizationClient
+          client = AcumaticaCustomizationClient(
+              '${{ secrets.ACUMATICA_URL }}',
+              '${{ secrets.ACUMATICA_USERNAME }}',
+              '${{ secrets.ACUMATICA_PASSWORD }}',
+              '${{ vars.ACUMATICA_TEST_TENANT }}',
+          )
+          client.login()
+          ok = client.smoke_test()
+          client.logout()
+          if not ok:
+              print('::error::Heritage Test smoke test FAILED — login broken after publish. BLOCKING production deploy.')
+              sys.exit(1)
+          print('Heritage Test smoke test passed — safe to proceed to production')
+          "
+
+      - name: Heritage Test gate summary
+        if: always()
+        run: |
+          echo "## Heritage Test Publish Gate" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Validates publish on the production instance Heritage Test tenant" >> "$GITHUB_STEP_SUMMARY"
+          echo "before deploying to the production tenant. **Hard gate — failure blocks prod.**" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Step | Result |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|------|--------|" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Deploy | \`${{ steps.deploy.outcome || 'n/a' }}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Field Validation | \`${{ steps.verify.outcome || 'n/a' }}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Smoke Test | \`${{ steps.smoke.outcome || 'n/a' }}\` |" >> "$GITHUB_STEP_SUMMARY"
+
+  # ──────────────────────────────────────────────
   # Job 4: Countdown + Deploy to Production
   # ──────────────────────────────────────────────
   countdown-notify:
     name: Send Maintenance Warnings
-    needs: [build, qualify, sandbox-gate]
+    needs: [build, qualify, sandbox-gate, heritage-test-gate]
     runs-on: ubuntu-latest
     if: |
       always() &&
       needs.build.result == 'success' &&
+      (needs.heritage-test-gate.result == 'success' || needs.heritage-test-gate.result == 'skipped') &&
       github.event_name != 'pull_request' && (
         needs.sandbox-gate.result == 'success' ||
         needs.sandbox-gate.result == 'skipped'

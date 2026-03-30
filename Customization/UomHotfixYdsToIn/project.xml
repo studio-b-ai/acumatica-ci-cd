@@ -1,0 +1,142 @@
+<Customization level="0" description="Hotfix v20b: InventoryItem SalesUnit/PurchaseUnit null fix + diagnostic" product-version="24.208">
+    <Graph ClassName="UomHotfixInventoryItemUom" Source="#CDATA" IsNew="True" FileType="NewFile">
+        <CDATA name="Source"><![CDATA[using System;
+using System.Configuration;
+using System.Data.SqlClient;
+using Customization;
+
+public class UomHotfixInventoryItemUom : CustomizationPlugin
+{
+    public override void UpdateDatabase()
+    {
+        WriteLog("TABLE === HOTFIX v20b: InventoryItem UOM field fix ===");
+        var cs = ConfigurationManager.ConnectionStrings["ProjectX"];
+        if (cs == null) { WriteLog("TABLE no connection string"); return; }
+        string connStr = cs.ConnectionString + ";TrustServerCertificate=True";
+        using (var conn = new SqlConnection(connStr))
+        {
+            conn.Open();
+
+            // 1. Diagnostic — item 28065 before fix
+            WriteLog("TABLE --- Item 28065 BEFORE ---");
+            try
+            {
+                using (var cmd = new SqlCommand(
+                    "SELECT InventoryID, InventoryCD, " +
+                    "ISNULL(BaseUnit,'(null)') AS Base, " +
+                    "ISNULL(SalesUnit,'(null)') AS Sales, " +
+                    "ISNULL(PurchaseUnit,'(null)') AS Purchase " +
+                    "FROM InventoryItem WHERE InventoryID=28065 AND CompanyID=2", conn))
+                using (var rdr = cmd.ExecuteReader())
+                    while (rdr.Read())
+                        WriteLog("TABLE Before28065: CD=" + rdr["InventoryCD"] +
+                            " Base=" + rdr["Base"] +
+                            " Sales=" + rdr["Sales"] +
+                            " Purchase=" + rdr["Purchase"]);
+            }
+            catch (Exception ex) { WriteLog("TABLE before-28065 error: " + ex.Message); }
+
+            // 2. Diagnostic — counts before fix
+            WriteLog("TABLE --- Counts BEFORE fix ---");
+            try
+            {
+                using (var cmd = new SqlCommand(
+                    "SELECT " +
+                    "  COUNT(*) AS Total, " +
+                    "  SUM(CASE WHEN SalesUnit IS NULL OR SalesUnit='' THEN 1 ELSE 0 END) AS NullSales, " +
+                    "  SUM(CASE WHEN PurchaseUnit IS NULL OR PurchaseUnit='' THEN 1 ELSE 0 END) AS NullPurchase, " +
+                    "  SUM(CASE WHEN SalesUnit='YDS' THEN 1 ELSE 0 END) AS SalesYDS, " +
+                    "  SUM(CASE WHEN SalesUnit='PIECE' THEN 1 ELSE 0 END) AS SalesPIECE, " +
+                    "  SUM(CASE WHEN BaseUnit='YDS' THEN 1 ELSE 0 END) AS BaseYDS, " +
+                    "  SUM(CASE WHEN BaseUnit='PIECE' THEN 1 ELSE 0 END) AS BasePIECE " +
+                    "FROM InventoryItem WHERE CompanyID=2 AND ItemStatus != 'IN'", conn))
+                using (var rdr = cmd.ExecuteReader())
+                    while (rdr.Read())
+                        WriteLog("TABLE BeforeCounts: Total=" + rdr["Total"] +
+                            " NullSales=" + rdr["NullSales"] +
+                            " NullPurchase=" + rdr["NullPurchase"] +
+                            " SalesYDS=" + rdr["SalesYDS"] +
+                            " SalesPIECE=" + rdr["SalesPIECE"] +
+                            " BaseYDS=" + rdr["BaseYDS"] +
+                            " BasePIECE=" + rdr["BasePIECE"]);
+            }
+            catch (Exception ex) { WriteLog("TABLE before-counts error: " + ex.Message); }
+
+            // 3. FIX — set SalesUnit = BaseUnit where SalesUnit is null/empty and BaseUnit is set
+            WriteLog("TABLE --- Applying SalesUnit fix ---");
+            try
+            {
+                using (var cmd = new SqlCommand(
+                    "UPDATE InventoryItem " +
+                    "SET SalesUnit = BaseUnit " +
+                    "WHERE CompanyID=2 " +
+                    "AND (SalesUnit IS NULL OR SalesUnit='') " +
+                    "AND BaseUnit IS NOT NULL AND BaseUnit != ''", conn))
+                {
+                    int rows = cmd.ExecuteNonQuery();
+                    WriteLog("TABLE SalesUnit fix: " + rows + " rows updated");
+                }
+            }
+            catch (Exception ex) { WriteLog("TABLE salesunit-fix error: " + ex.Message); }
+
+            // 4. FIX — set PurchaseUnit = BaseUnit where PurchaseUnit is null/empty and BaseUnit is set
+            WriteLog("TABLE --- Applying PurchaseUnit fix ---");
+            try
+            {
+                using (var cmd = new SqlCommand(
+                    "UPDATE InventoryItem " +
+                    "SET PurchaseUnit = BaseUnit " +
+                    "WHERE CompanyID=2 " +
+                    "AND (PurchaseUnit IS NULL OR PurchaseUnit='') " +
+                    "AND BaseUnit IS NOT NULL AND BaseUnit != ''", conn))
+                {
+                    int rows = cmd.ExecuteNonQuery();
+                    WriteLog("TABLE PurchaseUnit fix: " + rows + " rows updated");
+                }
+            }
+            catch (Exception ex) { WriteLog("TABLE purchaseunit-fix error: " + ex.Message); }
+
+            // 5. Diagnostic — item 28065 AFTER fix
+            WriteLog("TABLE --- Item 28065 AFTER ---");
+            try
+            {
+                using (var cmd = new SqlCommand(
+                    "SELECT InventoryID, InventoryCD, " +
+                    "ISNULL(BaseUnit,'(null)') AS Base, " +
+                    "ISNULL(SalesUnit,'(null)') AS Sales, " +
+                    "ISNULL(PurchaseUnit,'(null)') AS Purchase " +
+                    "FROM InventoryItem WHERE InventoryID=28065 AND CompanyID=2", conn))
+                using (var rdr = cmd.ExecuteReader())
+                    while (rdr.Read())
+                        WriteLog("TABLE After28065: CD=" + rdr["InventoryCD"] +
+                            " Base=" + rdr["Base"] +
+                            " Sales=" + rdr["Sales"] +
+                            " Purchase=" + rdr["Purchase"]);
+            }
+            catch (Exception ex) { WriteLog("TABLE after-28065 error: " + ex.Message); }
+
+            // 6. Diagnostic — counts after fix
+            WriteLog("TABLE --- Counts AFTER fix ---");
+            try
+            {
+                using (var cmd = new SqlCommand(
+                    "SELECT " +
+                    "  SUM(CASE WHEN SalesUnit IS NULL OR SalesUnit='' THEN 1 ELSE 0 END) AS NullSales, " +
+                    "  SUM(CASE WHEN PurchaseUnit IS NULL OR PurchaseUnit='' THEN 1 ELSE 0 END) AS NullPurchase, " +
+                    "  SUM(CASE WHEN SalesUnit='YDS' THEN 1 ELSE 0 END) AS SalesYDS, " +
+                    "  SUM(CASE WHEN BaseUnit='PIECE' THEN 1 ELSE 0 END) AS BasePIECE " +
+                    "FROM InventoryItem WHERE CompanyID=2 AND ItemStatus != 'IN'", conn))
+                using (var rdr = cmd.ExecuteReader())
+                    while (rdr.Read())
+                        WriteLog("TABLE AfterCounts: NullSales=" + rdr["NullSales"] +
+                            " NullPurchase=" + rdr["NullPurchase"] +
+                            " SalesYDS=" + rdr["SalesYDS"] +
+                            " BasePIECE=" + rdr["BasePIECE"]);
+            }
+            catch (Exception ex) { WriteLog("TABLE after-counts error: " + ex.Message); }
+        }
+        WriteLog("TABLE === HOTFIX v20b: done ===");
+    }
+}]]></CDATA>
+    </Graph>
+</Customization>

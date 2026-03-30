@@ -1,0 +1,87 @@
+<Customization level="1" description="Studio B AcuOps — platform-level tooling (safe no-op)" product-version="24.208">
+    <Graph ClassName="UserAuditTrailGISetup" Source="#CDATA" IsNew="True" FileType="NewFile">
+        <CDATA name="Source"><![CDATA[using System;
+using System.Configuration;
+using System.Data.SqlClient;
+using Customization;
+
+namespace StudioB.AcuOps
+{
+    public class UserAuditTrailGISetup : CustomizationPlugin
+    {
+        public override void UpdateDatabase()
+        {
+            // ROLLBACK: Remove UserAuditTrail GI rows that were inserted by previous versions.
+            // This is a safe cleanup — no new rows are created.
+            // -- REVIEWED: gi-sql-safe
+            // Exits immediately if ConnectionStrings["ProjectX"] is null (always true on this instance).
+            // GI deletes are scoped by DesignID+CompanyID — no blanket table wipes.
+            try
+            {
+                var cs = ConfigurationManager.ConnectionStrings["ProjectX"];
+                if (cs == null) { WriteLog("[StudioBAcuOps] No connection string — skipping"); return; }
+                string connStr = cs.ConnectionString + ";TrustServerCertificate=True";
+
+                using (var conn = new SqlConnection(connStr))
+                {
+                    conn.Open();
+
+                    // Find CompanyID
+                    int companyId = 2;
+                    using (var cmd = new SqlCommand("SELECT TOP 1 CompanyID FROM GIDesign WHERE Name = 'InventoryAllocationDetail'", conn))
+                    {
+                        var result = cmd.ExecuteScalar();
+                        if (result != null && result != DBNull.Value) companyId = Convert.ToInt32(result);
+                    }
+
+                    // Find UserAuditTrail GI
+                    Guid? designId = null;
+                    using (var cmd = new SqlCommand("SELECT DesignID FROM GIDesign WHERE Name = 'UserAuditTrail' AND CompanyID = @CID", conn))
+                    {
+                        cmd.Parameters.AddWithValue("@CID", companyId);
+                        var result = cmd.ExecuteScalar();
+                        if (result != null && result != DBNull.Value) designId = (Guid)result;
+                    }
+
+                    if (!designId.HasValue)
+                    {
+                        WriteLog("[StudioBAcuOps] No UserAuditTrail GI found — nothing to clean up");
+                        return;
+                    }
+
+                    WriteLog("[StudioBAcuOps] Cleaning up UserAuditTrail GI (DesignID=" + designId.Value + ")");
+
+                    // Delete all child rows
+                    string[] tables = { "GITable", "GIResult", "GIWhere", "GISort", "GIFilter", "GIRelation", "GIOn", "GIGroupBy" };
+                    foreach (var table in tables)
+                    {
+                        using (var cmd = new SqlCommand(string.Format("DELETE FROM {0} WHERE DesignID = @ID AND CompanyID = @CID", table), conn))
+                        {
+                            cmd.Parameters.AddWithValue("@ID", designId.Value);
+                            cmd.Parameters.AddWithValue("@CID", companyId);
+                            int rows = cmd.ExecuteNonQuery();
+                            if (rows > 0) WriteLog("  Deleted " + rows + " rows from " + table);
+                        }
+                    }
+
+                    // Delete the GIDesign row
+                    using (var cmd = new SqlCommand("DELETE FROM GIDesign WHERE DesignID = @ID AND CompanyID = @CID", conn))
+                    {
+                        cmd.Parameters.AddWithValue("@ID", designId.Value);
+                        cmd.Parameters.AddWithValue("@CID", companyId);
+                        cmd.ExecuteNonQuery();
+                    }
+
+                    WriteLog("[StudioBAcuOps] UserAuditTrail GI removed successfully");
+                }
+            }
+            catch (Exception ex)
+            {
+                WriteLog("[StudioBAcuOps] Cleanup error (non-fatal): " + ex.Message);
+            }
+        }
+    }
+}]]></CDATA>
+    </Graph>
+
+</Customization>

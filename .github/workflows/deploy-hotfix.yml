@@ -1,0 +1,72 @@
+name: Deploy Hotfix Package
+
+# One-shot workflow for deploying a pre-built .zip to Acumatica production.
+# Uses existing ACUMATICA_PROD_* secrets — no rebuild required.
+
+on:
+  workflow_dispatch:
+    inputs:
+      package_path:
+        description: 'Path to .zip in repo (relative to root)'
+        required: true
+        default: 'hotfix-packages/UomHotfixYdsToIn.zip'
+      project_name:
+        description: 'Customization project name in Acumatica'
+        required: true
+        default: 'UomHotfixYdsToIn'
+      also_publish:
+        description: 'Comma-separated co-publish project names'
+        required: true
+        default: 'AesthetikWMS,AesthetikContainers,UomHotfixRestoreConversions,UomHotfixYdsToIn'
+      dry_run:
+        description: 'Validate only (no publish)'
+        required: false
+        type: boolean
+        default: false
+
+concurrency:
+  group: acumatica-deploy-hotfix
+  cancel-in-progress: false
+
+jobs:
+  deploy-hotfix:
+    name: Deploy Hotfix to Production
+    runs-on: ubuntu-latest
+    environment: production
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install requests
+
+      - name: Confirm package exists
+        run: |
+          ls -lh "${{ github.event.inputs.package_path }}"
+          echo "Package SHA256: $(sha256sum ${{ github.event.inputs.package_path }})"
+
+      - name: Deploy hotfix via Customization API
+        env:
+          ACUMATICA_URL: ${{ secrets.ACUMATICA_PROD_URL }}
+          ACUMATICA_USERNAME: ${{ secrets.ACUMATICA_PROD_USERNAME }}
+          ACUMATICA_PASSWORD: ${{ secrets.ACUMATICA_PROD_PASSWORD }}
+          ACUMATICA_TENANT: ${{ secrets.ACUMATICA_PROD_TENANT }}
+        run: |
+          # Convert comma-separated also_publish to space-separated args
+          ALSO_PUBLISH_ARGS=$(echo "${{ github.event.inputs.also_publish }}" | tr ',' ' ')
+
+          python3 scripts/deploy.py \
+            --url "$ACUMATICA_URL" \
+            --username "$ACUMATICA_USERNAME" \
+            --password "$ACUMATICA_PASSWORD" \
+            --tenant "$ACUMATICA_TENANT" \
+            --project "${{ github.event.inputs.project_name }}" \
+            --package "${{ github.event.inputs.package_path }}" \
+            --also-publish $ALSO_PUBLISH_ARGS \
+            ${{ github.event.inputs.dry_run == 'true' && '--validate-only' || '' }}
