@@ -3912,6 +3912,12 @@ public class UomUnitConversionRestore : CustomizationPlugin
                 try
                 {
                     using (var cmd = new SqlCommand(
+                        "WITH UniqueItems AS ( " +
+                        "    SELECT DISTINCT InventoryID, BaseUnit " +
+                        "    FROM InventoryItem " +
+                        "    WHERE DeletedDatabaseRecord = 0 " +
+                        "    AND BaseUnit IS NOT NULL AND BaseUnit != '' " +
+                        ") " +
                         "INSERT INTO INUnit " +
                         "    (UnitType, ItemClassID, InventoryID, FromUnit, ToUnit, " +
                         "     UnitMultDiv, UnitRate, PriceAdjustmentMultiplier, " +
@@ -3926,10 +3932,8 @@ public class UomUnitConversionRestore : CustomizationPlugin
                         "    ISNULL((SELECT TOP 1 CreatedByID FROM INUnit WHERE UnitType=3), " +
                         "           '00000000-0000-0000-0000-000000000000'), " +
                         "    'IN202500', GETUTCDATE() " +
-                        "FROM InventoryItem i " +
-                        "WHERE i.DeletedDatabaseRecord = 0 " +
-                        "  AND i.BaseUnit IS NOT NULL AND i.BaseUnit != '' " +
-                        "  AND NOT EXISTS ( " +
+                        "FROM UniqueItems i " +
+                        "WHERE NOT EXISTS ( " +
                         "    SELECT 1 FROM INUnit u " +
                         "    WHERE u.UnitType = 1 " +
                         "      AND u.InventoryID = i.InventoryID " +
@@ -3947,6 +3951,17 @@ public class UomUnitConversionRestore : CustomizationPlugin
                 try
                 {
                     using (var cmd = new SqlCommand(
+                        "WITH UniqueItems AS ( " +
+                        "    SELECT DISTINCT InventoryID, SalesUnit, BaseUnit, " +
+                        "        CASE WHEN SalesUnit='IN' AND BaseUnit='YDS' THEN CAST(36.000000 AS decimal(25,6)) " +
+                        "             WHEN SalesUnit='FT' AND BaseUnit='YDS' THEN CAST(3.000000 AS decimal(25,6)) " +
+                        "             ELSE CAST(1.000000 AS decimal(25,6)) END AS Rate " +
+                        "    FROM InventoryItem " +
+                        "    WHERE DeletedDatabaseRecord = 0 " +
+                        "    AND SalesUnit IS NOT NULL AND SalesUnit != '' " +
+                        "    AND BaseUnit IS NOT NULL AND BaseUnit != '' " +
+                        "    AND SalesUnit != BaseUnit " +
+                        ") " +
                         "INSERT INTO INUnit " +
                         "    (UnitType, ItemClassID, InventoryID, FromUnit, ToUnit, " +
                         "     UnitMultDiv, UnitRate, PriceAdjustmentMultiplier, " +
@@ -3954,23 +3969,15 @@ public class UomUnitConversionRestore : CustomizationPlugin
                         "     LastModifiedByID, LastModifiedByScreenID, LastModifiedDateTime) " +
                         "SELECT " +
                         "    1, 0, i.InventoryID, i.SalesUnit, i.BaseUnit, " +
-                        "    'M', " +
-                        "    CASE WHEN i.SalesUnit='IN' AND i.BaseUnit='YDS' THEN 36.000000 " +
-                        "         WHEN i.SalesUnit='FT' AND i.BaseUnit='YDS' THEN 3.000000 " +
-                        "         ELSE 1.000000 END, " +
-                        "    1.000000, " +
+                        "    'M', i.Rate, 1.000000, " +
                         "    ISNULL((SELECT TOP 1 CreatedByID FROM INUnit WHERE UnitType=3), " +
                         "           '00000000-0000-0000-0000-000000000000'), " +
                         "    'IN202500', GETUTCDATE(), " +
                         "    ISNULL((SELECT TOP 1 CreatedByID FROM INUnit WHERE UnitType=3), " +
                         "           '00000000-0000-0000-0000-000000000000'), " +
                         "    'IN202500', GETUTCDATE() " +
-                        "FROM InventoryItem i " +
-                        "WHERE i.DeletedDatabaseRecord = 0 " +
-                        "  AND i.SalesUnit IS NOT NULL AND i.SalesUnit != '' " +
-                        "  AND i.BaseUnit IS NOT NULL AND i.BaseUnit != '' " +
-                        "  AND i.SalesUnit != i.BaseUnit " +
-                        "  AND NOT EXISTS ( " +
+                        "FROM UniqueItems i " +
+                        "WHERE NOT EXISTS ( " +
                         "    SELECT 1 FROM INUnit u " +
                         "    WHERE u.UnitType = 1 " +
                         "      AND u.InventoryID = i.InventoryID " +
