@@ -417,43 +417,56 @@ class AcumaticaCustomizationClient:
                 if isinstance(data, dict):
                     if data.get("isFailed"):
                         log_entries = data.get("log", "No details")
-                        # Extract only error/warning entries — info messages (file patching) bury the real errors
+                        # AAR 2026-03-29: Always dump ALL log entries on failure.
+                        # WriteLog() info-level entries (TABLE prefix) contain critical
+                        # diagnostic output from CustomizationPlugin.UpdateDatabase().
+                        # Filtering to error/warning only hid the root cause across
+                        # 20+ hotfix iterations during the UOM migration outage.
                         if isinstance(log_entries, list):
                             error_entries = [
                                 e for e in log_entries
                                 if isinstance(e, dict) and e.get("logType") in ("error", "warning")
                             ]
+                            all_log_text = "\n".join(str(x) for x in log_entries)
                             if error_entries:
-                                log_text = "\n".join(str(x) for x in error_entries)
+                                error_text = "\n".join(str(x) for x in error_entries)
+                                log_text = (
+                                    f"ERRORS/WARNINGS:\n{error_text}\n\n"
+                                    f"FULL LOG (includes WriteLog diagnostic output):\n{all_log_text}"
+                                )
                             else:
-                                # No error entries found — dump last 5 entries for context
-                                log_text = "\n".join(str(x) for x in log_entries[-5:])
+                                log_text = (
+                                    f"FULL LOG (no explicit error/warning entries — "
+                                    f"check WriteLog output below):\n{all_log_text}"
+                                )
                         else:
                             log_text = str(log_entries)
-                        raise RuntimeError(f"Publish failed: {log_text[:2000]}")
+                        raise RuntimeError(f"Publish failed:\n{log_text[:4000]}")
                     if data.get("isCompleted"):
                         action = "Validation" if validation_only else "Publish"
                         _log(
                             f"{action} completed ({elapsed}s)",
                             style="ok",
                         )
-                        # Dump publish log for SQL diagnostics
-                        log_text = data.get("log", "")
-                        if log_text:
-                            # log may be a list (Acumatica returns array) or string
-                            if isinstance(log_text, list):
-                                lines = log_text
+                        # AAR 2026-03-29: Show ALL WriteLog output, not just keyword-matched lines.
+                        # CustomizationPlugin.UpdateDatabase() logs via WriteLog() at info level.
+                        # Keyword filtering hid all diagnostic output across 20+ hotfix iterations.
+                        log_entries = data.get("log", "")
+                        if log_entries:
+                            if isinstance(log_entries, list):
+                                lines = [str(e) for e in log_entries]
                             else:
-                                lines = log_text.split("\n")
+                                lines = str(log_entries).split("\n")
+                            _log("  --- Publish Log ---", style="info")
                             for line in lines:
-                                if not isinstance(line, str):
-                                    line = str(line)
                                 line = line.strip()
                                 if not line:
                                     continue
                                 low = line.lower()
-                                if any(kw in low for kw in ("error", "warning", "sql", "table", "create", "failed", "exception")):
+                                if any(kw in low for kw in ("error", "warning", "failed", "exception")):
                                     _log(f"  PUBLISH LOG: {line[:300]}", style="warn")
+                                else:
+                                    _log(f"  PUBLISH LOG: {line[:300]}", style="info")
                         return
             except json.JSONDecodeError:
                 pass
