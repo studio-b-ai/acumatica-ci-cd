@@ -29,6 +29,7 @@ def capture_baseline(session: requests.Session, base_url: str) -> list[dict]:
         "InventoryAllocationDetail",
         "LotAvailability",
         "StockItemsChristmasWishList",
+        "UserAuditTrail",
     ]
 
     # Add any extra GIs from env var (comma-separated)

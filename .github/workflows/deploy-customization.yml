@@ -180,6 +180,42 @@ jobs:
             echo "No published projects changed — sandbox publish will be skipped"
           fi
 
+      - name: Validate ALSO_PUBLISH_PROJECTS entries
+        env:
+          ALSO_PUBLISH: ${{ vars.ALSO_PUBLISH_PROJECTS || '' }}
+        run: |
+          # Every project in ALSO_PUBLISH_PROJECTS must exist in the repo.
+          # Catches stale entries (e.g., deleted hotfix packages left in the variable).
+          # Root cause of UomHotfixYdsToIn near-miss on 2026-03-30.
+          if [ -z "${ALSO_PUBLISH}" ]; then
+            echo "ALSO_PUBLISH_PROJECTS is empty — nothing to validate"
+            exit 0
+          fi
+
+          FAILED=0
+          IFS=',' read -ra PROJECTS <<< "${ALSO_PUBLISH}"
+          for proj in "${PROJECTS[@]}"; do
+            proj=$(echo "$proj" | xargs)
+            [ -z "$proj" ] && continue
+
+            if [ ! -d "Customization/${proj}" ]; then
+              echo "::error::ALSO_PUBLISH_PROJECTS contains '${proj}' but Customization/${proj}/ does not exist"
+              FAILED=1
+            elif [ ! -f "Customization/${proj}/project.xml" ]; then
+              echo "::error::ALSO_PUBLISH_PROJECTS contains '${proj}' but Customization/${proj}/project.xml is missing"
+              FAILED=1
+            else
+              echo "Validated: ${proj} -> Customization/${proj}/project.xml exists"
+            fi
+          done
+
+          if [ ${FAILED} -ne 0 ]; then
+            echo ""
+            echo "Fix: Remove stale entries from the ALSO_PUBLISH_PROJECTS GitHub variable"
+            echo "     or add the missing Customization/{project}/project.xml to the repo."
+            exit 1
+          fi
+
       - name: Verify project folder exists
         run: |
           if [ ! -d "Customization/${PROJECT_NAME}" ]; then
@@ -647,6 +683,35 @@ jobs:
           fi
           echo "target=${TARGET}" >> "$GITHUB_OUTPUT"
           echo "Determined target environment: ${TARGET}"
+      - name: Circuit breaker — halt on consecutive failures
+        if: github.event.inputs.force_qualify != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # After 3 consecutive failed deploys, halt. Prevents the 20+ iteration
+          # loop from 2026-03-29 that exhausted the API login limit.
+          RECENT=$(gh run list \
+            --workflow deploy-customization.yml \
+            --branch "${{ github.ref_name }}" \
+            --limit 3 \
+            --json conclusion \
+            --jq '[.[] | .conclusion] | join(",")' 2>/dev/null || echo "")
+
+          if [ "${RECENT}" = "failure,failure,failure" ]; then
+            echo "::error::Circuit breaker tripped — 3 consecutive deploy failures on ${{ github.ref_name }}"
+            echo "Manual review required before retrying."
+            echo "Use force_qualify=true to bypass (emergency only)."
+
+            if [ -n "${{ secrets.STUDIOB_SLACK_WEBHOOK_URL }}" ]; then
+              curl -sf -X POST "${{ secrets.STUDIOB_SLACK_WEBHOOK_URL }}" \
+                -H "Content-Type: application/json" \
+                -d '{"text":"CIRCUIT BREAKER — 3 consecutive deploy failures on ${{ github.ref_name }}\nManual review required.\nBypass: workflow_dispatch with force_qualify=true"}'
+            fi
+            exit 1
+          fi
+
+          echo "Circuit breaker OK — recent results: ${RECENT:-none}"
+
       - name: Install Python dependencies
         run: pip install -r scripts/requirements.txt
       - name: Send 20-minute warning and schedule deploy
@@ -714,6 +779,24 @@ jobs:
           client.logout()
           sys.exit(0 if ok else 1)
           "
+
+      # ── GI baseline capture (pre-publish) ─────────────────────────────
+      - name: Capture GI baseline (pre-publish)
+        id: gi_pre
+        if: steps.smoke.outcome == 'success' || github.event.inputs.force_qualify == 'true'
+        continue-on-error: true
+        env:
+          ACUMATICA_URL: ${{ (steps.env.outputs.target == 'production') && secrets.ACUMATICA_PROD_URL || secrets.ACUMATICA_SANDBOX_URL }}
+          ACUMATICA_USERNAME: ${{ secrets.ACUMATICA_PROD_USERNAME }}
+          ACUMATICA_PASSWORD: ${{ secrets.ACUMATICA_PROD_PASSWORD }}
+          ACUMATICA_TENANT: ${{ (steps.env.outputs.target == 'production') && secrets.ACUMATICA_PROD_TENANT || secrets.ACUMATICA_SANDBOX_TENANT }}
+        run: |
+          python scripts/gi_baseline.py capture \
+            --url "${ACUMATICA_URL}" \
+            --username "${ACUMATICA_USERNAME}" \
+            --password "${ACUMATICA_PASSWORD}" \
+            --tenant "${ACUMATICA_TENANT}" \
+            --baseline-file baselines/gi-pre.json
 
       # ── Download built packages ──────────────────────────────────────
       - name: Download package artifacts
@@ -793,12 +876,30 @@ jobs:
           ACUMATICA_TENANT: ${{ (steps.env.outputs.target == 'production') && secrets.ACUMATICA_PROD_TENANT || secrets.ACUMATICA_SANDBOX_TENANT }}
         run: python scripts/validate-publish.py --manifest publish-manifest.json
 
+      # ── GI baseline diff (post-publish) ──────────────────────────────
+      - name: GI baseline diff (post-publish)
+        id: gi_diff
+        if: steps.deploy.outcome == 'success' && steps.gi_pre.outcome == 'success'
+        continue-on-error: true
+        env:
+          ACUMATICA_URL: ${{ (steps.env.outputs.target == 'production') && secrets.ACUMATICA_PROD_URL || secrets.ACUMATICA_SANDBOX_URL }}
+          ACUMATICA_USERNAME: ${{ secrets.ACUMATICA_PROD_USERNAME }}
+          ACUMATICA_PASSWORD: ${{ secrets.ACUMATICA_PROD_PASSWORD }}
+          ACUMATICA_TENANT: ${{ (steps.env.outputs.target == 'production') && secrets.ACUMATICA_PROD_TENANT || secrets.ACUMATICA_SANDBOX_TENANT }}
+        run: |
+          python scripts/gi_baseline.py diff \
+            --url "${ACUMATICA_URL}" \
+            --username "${ACUMATICA_USERNAME}" \
+            --password "${ACUMATICA_PASSWORD}" \
+            --tenant "${ACUMATICA_TENANT}" \
+            --baseline-file baselines/gi-pre.json
+
       # ── Auto-rollback on verification failure ─────────────────────────
       - name: Auto-rollback on verification failure
         id: rollback
         if: |
           steps.deploy.outcome == 'success' &&
-          steps.verify.outcome == 'failure' &&
+          (steps.verify.outcome == 'failure' || steps.gi_diff.outcome == 'failure') &&
           steps.env.outputs.target == 'production' &&
           github.event.inputs.dry_run != 'true'
         env:
@@ -830,18 +931,18 @@ jobs:
           if [ ${ROLLBACK_VERIFY} -eq 0 ]; then
             curl -sf -X POST "${SLACK_WEBHOOK_URL}" \
               -H "Content-Type: application/json" \
-              -d '{"text":"Deploy ROLLED BACK — '"${PROJECT_NAME}"' -> production\nDeploy: '"${GITHUB_SHA::8}"'\nRollback: snapshot restored + verified\nNote: two app pool restarts occurred"}'
+              -d '{"text":"PACKAGE RESTORED — '"${PROJECT_NAME}"' -> production\nDeploy: '"${GITHUB_SHA::8}"'\nPackage snapshot restored + verified.\nNote: CustomizationPlugin SQL changes are NOT reversed.\nIf UpdateDatabase() modified data, manual review required."}'
           else
             curl -sf -X POST "${SLACK_WEBHOOK_URL}" \
               -H "Content-Type: application/json" \
-              -d '{"text":"ROLLBACK FAILED — verification did not pass\nDeploy: '"${PROJECT_NAME}"' @ '"${GITHUB_SHA::8}"'\nArtifact: '"${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"'\nManual restore: download artifact -> SM204505 Import -> Publish"}'
+              -d '{"text":"PACKAGE RESTORE FAILED — verification did not pass\nDeploy: '"${PROJECT_NAME}"' @ '"${GITHUB_SHA::8}"'\nArtifact: '"${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"'\nCustomizationPlugin SQL changes are NOT reversed.\nManual restore: download artifact -> SM204505 Import -> Publish"}'
             exit 1
           fi
 
       - name: Tag rolled-back deploy
         if: steps.rollback.outcome == 'success'
         run: |
-          TAG="deploy/prod/$(date +%Y%m%d-%H%M%S)-ROLLED-BACK"
+          TAG="deploy/prod/$(date +%Y%m%d-%H%M%S)-RESTORED"
           git tag "${TAG}"
           git push origin "${TAG}"
 

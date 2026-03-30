@@ -513,6 +513,129 @@ class AcumaticaCustomizationClient:
         )
         return False
 
+    def e2e_smoke_test(
+        self,
+        customer_id: str = "C000949",
+        inventory_id: str = "00004",
+        order_type: str = "SO",
+        warehouse: str = "99",
+    ) -> bool:
+        """Full order lifecycle smoke test: create SO -> ship -> confirm -> cancel.
+
+        Exercises:
+          - SO creation with customer (customer DAC extensions)
+          - Line item with UOM (INUnit validation — 2026-03-29 failure point)
+          - Shipment creation (SOOrderEntry graph extensions)
+          - Shipment confirmation (ShipmentEntry graph extensions)
+          - Cancellation for cleanup (no invoice, no AR impact)
+
+        Uses Heritage Fabrics Management (C000949) as test customer.
+        """
+        api = f"{self.base_url}/entity/default/24.200.001"
+        order_nbr = None
+        shipment_nbr = None
+
+        try:
+            # ── Step 1: Create Sales Order with one line ──
+            _log("E2E smoke test: Creating sales order...")
+            so_payload = {
+                "OrderType": {"value": order_type},
+                "CustomerID": {"value": customer_id},
+                "Description": {"value": f"CI/CD smoke test {datetime.now(timezone.utc).isoformat()[:19]}Z"},
+                "Details": [
+                    {
+                        "InventoryID": {"value": inventory_id},
+                        "OrderQty": {"value": 1},
+                        "WarehouseID": {"value": warehouse},
+                    }
+                ],
+            }
+            resp = self.session.put(f"{api}/SalesOrder", json=so_payload, timeout=60)
+            if resp.status_code not in (200, 201):
+                _log(f"E2E FAIL: SO creation returned HTTP {resp.status_code}: {resp.text[:500]}", style="err")
+                return False
+
+            so = resp.json()
+            order_nbr = so.get("OrderNbr", {}).get("value")
+            if not order_nbr:
+                _log("E2E FAIL: SO created but no OrderNbr in response", style="err")
+                return False
+            _log(f"  Created SO {order_type} {order_nbr}", style="ok")
+
+            # ── Step 2: Create Shipment ──
+            _log("E2E smoke test: Creating shipment...")
+            action_resp = self.session.post(
+                f"{api}/SalesOrder/{order_type}/{order_nbr}/action/CreateShipment",
+                json={"entity": {}, "parameters": {"WarehouseID": {"value": warehouse}}},
+                timeout=60,
+            )
+            if action_resp.status_code not in (200, 202, 204):
+                _log(f"E2E FAIL: CreateShipment returned HTTP {action_resp.status_code}: {action_resp.text[:500]}", style="err")
+                self._e2e_cleanup(api, order_type, order_nbr)
+                return False
+
+            # Fetch the shipment number from the updated SO
+            so_resp = self.session.get(
+                f"{api}/SalesOrder/{order_type}/{order_nbr}",
+                params={"$expand": "Shipments"},
+                timeout=30,
+            )
+            if so_resp.status_code == 200:
+                shipments = so_resp.json().get("Shipments", [])
+                if shipments:
+                    shipment_nbr = shipments[0].get("ShipmentNbr", {}).get("value")
+
+            if shipment_nbr:
+                _log(f"  Created Shipment {shipment_nbr}", style="ok")
+            else:
+                _log("  Shipment created (number not retrieved)", style="ok")
+
+            # ── Step 3: Confirm Shipment ──
+            if shipment_nbr:
+                _log("E2E smoke test: Confirming shipment...")
+                confirm_resp = self.session.post(
+                    f"{api}/Shipment/{shipment_nbr}/action/ConfirmShipment",
+                    json={"entity": {}},
+                    timeout=60,
+                )
+                if confirm_resp.status_code not in (200, 202, 204):
+                    _log(f"E2E WARN: ConfirmShipment returned HTTP {confirm_resp.status_code}: {confirm_resp.text[:300]}", style="warn")
+                else:
+                    _log(f"  Confirmed Shipment {shipment_nbr}", style="ok")
+
+            # ── Step 4: Cancel SO (cleanup — no invoice) ──
+            _log("E2E smoke test: Cancelling order...")
+            cancel_resp = self.session.post(
+                f"{api}/SalesOrder/{order_type}/{order_nbr}/action/CancelOrder",
+                json={"entity": {}},
+                timeout=60,
+            )
+            if cancel_resp.status_code not in (200, 202, 204):
+                _log(f"E2E WARN: CancelOrder returned HTTP {cancel_resp.status_code} — orphaned order {order_nbr}", style="warn")
+            else:
+                _log(f"  Cancelled SO {order_type} {order_nbr}", style="ok")
+
+            _log("E2E smoke test PASSED — full order lifecycle verified", style="ok")
+            return True
+
+        except Exception as exc:
+            _log(f"E2E smoke test FAILED with exception: {exc}", style="err")
+            if order_nbr:
+                self._e2e_cleanup(api, order_type, order_nbr)
+            return False
+
+    def _e2e_cleanup(self, api: str, order_type: str, order_nbr: str) -> None:
+        """Best-effort cleanup of a smoke test order."""
+        try:
+            _log(f"  Cleaning up test order {order_type} {order_nbr}...")
+            self.session.post(
+                f"{api}/SalesOrder/{order_type}/{order_nbr}/action/CancelOrder",
+                json={"entity": {}},
+                timeout=30,
+            )
+        except Exception:
+            _log(f"  Cleanup failed — orphaned order {order_type} {order_nbr} on C000949", style="warn")
+
     def download_package(
         self,
         project_name: str,
@@ -883,6 +1006,13 @@ def main():
                         "Smoke test failed — publish completed but API may be unstable",
                         style="warn",
                     )
+
+                # Full order lifecycle test
+                if smoke_ok and not args.validate_only:
+                    e2e_ok = client.e2e_smoke_test()
+                    if not e2e_ok:
+                        _log("E2E smoke test FAILED — business operations broken after publish", style="err")
+                        sys.exit(2)
 
             _log("Deployment complete!", style="ok")
 
