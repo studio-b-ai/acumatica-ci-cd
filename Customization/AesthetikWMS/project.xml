@@ -3868,145 +3868,90 @@ IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('INItemXRef
 
     <Graph ClassName="UomUnitConversionRestore" Source="#CDATA" IsNew="True" FileType="NewFile">
         <CDATA name="Source"><![CDATA[using System;
-using System.Configuration;
-using System.Data.SqlClient;
+using Microsoft.Data.SqlClient;
 using Customization;
 
 public class UomUnitConversionRestore : CustomizationPlugin
 {
     // Root cause of 2026-03-29 P0 outage:
-    // UomRenamePieceToYds migration wiped all item-level INUnit records (UnitType=1).
-    // Without BaseUnit->BaseUnit self-references, UnitVerifying(unit=null) fires on
-    // every SO line, blocking all order entry. This plugin restores them.
+    // UomRenamePieceToYds migration Step 3 deleted ALL YDS->YDS self-references:
+    //   DELETE FROM INUnit WHERE FromUnit='YDS' AND ToUnit='YDS' AND UnitRate=1
     //
-    // Runs at publish time. IDEMPOTENT (NOT EXISTS guard). Safe to re-publish.
+    // v4: Correct UnitType values + CompanyID (based on UomHotfixRestoreConversions.zip).
+    // Previous versions (v1-v3) used wrong UnitType=1 with item InventoryIDs and
+    // omitted CompanyID — making records invisible to Acumatica's company-filtered
+    // queries. INUnit.UnitType: 1=global/company, 2=item-class, 3=item-level.
+    // All WriteLog calls use TABLE prefix so they appear in deploy.py CI logs.
     // See: memory/context/aar-2026-03-29-uom-migration-outage.md
 
     public override void UpdateDatabase()
     {
-        WriteLog("UomUnitConversionRestore: starting INUnit self-reference restore...");
-        var cs = ConfigurationManager.ConnectionStrings["ProjectX"];
-        if (cs == null) { WriteLog("UomUnitConversionRestore: no ProjectX connection string — skipping"); return; }
+        WriteLog("TABLE === UomUnitConversionRestore v4: starting ===");
+        var cs = System.Configuration.ConfigurationManager.ConnectionStrings["ProjectX"];
+        if (cs == null) { WriteLog("TABLE UomUnitConversionRestore: ERROR: No connection string."); return; }
         string connStr = cs.ConnectionString + ";TrustServerCertificate=True";
-
-        try
+        using (var conn = new Microsoft.Data.SqlClient.SqlConnection(connStr))
         {
-            using (var conn = new SqlConnection(connStr))
+            conn.Open();
+            using (var txn = conn.BeginTransaction())
             {
-                conn.Open();
-
-                // Diagnostic: count before
-                int beforeCount = 0;
                 try
                 {
-                    using (var cmd = new SqlCommand(
-                        "SELECT COUNT(*) FROM INUnit WHERE UnitType=1", conn))
-                        beforeCount = (int)cmd.ExecuteScalar();
-                    WriteLog("UomUnitConversionRestore: item-level INUnit records before fix: " + beforeCount);
-                }
-                catch (Exception ex) { WriteLog("UomUnitConversionRestore: diagnostic error: " + ex.Message); }
+                    int total = 0;
 
-                // Step 1: Insert missing BaseUnit->BaseUnit self-references
-                // Every item must have a record where FromUnit=ToUnit=BaseUnit, Rate=1
-                int selfRefsInserted = 0;
-                try
-                {
-                    using (var cmd = new SqlCommand(
-                        "WITH UniqueItems AS ( " +
-                        "    SELECT DISTINCT InventoryID, BaseUnit " +
-                        "    FROM InventoryItem " +
-                        "    WHERE DeletedDatabaseRecord = 0 " +
-                        "    AND BaseUnit IS NOT NULL AND BaseUnit != '' " +
-                        ") " +
-                        "INSERT INTO INUnit " +
-                        "    (UnitType, ItemClassID, InventoryID, FromUnit, ToUnit, " +
-                        "     UnitMultDiv, UnitRate, PriceAdjustmentMultiplier, " +
-                        "     CreatedByID, CreatedByScreenID, CreatedDateTime, " +
-                        "     LastModifiedByID, LastModifiedByScreenID, LastModifiedDateTime) " +
-                        "SELECT " +
-                        "    1, 0, i.InventoryID, i.BaseUnit, i.BaseUnit, " +
-                        "    'M', 1.000000, 1.000000, " +
-                        "    ISNULL((SELECT TOP 1 CreatedByID FROM INUnit WHERE UnitType=3), " +
-                        "           '00000000-0000-0000-0000-000000000000'), " +
-                        "    'IN202500', GETUTCDATE(), " +
-                        "    ISNULL((SELECT TOP 1 CreatedByID FROM INUnit WHERE UnitType=3), " +
-                        "           '00000000-0000-0000-0000-000000000000'), " +
-                        "    'IN202500', GETUTCDATE() " +
-                        "FROM UniqueItems i " +
-                        "WHERE NOT EXISTS ( " +
-                        "    SELECT 1 FROM INUnit u " +
-                        "    WHERE u.UnitType = 1 " +
-                        "      AND u.InventoryID = i.InventoryID " +
-                        "      AND u.FromUnit = i.BaseUnit " +
-                        "      AND u.ToUnit = i.BaseUnit " +
-                        "  )", conn))
-                        selfRefsInserted = cmd.ExecuteNonQuery();
-                    WriteLog("UomUnitConversionRestore: BaseUnit self-refs inserted: " + selfRefsInserted);
-                }
-                catch (Exception ex) { WriteLog("UomUnitConversionRestore: self-ref insert error: " + ex.Message); }
+                    // Cleanup: remove wrong records inserted by v1-v3 (UnitType=1 with InventoryID > 0).
+                    // These were invisible to Acumatica but block duplicate key detection.
+                    WriteLog("TABLE UomUnitConversionRestore: --- Cleanup: wrong v1-v3 records (UnitType=1, InventoryID>0) ---");
+                    total += Run(conn, txn,
+                        "DELETE FROM INUnit WHERE UnitType = 1 AND InventoryID > 0",
+                        "Cleanup.WrongRecords");
 
-                // Step 2: Insert missing SalesUnit->BaseUnit conversions
-                // Items with SalesUnit=IN and BaseUnit=YDS need IN->YDS at Rate=36
-                int convRefsInserted = 0;
-                try
-                {
-                    using (var cmd = new SqlCommand(
-                        "WITH UniqueItems AS ( " +
-                        "    SELECT DISTINCT InventoryID, SalesUnit, BaseUnit, " +
-                        "        CASE WHEN SalesUnit='IN' AND BaseUnit='YDS' THEN CAST(36.000000 AS decimal(25,6)) " +
-                        "             WHEN SalesUnit='FT' AND BaseUnit='YDS' THEN CAST(3.000000 AS decimal(25,6)) " +
-                        "             ELSE CAST(1.000000 AS decimal(25,6)) END AS Rate " +
-                        "    FROM InventoryItem " +
-                        "    WHERE DeletedDatabaseRecord = 0 " +
-                        "    AND SalesUnit IS NOT NULL AND SalesUnit != '' " +
-                        "    AND BaseUnit IS NOT NULL AND BaseUnit != '' " +
-                        "    AND SalesUnit != BaseUnit " +
-                        ") " +
-                        "INSERT INTO INUnit " +
-                        "    (UnitType, ItemClassID, InventoryID, FromUnit, ToUnit, " +
-                        "     UnitMultDiv, UnitRate, PriceAdjustmentMultiplier, " +
-                        "     CreatedByID, CreatedByScreenID, CreatedDateTime, " +
-                        "     LastModifiedByID, LastModifiedByScreenID, LastModifiedDateTime) " +
-                        "SELECT " +
-                        "    1, 0, i.InventoryID, i.SalesUnit, i.BaseUnit, " +
-                        "    'M', i.Rate, 1.000000, " +
-                        "    ISNULL((SELECT TOP 1 CreatedByID FROM INUnit WHERE UnitType=3), " +
-                        "           '00000000-0000-0000-0000-000000000000'), " +
-                        "    'IN202500', GETUTCDATE(), " +
-                        "    ISNULL((SELECT TOP 1 CreatedByID FROM INUnit WHERE UnitType=3), " +
-                        "           '00000000-0000-0000-0000-000000000000'), " +
-                        "    'IN202500', GETUTCDATE() " +
-                        "FROM UniqueItems i " +
-                        "WHERE NOT EXISTS ( " +
-                        "    SELECT 1 FROM INUnit u " +
-                        "    WHERE u.UnitType = 1 " +
-                        "      AND u.InventoryID = i.InventoryID " +
-                        "      AND u.FromUnit = i.SalesUnit " +
-                        "      AND u.ToUnit = i.BaseUnit " +
-                        "  )", conn))
-                        convRefsInserted = cmd.ExecuteNonQuery();
-                    WriteLog("UomUnitConversionRestore: SalesUnit conversions inserted: " + convRefsInserted);
-                }
-                catch (Exception ex) { WriteLog("UomUnitConversionRestore: conversion insert error: " + ex.Message); }
+                    WriteLog("TABLE UomUnitConversionRestore: --- Global YDS self-conversion (UnitType=1) ---");
+                    total += Run(conn, txn, @"
+                        INSERT INTO INUnit (CompanyID, UnitType, ItemClassID, InventoryID, FromUnit, ToUnit, UnitRate, PriceAdjustmentMultiplier, UnitMultDiv, CreatedByID, CreatedByScreenID, CreatedDateTime, LastModifiedByID, LastModifiedByScreenID, LastModifiedDateTime)
+                        SELECT DISTINCT i.CompanyID, 1, 0, 0, 'YDS', 'YDS', 1.0, 1.0, 'M',
+                            CAST('00000000-0000-0000-0000-000000000000' AS UNIQUEIDENTIFIER), 'IN209000', GETUTCDATE(),
+                            CAST('00000000-0000-0000-0000-000000000000' AS UNIQUEIDENTIFIER), 'IN209000', GETUTCDATE()
+                        FROM InventoryItem i WHERE i.BaseUnit = 'YDS'
+                        AND NOT EXISTS (SELECT 1 FROM INUnit u WHERE u.CompanyID = i.CompanyID AND u.UnitType = 1 AND u.FromUnit = 'YDS' AND u.ToUnit = 'YDS')
+                        GROUP BY i.CompanyID", "Global.SelfConv");
 
-                // Diagnostic: count after
-                try
-                {
-                    int afterCount = 0;
-                    using (var cmd = new SqlCommand(
-                        "SELECT COUNT(*) FROM INUnit WHERE UnitType=1", conn))
-                        afterCount = (int)cmd.ExecuteScalar();
-                    WriteLog("UomUnitConversionRestore: item-level INUnit records after fix: " + afterCount);
+                    WriteLog("TABLE UomUnitConversionRestore: --- Item-class YDS self-conversion (UnitType=2) ---");
+                    total += Run(conn, txn, @"
+                        INSERT INTO INUnit (CompanyID, UnitType, ItemClassID, InventoryID, FromUnit, ToUnit, UnitRate, PriceAdjustmentMultiplier, UnitMultDiv, CreatedByID, CreatedByScreenID, CreatedDateTime, LastModifiedByID, LastModifiedByScreenID, LastModifiedDateTime)
+                        SELECT DISTINCT ic.CompanyID, 2, ic.ItemClassID, 0, 'YDS', 'YDS', 1.0, 1.0, 'M',
+                            CAST('00000000-0000-0000-0000-000000000000' AS UNIQUEIDENTIFIER), 'IN209000', GETUTCDATE(),
+                            CAST('00000000-0000-0000-0000-000000000000' AS UNIQUEIDENTIFIER), 'IN209000', GETUTCDATE()
+                        FROM INItemClass ic WHERE ic.BaseUnit = 'YDS'
+                        AND NOT EXISTS (SELECT 1 FROM INUnit u WHERE u.CompanyID = ic.CompanyID AND u.UnitType = 2 AND u.ItemClassID = ic.ItemClassID AND u.FromUnit = 'YDS' AND u.ToUnit = 'YDS')",
+                        "ItemClass.SelfConv");
+
+                    WriteLog("TABLE UomUnitConversionRestore: --- Item-level YDS self-conversion (UnitType=3) ---");
+                    total += Run(conn, txn, @"
+                        INSERT INTO INUnit (CompanyID, UnitType, ItemClassID, InventoryID, FromUnit, ToUnit, UnitRate, PriceAdjustmentMultiplier, UnitMultDiv, CreatedByID, CreatedByScreenID, CreatedDateTime, LastModifiedByID, LastModifiedByScreenID, LastModifiedDateTime)
+                        SELECT DISTINCT i.CompanyID, 3, 0, i.InventoryID, 'YDS', 'YDS', 1.0, 1.0, 'M',
+                            CAST('00000000-0000-0000-0000-000000000000' AS UNIQUEIDENTIFIER), 'IN209000', GETUTCDATE(),
+                            CAST('00000000-0000-0000-0000-000000000000' AS UNIQUEIDENTIFIER), 'IN209000', GETUTCDATE()
+                        FROM InventoryItem i WHERE i.BaseUnit = 'YDS'
+                        AND NOT EXISTS (SELECT 1 FROM INUnit u WHERE u.CompanyID = i.CompanyID AND u.UnitType = 3 AND u.InventoryID = i.InventoryID AND u.FromUnit = 'YDS' AND u.ToUnit = 'YDS')",
+                        "Item.SelfConv");
+
+                    txn.Commit();
+                    WriteLog("TABLE UomUnitConversionRestore: === COMMITTED. " + total + " records affected. ===");
                 }
-                catch (Exception ex) { WriteLog("UomUnitConversionRestore: post-diagnostic error: " + ex.Message); }
+                catch (Exception ex)
+                {
+                    WriteLog("TABLE UomUnitConversionRestore: !!! ERROR: " + ex.Message);
+                    try { txn.Rollback(); } catch { }
+                    throw;
+                }
             }
-            WriteLog("UomUnitConversionRestore: COMPLETE.");
         }
-        catch (Exception ex)
-        {
-            WriteLog("UomUnitConversionRestore: FAILED — " + ex.GetType().Name + ": " + ex.Message);
-            throw;
-        }
+    }
+
+    private int Run(Microsoft.Data.SqlClient.SqlConnection c, Microsoft.Data.SqlClient.SqlTransaction t, string sql, string label)
+    {
+        using (var cmd = c.CreateCommand()) { cmd.Transaction = t; cmd.CommandText = sql; cmd.CommandTimeout = 300; int r = cmd.ExecuteNonQuery(); WriteLog("TABLE UomUnitConversionRestore: " + label + ": " + r + " rows"); return r; }
     }
 }
 ]]></CDATA>
