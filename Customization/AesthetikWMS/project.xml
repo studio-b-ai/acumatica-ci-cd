@@ -3882,7 +3882,7 @@ public class UomUnitConversionRestore : CustomizationPlugin
     // omitted CompanyID — making records invisible to Acumatica's company-filtered
     // queries. INUnit.UnitType: 1=global/company, 2=item-class, 3=item-level.
     // All WriteLog calls use TABLE prefix so they appear in deploy.py CI logs.
-    // Uses System.Data.SqlClient (Cloud-compatible; Microsoft.Data.SqlClient blocked by validator).
+    // Uses System.Data.SqlClient — the Cloud-compatible SQL client namespace.
     // See: memory/context/aar-2026-03-29-uom-migration-outage.md
 
     public override void UpdateDatabase()
