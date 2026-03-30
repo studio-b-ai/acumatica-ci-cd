@@ -116,10 +116,13 @@ jobs:
       package_path: ${{ steps.package.outputs.path }}
       package_name: ${{ steps.package.outputs.name }}
       plugin_changes: ${{ steps.plugin_check.outputs.plugin_changes }}
+      published_projects_changed: ${{ steps.published_check.outputs.changed }}
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -135,6 +138,46 @@ jobs:
             echo "::warning::CustomizationPlugin changes detected — sandbox gate is MANDATORY"
           else
             echo "plugin_changes=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Check if published projects changed
+        id: published_check
+        env:
+          ALSO_PUBLISH: ${{ vars.ALSO_PUBLISH_PROJECTS || '' }}
+        run: |
+          # Only trigger sandbox publish if the PRIMARY project or a co-published
+          # project actually changed. Deleting non-published packages (e.g.,
+          # removing UomHotfixYdsToIn) should NOT cause an Acumatica publish.
+          # Guard added after 2026-03-30 incident review.
+          CHANGED_FILES=$(git diff --name-only origin/main 2>/dev/null || true)
+          PUBLISHED_CHANGED=false
+
+          # Check primary project
+          if echo "$CHANGED_FILES" | grep -q "^Customization/${PROJECT_NAME}/"; then
+            PUBLISHED_CHANGED=true
+            echo "Primary project ${PROJECT_NAME} has changes"
+          fi
+
+          # Check co-published projects
+          IFS=',' read -ra COPUB <<< "${ALSO_PUBLISH}"
+          for proj in "${COPUB[@]}"; do
+            proj=$(echo "$proj" | xargs)  # trim whitespace
+            [ -z "$proj" ] && continue
+            if echo "$CHANGED_FILES" | grep -q "^Customization/${proj}/"; then
+              PUBLISHED_CHANGED=true
+              echo "Co-published project ${proj} has changes"
+            fi
+          done
+
+          # Check pipeline/script changes (these always need validation)
+          if echo "$CHANGED_FILES" | grep -qE '^(scripts/|\.github/workflows/)'; then
+            PUBLISHED_CHANGED=true
+            echo "Pipeline scripts changed — validation needed"
+          fi
+
+          echo "changed=${PUBLISHED_CHANGED}" >> "$GITHUB_OUTPUT"
+          if [ "$PUBLISHED_CHANGED" = "false" ]; then
+            echo "No published projects changed — sandbox publish will be skipped"
           fi
 
       - name: Verify project folder exists
@@ -934,7 +977,7 @@ jobs:
     name: Validate on Sandbox
     needs: build
     runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request'
+    if: github.event_name == 'pull_request' && needs.build.outputs.published_projects_changed == 'true'
     continue-on-error: true
     concurrency:
       group: sandbox-publish
