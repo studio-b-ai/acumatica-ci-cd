@@ -124,7 +124,6 @@ public class UomRenamePieceToYds : CustomizationPlugin
                     WriteLog("--- Section 2: UOM Conversions ---");
                     total += Exec(conn, txn, $"UPDATE INUnit SET FromUnit = 'YDS' WHERE FromUnit = 'PIECE'{companyFilter}", "INUnit.FromUnit");
                     total += Exec(conn, txn, $"UPDATE INUnit SET ToUnit = 'YDS' WHERE ToUnit = 'PIECE'{companyFilter}", "INUnit.ToUnit");
-                    total += Safe(conn, txn, $"DELETE FROM INUnit WHERE FromUnit = 'YDS' AND ToUnit = 'YDS' AND UnitRate = 1{companyFilter}", "INUnit.SelfRef.Cleanup");
 
                     // Section 3: Inventory Transactions
                     WriteLog("--- Section 3: Inventory Transactions ---");
@@ -167,12 +166,12 @@ public class UomRenamePieceToYds : CustomizationPlugin
                     total += Safe(conn, txn, $"UPDATE INItemPlan SET UOM = 'YDS' WHERE UOM = 'PIECE'{companyFilter}", "INItemPlan.UOM");
                     total += Safe(conn, txn, $"UPDATE INItemCustSalesStats SET BaseUOM = 'YDS' WHERE BaseUOM = 'PIECE'{companyFilter}", "INItemCustSalesStats.BaseUOM");
 
-                    // Section 10: Lot/Serial Class Rename (PIECENBR → BLTNBR)
+                    // Section 10: Lot/Serial Class Rename (PIECENBR → BOLTID)
                     WriteLog("--- Section 10: Lot/Serial Class Rename ---");
-                    total += Safe(conn, txn, $"UPDATE InventoryItem SET LotSerClassID = 'BLTNBR' WHERE LotSerClassID = 'PIECENBR'{companyFilter}", "InventoryItem.LotSerClassID");
-                    total += Safe(conn, txn, $"UPDATE INItemClass SET LotSerClassID = 'BLTNBR' WHERE LotSerClassID = 'PIECENBR'{companyFilter}", "INItemClass.LotSerClassID");
-                    total += Safe(conn, txn, $"UPDATE INLotSerClassSegment SET LotSerClassID = 'BLTNBR' WHERE LotSerClassID = 'PIECENBR'{companyFilter}", "INLotSerClassSegment.LotSerClassID");
-                    total += Safe(conn, txn, $"UPDATE INLotSerClass SET LotSerClassID = 'BLTNBR' WHERE LotSerClassID = 'PIECENBR'{companyFilter}", "INLotSerClass.LotSerClassID");
+                    total += Safe(conn, txn, $"UPDATE InventoryItem SET LotSerClassID = 'BOLTID' WHERE LotSerClassID = 'PIECENBR'{companyFilter}", "InventoryItem.LotSerClassID");
+                    total += Safe(conn, txn, $"UPDATE INItemClass SET LotSerClassID = 'BOLTID' WHERE LotSerClassID = 'PIECENBR'{companyFilter}", "INItemClass.LotSerClassID");
+                    total += Safe(conn, txn, $"UPDATE INLotSerClassSegment SET LotSerClassID = 'BOLTID' WHERE LotSerClassID = 'PIECENBR'{companyFilter}", "INLotSerClassSegment.LotSerClassID");
+                    total += Safe(conn, txn, $"UPDATE INLotSerClass SET LotSerClassID = 'BOLTID' WHERE LotSerClassID = 'PIECENBR'{companyFilter}", "INLotSerClass.LotSerClassID");
 
                     // Section 11: Cleanup
                     WriteLog("--- Section 11: Cleanup ---");
