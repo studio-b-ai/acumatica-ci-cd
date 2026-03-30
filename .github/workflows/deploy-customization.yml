@@ -977,11 +977,7 @@ jobs:
     name: Validate on Sandbox
     needs: build
     runs-on: ubuntu-latest
-    # DISABLED: Acumatica has one instance with one app pool. Publishing to
-    # Heritage Test restarts the same app pool that serves Heritage Fabrics (prod).
-    # PR validation must NEVER trigger a publish — static checks only.
-    # Publish testing happens during the after-hours deploy sequence.
-    if: false
+    if: github.event_name == 'pull_request' && needs.build.outputs.published_projects_changed == 'true'
     continue-on-error: true
     concurrency:
       group: sandbox-publish
