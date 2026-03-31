@@ -1,8 +1,7 @@
 <Customization level="1" description="Studio B AcuOps — Audit Trail (SQL View + DAC + GI)" product-version="24.208">
 
-    <Sql Name="UsrAuditTrailView" Source="#CDATA">
-        <CDATA name="UsrAuditTrailView.sql"><![CDATA[
-IF NOT EXISTS (SELECT 1 FROM sys.views WHERE name = 'UsrAuditTrailView')
+    <Sql Name="CreateUsrAuditTrailView" Script="#CDATA">
+        <CDATA name="Script"><![CDATA[IF NOT EXISTS (SELECT 1 FROM sys.views WHERE name = 'UsrAuditTrailView')
 BEGIN
     EXEC('
         CREATE VIEW dbo.UsrAuditTrailView AS
@@ -39,7 +38,7 @@ END
     </Sql>
 
     <Graph ClassName="UsrAuditTrailView" Source="#CDATA" IsNew="True" FileType="NewFile">
-        <CDATA name="UsrAuditTrailView.cs"><![CDATA[using System;
+        <CDATA name="Source"><![CDATA[using System;
 using PX.Data;
 using PX.Data.BQL;
 
@@ -132,43 +131,54 @@ namespace StudioB.AcuOps
         ]]></CDATA>
     </Graph>
 
-    <Sql Name="StudioBAuditTrailGI" Source="#CDATA">
-        <CDATA name="StudioBAuditTrailGI.sql"><![CDATA[
--- REVIEWED: gi-sql-safe
+    <Sql Name="InstallStudioBAuditTrailGI" Script="#CDATA">
+        <CDATA name="Script"><![CDATA[-- REVIEWED: gi-sql-safe
 -- StudioBAuditTrail GI installer — scoped by DesignID + CompanyID, no blanket wipes.
 -- Upsert pattern: delete existing, insert fresh.
+-- Also cleans up old UserAuditTrail GI from prior versions.
 
 DECLARE @CompanyID int = 2;
 DECLARE @DesignID uniqueidentifier;
+DECLARE @OldDesignID uniqueidentifier;
 DECLARE @Now datetime = GETUTCDATE();
 
 -- Discover CompanyID from a known GI
 SELECT TOP 1 @CompanyID = CompanyID FROM GIDesign WHERE Name = 'InventoryAllocationDetail';
 
--- Clean up any existing StudioBAuditTrail GI
+-- Clean up old UserAuditTrail GI (from prior version)
+SELECT @OldDesignID = DesignID FROM GIDesign WHERE Name = 'UserAuditTrail' AND CompanyID = @CompanyID;
+IF @OldDesignID IS NOT NULL
+BEGIN
+    DELETE FROM GIFilter   WHERE DesignID = @OldDesignID AND CompanyID = @CompanyID;
+    DELETE FROM GISort     WHERE DesignID = @OldDesignID AND CompanyID = @CompanyID;
+    DELETE FROM GIResult   WHERE DesignID = @OldDesignID AND CompanyID = @CompanyID;
+    DELETE FROM GIGroupBy  WHERE DesignID = @OldDesignID AND CompanyID = @CompanyID;
+    DELETE FROM GIOn       WHERE DesignID = @OldDesignID AND CompanyID = @CompanyID;
+    DELETE FROM GIRelation WHERE DesignID = @OldDesignID AND CompanyID = @CompanyID;
+    DELETE FROM GIWhere    WHERE DesignID = @OldDesignID AND CompanyID = @CompanyID;
+    DELETE FROM GIDesign   WHERE DesignID = @OldDesignID AND CompanyID = @CompanyID;
+END
+
+-- Clean up existing StudioBAuditTrail GI (for re-deploy idempotency)
 SELECT @DesignID = DesignID FROM GIDesign WHERE Name = 'StudioBAuditTrail' AND CompanyID = @CompanyID;
 IF @DesignID IS NOT NULL
 BEGIN
-    DELETE FROM GIFilter  WHERE DesignID = @DesignID AND CompanyID = @CompanyID;
-    DELETE FROM GISort    WHERE DesignID = @DesignID AND CompanyID = @CompanyID;
-    DELETE FROM GIResult  WHERE DesignID = @DesignID AND CompanyID = @CompanyID;
-    DELETE FROM GIGroupBy WHERE DesignID = @DesignID AND CompanyID = @CompanyID;
-    DELETE FROM GIOn      WHERE DesignID = @DesignID AND CompanyID = @CompanyID;
+    DELETE FROM GIFilter   WHERE DesignID = @DesignID AND CompanyID = @CompanyID;
+    DELETE FROM GISort     WHERE DesignID = @DesignID AND CompanyID = @CompanyID;
+    DELETE FROM GIResult   WHERE DesignID = @DesignID AND CompanyID = @CompanyID;
+    DELETE FROM GIGroupBy  WHERE DesignID = @DesignID AND CompanyID = @CompanyID;
+    DELETE FROM GIOn       WHERE DesignID = @DesignID AND CompanyID = @CompanyID;
     DELETE FROM GIRelation WHERE DesignID = @DesignID AND CompanyID = @CompanyID;
-    DELETE FROM GIWhere   WHERE DesignID = @DesignID AND CompanyID = @CompanyID;
-    DELETE FROM GIDesign  WHERE DesignID = @DesignID AND CompanyID = @CompanyID;
+    DELETE FROM GIWhere    WHERE DesignID = @DesignID AND CompanyID = @CompanyID;
+    DELETE FROM GIDesign   WHERE DesignID = @DesignID AND CompanyID = @CompanyID;
 END
 
 -- Generate new DesignID
 SET @DesignID = NEWID();
 
--- GI header
+-- GI header (ExposeViaOData=1 for REST API access)
 INSERT INTO GIDesign (CompanyID, DesignID, Name, Description, ExposeViaOData, CreatedDateTime, LastModifiedDateTime)
 VALUES (@CompanyID, @DesignID, 'StudioBAuditTrail', 'AcuOps Audit Trail - user change history with readable field data', 1, @Now, @Now);
-
--- Primary table reference
-INSERT INTO GITable (CompanyID, DesignID, Alias, Name, IsActive)
-VALUES (@CompanyID, @DesignID, 'UsrAuditTrailView', 'StudioB.AcuOps.UsrAuditTrailView', 1);
 
 -- Result columns (7 visible)
 INSERT INTO GIResult (CompanyID, DesignID, LineNbr, ObjectName, Field, IsVisible, SortOrder)
