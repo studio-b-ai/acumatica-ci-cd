@@ -23,34 +23,50 @@ namespace HeritageFabrics.SO
     {
         public static bool IsActive() => true;
 
-        private bool _invtMultGuard;
-
-        protected void _(Events.RowPersisting<SOLine> e)
+        /// <summary>
+        /// Provide InvtMult default from SOOrderTypeOperation when the framework
+        /// cannot resolve it (e.g. PC order type). Runs at FieldDefaulting so the
+        /// value is set before PXDefaultAttribute validates at RowPersisting.
+        /// </summary>
+        protected void _(Events.FieldDefaulting<SOLine, SOLine.invtMult> e)
         {
-            if (e.Row == null || _invtMultGuard) return;
+            if (e.Row == null || e.NewValue != null) return;
+
+            SOLine line = e.Row;
+            if (line.OrderType == null) return;
+
+            SOOrderTypeOperation operation = SelectFrom<SOOrderTypeOperation>
+                .Where<SOOrderTypeOperation.orderType.IsEqual<@P.AsString>
+                    .And<SOOrderTypeOperation.operation.IsEqual<@P.AsString>>>
+                .View.Select(Base, line.OrderType, line.Operation ?? SOOperation.Issue);
+
+            if (operation != null)
+            {
+                e.NewValue = operation.InvtMult ?? (short)1;
+            }
+        }
+
+        /// <summary>
+        /// Fix existing orders with null InvtMult: set it during RowSelected
+        /// so it's populated before save even triggers RowPersisting.
+        /// </summary>
+        protected void _(Events.RowSelected<SOLine> e)
+        {
+            if (e.Row == null) return;
 
             SOLine line = e.Row;
 
-            if (line.InvtMult == null && line.InventoryID != null)
+            if (line.InvtMult == null && line.InventoryID != null && line.OrderType != null)
             {
-                _invtMultGuard = true;
-                try
-                {
-                    // Look up the operation config for this order type + operation
-                    SOOrderTypeOperation operation = SelectFrom<SOOrderTypeOperation>
-                        .Where<SOOrderTypeOperation.orderType.IsEqual<@P.AsString>
-                            .And<SOOrderTypeOperation.operation.IsEqual<@P.AsString>>>
-                        .View.Select(Base, line.OrderType, line.Operation ?? SOOperation.Issue);
+                SOOrderTypeOperation operation = SelectFrom<SOOrderTypeOperation>
+                    .Where<SOOrderTypeOperation.orderType.IsEqual<@P.AsString>
+                        .And<SOOrderTypeOperation.operation.IsEqual<@P.AsString>>>
+                    .View.Select(Base, line.OrderType, line.Operation ?? SOOperation.Issue);
 
-                    if (operation != null)
-                    {
-                        short invtMult = operation.InvtMult ?? (short)1;
-                        Base.Transactions.Cache.SetValueExt<SOLine.invtMult>(line, invtMult);
-                    }
-                }
-                finally
+                if (operation != null)
                 {
-                    _invtMultGuard = false;
+                    short invtMult = operation.InvtMult ?? (short)1;
+                    e.Cache.SetValue<SOLine.invtMult>(line, invtMult);
                 }
             }
         }
