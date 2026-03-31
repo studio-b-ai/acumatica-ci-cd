@@ -330,12 +330,13 @@ class AcumaticaCustomizationClient:
         poll_interval: int = 10,
         poll_timeout: int = 600,
         validation_only: bool = False,
+        merge_with_existing: bool = True,
     ) -> None:
         """Publish one or more customization projects and wait for completion."""
-        _log(f"Publishing: {', '.join(project_names)}")
+        _log(f"Publishing: {', '.join(project_names)} (merge={merge_with_existing})")
 
         payload = {
-            "isMergeWithExistingPackages": True,  # Keep ISV/third-party packages published alongside managed projects
+            "isMergeWithExistingPackages": merge_with_existing,
             "isOnlyValidation": validation_only,
             "isOnlyDbUpdates": False,
             "projectNames": project_names,
@@ -778,6 +779,11 @@ def main():
         help="Additional package NAME:FILE to import (repeatable)",
     )
     parser.add_argument(
+        "--no-merge",
+        action="store_true",
+        help="Use isMergeWithExistingPackages=False (clean compile, sandbox only)",
+    )
+    parser.add_argument(
         "--rollback",
         action="store_true",
         help="Rollback: download current package from instance, find previous git tag, "
@@ -873,6 +879,7 @@ def main():
                         project_names=all_projects,
                         poll_interval=args.poll_interval,
                         poll_timeout=args.poll_timeout,
+                        merge_with_existing=not args.no_merge,
                     )
 
             # Post-publish smoke test
