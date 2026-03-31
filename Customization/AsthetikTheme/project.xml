@@ -188,6 +188,4 @@ a.link:hover {
 }
 ]]></CDATA>
     </File>
-    <!-- SM200505 (Site Preferences) removed — page does not exist in current
-         Acumatica version. Company name "Ästhetik" is set directly on the instance. -->
 </Customization>
