@@ -3,16 +3,18 @@
   "entities": {
     "PurchaseOrder": {
       "screen": "PO301000",
-      "custom_fields": [],
-      "_note_containers": "UsrExpArrivalDate, UsrActArrivalDate, UsrContainerRef from AesthetikContainers — re-add after first successful publish"
+      "custom_fields": ["custom.Document.UsrExpArrivalDate", "custom.Document.UsrActArrivalDate", "custom.Document.UsrContainerRef"]
     },
     "SalesOrder": {
       "screen": "SO301000",
-      "custom_fields": [],
-      "_note": "UsrHubSpotDealId removed from validation — column exists in SOOrder table but DAC extension not loading in REST API schema. Investigate: AesthetikWMS SOOrderExt may need IsActive() or publish order fix."
+      "custom_fields": ["custom.Document.UsrHubSpotDealId"]
     },
     "Customer": {
       "screen": "AR303000",
+      "custom_fields": []
+    },
+    "Vendor": {
+      "screen": "AP303000",
       "custom_fields": []
     },
     "Invoice": {
@@ -21,10 +23,32 @@
     },
     "StockItem": {
       "screen": "IN202500",
-      "custom_fields": [],
-      "_note_containers": "UsrHTSCode, UsrDutyRate, UsrCountryOfOrigin, UsrFiberContent, UsrPreferentialTariff, UsrFreightClass from AesthetikContainers — re-add after first successful publish"
+      "custom_fields": ["custom.ItemSettings.UsrHTSCode", "custom.ItemSettings.UsrDutyRate", "custom.ItemSettings.UsrCountryOfOrigin", "custom.ItemSettings.UsrFiberContent", "custom.ItemSettings.UsrPreferentialTariff", "custom.ItemSettings.UsrFreightClass"]
     }
   },
+  "e2e_probes": [
+    {
+      "entity": "Vendor",
+      "select_fields": ["VendorID", "UsrDefaultInTransitSiteID", "UsrDefaultCarrierCode"],
+      "note": "BAccount extension — forces Vendor_Vendor view resolution"
+    },
+    {
+      "entity": "PurchaseOrder",
+      "select_fields": ["OrderNbr", "UsrExpArrivalDate", "UsrActArrivalDate", "UsrContainerRef"]
+    },
+    {
+      "entity": "StockItem",
+      "select_fields": ["InventoryID", "UsrHTSCode", "UsrDutyRate", "UsrCountryOfOrigin"]
+    },
+    {
+      "entity": "SalesOrder",
+      "select_fields": ["OrderNbr", "UsrHubSpotDealId"]
+    },
+    {
+      "entity": "Shipment",
+      "select_fields": ["ShipmentNbr", "UsrIncludeInContainer", "UsrContainerID"]
+    }
+  ],
   "sql_columns": [
     {"table": "POOrder", "columns": ["UsrExpArrivalDate", "UsrActArrivalDate", "UsrContainerRef"]},
     {"table": "POLine", "columns": ["UsrExpArrivalDate", "UsrActArrivalDate"]},
@@ -41,8 +65,9 @@
   "_notes": {
     "UsrDisablePayLink": "CustomerExt : PXCacheExtension<Customer> field. Works on AR303000 screen and in C# (ARInvoiceEntry_PayLink_Extension), but NOT exposed via REST API $adHocSchema for Customer entity. SQL column on BAccount table. Cannot validate via REST API schema check — only via sql_columns.",
     "UsrHubSpotDealId": "SOOrderExt in AesthetikWMS package. DAC field requires ALTER TABLE on SOOrder — created via CustomizationPlugin in AesthetikWMS.",
-    "UsrComplianceHold_REMOVED": "Removed from validation — columns need manual creation via SM203510 and are not reliably present. Re-add when confirmed live.",
-    "container_tables": "UsrContainer, UsrContainerEvent, UsrContainerPOLink are standalone tables created by AesthetikContainers CustomizationPlugin.UpdateDatabase(). Validated via sql_columns, not entity custom_fields.",
-    "UsrHFExpiryDate": "INItemXRefExt : PXCacheExtension<INItemXRef>. Absorbed from WMSynergy ExpirationDateAtStockItems. Tracks vendor-assigned expiry dates on Item Cross-Reference grid (IN202500). Column created via <Sql> element in AesthetikWMS."
+    "UsrDefaultInTransitSiteID": "BAccountContainerExt : PXCacheExtension<BAccount>. Column on BAccount table. NOT exposed via $adHocSchema — validated via e2e_probes on Vendor entity (forces Vendor_Vendor view resolution). See: 2026-03-30 outage.",
+    "UsrDefaultCarrierCode": "Same as UsrDefaultInTransitSiteID — BAccount extension, e2e_probes only.",
+    "UsrHFExpiryDate": "INItemXRefExt : PXCacheExtension<INItemXRef>. Absorbed from WMSynergy ExpirationDateAtStockItems. Tracks vendor-assigned expiry dates on Item Cross-Reference grid (IN202500). Column created via <Sql> element in AesthetikWMS.",
+    "container_tables": "UsrContainer, UsrContainerEvent, UsrContainerPOLink are standalone tables created by AesthetikContainers CustomizationPlugin.UpdateDatabase(). Validated via sql_columns, not entity custom_fields."
   }
 }
