@@ -24,7 +24,7 @@ on:
 
 env:
   TEST_PROJECT: CICDRollbackTest
-  REAL_PROJECT: ${{ vars.CUSTOMIZATION_PROJECT_NAME || 'AesthetikERP' }}
+  REAL_PROJECT: ${{ vars.CUSTOMIZATION_PROJECT_NAME || 'AesthetikWMS' }}
 
 jobs:
   rollback-test:

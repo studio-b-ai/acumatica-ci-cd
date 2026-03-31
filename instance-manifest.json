@@ -1,6 +1,6 @@
 {
   "$schema": "Instance manifest — tracks ALL customization projects expected on heritagefabrics.acumatica.com",
-  "$updated": "2026-03-31",
+  "$updated": "2026-03-31T21:30:00Z",
   "$source": "SM204505 live audit via Chrome (pages 1+2)",
   "projects": {
     "AcumaticaPacejetCustomFields24.1001": {
@@ -76,10 +76,10 @@
       "repo_dir": null
     },
     "LotSerialGI": {
-      "category": "managed",
+      "category": "legacy",
       "level": null,
       "owner": "api-bot",
-      "description": "Lot Serial Availability GI for OData",
+      "description": "Lot Serial Availability GI for OData. Sunset from CI/CD — stays published but no longer actively deployed.",
       "published": true,
       "repo_dir": null
     },
@@ -100,10 +100,10 @@
       "repo_dir": "Customization/StudioBAcuOps"
     },
     "StudioBAuditTrail": {
-      "category": "managed",
+      "category": "legacy",
       "level": null,
       "owner": "studio-b-ai",
-      "description": "GI: Studio B Audit Trail with OData",
+      "description": "GI: Studio B Audit Trail with OData. Sunset from CI/CD — stays published but no longer actively deployed.",
       "published": true,
       "repo_dir": null
     },
@@ -256,6 +256,7 @@
     "managed": "Deployed and maintained via CI/CD pipeline. Changes tracked in git.",
     "isv": "Third-party vendor packages. NOT managed by CI/CD. Updates come from vendor.",
     "one-time": "One-time migration/setup scripts. Should NOT be republished (may re-run seed SQL).",
+    "legacy": "Previously managed by CI/CD but now sunset. Stays published on instance but not actively deployed or maintained. Remove manually via SM204505 if no longer needed.",
     "deprecated": "No longer active. Safe to delete from instance. DO NOT publish."
   },
   "validation_rules": {

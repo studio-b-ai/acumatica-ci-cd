@@ -12,8 +12,8 @@ uploaded as a GitHub Actions artifact.
 Non-blocking: exits 0 even on failure (snapshot is advisory, not a gate).
 
 Usage:
-  python snapshot.py --project HeritageFabricsPOv5 --output backups/
-  python snapshot.py --project HeritageFabricsPOv5 --also-snapshot StudioBPORelations
+  python snapshot.py --project AesthetikWMS --output backups/
+  python snapshot.py --project AesthetikWMS --also-snapshot AesthetikContainers
 """
 
 import argparse

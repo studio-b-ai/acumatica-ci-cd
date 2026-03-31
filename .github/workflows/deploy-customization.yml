@@ -16,8 +16,8 @@
 #
 # Required GitHub Variables:
 #   CUSTOMIZATION_PROJECT_NAME      - Name of the customization project in Acumatica
-#   ALSO_PUBLISH_PROJECTS           - Comma-separated list of other active projects to co-publish
-#                                     (VAR packages, Shopify connector, etc.) for conflict detection
+#   ALSO_PUBLISH_PROJECTS           - Comma-separated list of managed projects to co-publish
+#                                     (only CI/CD-managed projects — ISVs stay published via merge flag)
 #   MAINTENANCE_NOTIFY_RECIPIENTS   - Comma-separated emails for maintenance countdown notifications
 #   MAINTENANCE_NOTIFY_SENDER       - Sender email for notifications (default: kevin@heritagefabrics.com)
 #
@@ -258,7 +258,7 @@ jobs:
         run: |
           TIMESTAMP=$(date +%Y%m%d-%H%M%S)
           # Only package directories that appear in ALSO_PUBLISH_PROJECTS
-          # This prevents importing deprecated packages (AesthetikERP, StudioBPORelations)
+          # Only managed projects in ALSO_PUBLISH_PROJECTS get packaged
           for dir in Customization/*/; do
             dirname=$(basename "${dir}")
             if [[ "${dirname}" == "${PROJECT_NAME}" ]] || [[ "${dirname}" == "_project" ]]; then

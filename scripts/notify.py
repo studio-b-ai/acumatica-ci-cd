@@ -12,7 +12,7 @@ Usage:
   python notify.py --type countdown --minutes 20 \
     --recipients "user1@hf.com,user2@hf.com" \
     --sender "kevin@heritagefabrics.com" \
-    --project "HeritageFabricsPOv5" \
+    --project "AesthetikWMS" \
     --environment production \
     --slack-webhook "$SLACK_WEBHOOK_URL"
 
