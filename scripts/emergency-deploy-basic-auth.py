@@ -138,7 +138,7 @@ if ALSO:
 log(f"Publishing: {projects}")
 
 publish_payload = {
-    "isMergeWithExistingPackages": False,
+    "isMergeWithExistingPackages": True,  # Keep ISV/third-party packages published alongside managed projects
     "isOnlyValidation": False,
     "isOnlyDbUpdates": False,
     "projectNames": projects,
