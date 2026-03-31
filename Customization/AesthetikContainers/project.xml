@@ -542,7 +542,7 @@ namespace StudioB.Containers
         #region UsrIncludeInContainer
         public abstract class usrIncludeInContainer : BqlBool.Field<usrIncludeInContainer> { }
         [PXDBBool]
-        [PXDefault(false)]
+        [PXDefault(false, PersistingCheck = PXPersistingCheck.Nothing)]
         [PXUIField(DisplayName = "Include in Container")]
         public bool? UsrIncludeInContainer { get; set; }
         #endregion
