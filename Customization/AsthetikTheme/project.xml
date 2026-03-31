@@ -188,7 +188,6 @@ a.link:hover {
 }
 ]]></CDATA>
     </File>
-    <Page PageID="SM200505" GraphName="PX.SM.PreferencesGeneral">
-        <Modify Container="SitePreferences" Field="CompanyName" Value="Ästhetik" />
-    </Page>
+    <!-- SM200505 (Site Preferences) removed — page does not exist in current
+         Acumatica version. Company name "Ästhetik" is set directly on the instance. -->
 </Customization>
