@@ -29,9 +29,9 @@ Usage:
   # Validate only (no publish)
   python deploy.py --validate-only --project MyProject --package dist/MyProject.zip
 
-  # Co-publish with other active projects
-  python deploy.py --project MyProject --package dist/MyProject.zip \\
-    --also-publish VARPackage ShopifyConnector
+  # Co-publish with other managed projects
+  python deploy.py --project AesthetikWMS --package dist/AesthetikWMS.zip \\
+    --also-publish AesthetikContainers StudioBAcuOps
 """
 
 import argparse

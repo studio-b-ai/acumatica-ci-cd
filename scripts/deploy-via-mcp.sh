@@ -14,9 +14,9 @@
 #
 # Usage:
 #   ./deploy-via-mcp.sh \
-#     --project HeritageFabricsPO \
-#     --package dist/HeritageFabricsPO.zip \
-#     --also-publish "HeritageFabricsPO" \
+#     --project AesthetikWMS \
+#     --package dist/AesthetikWMS.zip \
+#     --also-publish "AesthetikContainers,StudioBAcuOps" \
 #     --validate-only
 #
 # Environment variables:

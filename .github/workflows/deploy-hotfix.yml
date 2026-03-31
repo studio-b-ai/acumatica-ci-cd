@@ -17,7 +17,7 @@ on:
       also_publish:
         description: 'Comma-separated co-publish project names'
         required: true
-        default: 'AesthetikWMS,AesthetikContainers,UomHotfixRestoreConversions,UomHotfixYdsToIn'
+        default: 'AesthetikWMS,AesthetikContainers,StudioBAcuOps'
       dry_run:
         description: 'Validate only (no publish)'
         required: false
