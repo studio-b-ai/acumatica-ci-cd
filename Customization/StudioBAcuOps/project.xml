@@ -1,87 +1,200 @@
-<Customization level="1" description="Studio B AcuOps — platform-level tooling (safe no-op)" product-version="24.208">
-    <Graph ClassName="UserAuditTrailGISetup" Source="#CDATA" IsNew="True" FileType="NewFile">
-        <CDATA name="Source"><![CDATA[using System;
-using System.Configuration;
-using System.Data.SqlClient;
-using Customization;
+<Customization level="1" description="Studio B AcuOps — Audit Trail (SQL View + DAC + GI)" product-version="24.208">
+
+    <Sql Name="UsrAuditTrailView" Source="#CDATA">
+        <CDATA name="UsrAuditTrailView.sql"><![CDATA[
+IF NOT EXISTS (SELECT 1 FROM sys.views WHERE name = 'UsrAuditTrailView')
+BEGIN
+    EXEC('
+        CREATE VIEW dbo.UsrAuditTrailView AS
+        SELECT
+            ah.CompanyID,
+            ah.BatchID,
+            ah.ChangeID,
+            ah.ScreenID,
+            ah.UserID,
+            u.Username,
+            ah.ChangeDate,
+            CASE ah.Operation
+                WHEN 1 THEN ''Insert''
+                WHEN 2 THEN ''Update''
+                WHEN 3 THEN ''Delete''
+                ELSE ''Unknown ('' + CAST(ah.Operation AS nvarchar(10)) + '')''
+            END AS OperationDesc,
+            ah.TableName,
+            REPLACE(
+                CAST(ah.CombinedKey AS nvarchar(MAX)) COLLATE Latin1_General_BIN,
+                NCHAR(0),
+                ''|''
+            ) AS CombinedKeyDisplay,
+            REPLACE(
+                CAST(ah.ModifiedFields AS nvarchar(MAX)) COLLATE Latin1_General_BIN,
+                NCHAR(0),
+                ''|''
+            ) AS ModifiedFieldsDisplay
+        FROM AuditHistory ah
+        LEFT JOIN Users u ON ah.UserID = u.PKID AND ah.CompanyID = u.CompanyID
+    ')
+END
+        ]]></CDATA>
+    </Sql>
+
+    <Graph ClassName="UsrAuditTrailView" Source="#CDATA" IsNew="True" FileType="NewFile">
+        <CDATA name="UsrAuditTrailView.cs"><![CDATA[using System;
+using PX.Data;
+using PX.Data.BQL;
 
 namespace StudioB.AcuOps
 {
-    public class UserAuditTrailGISetup : CustomizationPlugin
+    [PXTable("UsrAuditTrailView")]
+    [PXCacheName("Audit Trail")]
+    public class UsrAuditTrailView : IBqlTable
     {
-        public override void UpdateDatabase()
-        {
-            // ROLLBACK: Remove UserAuditTrail GI rows that were inserted by previous versions.
-            // This is a safe cleanup — no new rows are created.
-            // -- REVIEWED: gi-sql-safe
-            // Exits immediately if ConnectionStrings["ProjectX"] is null (always true on this instance).
-            // GI deletes are scoped by DesignID+CompanyID — no blanket table wipes.
-            try
-            {
-                var cs = ConfigurationManager.ConnectionStrings["ProjectX"];
-                if (cs == null) { WriteLog("[StudioBAcuOps] No connection string — skipping"); return; }
-                string connStr = cs.ConnectionString + ";TrustServerCertificate=True";
+        public static bool IsActive() => true;
 
-                using (var conn = new SqlConnection(connStr))
-                {
-                    conn.Open();
+        #region CompanyID
+        public abstract class companyID : BqlInt.Field<companyID> { }
+        [PXDBInt(IsKey = true)]
+        [PXUIField(DisplayName = "Company ID", Visible = false)]
+        public virtual int? CompanyID { get; set; }
+        #endregion
 
-                    // Find CompanyID
-                    int companyId = 2;
-                    using (var cmd = new SqlCommand("SELECT TOP 1 CompanyID FROM GIDesign WHERE Name = 'InventoryAllocationDetail'", conn))
-                    {
-                        var result = cmd.ExecuteScalar();
-                        if (result != null && result != DBNull.Value) companyId = Convert.ToInt32(result);
-                    }
+        #region BatchID
+        public abstract class batchID : BqlGuid.Field<batchID> { }
+        [PXDBGuid(IsKey = true)]
+        [PXUIField(DisplayName = "Batch ID", Visible = false)]
+        public virtual Guid? BatchID { get; set; }
+        #endregion
 
-                    // Find UserAuditTrail GI
-                    Guid? designId = null;
-                    using (var cmd = new SqlCommand("SELECT DesignID FROM GIDesign WHERE Name = 'UserAuditTrail' AND CompanyID = @CID", conn))
-                    {
-                        cmd.Parameters.AddWithValue("@CID", companyId);
-                        var result = cmd.ExecuteScalar();
-                        if (result != null && result != DBNull.Value) designId = (Guid)result;
-                    }
+        #region ChangeID
+        public abstract class changeID : BqlInt.Field<changeID> { }
+        [PXDBInt(IsKey = true)]
+        [PXUIField(DisplayName = "Change ID", Visible = false)]
+        public virtual int? ChangeID { get; set; }
+        #endregion
 
-                    if (!designId.HasValue)
-                    {
-                        WriteLog("[StudioBAcuOps] No UserAuditTrail GI found — nothing to clean up");
-                        return;
-                    }
+        #region ScreenID
+        public abstract class screenID : BqlString.Field<screenID> { }
+        [PXDBString(8, IsUnicode = true)]
+        [PXUIField(DisplayName = "Screen ID")]
+        public virtual string ScreenID { get; set; }
+        #endregion
 
-                    WriteLog("[StudioBAcuOps] Cleaning up UserAuditTrail GI (DesignID=" + designId.Value + ")");
+        #region UserID
+        public abstract class userID : BqlGuid.Field<userID> { }
+        [PXDBGuid]
+        [PXUIField(DisplayName = "User ID", Visible = false)]
+        public virtual Guid? UserID { get; set; }
+        #endregion
 
-                    // Delete all child rows
-                    string[] tables = { "GITable", "GIResult", "GIWhere", "GISort", "GIFilter", "GIRelation", "GIOn", "GIGroupBy" };
-                    foreach (var table in tables)
-                    {
-                        using (var cmd = new SqlCommand(string.Format("DELETE FROM {0} WHERE DesignID = @ID AND CompanyID = @CID", table), conn))
-                        {
-                            cmd.Parameters.AddWithValue("@ID", designId.Value);
-                            cmd.Parameters.AddWithValue("@CID", companyId);
-                            int rows = cmd.ExecuteNonQuery();
-                            if (rows > 0) WriteLog("  Deleted " + rows + " rows from " + table);
-                        }
-                    }
+        #region Username
+        public abstract class username : BqlString.Field<username> { }
+        [PXDBString(256, IsUnicode = true)]
+        [PXUIField(DisplayName = "User")]
+        public virtual string Username { get; set; }
+        #endregion
 
-                    // Delete the GIDesign row
-                    using (var cmd = new SqlCommand("DELETE FROM GIDesign WHERE DesignID = @ID AND CompanyID = @CID", conn))
-                    {
-                        cmd.Parameters.AddWithValue("@ID", designId.Value);
-                        cmd.Parameters.AddWithValue("@CID", companyId);
-                        cmd.ExecuteNonQuery();
-                    }
+        #region ChangeDate
+        public abstract class changeDate : BqlDateTime.Field<changeDate> { }
+        [PXDBDate(PreserveTime = true)]
+        [PXUIField(DisplayName = "Date")]
+        public virtual DateTime? ChangeDate { get; set; }
+        #endregion
 
-                    WriteLog("[StudioBAcuOps] UserAuditTrail GI removed successfully");
-                }
-            }
-            catch (Exception ex)
-            {
-                WriteLog("[StudioBAcuOps] Cleanup error (non-fatal): " + ex.Message);
-            }
-        }
+        #region OperationDesc
+        public abstract class operationDesc : BqlString.Field<operationDesc> { }
+        [PXDBString(50, IsUnicode = true)]
+        [PXUIField(DisplayName = "Operation")]
+        public virtual string OperationDesc { get; set; }
+        #endregion
+
+        #region TableName
+        public abstract class tableName : BqlString.Field<tableName> { }
+        [PXDBString(128, IsUnicode = true)]
+        [PXUIField(DisplayName = "Table")]
+        public virtual string TableName { get; set; }
+        #endregion
+
+        #region CombinedKeyDisplay
+        public abstract class combinedKeyDisplay : BqlString.Field<combinedKeyDisplay> { }
+        [PXDBString(IsUnicode = true)]
+        [PXUIField(DisplayName = "Record Key")]
+        public virtual string CombinedKeyDisplay { get; set; }
+        #endregion
+
+        #region ModifiedFieldsDisplay
+        public abstract class modifiedFieldsDisplay : BqlString.Field<modifiedFieldsDisplay> { }
+        [PXDBString(IsUnicode = true)]
+        [PXUIField(DisplayName = "Modified Fields")]
+        public virtual string ModifiedFieldsDisplay { get; set; }
+        #endregion
     }
-}]]></CDATA>
+}
+        ]]></CDATA>
     </Graph>
+
+    <Sql Name="StudioBAuditTrailGI" Source="#CDATA">
+        <CDATA name="StudioBAuditTrailGI.sql"><![CDATA[
+-- REVIEWED: gi-sql-safe
+-- StudioBAuditTrail GI installer — scoped by DesignID + CompanyID, no blanket wipes.
+-- Upsert pattern: delete existing, insert fresh.
+
+DECLARE @CompanyID int = 2;
+DECLARE @DesignID uniqueidentifier;
+DECLARE @Now datetime = GETUTCDATE();
+
+-- Discover CompanyID from a known GI
+SELECT TOP 1 @CompanyID = CompanyID FROM GIDesign WHERE Name = 'InventoryAllocationDetail';
+
+-- Clean up any existing StudioBAuditTrail GI
+SELECT @DesignID = DesignID FROM GIDesign WHERE Name = 'StudioBAuditTrail' AND CompanyID = @CompanyID;
+IF @DesignID IS NOT NULL
+BEGIN
+    DELETE FROM GIFilter  WHERE DesignID = @DesignID AND CompanyID = @CompanyID;
+    DELETE FROM GISort    WHERE DesignID = @DesignID AND CompanyID = @CompanyID;
+    DELETE FROM GIResult  WHERE DesignID = @DesignID AND CompanyID = @CompanyID;
+    DELETE FROM GIGroupBy WHERE DesignID = @DesignID AND CompanyID = @CompanyID;
+    DELETE FROM GIOn      WHERE DesignID = @DesignID AND CompanyID = @CompanyID;
+    DELETE FROM GIRelation WHERE DesignID = @DesignID AND CompanyID = @CompanyID;
+    DELETE FROM GIWhere   WHERE DesignID = @DesignID AND CompanyID = @CompanyID;
+    DELETE FROM GIDesign  WHERE DesignID = @DesignID AND CompanyID = @CompanyID;
+END
+
+-- Generate new DesignID
+SET @DesignID = NEWID();
+
+-- GI header
+INSERT INTO GIDesign (CompanyID, DesignID, Name, Description, ExposeViaOData, CreatedDateTime, LastModifiedDateTime)
+VALUES (@CompanyID, @DesignID, 'StudioBAuditTrail', 'AcuOps Audit Trail - user change history with readable field data', 1, @Now, @Now);
+
+-- Primary table reference
+INSERT INTO GITable (CompanyID, DesignID, Alias, Name, IsActive)
+VALUES (@CompanyID, @DesignID, 'UsrAuditTrailView', 'StudioB.AcuOps.UsrAuditTrailView', 1);
+
+-- Result columns (7 visible)
+INSERT INTO GIResult (CompanyID, DesignID, LineNbr, ObjectName, Field, IsVisible, SortOrder)
+VALUES
+    (@CompanyID, @DesignID, 1, 'UsrAuditTrailView', 'ChangeDate', 1, 0),
+    (@CompanyID, @DesignID, 2, 'UsrAuditTrailView', 'Username', 1, 0),
+    (@CompanyID, @DesignID, 3, 'UsrAuditTrailView', 'ScreenID', 1, 0),
+    (@CompanyID, @DesignID, 4, 'UsrAuditTrailView', 'OperationDesc', 1, 0),
+    (@CompanyID, @DesignID, 5, 'UsrAuditTrailView', 'TableName', 1, 0),
+    (@CompanyID, @DesignID, 6, 'UsrAuditTrailView', 'CombinedKeyDisplay', 1, 0),
+    (@CompanyID, @DesignID, 7, 'UsrAuditTrailView', 'ModifiedFieldsDisplay', 1, 0);
+
+-- Sort: ChangeDate descending
+INSERT INTO GISort (CompanyID, DesignID, LineNbr, DataFieldName, IsDescending)
+VALUES (@CompanyID, @DesignID, 1, 'UsrAuditTrailView.ChangeDate', 1);
+
+-- Filters (5 user-facing)
+-- Condition codes: 0=Equals, 2=Contains, 6=Between
+INSERT INTO GIFilter (CompanyID, DesignID, LineNbr, DataFieldName, Condition, IsDefault)
+VALUES
+    (@CompanyID, @DesignID, 1, 'UsrAuditTrailView.ChangeDate', 6, 1),
+    (@CompanyID, @DesignID, 2, 'UsrAuditTrailView.ScreenID', 2, 1),
+    (@CompanyID, @DesignID, 3, 'UsrAuditTrailView.Username', 2, 1),
+    (@CompanyID, @DesignID, 4, 'UsrAuditTrailView.TableName', 2, 1),
+    (@CompanyID, @DesignID, 5, 'UsrAuditTrailView.OperationDesc', 0, 1);
+        ]]></CDATA>
+    </Sql>
 
 </Customization>
