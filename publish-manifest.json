@@ -19,6 +19,11 @@
       "screen": "AR301000",
       "custom_fields": []
     },
+    "Shipment": {
+      "screen": "SO302000",
+      "custom_fields": [],
+      "_note_containers": "UsrIncludeInContainer, UsrContainerID from AesthetikContainers ShipmentExt — re-add after first successful publish with schema validation"
+    },
     "StockItem": {
       "screen": "IN202500",
       "custom_fields": [],

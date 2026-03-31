@@ -3316,6 +3316,14 @@ IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('SOOrder') 
 -- BAccount pay link disable field
 IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('BAccount') AND name = 'UsrDisablePayLink')
   ALTER TABLE BAccount ADD UsrDisablePayLink bit NULL;
+-- SOShipment container fields (AesthetikContainers ShipmentExt)
+-- Belt-and-suspenders: also created by AesthetikContainers CustomizationPlugin,
+-- but plugin may not run if connection string is unavailable on Cloud.
+-- SEV-1 fix: SHIP006390 CommandPreparing error — columns missing from DB.
+IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('SOShipment') AND name = 'UsrIncludeInContainer')
+  ALTER TABLE SOShipment ADD UsrIncludeInContainer bit NULL DEFAULT 0;
+IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('SOShipment') AND name = 'UsrContainerID')
+  ALTER TABLE SOShipment ADD UsrContainerID int NULL;
 ]]></CDATA>
     </Sql>
         <Graph ClassName="SOShipmentEntry_LabelAutoPrint" Source="#CDATA" IsNew="True" FileType="NewFile">
