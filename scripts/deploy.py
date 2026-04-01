@@ -328,7 +328,7 @@ class AcumaticaCustomizationClient:
         self,
         project_names: list[str],
         poll_interval: int = 10,
-        poll_timeout: int = 600,
+        poll_timeout: int = 1800,
         validation_only: bool = False,
         merge_with_existing: bool = True,
     ) -> None:

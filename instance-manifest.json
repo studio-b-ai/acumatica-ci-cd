@@ -76,11 +76,11 @@
       "repo_dir": null
     },
     "LotSerialGI": {
-      "category": "legacy",
+      "category": "deprecated",
       "level": null,
       "owner": "api-bot",
-      "description": "Lot Serial Availability GI for OData. Sunset from CI/CD — stays published but no longer actively deployed.",
-      "published": true,
+      "description": "Lot Serial Availability GI for OData. Deleted from Heritage Test, remove from production via SM204505.",
+      "published": false,
       "repo_dir": null
     },
     "Ramp": {
@@ -100,11 +100,11 @@
       "repo_dir": "Customization/StudioBAcuOps"
     },
     "StudioBAuditTrail": {
-      "category": "legacy",
+      "category": "deprecated",
       "level": null,
       "owner": "studio-b-ai",
-      "description": "GI: Studio B Audit Trail with OData. Sunset from CI/CD — stays published but no longer actively deployed.",
-      "published": true,
+      "description": "GI: Studio B Audit Trail with OData. Deleted from Heritage Test, remove from production via SM204505.",
+      "published": false,
       "repo_dir": null
     },
     "AsthetikTheme": {

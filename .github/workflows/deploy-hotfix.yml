@@ -15,9 +15,9 @@ on:
         required: true
         default: 'UomHotfixYdsToIn'
       also_publish:
-        description: 'Comma-separated co-publish project names'
+        description: 'Comma-separated co-publish project names (MUST include all ISV packages)'
         required: true
-        default: 'AesthetikWMS,AesthetikContainers,StudioBAcuOps'
+        default: 'AesthetikWMS,AesthetikContainers,StudioBAcuOps,Ramp,AcumaticaPacejetCustomFields24.1001,KNCentralizedLicense[24.200.0118][19NOV2024][V03]3,IIGCONTAINERMGMT[24.204.0004][R19]1,IIGHFContainerMods[24.204.0004][R04],FusionWMSBasic[9.4.11][24.201.0052],FusionWMSAdvanced[9.4.11][24.201.0052],PXLotSertialNbrAttributeExtPkg'
       dry_run:
         description: 'Validate only (no publish)'
         required: false
