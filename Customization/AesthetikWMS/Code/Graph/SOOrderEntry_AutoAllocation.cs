@@ -67,7 +67,9 @@ namespace HeritageFabrics.SO
             if (e.Row == null) return;
             SOLine line = e.Row;
 
-            // Show warning if order description indicates partial allocation for this line
+            // Gate on order description as a cheap pre-filter before querying splits.
+            // Note: this couples to the alloc stamp format — if the stamp text changes,
+            // update this check too. The split query is the source of truth.
             SOOrder order = Base.Document.Current;
             if (order?.OrderDesc != null && order.OrderDesc.Contains("unallocated"))
             {
@@ -415,8 +417,9 @@ namespace HeritageFabrics.SO
         }
 
         /// <summary>
-        /// Revert any SOLineSplit cache mutations made during a failed allocation attempt.
+        /// Revert any cache mutations made during a failed allocation attempt.
         /// This prevents partial/corrupt split data from being persisted.
+        /// Covers SOLineSplit (inserted/deleted) and SOLine (updated POCreate).
         /// </summary>
         private void RevertPendingSplitChanges(SOOrder order)
         {
@@ -449,8 +452,22 @@ namespace HeritageFabrics.SO
                 splitCache.RevertDelete(split);
             }
 
+            // Revert SOLine updates (e.g. POCreate set during no-bolts path)
+            var lineCache = Base.Transactions.Cache;
+            var linesToRevert = new List<SOLine>();
+            foreach (SOLine line in lineCache.Updated)
+            {
+                if (line.OrderType == order.OrderType && line.OrderNbr == order.OrderNbr)
+                    linesToRevert.Add(line);
+            }
+
+            foreach (var line in linesToRevert)
+            {
+                lineCache.RevertUpdate(line);
+            }
+
             PXTrace.WriteWarning(
-                $"[AUTO-ALLOC] Reverted {toRevert.Count} inserted + {toRestore.Count} deleted splits after failure");
+                $"[AUTO-ALLOC] Reverted {toRevert.Count} inserted + {toRestore.Count} deleted splits + {linesToRevert.Count} updated lines after failure");
         }
 
         private class BoltCandidate
