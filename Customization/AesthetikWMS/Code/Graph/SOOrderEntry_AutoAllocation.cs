@@ -198,12 +198,36 @@ namespace HeritageFabrics.SO
                         $"[AUTO-ALLOC] Ln{line.LineNbr}: split {bolt.LotSerialNbr} qty={bolt.QtyOnHand}");
                 }
 
-                // Override line qty to actual bolt total
-                Base.Transactions.Cache.SetValueExt<SOLine.orderQty>(line, totalAllocated);
-                Base.Transactions.Cache.Update(line);
+                // If bolts don't cover full request, create unallocated remainder split
+                if (totalAllocated < requestedQty)
+                {
+                    decimal remainder = requestedQty - totalAllocated;
+                    var remainderSplit = (SOLineSplit)Base.Caches[typeof(SOLineSplit)].CreateInstance();
+                    remainderSplit.OrderType = line.OrderType;
+                    remainderSplit.OrderNbr = line.OrderNbr;
+                    remainderSplit.LineNbr = line.LineNbr;
+                    remainderSplit.InventoryID = line.InventoryID;
+                    remainderSplit.SubItemID = line.SubItemID;
+                    remainderSplit.SiteID = line.SiteID;
+                    remainderSplit.LocationID = line.LocationID;
+                    remainderSplit.Qty = remainder;
+                    remainderSplit.UOM = line.UOM;
+                    remainderSplit.IsAllocated = false;
+                    remainderSplit.Operation = lineOperation;
+                    remainderSplit.InvtMult = lineInvtMult;
+
+                    Base.Caches[typeof(SOLineSplit)].Insert(remainderSplit);
+
+                    PXTrace.WriteInformation(
+                        $"[AUTO-ALLOC] Ln{line.LineNbr}: remainder split qty={remainder} (unallocated)");
+                }
+                // Do NOT override SOLine.OrderQty — preserve user's requested quantity
 
                 totalBoltsAssigned += assignedBolts.Count;
-                allocSummary.Add($"Ln{line.LineNbr}: {assignedBolts.Count} bolt(s), {totalAllocated} {line.UOM}");
+                string partialNote = totalAllocated < requestedQty
+                    ? $" (partial — {requestedQty - totalAllocated} unallocated)"
+                    : "";
+                allocSummary.Add($"Ln{line.LineNbr}: {assignedBolts.Count} bolt(s), {totalAllocated} {line.UOM}{partialNote}");
 
                 PXTrace.WriteInformation(
                     $"[AUTO-ALLOC] Ln{line.LineNbr}: {assignedBolts.Count} bolts, " +
