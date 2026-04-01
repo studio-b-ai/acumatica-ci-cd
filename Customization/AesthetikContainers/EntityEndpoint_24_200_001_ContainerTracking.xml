@@ -29,7 +29,7 @@
         <TopLevelEntity name="UsrContainer" screen="SB501000">
             <Fields>
                 <Field name="ContainerID"          type="IntValue" />
-                <Field name="ContainerCD"          type="StringValue" />
+                <Field name="ContainerNbr"         type="StringValue" />
                 <Field name="CarrierCode"          type="StringValue" />
                 <Field name="BookingRef"           type="StringValue" />
                 <Field name="BillOfLading"         type="StringValue" />
@@ -56,7 +56,7 @@
                 <Mapping field="ContainerID">
                     <To object="Container" field="ContainerID" />
                 </Mapping>
-                <Mapping field="ContainerCD">
+                <Mapping field="ContainerNbr">
                     <To object="Container" field="ContainerCD" />
                 </Mapping>
                 <Mapping field="CarrierCode">
