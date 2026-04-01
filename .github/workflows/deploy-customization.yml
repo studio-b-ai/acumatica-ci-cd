@@ -85,16 +85,6 @@ on:
         required: false
         type: boolean
         default: false
-      skip_sandbox:
-        description: 'Skip sandbox validation (when sandbox env differs from prod)'
-        required: false
-        type: boolean
-        default: false
-      skip_sandbox_force:
-        description: 'Force skip sandbox even for plugin changes (LOGGED, emergency only)'
-        required: false
-        type: boolean
-        default: false
 
 env:
   # HARDCODED — never use a mutable GitHub variable for the project name.
@@ -132,7 +122,7 @@ jobs:
           DIFF=$(git diff origin/main -- '*.xml' '*.cs' 2>/dev/null || true)
           if echo "$DIFF" | grep -qiE '(CustomizationPlugin|UpdateDatabase|<Sql>|ExecuteSQL|SqlCommand)'; then
             echo "plugin_changes=true" >> "$GITHUB_OUTPUT"
-            echo "::warning::CustomizationPlugin changes detected — sandbox gate is MANDATORY"
+            echo "::warning::CustomizationPlugin changes detected"
           else
             echo "plugin_changes=false" >> "$GITHUB_OUTPUT"
           fi
@@ -325,10 +315,14 @@ jobs:
   # ──────────────────────────────────────────────
   # Job 3: Countdown — offloaded to webhook-router
   # ──────────────────────────────────────────────
-  # Job 3: Sandbox — Publish + smoke test before production (AAR 2026-03-28)
   # ──────────────────────────────────────────────
-  sandbox-gate:
-    name: Sandbox Publish Gate
+  # Job 3: Heritage Test — Hard gate on prod instance test tenant (pre-prod validation)
+  # Sandbox gate removed 2026-04-01 — sandbox instance corrupted and blocking deploys.
+  # Heritage Test runs on the production instance's test tenant, which is the real
+  # pre-production validation environment.
+  # ──────────────────────────────────────────────
+  heritage-test-gate:
+    name: Heritage Test Publish Gate
     needs: [build, qualify]
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -336,163 +330,7 @@ jobs:
       always() &&
       needs.build.result == 'success' &&
       github.event_name != 'pull_request' &&
-      github.event.inputs.force_qualify != 'true' &&
-      (
-        github.event.inputs.skip_sandbox != 'true' ||
-        (needs.build.outputs.plugin_changes == 'true' && github.event.inputs.skip_sandbox_force != 'true')
-      ) && (
-        needs.qualify.result == 'success' ||
-        needs.qualify.result == 'skipped'
-      )
-    concurrency:
-      group: sandbox-publish
-      cancel-in-progress: true
-
-    steps:
-      - name: Log forced sandbox skip
-        if: github.event.inputs.skip_sandbox_force == 'true' && needs.build.outputs.plugin_changes == 'true'
-        run: |
-          echo "::error::SANDBOX GATE FORCE-SKIPPED for plugin changes by ${{ github.actor }}"
-
-      - uses: actions/checkout@v4
-
-      - name: Download package artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: customization-package
-          path: dist/
-
-      - name: Install Python dependencies
-        run: pip install -r scripts/requirements.txt
-
-      - name: Import and publish on sandbox
-        id: sandbox-deploy
-        env:
-          ACUMATICA_URL: ${{ secrets.ACUMATICA_SANDBOX_URL }}
-          ACUMATICA_USERNAME: ${{ secrets.ACUMATICA_PROD_USERNAME }}
-          ACUMATICA_PASSWORD: ${{ secrets.ACUMATICA_PROD_PASSWORD }}
-          ACUMATICA_TENANT: ${{ secrets.ACUMATICA_SANDBOX_TENANT }}
-        run: |
-          PACKAGE_FILE=$(ls dist/${PROJECT_NAME}_*.zip 2>/dev/null | head -1)
-          if [ -z "${PACKAGE_FILE}" ]; then
-            PACKAGE_FILE=$(ls dist/*.zip | head -1)
-          fi
-
-          EXTRA_FLAGS=""
-          SANDBOX_COPUBLISH=""
-          for pkg in dist/*.zip; do
-            if [ "${pkg}" != "${PACKAGE_FILE}" ]; then
-              PKG_BASE=$(basename "${pkg}" .zip)
-              PKG_NAME=$(echo "${PKG_BASE}" | sed 's/_[0-9]\{8\}-[0-9]\{6\}$//')
-              EXTRA_FLAGS+=" --extra-import ${PKG_NAME}:${pkg}"
-              if [ -n "${SANDBOX_COPUBLISH}" ]; then
-                SANDBOX_COPUBLISH+=",${PKG_NAME}"
-              else
-                SANDBOX_COPUBLISH="${PKG_NAME}"
-              fi
-            fi
-          done
-
-          python scripts/deploy.py \
-            --project "${PROJECT_NAME}" \
-            --package "${PACKAGE_FILE}" \
-            --also-publish "${SANDBOX_COPUBLISH}" \
-            --no-merge \
-            --pre-cleanup \
-            ${EXTRA_FLAGS}
-
-      - name: Post-publish login smoke test
-        id: smoke
-        env:
-          ACUMATICA_URL: ${{ secrets.ACUMATICA_SANDBOX_URL }}
-          ACUMATICA_USERNAME: ${{ secrets.ACUMATICA_PROD_USERNAME }}
-          ACUMATICA_PASSWORD: ${{ secrets.ACUMATICA_PROD_PASSWORD }}
-          ACUMATICA_TENANT: ${{ secrets.ACUMATICA_SANDBOX_TENANT }}
-        run: |
-          # THIS IS THE CHECK THAT WOULD HAVE CAUGHT THE 2026-03-28 OUTAGE.
-          # After publishing on sandbox, verify api-bot can still log in.
-          # If VendorExt [PXDBInt] generates "Invalid column name" — caught HERE,
-          # not on production.
-          python -c "
-          import sys, os
-          sys.path.insert(0, '.')
-          from scripts.deploy import AcumaticaCustomizationClient
-          client = AcumaticaCustomizationClient(
-              os.environ['ACUMATICA_URL'],
-              os.environ['ACUMATICA_USERNAME'],
-              os.environ['ACUMATICA_PASSWORD'],
-              os.environ['ACUMATICA_TENANT'],
-          )
-          client.login()
-          ok = client.smoke_test()
-          client.logout()
-          if not ok:
-              print('::error::Sandbox smoke test FAILED — login broken after publish. BLOCKING production deploy.')
-              sys.exit(1)
-          print('Sandbox smoke test passed — safe to proceed to production')
-          "
-
-      - name: Validate custom fields on sandbox
-        id: verify
-        env:
-          ACUMATICA_URL: ${{ secrets.ACUMATICA_SANDBOX_URL }}
-          ACUMATICA_USERNAME: ${{ secrets.ACUMATICA_PROD_USERNAME }}
-          ACUMATICA_PASSWORD: ${{ secrets.ACUMATICA_PROD_PASSWORD }}
-          ACUMATICA_TENANT: ${{ secrets.ACUMATICA_SANDBOX_TENANT }}
-        run: python scripts/validate-publish.py --manifest publish-manifest.json
-
-      - name: E2E view-level smoke test
-        id: e2e
-        env:
-          ACUMATICA_URL: ${{ secrets.ACUMATICA_SANDBOX_URL }}
-          ACUMATICA_USERNAME: ${{ secrets.ACUMATICA_PROD_USERNAME }}
-          ACUMATICA_PASSWORD: ${{ secrets.ACUMATICA_PROD_PASSWORD }}
-          ACUMATICA_TENANT: ${{ secrets.ACUMATICA_SANDBOX_TENANT }}
-        run: python scripts/smoke-e2e.py --manifest publish-manifest.json
-
-      - name: Audit-derived regression tests
-        id: audit-regression
-        if: steps.e2e.outcome == 'success'
-        env:
-          ACUMATICA_URL: ${{ secrets.ACUMATICA_SANDBOX_URL }}
-          ACUMATICA_USERNAME: ${{ secrets.ACUMATICA_PROD_USERNAME }}
-          ACUMATICA_PASSWORD: ${{ secrets.ACUMATICA_PROD_PASSWORD }}
-          ACUMATICA_TENANT: ${{ secrets.ACUMATICA_SANDBOX_TENANT }}
-        run: python -m pytest tests/test_audit_derived.py -v --tb=short
-
-      - name: Sandbox gate summary
-        if: always()
-        run: |
-          echo "## Sandbox Publish Gate (AAR 2026-03-28)" >> "$GITHUB_STEP_SUMMARY"
-          echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "| Step | Result |" >> "$GITHUB_STEP_SUMMARY"
-          echo "|------|--------|" >> "$GITHUB_STEP_SUMMARY"
-          echo "| Import + Publish | \`${{ steps.sandbox-deploy.outcome }}\` |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| Login Smoke Test | \`${{ steps.smoke.outcome }}\` |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| Field Validation | \`${{ steps.verify.outcome }}\` |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| E2E View Smoke | \`${{ steps.e2e.outcome }}\` |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| Audit Regression | \`${{ steps.audit-regression.outcome }}\` |" >> "$GITHUB_STEP_SUMMARY"
-          echo "" >> "$GITHUB_STEP_SUMMARY"
-          if [ "${{ steps.smoke.outcome }}" = "failure" ] || [ "${{ steps.e2e.outcome }}" = "failure" ] || [ "${{ steps.audit-regression.outcome }}" = "failure" ]; then
-            echo "**BLOCKED:** Post-publish validation failed — production deploy prevented." >> "$GITHUB_STEP_SUMMARY"
-          fi
-
-  # ──────────────────────────────────────────────
-  # Job 3b: Heritage Test — Hard gate on prod instance test tenant (pre-prod validation)
-  # ──────────────────────────────────────────────
-  heritage-test-gate:
-    name: Heritage Test Publish Gate
-    needs: [build, qualify, sandbox-gate]
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    if: |
-      always() &&
-      needs.build.result == 'success' &&
-      github.event_name != 'pull_request' &&
       github.event.inputs.force_qualify != 'true' && (
-        needs.sandbox-gate.result == 'success' ||
-        needs.sandbox-gate.result == 'skipped'
-      ) && (
         needs.qualify.result == 'success' ||
         needs.qualify.result == 'skipped'
       )
@@ -610,16 +448,13 @@ jobs:
   # ──────────────────────────────────────────────
   countdown-notify:
     name: Send Maintenance Warnings
-    needs: [build, qualify, sandbox-gate, heritage-test-gate]
+    needs: [build, qualify, heritage-test-gate]
     runs-on: ubuntu-latest
     if: |
       always() &&
       needs.build.result == 'success' &&
       (needs.heritage-test-gate.result == 'success' || needs.heritage-test-gate.result == 'skipped') &&
       github.event_name != 'pull_request' && (
-        needs.sandbox-gate.result == 'success' ||
-        needs.sandbox-gate.result == 'skipped'
-      ) && (
         (needs.qualify.outputs.needs_countdown == 'true' && github.event.inputs.countdown_complete != 'true') ||
         github.event.inputs.force_qualify == 'true' ||
         github.event.inputs.countdown_complete == 'true' ||
