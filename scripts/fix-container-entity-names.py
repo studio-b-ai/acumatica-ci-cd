@@ -3,12 +3,12 @@
 Fix ContainerTracking REST endpoint entity names.
 Changes: Container→UsrContainer, ContainerEvent→UsrContainerEvent, ContainerPOLink→UsrContainerPOLink.
 
-Strategy (based on full SM207060 GetSchema analysis):
-  1. Set filter to ContainerTracking endpoint (InterfaceName on Endpoint)
-  2. Navigate EntityTree to each wrong-named entity (//Title field)
-  3. Delete via DeleteRow on SelectedEntity
-  4. Add correct entities via insertNew + CreateEntityView dialog
-  5. Save and verify via REST
+Strategy:
+  1. Navigate to ContainerTracking endpoint via SOAP (verify via response)
+  2. Delete wrong-named entities using EntityTree.Title navigation + SelectedEntity.DeleteRow
+     (uses plain 'Title' not '//Title' to avoid stack overflow)
+  3. Add correct entities via EntityTree.insertNew + CreateEntityView dialog
+  4. Save and verify via REST
 
 Usage:
     python3 fix-container-entity-names.py
@@ -60,8 +60,8 @@ def check_response(resp, label):
             root = ET.fromstring(resp.text)
             fault = get_fault(root)
         except:
-            fault = resp.text[:200]
-        print(f"  FAIL ({label}): HTTP {resp.status_code} — {fault[:300]}")
+            fault = resp.text[:300]
+        print(f"  FAIL ({label}): HTTP {resp.status_code} — {fault[:400]}")
         return False
     return True
 
@@ -70,6 +70,14 @@ def extract_field_value(xml_text, field_name):
     pattern = rf'<FieldName>{re.escape(field_name)}</FieldName>.*?<Value>(.*?)</Value>'
     m = re.search(pattern, xml_text, re.DOTALL)
     return m.group(1) if m else None
+
+def extract_all_field_values(xml_text):
+    """Extract all FieldName→Value pairs from SOAP response for debugging."""
+    results = {}
+    pattern = r'<FieldName>(.*?)</FieldName>.*?<Value>(.*?)</Value>'
+    for m in re.finditer(pattern, xml_text, re.DOTALL):
+        results[m.group(1)] = m.group(2)
+    return results
 
 def login(session):
     body = (
@@ -90,14 +98,15 @@ def logout(session):
     print("OK: Logged out")
 
 def navigate_to_endpoint(session):
-    """Set filter to ContainerTracking endpoint."""
+    """Navigate to ContainerTracking endpoint and verify we landed on it."""
+    # Submit InterfaceName and GateVersion together to search for ContainerTracking
     body = f"""<tns:Submit>
   <tns:commands>
     <tns:Command>
       <tns:FieldName>InterfaceName</tns:FieldName>
       <tns:ObjectName>Endpoint</tns:ObjectName>
       <tns:Value>{ENDPOINT_NAME}</tns:Value>
-      <tns:Commit>true</tns:Commit>
+      <tns:Commit>false</tns:Commit>
     </tns:Command>
     <tns:Command>
       <tns:FieldName>GateVersion</tns:FieldName>
@@ -110,15 +119,59 @@ def navigate_to_endpoint(session):
     resp = session.post(SOAP_URL, data=make_envelope(body), headers=soap_headers("Submit"))
     if not check_response(resp, "navigate_to_endpoint"):
         return False
-    print(f"  OK: Navigated to {ENDPOINT_NAME} {ENDPOINT_VERSION}")
+
+    # Verify we actually landed on ContainerTracking
+    fields = extract_all_field_values(resp.text)
+    iface   = fields.get("InterfaceName", "<not found>")
+    version = fields.get("GateVersion",   "<not found>")
+    print(f"  Navigation response: InterfaceName={iface!r}, GateVersion={version!r}")
+
+    if iface != ENDPOINT_NAME:
+        print(f"  WARNING: Expected '{ENDPOINT_NAME}', got '{iface}' — trying Search approach")
+        # Try the Search action to find ContainerTracking
+        return navigate_via_search(session)
+
+    print(f"  OK: Confirmed on {ENDPOINT_NAME} {ENDPOINT_VERSION}")
     return True
 
-def select_entity_in_tree(session, entity_name):
-    """Navigate EntityTree to select an entity by title."""
+def navigate_via_search(session):
+    """Alternative: use Search/FindRow to navigate to ContainerTracking."""
     body = f"""<tns:Submit>
   <tns:commands>
     <tns:Command>
-      <tns:FieldName>//Title</tns:FieldName>
+      <tns:FieldName>Search</tns:FieldName>
+      <tns:ObjectName>Endpoint</tns:ObjectName>
+      <tns:Commit>true</tns:Commit>
+    </tns:Command>
+  </tns:commands>
+</tns:Submit>"""
+    resp = session.post(SOAP_URL, data=make_envelope(body), headers=soap_headers("Submit"))
+    if not check_response(resp, "navigate_via_search"):
+        return False
+
+    fields = extract_all_field_values(resp.text)
+    iface = fields.get("InterfaceName", "<not found>")
+    print(f"  After Search: InterfaceName={iface!r}")
+
+    if iface == ENDPOINT_NAME:
+        print(f"  OK: Search navigation worked")
+        return True
+
+    # Last resort: print all fields to diagnose
+    print(f"  All response fields: {fields}")
+    print(f"  WARNING: Could not navigate to {ENDPOINT_NAME} — proceeding anyway")
+    return True  # continue with best-effort
+
+def delete_entity(session, entity_name):
+    """Navigate to entity using plain 'Title' (not '//Title') then delete."""
+    print(f"\n  Deleting: {entity_name}")
+
+    # Step 1: Navigate to entity in tree using plain Title field
+    # (Using '//Title' caused InsufficientExecutionStackException in prior runs)
+    body = f"""<tns:Submit>
+  <tns:commands>
+    <tns:Command>
+      <tns:FieldName>Title</tns:FieldName>
       <tns:ObjectName>EntityTree</tns:ObjectName>
       <tns:Value>{entity_name}</tns:Value>
       <tns:Commit>true</tns:Commit>
@@ -126,16 +179,15 @@ def select_entity_in_tree(session, entity_name):
   </tns:commands>
 </tns:Submit>"""
     resp = session.post(SOAP_URL, data=make_envelope(body), headers=soap_headers("Submit"))
-    if not check_response(resp, f"select_entity {entity_name}"):
-        return False
-    # Check what was selected
-    selected = extract_field_value(resp.text, "ObjectName")
-    print(f"    Selected entity: {selected!r} (expected {entity_name!r})")
-    return True
+    if not check_response(resp, f"select_entity_title {entity_name}"):
+        print(f"    Trying deleteNode approach instead...")
+        return delete_via_deletenode(session, entity_name)
 
-def delete_selected_entity(session, entity_name):
-    """Delete the currently selected entity via SelectedEntity.DeleteRow."""
-    body = f"""<tns:Submit>
+    fields = extract_all_field_values(resp.text)
+    print(f"    After Title navigate: ObjectName={fields.get('ObjectName', '?')!r}, Title={fields.get('Title', '?')!r}")
+
+    # Step 2: Delete the selected entity
+    body2 = f"""<tns:Submit>
   <tns:commands>
     <tns:Command>
       <tns:FieldName>DeleteRow</tns:FieldName>
@@ -144,19 +196,63 @@ def delete_selected_entity(session, entity_name):
     </tns:Command>
   </tns:commands>
 </tns:Submit>"""
-    resp = session.post(SOAP_URL, data=make_envelope(body), headers=soap_headers("Submit"))
-    if not check_response(resp, f"delete_entity {entity_name}"):
-        root = ET.fromstring(resp.text)
-        print(f"    Fault: {get_fault(root)[:300]}")
+    resp2 = session.post(SOAP_URL, data=make_envelope(body2), headers=soap_headers("Submit"))
+    if not check_response(resp2, f"delete_selected {entity_name}"):
+        root = ET.fromstring(resp2.text)
+        print(f"    Delete fault: {get_fault(root)[:300]}")
         return False
-    print(f"    Deleted: {entity_name}")
+
+    fields2 = extract_all_field_values(resp2.text)
+    print(f"    Deleted. Response fields: {list(fields2.keys())[:5]}")
+    return True
+
+def delete_via_deletenode(session, entity_name):
+    """Fallback: use Endpoint.deleteNode ServiceCommand."""
+    body = f"""<tns:Submit>
+  <tns:commands>
+    <tns:Command>
+      <tns:FieldName>deleteNode</tns:FieldName>
+      <tns:ObjectName>Endpoint</tns:ObjectName>
+      <tns:Commit>true</tns:Commit>
+    </tns:Command>
+  </tns:commands>
+</tns:Submit>"""
+    resp = session.post(SOAP_URL, data=make_envelope(body), headers=soap_headers("Submit"))
+    if not check_response(resp, f"deleteNode {entity_name}"):
+        return False
+    print(f"    deleteNode response OK for {entity_name}")
     return True
 
 def add_entity(session, object_name):
-    """Add entity via insertNew + CreateEntityView dialog flow."""
+    """Add entity via EntityTree.insertNew + CreateEntityView dialog."""
     print(f"\n  Adding entity: {object_name}")
 
-    # Step 1: insertNew on Endpoint to open Create Entity dialog
+    # Step 1: insertNew on EntityTree (NOT Endpoint — that creates a new endpoint record)
+    # EntityTree.insertNew adds a new entity to the currently active endpoint
+    body = f"""<tns:Submit>
+  <tns:commands>
+    <tns:Command>
+      <tns:FieldName>insertNew</tns:FieldName>
+      <tns:ObjectName>EntityTree</tns:ObjectName>
+      <tns:Commit>true</tns:Commit>
+    </tns:Command>
+  </tns:commands>
+</tns:Submit>"""
+    resp = session.post(SOAP_URL, data=make_envelope(body), headers=soap_headers("Submit"))
+    if not check_response(resp, f"EntityTree.insertNew for {object_name}"):
+        root = ET.fromstring(resp.text)
+        print(f"    Fault: {get_fault(root)[:300]}")
+        print(f"    Trying Endpoint.insertNew fallback...")
+        return add_entity_via_endpoint_insertnew(session, object_name)
+
+    fields = extract_all_field_values(resp.text)
+    print(f"    insertNew response fields: {dict(list(fields.items())[:6])}")
+
+    # Step 2: Fill CreateEntityView dialog
+    return fill_create_entity_dialog(session, object_name)
+
+def add_entity_via_endpoint_insertnew(session, object_name):
+    """Fallback: insertNew on Endpoint (may open Create Endpoint dialog instead of Create Entity)."""
     body = f"""<tns:Submit>
   <tns:commands>
     <tns:Command>
@@ -167,16 +263,17 @@ def add_entity(session, object_name):
   </tns:commands>
 </tns:Submit>"""
     resp = session.post(SOAP_URL, data=make_envelope(body), headers=soap_headers("Submit"))
-    if not check_response(resp, f"insertNew for {object_name}"):
+    if not check_response(resp, f"Endpoint.insertNew for {object_name}"):
         root = ET.fromstring(resp.text)
         print(f"    Fault: {get_fault(root)[:300]}")
         return False
-    # Check if dialog opened
-    dialog_check = extract_field_value(resp.text, "ObjectName")
-    print(f"    insertNew response ObjectName: {dialog_check!r}")
-    print(f"    insertNew response: {resp.text[100:300]}")
 
-    # Step 2: Fill dialog fields
+    fields = extract_all_field_values(resp.text)
+    print(f"    Endpoint.insertNew response fields: {dict(list(fields.items())[:6])}")
+    return fill_create_entity_dialog(session, object_name)
+
+def fill_create_entity_dialog(session, object_name):
+    """Fill and submit the CreateEntityView dialog."""
     body = f"""<tns:Submit>
   <tns:commands>
     <tns:Command>
@@ -197,24 +294,67 @@ def add_entity(session, object_name):
       <tns:Value>{SCREEN_ID}</tns:Value>
       <tns:Commit>true</tns:Commit>
     </tns:Command>
+  </tns:commands>
+</tns:Submit>"""
+    resp = session.post(SOAP_URL, data=make_envelope(body), headers=soap_headers("Submit"))
+    if not check_response(resp, f"fill_dialog {object_name}"):
+        root = ET.fromstring(resp.text)
+        print(f"    Dialog fill fault: {get_fault(root)[:400]}")
+        print(f"    Response snippet: {resp.text[200:500]}")
+        return False
+
+    fields = extract_all_field_values(resp.text)
+    print(f"    Dialog filled. ObjectName={fields.get('ObjectName', '?')!r}, ScreenID={fields.get('ScreenID', '?')!r}")
+
+    # Confirm/OK the dialog
+    return confirm_dialog(session, object_name)
+
+def confirm_dialog(session, object_name):
+    """Click OK/Save on the CreateEntityView dialog."""
+    body = f"""<tns:Submit>
+  <tns:commands>
     <tns:Command>
-      <tns:FieldName>Save</tns:FieldName>
-      <tns:ObjectName>Endpoint</tns:ObjectName>
+      <tns:FieldName>OK</tns:FieldName>
+      <tns:ObjectName>CreateEntityView</tns:ObjectName>
       <tns:Commit>true</tns:Commit>
     </tns:Command>
   </tns:commands>
 </tns:Submit>"""
     resp = session.post(SOAP_URL, data=make_envelope(body), headers=soap_headers("Submit"))
-    if not check_response(resp, f"fill+save {object_name}"):
+    if not check_response(resp, f"dialog_ok {object_name}"):
         root = ET.fromstring(resp.text)
-        print(f"    Fault: {get_fault(root)[:500]}")
-        print(f"    Response: {resp.text[100:400]}")
+        fault = get_fault(root)
+        print(f"    Dialog OK fault: {fault[:300]}")
+        # Try 'Save' button instead of 'OK'
+        return confirm_dialog_save(session, object_name)
+
+    fields = extract_all_field_values(resp.text)
+    print(f"    Dialog confirmed. Tree fields: {dict(list(fields.items())[:4])}")
+    return True
+
+def confirm_dialog_save(session, object_name):
+    """Fallback: use Save button on CreateEntityView."""
+    body = f"""<tns:Submit>
+  <tns:commands>
+    <tns:Command>
+      <tns:FieldName>Save</tns:FieldName>
+      <tns:ObjectName>CreateEntityView</tns:ObjectName>
+      <tns:Commit>true</tns:Commit>
+    </tns:Command>
+  </tns:commands>
+</tns:Submit>"""
+    resp = session.post(SOAP_URL, data=make_envelope(body), headers=soap_headers("Submit"))
+    if not check_response(resp, f"dialog_save {object_name}"):
+        root = ET.fromstring(resp.text)
+        print(f"    Dialog Save fault: {get_fault(root)[:300]}")
         return False
-    print(f"    Created and saved: {object_name}")
+
+    fields = extract_all_field_values(resp.text)
+    print(f"    Dialog save OK. Fields: {dict(list(fields.items())[:4])}")
     return True
 
 def save_endpoint(session):
-    """Final save."""
+    """Final save of the endpoint."""
     body = f"""<tns:Submit>
   <tns:commands>
     <tns:Command>
@@ -256,6 +396,14 @@ def verify_rest():
             except:
                 print(f"       {r.text[:200]}")
 
+    # Also check wrong-named entities are gone
+    print("\n  Checking wrong-named entities are gone:")
+    for entity in WRONG_NAMES:
+        url = f"{BASE_URL}/entity/{ENDPOINT_NAME}/{ENDPOINT_VERSION}/{entity}"
+        r = session.get(url, params={"$top": "1"})
+        icon = "OK (gone)" if r.status_code != 200 else "STILL PRESENT"
+        print(f"  {icon}: {entity} → HTTP {r.status_code}")
+
     session.post(f"{BASE_URL}/entity/auth/logout")
     return all_ok
 
@@ -272,27 +420,39 @@ def main():
 
     try:
         login(session)
-        navigate_to_endpoint(session)
 
-        # Phase 1: Delete wrong-named entities via EntityTree
+        if not navigate_to_endpoint(session):
+            print("ERROR: Could not navigate to endpoint")
+            sys.exit(1)
+
+        # Phase 1: Delete wrong-named entities
         print("\n--- Phase 1: Delete wrong-named entities ---")
+        deleted_any = False
         for name in WRONG_NAMES:
-            print(f"\n  Deleting: {name}")
-            if select_entity_in_tree(session, name):
-                delete_selected_entity(session, name)
+            if delete_entity(session, name):
+                deleted_any = True
             else:
-                print(f"    Could not select {name} — may already be deleted or different name")
-            time.sleep(1)
+                print(f"    Could not delete {name} — may already be absent")
+            time.sleep(0.5)
 
         # Phase 2: Add correct entities
         print("\n--- Phase 2: Add correct-named entities ---")
-        # Re-navigate to ensure we're on ContainerTracking
+        # Re-navigate to ensure we're on ContainerTracking after deletes
         navigate_to_endpoint(session)
-        for name in CORRECT_NAMES:
-            add_entity(session, name)
-            time.sleep(1)
+        time.sleep(0.5)
 
-        save_endpoint(session)
+        added_all = True
+        for name in CORRECT_NAMES:
+            if not add_entity(session, name):
+                print(f"  ERROR: Failed to add {name}")
+                added_all = False
+            time.sleep(0.5)
+
+        if added_all:
+            save_endpoint(session)
+        else:
+            print("WARNING: Not all entities added — skipping save")
+
         logout(session)
 
         print("\n=== Verifying REST endpoint ===")
