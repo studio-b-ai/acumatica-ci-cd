@@ -1448,12 +1448,19 @@ namespace StudioB.Containers
             <px:PXDropDown ID="edStatus" runat="server" DataField="Status" />
             <px:PXTextEdit ID="edCarrierCode" runat="server" DataField="CarrierCode" />
             <px:PXTextEdit ID="edVesselName" runat="server" DataField="VesselName" />
+            <px:PXTextEdit ID="edVesselIMO" runat="server" DataField="VesselIMO" />
+            <px:PXTextEdit ID="edContainerType" runat="server" DataField="ContainerType" />
             <px:PXLayoutRule ID="PXLayoutRule2" runat="server" StartColumn="True" LabelsWidth="SM" ControlSize="M" />
             <px:PXDateTimeEdit ID="edETD" runat="server" DataField="ETD" />
             <px:PXDateTimeEdit ID="edETA" runat="server" DataField="ETA" />
             <px:PXDateTimeEdit ID="edATA" runat="server" DataField="ATA" />
             <px:PXTextEdit ID="edPortOfLoading" runat="server" DataField="PortOfLoading" />
             <px:PXTextEdit ID="edPortOfDischarge" runat="server" DataField="PortOfDischarge" />
+            <px:PXLayoutRule ID="PXLayoutRule3" runat="server" StartColumn="True" LabelsWidth="SM" ControlSize="M" />
+            <px:PXTextEdit ID="edBookingRef" runat="server" DataField="BookingRef" />
+            <px:PXTextEdit ID="edBillOfLading" runat="server" DataField="BillOfLading" />
+            <px:PXTextEdit ID="edVoyageNbr" runat="server" DataField="VoyageNbr" />
+            <px:PXTextEdit ID="edSealNbr" runat="server" DataField="SealNbr" />
         </Template>
     </px:PXFormView>
 </asp:Content>
