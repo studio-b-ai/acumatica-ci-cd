@@ -8,12 +8,15 @@ using PX.Objects.SO;
 namespace HeritageFabrics.SO
 {
     /// <summary>
-    /// Fixes "InvtMult cannot be empty" error on SOLine persist.
+    /// Fixes "InvtMult cannot be empty" error on SOLine and SOLineSplit persist.
     ///
     /// InvtMult is set by SOOrderEntry when Operation is defaulted, but certain
     /// order types (e.g. PC) or data-repair scenarios can leave it null.
     /// This extension catches the gap at RowPersisting and defaults InvtMult
     /// from SOOrderTypeOperation, preventing the PXDefaultAttribute error.
+    ///
+    /// Covers both SOLine (original fix) and SOLineSplit (auto-allocation
+    /// creates splits that inherit null InvtMult from parent line).
     ///
     /// Issue: acumatica-ci-cd#101
     /// Repro: Sales Order PC S004709 (FABRICUT) — Save throws
@@ -67,6 +70,36 @@ namespace HeritageFabrics.SO
                 {
                     short invtMult = operation.InvtMult ?? (short)1;
                     e.Cache.SetValue<SOLine.invtMult>(line, invtMult);
+                }
+            }
+        }
+
+        protected void _(Events.RowPersisting<SOLineSplit> e)
+        {
+            if (e.Row == null || _invtMultGuard) return;
+
+            SOLineSplit split = e.Row;
+
+            if (split.InvtMult == null && split.InventoryID != null)
+            {
+                _invtMultGuard = true;
+                try
+                {
+                    // Look up the operation config for this order type + operation
+                    SOOrderTypeOperation operation = SelectFrom<SOOrderTypeOperation>
+                        .Where<SOOrderTypeOperation.orderType.IsEqual<@P.AsString>
+                            .And<SOOrderTypeOperation.operation.IsEqual<@P.AsString>>>
+                        .View.Select(Base, split.OrderType, split.Operation ?? SOOperation.Issue);
+
+                    if (operation != null)
+                    {
+                        short invtMult = operation.InvtMult ?? (short)1;
+                        Base.Caches[typeof(SOLineSplit)].SetValueExt<SOLineSplit.invtMult>(split, invtMult);
+                    }
+                }
+                finally
+                {
+                    _invtMultGuard = false;
                 }
             }
         }
