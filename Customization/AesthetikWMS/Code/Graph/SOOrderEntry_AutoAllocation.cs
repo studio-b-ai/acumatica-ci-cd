@@ -47,8 +47,11 @@ namespace HeritageFabrics.SO
                 }
                 catch (Exception ex)
                 {
-                    PXTrace.WriteError($"[AUTO-ALLOC] Failed: {ex.Message}");
-                    // Don't block save — log and continue
+                    PXTrace.WriteError($"[AUTO-ALLOC] Failed: {ex.Message}\n{ex.StackTrace}");
+
+                    // Revert any partial cache mutations from failed allocation
+                    // by rolling back Inserted/Updated/Deleted splits for this order
+                    RevertPendingSplitChanges(order);
                 }
             }
 
@@ -370,6 +373,45 @@ namespace HeritageFabrics.SO
                 ((InventoryItem)item).LotSerClassID,
                 PieceGoodsClassID,
                 StringComparison.OrdinalIgnoreCase);
+        }
+
+        /// <summary>
+        /// Revert any SOLineSplit cache mutations made during a failed allocation attempt.
+        /// This prevents partial/corrupt split data from being persisted.
+        /// </summary>
+        private void RevertPendingSplitChanges(SOOrder order)
+        {
+            var splitCache = Base.Caches[typeof(SOLineSplit)];
+
+            // Collect refs first to avoid modifying collection during iteration
+            var toRevert = new List<SOLineSplit>();
+
+            foreach (SOLineSplit split in splitCache.Inserted)
+            {
+                if (split.OrderType == order.OrderType && split.OrderNbr == order.OrderNbr)
+                    toRevert.Add(split);
+            }
+
+            foreach (var split in toRevert)
+            {
+                splitCache.Remove(split);
+            }
+
+            // Also revert any deleted default splits
+            var toRestore = new List<SOLineSplit>();
+            foreach (SOLineSplit split in splitCache.Deleted)
+            {
+                if (split.OrderType == order.OrderType && split.OrderNbr == order.OrderNbr)
+                    toRestore.Add(split);
+            }
+
+            foreach (var split in toRestore)
+            {
+                splitCache.RevertDelete(split);
+            }
+
+            PXTrace.WriteWarning(
+                $"[AUTO-ALLOC] Reverted {toRevert.Count} inserted + {toRestore.Count} deleted splits after failure");
         }
 
         private class BoltCandidate
