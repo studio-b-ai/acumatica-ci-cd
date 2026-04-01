@@ -60,6 +60,45 @@ namespace HeritageFabrics.SO
 
         #endregion
 
+        #region UI Warnings
+
+        protected void _(Events.RowSelected<SOLine> e)
+        {
+            if (e.Row == null) return;
+            SOLine line = e.Row;
+
+            // Show warning if order description indicates partial allocation for this line
+            SOOrder order = Base.Document.Current;
+            if (order?.OrderDesc != null && order.OrderDesc.Contains("unallocated"))
+            {
+                // Check if this specific line has unallocated splits
+                bool hasUnallocated = false;
+                bool hasAllocated = false;
+                foreach (SOLineSplit split in
+                    SelectFrom<SOLineSplit>
+                        .Where<SOLineSplit.orderType.IsEqual<@P.AsString>
+                            .And<SOLineSplit.orderNbr.IsEqual<@P.AsString>>
+                            .And<SOLineSplit.lineNbr.IsEqual<@P.AsInt>>>
+                        .View.ReadOnly.Select(Base, line.OrderType, line.OrderNbr, line.LineNbr))
+                {
+                    if (split.IsAllocated == true && !string.IsNullOrEmpty(split.LotSerialNbr))
+                        hasAllocated = true;
+                    if (split.IsAllocated != true && string.IsNullOrEmpty(split.LotSerialNbr))
+                        hasUnallocated = true;
+                }
+
+                if (hasAllocated && hasUnallocated)
+                {
+                    PXUIFieldAttribute.SetWarning<SOLine.orderQty>(
+                        e.Cache, line,
+                        "Partially allocated — not enough bolts in stock to cover full quantity. " +
+                        "Remainder is unallocated.");
+                }
+            }
+        }
+
+        #endregion
+
         #region Core Allocation Logic
 
         private void AllocateBoltsForOrder(SOOrder order)
