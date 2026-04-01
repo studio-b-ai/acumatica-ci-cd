@@ -849,7 +849,8 @@ def main():
         "--pre-cleanup",
         action="store_true",
         help="Delete project from instance before importing. Fixes NullReferenceException "
-             "corruption in CustProject table.",
+             "corruption in CustProject table (2026-03-22 / 2026-04-01 incidents). "
+             "Safe for sandbox — import immediately re-creates the project.",
     )
 
     args = parser.parse_args()
@@ -901,6 +902,10 @@ def main():
                 _log(f"Backup saved: {backup_path}", style="ok")
 
             # Pre-cleanup: delete projects before import to clear corrupted CustProject state.
+            # The 2026-03-22 and 2026-04-01 incidents showed that NullReferenceException
+            # during import means the CustProject table entry is corrupted — the only
+            # fix is to delete and re-import. Safe for sandbox; the import immediately
+            # re-creates the project.
             if args.pre_cleanup and args.package:
                 _log("Pre-cleanup: deleting projects before import (--pre-cleanup)...", style="warn")
                 client.cleanup_orphan(args.project)

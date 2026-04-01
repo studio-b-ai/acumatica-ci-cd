@@ -16,7 +16,7 @@ namespace HeritageFabrics.SO
     /// For each unallocated PIECENBR line:
     ///   1. Find available bolts from INLotSerialStatus (FIFO, then largest)
     ///   2. Create SOLineSplit rows for each bolt (native allocation pattern)
-    ///   3. Override SOLine.OrderQty to actual bolt total (120% overship cap)
+    ///   3. If bolts don't cover full request, create unallocated remainder split
     ///   4. If no bolts available, mark line POCreate = true
     ///
     /// Uses SOLineSplit (not SOLine splitting) to avoid openLineCntr aggregate
@@ -47,12 +47,56 @@ namespace HeritageFabrics.SO
                 }
                 catch (Exception ex)
                 {
-                    PXTrace.WriteError($"[AUTO-ALLOC] Failed: {ex.Message}");
-                    // Don't block save — log and continue
+                    PXTrace.WriteError($"[AUTO-ALLOC] Failed: {ex.Message}\n{ex.StackTrace}");
+
+                    // Revert any partial cache mutations from failed allocation
+                    // by rolling back Inserted/Updated/Deleted splits for this order
+                    RevertPendingSplitChanges(order);
                 }
             }
 
             baseMethod();
+        }
+
+        #endregion
+
+        #region UI Warnings
+
+        protected void _(Events.RowSelected<SOLine> e)
+        {
+            if (e.Row == null) return;
+            SOLine line = e.Row;
+
+            // Gate on order description as a cheap pre-filter before querying splits.
+            // Note: this couples to the alloc stamp format — if the stamp text changes,
+            // update this check too. The split query is the source of truth.
+            SOOrder order = Base.Document.Current;
+            if (order?.OrderDesc != null && order.OrderDesc.Contains("unallocated"))
+            {
+                // Check if this specific line has unallocated splits
+                bool hasUnallocated = false;
+                bool hasAllocated = false;
+                foreach (SOLineSplit split in
+                    SelectFrom<SOLineSplit>
+                        .Where<SOLineSplit.orderType.IsEqual<@P.AsString>
+                            .And<SOLineSplit.orderNbr.IsEqual<@P.AsString>>
+                            .And<SOLineSplit.lineNbr.IsEqual<@P.AsInt>>>
+                        .View.ReadOnly.Select(Base, line.OrderType, line.OrderNbr, line.LineNbr))
+                {
+                    if (split.IsAllocated == true && !string.IsNullOrEmpty(split.LotSerialNbr))
+                        hasAllocated = true;
+                    if (split.IsAllocated != true && string.IsNullOrEmpty(split.LotSerialNbr))
+                        hasUnallocated = true;
+                }
+
+                if (hasAllocated && hasUnallocated)
+                {
+                    PXUIFieldAttribute.SetWarning<SOLine.orderQty>(
+                        e.Cache, line,
+                        "Partially allocated — not enough bolts in stock to cover full quantity. " +
+                        "Remainder is unallocated.");
+                }
+            }
         }
 
         #endregion
@@ -198,12 +242,36 @@ namespace HeritageFabrics.SO
                         $"[AUTO-ALLOC] Ln{line.LineNbr}: split {bolt.LotSerialNbr} qty={bolt.QtyOnHand}");
                 }
 
-                // Override line qty to actual bolt total
-                Base.Transactions.Cache.SetValueExt<SOLine.orderQty>(line, totalAllocated);
-                Base.Transactions.Cache.Update(line);
+                // If bolts don't cover full request, create unallocated remainder split
+                if (totalAllocated < requestedQty)
+                {
+                    decimal remainder = requestedQty - totalAllocated;
+                    var remainderSplit = (SOLineSplit)Base.Caches[typeof(SOLineSplit)].CreateInstance();
+                    remainderSplit.OrderType = line.OrderType;
+                    remainderSplit.OrderNbr = line.OrderNbr;
+                    remainderSplit.LineNbr = line.LineNbr;
+                    remainderSplit.InventoryID = line.InventoryID;
+                    remainderSplit.SubItemID = line.SubItemID;
+                    remainderSplit.SiteID = line.SiteID;
+                    remainderSplit.LocationID = line.LocationID;
+                    remainderSplit.Qty = remainder;
+                    remainderSplit.UOM = line.UOM;
+                    remainderSplit.IsAllocated = false;
+                    remainderSplit.Operation = lineOperation;
+                    remainderSplit.InvtMult = lineInvtMult;
+
+                    Base.Caches[typeof(SOLineSplit)].Insert(remainderSplit);
+
+                    PXTrace.WriteInformation(
+                        $"[AUTO-ALLOC] Ln{line.LineNbr}: remainder split qty={remainder} (unallocated)");
+                }
+                // Do NOT override SOLine.OrderQty — preserve user's requested quantity
 
                 totalBoltsAssigned += assignedBolts.Count;
-                allocSummary.Add($"Ln{line.LineNbr}: {assignedBolts.Count} bolt(s), {totalAllocated} {line.UOM}");
+                string partialNote = totalAllocated < requestedQty
+                    ? $" (partial — {requestedQty - totalAllocated} unallocated)"
+                    : "";
+                allocSummary.Add($"Ln{line.LineNbr}: {assignedBolts.Count} bolt(s), {totalAllocated} {line.UOM}{partialNote}");
 
                 PXTrace.WriteInformation(
                     $"[AUTO-ALLOC] Ln{line.LineNbr}: {assignedBolts.Count} bolts, " +
@@ -285,23 +353,30 @@ namespace HeritageFabrics.SO
 
             foreach (PXResult<INLotSerialStatus> row in SelectFrom<INLotSerialStatus>
                 .Where<INLotSerialStatus.inventoryID.IsEqual<@P.AsInt>
-                    .And<INLotSerialStatus.siteID.IsEqual<@P.AsInt>>>
+                    .And<INLotSerialStatus.siteID.IsEqual<@P.AsInt>>
+                    .And<INLotSerialStatus.qtyOnHand.IsGreater<decimal0>>
+                    .And<INLotSerialStatus.qtyAvail.IsGreater<decimal0>>>
                 .View.ReadOnly.Select(Base, inventoryID, siteID))
             {
                 var status = (INLotSerialStatus)row;
-                if (status.LotSerialNbr == null) continue;
+                if (string.IsNullOrEmpty(status.LotSerialNbr)) continue;
                 if (assignedSerials.Contains(status.LotSerialNbr)) continue;
 
                 decimal qtyOnHand = status.QtyOnHand ?? 0;
                 decimal qtyAvail = status.QtyAvail ?? 0;
 
-                if (qtyOnHand <= 0) continue;
-                if (qtyAvail != qtyOnHand) continue; // Skip partially allocated bolts
+                // Use QtyAvail (not QtyOnHand) as the allocatable amount —
+                // QtyAvail accounts for existing allocations on other orders
+                if (qtyAvail <= 0) continue;
+
+                // Skip bolts where availability doesn't match on-hand
+                // (partially allocated to other orders)
+                if (qtyAvail != qtyOnHand) continue;
 
                 candidates.Add(new BoltCandidate
                 {
                     LotSerialNbr = status.LotSerialNbr,
-                    QtyOnHand = qtyOnHand,
+                    QtyOnHand = qtyAvail,  // Use QtyAvail as the allocatable amount
                     ReceiptDate = status.ReceiptDate,
                 });
             }
@@ -339,6 +414,60 @@ namespace HeritageFabrics.SO
                 ((InventoryItem)item).LotSerClassID,
                 PieceGoodsClassID,
                 StringComparison.OrdinalIgnoreCase);
+        }
+
+        /// <summary>
+        /// Revert any cache mutations made during a failed allocation attempt.
+        /// This prevents partial/corrupt split data from being persisted.
+        /// Covers SOLineSplit (inserted/deleted) and SOLine (updated POCreate).
+        /// </summary>
+        private void RevertPendingSplitChanges(SOOrder order)
+        {
+            var splitCache = Base.Caches[typeof(SOLineSplit)];
+
+            // Collect refs first to avoid modifying collection during iteration
+            var toRevert = new List<SOLineSplit>();
+
+            foreach (SOLineSplit split in splitCache.Inserted)
+            {
+                if (split.OrderType == order.OrderType && split.OrderNbr == order.OrderNbr)
+                    toRevert.Add(split);
+            }
+
+            foreach (var split in toRevert)
+            {
+                splitCache.Remove(split);
+            }
+
+            // Also revert any deleted default splits
+            var toRestore = new List<SOLineSplit>();
+            foreach (SOLineSplit split in splitCache.Deleted)
+            {
+                if (split.OrderType == order.OrderType && split.OrderNbr == order.OrderNbr)
+                    toRestore.Add(split);
+            }
+
+            foreach (var split in toRestore)
+            {
+                splitCache.RevertDelete(split);
+            }
+
+            // Revert SOLine updates (e.g. POCreate set during no-bolts path)
+            var lineCache = Base.Transactions.Cache;
+            var linesToRevert = new List<SOLine>();
+            foreach (SOLine line in lineCache.Updated)
+            {
+                if (line.OrderType == order.OrderType && line.OrderNbr == order.OrderNbr)
+                    linesToRevert.Add(line);
+            }
+
+            foreach (var line in linesToRevert)
+            {
+                lineCache.RevertUpdate(line);
+            }
+
+            PXTrace.WriteWarning(
+                $"[AUTO-ALLOC] Reverted {toRevert.Count} inserted + {toRestore.Count} deleted splits + {linesToRevert.Count} updated lines after failure");
         }
 
         private class BoltCandidate
