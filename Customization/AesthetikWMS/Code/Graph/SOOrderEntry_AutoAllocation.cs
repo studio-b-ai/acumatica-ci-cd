@@ -309,23 +309,30 @@ namespace HeritageFabrics.SO
 
             foreach (PXResult<INLotSerialStatus> row in SelectFrom<INLotSerialStatus>
                 .Where<INLotSerialStatus.inventoryID.IsEqual<@P.AsInt>
-                    .And<INLotSerialStatus.siteID.IsEqual<@P.AsInt>>>
+                    .And<INLotSerialStatus.siteID.IsEqual<@P.AsInt>>
+                    .And<INLotSerialStatus.qtyOnHand.IsGreater<decimal0>>
+                    .And<INLotSerialStatus.qtyAvail.IsGreater<decimal0>>>
                 .View.ReadOnly.Select(Base, inventoryID, siteID))
             {
                 var status = (INLotSerialStatus)row;
-                if (status.LotSerialNbr == null) continue;
+                if (string.IsNullOrEmpty(status.LotSerialNbr)) continue;
                 if (assignedSerials.Contains(status.LotSerialNbr)) continue;
 
                 decimal qtyOnHand = status.QtyOnHand ?? 0;
                 decimal qtyAvail = status.QtyAvail ?? 0;
 
-                if (qtyOnHand <= 0) continue;
-                if (qtyAvail != qtyOnHand) continue; // Skip partially allocated bolts
+                // Use QtyAvail (not QtyOnHand) as the allocatable amount —
+                // QtyAvail accounts for existing allocations on other orders
+                if (qtyAvail <= 0) continue;
+
+                // Skip bolts where availability doesn't match on-hand
+                // (partially allocated to other orders)
+                if (qtyAvail != qtyOnHand) continue;
 
                 candidates.Add(new BoltCandidate
                 {
                     LotSerialNbr = status.LotSerialNbr,
-                    QtyOnHand = qtyOnHand,
+                    QtyOnHand = qtyAvail,  // Use QtyAvail as the allocatable amount
                     ReceiptDate = status.ReceiptDate,
                 });
             }
