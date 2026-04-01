@@ -531,7 +531,6 @@ jobs:
             --project "${PROJECT_NAME}" \
             --package "${PACKAGE_FILE}" \
             --also-publish "${HT_COPUBLISH}" \
-            --no-merge \
             ${EXTRA_FLAGS}
 
       - name: Validate Heritage Test
