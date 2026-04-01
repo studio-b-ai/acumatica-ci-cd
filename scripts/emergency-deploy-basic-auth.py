@@ -23,6 +23,7 @@ TENANT = os.environ.get("ACUMATICA_TENANT", "Heritage Fabrics")
 PROJECT = os.environ.get("PROJECT_NAME", "AesthetikContainers")
 ALSO = os.environ.get("ALSO_PUBLISH_PROJECTS", "")
 ZIP_DIR = os.environ.get("PACKAGE_DIR", "package")
+IMPORT_ONLY = os.environ.get("IMPORT_ONLY", "").lower() in ("true", "1", "yes")
 OPERATOR = os.environ.get("OPERATOR", os.environ.get("GITHUB_ACTOR", "unknown"))
 
 headers = {"Content-Type": "application/json"}
@@ -131,7 +132,12 @@ else:
     notify_slack("FAILED — import failed after 5 attempts", operator=OPERATOR)
     sys.exit(1)
 
-# Step 3: Publish
+# Step 3: Publish (skip if IMPORT_ONLY — caller will publish once at the end)
+if IMPORT_ONLY:
+    log(f"IMPORT_ONLY mode — skipping publish for {PROJECT}")
+    session.post(f"{URL}/entity/auth/logout", headers=headers, timeout=10)
+    sys.exit(0)
+
 projects = [PROJECT]
 if ALSO:
     projects.extend([p.strip() for p in ALSO.split(",") if p.strip()])
