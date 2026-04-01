@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Diagnose SM207060 SOAP — verify insertNew creates entity in ContainerTracking vs new endpoint."""
+"""Save full SM207060 GetSchema to file artifact + try alternate navigation field names."""
 import os, sys, requests, xml.etree.ElementTree as ET, re
 
 BASE_URL = os.environ.get("ACUMATICA_URL", "https://heritagefabrics.acumatica.com")
@@ -15,16 +15,23 @@ def make_envelope(body_xml):
     return (f'<?xml version="1.0" encoding="utf-8"?>'
             f'<soap:Envelope xmlns:soap="{SOAP_NS}" xmlns:tns="{TNS}">'
             f'<soap:Body>{body_xml}</soap:Body></soap:Envelope>')
-
 def soap_headers(action):
     return {"SOAPAction": f'"{TNS}{action}"', "Content-Type": "text/xml; charset=utf-8"}
-
-def extract_value(xml_text, field_name):
-    """Extract a field value from the SOAP response."""
-    # Look for the field value
-    pattern = rf'<FieldName>{field_name}</FieldName>.*?<Value>(.*?)</Value>'
-    m = re.search(pattern, xml_text, re.DOTALL)
-    return m.group(1) if m else None
+def extract_values(xml_text):
+    """Extract all FieldName/Value pairs from response."""
+    pairs = {}
+    root = ET.fromstring(xml_text)
+    for el in root.iter():
+        tag = el.tag.split("}")[-1] if "}" in el.tag else el.tag
+        if tag == "Field":
+            fname = None; fval = None
+            for child in el:
+                ctag = child.tag.split("}")[-1] if "}" in child.tag else child.tag
+                if ctag == "FieldName": fname = child.text
+                if ctag == "Value": fval = child.text
+            if fname:
+                pairs[fname] = fval
+    return pairs
 
 session = requests.Session()
 
@@ -33,65 +40,47 @@ body = f"<tns:Login><tns:name>{USERNAME}</tns:name><tns:password>{PASSWORD}</tns
 resp = session.post(SOAP_URL, data=make_envelope(body), headers=soap_headers("Login"))
 print(f"Login: HTTP {resp.status_code}")
 
-# Navigate to ContainerTracking
-body = """<tns:Submit><tns:commands>
-  <tns:Command><tns:FieldName>InterfaceName</tns:FieldName><tns:ObjectName>Endpoint</tns:ObjectName><tns:Value>ContainerTracking</tns:Value><tns:Commit>true</tns:Commit></tns:Command>
-  <tns:Command><tns:FieldName>GateVersion</tns:FieldName><tns:ObjectName>Endpoint</tns:ObjectName><tns:Value>24.200.001</tns:Value><tns:Commit>true</tns:Commit></tns:Command>
-</tns:commands></tns:Submit>"""
-resp = session.post(SOAP_URL, data=make_envelope(body), headers=soap_headers("Submit"))
-print(f"Navigate to ContainerTracking: HTTP {resp.status_code}")
-iface_val = extract_value(resp.text, "InterfaceName")
-print(f"  InterfaceName after navigate = '{iface_val}'")
+# GetSchema — save FULL response to file
+body = "<tns:GetSchema/>"
+resp = session.post(SOAP_URL, data=make_envelope(body), headers=soap_headers("GetSchema"))
+print(f"GetSchema: HTTP {resp.status_code} / {len(resp.text)} bytes")
+with open("/tmp/sm207060-schema.xml", "w") as f:
+    f.write(resp.text)
+print("Schema saved to /tmp/sm207060-schema.xml")
 
-# Now call insertNew and check what endpoint we're on AFTER
-print("\n--- Calling insertNew on Endpoint ---")
-body = """<tns:Submit><tns:commands>
-  <tns:Command><tns:FieldName>insertNew</tns:FieldName><tns:ObjectName>Endpoint</tns:ObjectName><tns:Commit>true</tns:Commit></tns:Command>
-</tns:commands></tns:Submit>"""
-resp = session.post(SOAP_URL, data=make_envelope(body), headers=soap_headers("Submit"))
-print(f"insertNew: HTTP {resp.status_code}")
-iface_val = extract_value(resp.text, "InterfaceName")
-ver_val = extract_value(resp.text, "GateVersion")
-print(f"  InterfaceName AFTER insertNew = '{iface_val}'")
-print(f"  GateVersion AFTER insertNew = '{ver_val}'")
-# Check if a dialog opened
-has_dialog = "CreateEntityView" in resp.text or "ObjectName" in resp.text
-print(f"  Response has dialog/ObjectName = {has_dialog}")
-print(f"  Response snippet: {resp.text[200:800]}")
+# Print all FieldName/ObjectName from Fields section
+root = ET.fromstring(resp.text)
+print("\n=== All Fields (ObjectName.FieldName) ===")
+for el in root.iter():
+    tag = el.tag.split("}")[-1] if "}" in el.tag else el.tag
+    if tag == "Field":
+        fname = None; oname = None; vtype = None
+        for child in el:
+            ctag = child.tag.split("}")[-1] if "}" in child.tag else child.tag
+            if ctag == "FieldName": fname = child.text
+            if ctag == "ObjectName": oname = child.text
+            if ctag == "ViewTypeName": vtype = child.text
+        if fname and oname:
+            print(f"  {oname}.{fname}")
 
-# Cancel the dialog (if any)
-body = """<tns:Submit><tns:commands>
-  <tns:Command><tns:FieldName>Cancel</tns:FieldName><tns:ObjectName>Endpoint</tns:ObjectName><tns:Commit>true</tns:Commit></tns:Command>
-</tns:commands></tns:Submit>"""
-resp = session.post(SOAP_URL, data=make_envelope(body), headers=soap_headers("Submit"))
-print(f"\nCancel: HTTP {resp.status_code}")
-iface_val = extract_value(resp.text, "InterfaceName")
-print(f"  InterfaceName after Cancel = '{iface_val}'")
+# Try multiple navigation approaches
+print("\n=== Testing navigation alternatives ===")
+nav_attempts = [
+    ("Name + Version", [("Name", "ContainerTracking"), ("Version", "24.200.001")]),
+    ("InterfaceName alone", [("InterfaceName", "ContainerTracking")]),
+    ("Name alone", [("Name", "ContainerTracking")]),
+]
 
-# Re-navigate and test deleteNode for Container
-print("\n--- Re-navigating and testing deleteNode ---")
-body = """<tns:Submit><tns:commands>
-  <tns:Command><tns:FieldName>InterfaceName</tns:FieldName><tns:ObjectName>Endpoint</tns:ObjectName><tns:Value>ContainerTracking</tns:Value><tns:Commit>true</tns:Commit></tns:Command>
-  <tns:Command><tns:FieldName>GateVersion</tns:FieldName><tns:ObjectName>Endpoint</tns:ObjectName><tns:Value>24.200.001</tns:Value><tns:Commit>true</tns:Commit></tns:Command>
-</tns:commands></tns:Submit>"""
-resp = session.post(SOAP_URL, data=make_envelope(body), headers=soap_headers("Submit"))
-print(f"Navigate: HTTP {resp.status_code}")
-
-# Try deleteNode with Value=Container
-body = """<tns:Submit><tns:commands>
-  <tns:Command><tns:FieldName>deleteNode</tns:FieldName><tns:ObjectName>Endpoint</tns:ObjectName><tns:Value>Container</tns:Value><tns:Commit>true</tns:Commit></tns:Command>
-</tns:commands></tns:Submit>"""
-resp = session.post(SOAP_URL, data=make_envelope(body), headers=soap_headers("Submit"))
-print(f"deleteNode Container: HTTP {resp.status_code}")
-if resp.status_code != 200:
-    root = ET.fromstring(resp.text)
-    for el in root.iter():
-        if el.tag.endswith("faultstring"):
-            print(f"  Fault: {el.text[:300]}")
-else:
-    iface_val = extract_value(resp.text, "InterfaceName")
-    print(f"  OK! InterfaceName = '{iface_val}'")
-    print(f"  Response snippet: {resp.text[200:600]}")
+for label, fields in nav_attempts:
+    cmds = ""
+    for fname, val in fields:
+        cmds += f"""<tns:Command><tns:FieldName>{fname}</tns:FieldName><tns:ObjectName>Endpoint</tns:ObjectName><tns:Value>{val}</tns:Value><tns:Commit>true</tns:Commit></tns:Command>"""
+    body = f"<tns:Submit><tns:commands>{cmds}</tns:commands></tns:Submit>"
+    resp = session.post(SOAP_URL, data=make_envelope(body), headers=soap_headers("Submit"))
+    pairs = extract_values(resp.text)
+    print(f"\n  [{label}]: HTTP {resp.status_code}")
+    for k, v in sorted(pairs.items())[:8]:
+        print(f"    {k} = {v!r}")
 
 session.post(SOAP_URL, data=make_envelope("<tns:Logout/>"), headers=soap_headers("Logout"))
 print("\nDone")
