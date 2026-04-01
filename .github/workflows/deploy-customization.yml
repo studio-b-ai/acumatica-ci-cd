@@ -449,6 +449,16 @@ jobs:
           ACUMATICA_TENANT: ${{ secrets.ACUMATICA_SANDBOX_TENANT }}
         run: python scripts/smoke-e2e.py --manifest publish-manifest.json
 
+      - name: Audit-derived regression tests
+        id: audit-regression
+        if: steps.e2e.outcome == 'success'
+        env:
+          ACUMATICA_URL: ${{ secrets.ACUMATICA_SANDBOX_URL }}
+          ACUMATICA_USERNAME: ${{ secrets.ACUMATICA_PROD_USERNAME }}
+          ACUMATICA_PASSWORD: ${{ secrets.ACUMATICA_PROD_PASSWORD }}
+          ACUMATICA_TENANT: ${{ secrets.ACUMATICA_SANDBOX_TENANT }}
+        run: python -m pytest tests/test_audit_derived.py -v --tb=short
+
       - name: Sandbox gate summary
         if: always()
         run: |
@@ -460,9 +470,10 @@ jobs:
           echo "| Login Smoke Test | \`${{ steps.smoke.outcome }}\` |" >> "$GITHUB_STEP_SUMMARY"
           echo "| Field Validation | \`${{ steps.verify.outcome }}\` |" >> "$GITHUB_STEP_SUMMARY"
           echo "| E2E View Smoke | \`${{ steps.e2e.outcome }}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Audit Regression | \`${{ steps.audit-regression.outcome }}\` |" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
-          if [ "${{ steps.smoke.outcome }}" = "failure" ] || [ "${{ steps.e2e.outcome }}" = "failure" ]; then
-            echo "**BLOCKED:** Login failed after sandbox publish — production deploy prevented." >> "$GITHUB_STEP_SUMMARY"
+          if [ "${{ steps.smoke.outcome }}" = "failure" ] || [ "${{ steps.e2e.outcome }}" = "failure" ] || [ "${{ steps.audit-regression.outcome }}" = "failure" ]; then
+            echo "**BLOCKED:** Post-publish validation failed — production deploy prevented." >> "$GITHUB_STEP_SUMMARY"
           fi
 
   # ──────────────────────────────────────────────
