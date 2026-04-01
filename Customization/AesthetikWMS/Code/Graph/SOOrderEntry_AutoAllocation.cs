@@ -83,6 +83,10 @@ namespace HeritageFabrics.SO
                 if ((line.OrderQty ?? 0m) <= 0m) continue;
                 if (!IsPieceGoodsItem(line.InventoryID)) continue;
 
+                // Skip lines marked for PO — user rejected allocation, DRP will handle
+                if (line.POCreate == true)
+                    continue;
+
                 // Skip lines that already have allocated splits with lot serials
                 if (LineHasAllocatedSplits(line, order))
                     continue;
