@@ -398,6 +398,7 @@ jobs:
             --package "${PACKAGE_FILE}" \
             --also-publish "${SANDBOX_COPUBLISH}" \
             --no-merge \
+            --pre-cleanup \
             ${EXTRA_FLAGS}
 
       - name: Post-publish login smoke test
@@ -1023,6 +1024,7 @@ jobs:
             --project "${PROJECT_NAME}" \
             --package "${PACKAGE_FILE}" \
             --also-publish "${SANDBOX_COPUBLISH}" \
+            --pre-cleanup \
             ${EXTRA_FLAGS}
 
       - name: Validate custom fields on sandbox
