@@ -3973,32 +3973,49 @@ namespace HeritageFabrics.SO
             }
         }
 
-        protected void _(Events.RowPersisting<SOLineSplit> e)
+        /// <summary>
+        /// Provide InvtMult default for SOLineSplit when the framework cannot
+        /// resolve it (auto-allocation creates splits inheriting null from parent).
+        /// </summary>
+        protected void _(Events.FieldDefaulting<SOLineSplit, SOLineSplit.invtMult> e)
         {
-            if (e.Row == null || _invtMultGuard) return;
+            if (e.Row == null || e.NewValue != null) return;
+
+            SOLineSplit split = e.Row;
+            if (split.OrderType == null) return;
+
+            SOOrderTypeOperation operation = SelectFrom<SOOrderTypeOperation>
+                .Where<SOOrderTypeOperation.orderType.IsEqual<@P.AsString>
+                    .And<SOOrderTypeOperation.operation.IsEqual<@P.AsString>>>
+                .View.Select(Base, split.OrderType, split.Operation ?? SOOperation.Issue);
+
+            if (operation != null)
+            {
+                e.NewValue = operation.InvtMult ?? (short)1;
+            }
+        }
+
+        /// <summary>
+        /// Fix existing splits with null InvtMult: set it during RowSelected
+        /// so it's populated before save even triggers RowPersisting.
+        /// </summary>
+        protected void _(Events.RowSelected<SOLineSplit> e)
+        {
+            if (e.Row == null) return;
 
             SOLineSplit split = e.Row;
 
-            if (split.InvtMult == null && split.InventoryID != null)
+            if (split.InvtMult == null && split.InventoryID != null && split.OrderType != null)
             {
-                _invtMultGuard = true;
-                try
-                {
-                    // Look up the operation config for this order type + operation
-                    SOOrderTypeOperation operation = SelectFrom<SOOrderTypeOperation>
-                        .Where<SOOrderTypeOperation.orderType.IsEqual<@P.AsString>
-                            .And<SOOrderTypeOperation.operation.IsEqual<@P.AsString>>>
-                        .View.Select(Base, split.OrderType, split.Operation ?? SOOperation.Issue);
+                SOOrderTypeOperation operation = SelectFrom<SOOrderTypeOperation>
+                    .Where<SOOrderTypeOperation.orderType.IsEqual<@P.AsString>
+                        .And<SOOrderTypeOperation.operation.IsEqual<@P.AsString>>>
+                    .View.Select(Base, split.OrderType, split.Operation ?? SOOperation.Issue);
 
-                    if (operation != null)
-                    {
-                        short invtMult = operation.InvtMult ?? (short)1;
-                        Base.Caches[typeof(SOLineSplit)].SetValueExt<SOLineSplit.invtMult>(split, invtMult);
-                    }
-                }
-                finally
+                if (operation != null)
                 {
-                    _invtMultGuard = false;
+                    short invtMult = operation.InvtMult ?? (short)1;
+                    e.Cache.SetValue<SOLineSplit.invtMult>(split, invtMult);
                 }
             }
         }
