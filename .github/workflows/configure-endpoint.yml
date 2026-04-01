@@ -58,6 +58,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: schemas
-          path: /tmp/sm*.xml
+          path: /tmp/sm207060-schema.xml
           retention-days: 7
           if-no-files-found: ignore
