@@ -1,13 +1,17 @@
 #!/usr/bin/env python3
 """
 Agentic pre-deploy qualification gate.
-Runs 6 checks and returns pass/warn/fail for each.
+Runs 7 checks and returns pass/warn/fail for each.
 Exit 0 = proceed, exit 1 = halt.
 Outputs JSON summary to stdout for workflow consumption.
 
 IMPORTANT: Uses a SINGLE Acumatica session for all checks that need API access.
 Multiple logins during deploy cycles cause account lockouts, especially when
 the app pool is restarting between attempts. See: 2026-03-27 lockout incident.
+
+Check 7 (Heritage Test) creates a SEPARATE session to the test tenant.
+This is unavoidable — it's a different tenant. One extra login is acceptable
+given the criticality of the check. See AAR 2026-03-29.
 """
 
 import json
@@ -292,6 +296,66 @@ def check_timing():
     return WARN, f"Business hours ({ct.strftime('%H:%M CT')}) — countdown required"
 
 
+def check_heritage_test_accessible(url, username, password, test_tenant):
+    """Check 7: Is Heritage Test tenant accessible?
+
+    Heritage Test MUST be accessible and healthy before deploying any production
+    migration. A broken Heritage Test (compile error, login failure) means the
+    migration cannot be validated in staging — which blocks production.
+
+    AAR 2026-03-29: Heritage Test had a DefaultQty compile error (extra brace).
+    This was treated as "skip Heritage Test validation" instead of
+    "Heritage Test is broken, unblock it first." Production was migrated without
+    staging validation. Production broke for several hours.
+
+    Rule: If Heritage Test is not accessible, ALL production migrations are blocked.
+    Period. No exceptions. Fix staging first.
+
+    If ACUMATICA_TEST_TENANT is not configured, returns WARN (check skipped).
+    """
+    if not test_tenant:
+        return WARN, "ACUMATICA_TEST_TENANT not configured — Heritage Test check skipped (set var to enable)"
+
+    # Create a separate session for the test tenant.
+    # The shared session uses the production tenant — we MUST use a different
+    # session to authenticate as the test tenant. This is one extra login;
+    # acceptable given the criticality of this guard.
+    _print(f"[INFO] Checking Heritage Test tenant: '{test_tenant}'")
+    test_session = AcumaticaSession(url, username, password, test_tenant)
+
+    if not test_session.is_authenticated:
+        return FAIL, (
+            f"Heritage Test login FAILED (tenant='{test_tenant}'): {test_session.login_error}\n"
+            f"  Heritage Test is broken or unreachable.\n"
+            f"  BLOCKING production deploy — fix Heritage Test first.\n"
+            f"  AAR 2026-03-29: 'skip Heritage Test' caused a multi-hour production outage."
+        )
+
+    try:
+        resp = test_session.get(
+            "/entity/Default/24.200.001/StockItem?$top=1&$select=InventoryID"
+        )
+        test_session.logout()
+        if resp.status == 200:
+            return PASS, f"Heritage Test tenant '{test_tenant}' is accessible and healthy"
+        return FAIL, (
+            f"Heritage Test query returned HTTP {resp.status} (tenant='{test_tenant}').\n"
+            f"  Heritage Test may have a compile error (e.g., unbalanced brace in a WMSynergy package).\n"
+            f"  BLOCKING production deploy — fix Heritage Test first.\n"
+            f"  AAR 2026-03-29: DefaultQty extra brace error blocked Heritage Test but was ignored."
+        )
+    except Exception as e:
+        try:
+            test_session.logout()
+        except Exception:
+            pass
+        return FAIL, (
+            f"Heritage Test query failed: {e}\n"
+            f"  BLOCKING production deploy — Heritage Test must be healthy before production migration.\n"
+            f"  AAR 2026-03-29: Fix Heritage Test first."
+        )
+
+
 def post_slack(webhook_url, message):
     """Post a message to Slack."""
     if not webhook_url:
@@ -312,6 +376,7 @@ def main():
     username = os.environ.get("ACUMATICA_USERNAME", "")
     password = os.environ.get("ACUMATICA_PASSWORD", "")
     tenant = os.environ.get("ACUMATICA_TENANT", "")
+    test_tenant = os.environ.get("ACUMATICA_TEST_TENANT", "")
     slack_url = os.environ.get("SLACK_WEBHOOK_URL", "")
     known_str = os.environ.get("KNOWN_PROJECTS", "")
     isv_str = os.environ.get("ISV_PACKAGES", "")
@@ -335,8 +400,8 @@ def main():
             )
             time.sleep(retry_delay)
 
-        # Single Acumatica session for ALL API-dependent checks
-        _print("[INFO] Connecting to Acumatica (single session)...")
+        # Single Acumatica session for ALL API-dependent checks (production tenant)
+        _print("[INFO] Connecting to Acumatica (single session for production tenant)...")
         session = AcumaticaSession(url, username, password, tenant)
         if session.is_authenticated:
             _print("[INFO] Authenticated — running checks")
@@ -351,8 +416,13 @@ def main():
         results["Cooldown"] = check_deploy_cooldown(repo, workflow)
         results["Timing"] = check_timing()
 
-        # Logout once — end of all checks
+        # Logout production session — done with all production tenant checks
         session.logout()
+
+        # Check 7: Heritage Test (separate session, separate tenant)
+        # AAR 2026-03-29: Heritage Test was broken, this was ignored, production broke.
+        # If Heritage Test is inaccessible, FAIL the qualify gate.
+        results["HeritageTest"] = check_heritage_test_accessible(url, username, password, test_tenant)
 
         # Summarize
         has_fail = any(r[0] == FAIL for r in results.values())

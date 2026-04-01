@@ -8,11 +8,13 @@ Catches common format errors that cause silent failures or NullReferenceExceptio
 Usage:
     python validate-project.py Customization/_project/project.xml
     python validate-project.py --strict Customization/_project/project.xml
+    python validate-project.py --validate-zip dist/AesthetikWMS_20260329.zip
 """
 
 import os
 import sys
 import re
+import zipfile as _zipfile
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
@@ -83,9 +85,19 @@ def validate(path: str, strict: bool = False, no_semantic: bool = False):
     ok("Root element is <Customization>")
 
     # Check 2: level attribute
+    # HARD FAIL on empty string — causes NullReferenceException in SM204505 XML parser.
+    # Root cause of 2026-03-29 UOM migration outage rollback failure:
+    # the rollback zip had level="" and Acumatica rejected it at upload time.
     level = root.get("level")
     if level is None:
         warn("Missing 'level' attribute on <Customization> (should be \"0\")")
+    elif level == "":
+        error(
+            "Empty level=\"\" attribute on <Customization> root element.\n"
+            "         Acumatica SM204505 XML parser throws NullReferenceException on empty level=\"\".\n"
+            "         Fix: change <Customization level=\"\" ...> to <Customization level=\"0\" ...>\n"
+            "         Root cause of failed rollback upload during 2026-03-29 UOM migration outage."
+        )
     else:
         ok(f"level=\"{level}\"")
 
@@ -450,29 +462,76 @@ def validate_customization_plugin_ban(class_name: str, code: str):
             f"         Wrap body in try/catch with WriteLog for error reporting."
         )
 
-    # HARD FAIL: Raw SQL DELETE on INUnit — destroys UOM conversion records
-    if re.search(r"DELETE\s+.*\bINUnit\b", clean, re.IGNORECASE):
+    # ── Destructive SQL guard ──────────────────────────────────────────
+    # UpdateDatabase() must be additive and idempotent only.
+    # ALTER TABLE ADD (with IF NOT EXISTS), INSERT (with idempotency check),
+    # and CREATE TABLE (with IF NOT EXISTS) are safe.
+    # DELETE, UPDATE, DROP, and TRUNCATE are destructive and cannot be
+    # rolled back by redeploying the previous package.
+    #
+    # The 2026-03-29 P0 outage was caused by DELETE FROM INUnit.
+    # Package rollback re-publishes old code but does NOT undo SQL changes.
+    # Destructive data operations require a separate, manually-approved
+    # migration project — never the CI/CD auto-publish pipeline.
+
+    # Collapse C# string concatenation so SQL spanning multiple lines is
+    # matched as a single string.  e.g.:
+    #   "UPDATE InventoryItem " +
+    #   "SET SalesUnit = BaseUnit "
+    # becomes:
+    #   "UPDATE InventoryItem SET SalesUnit = BaseUnit "
+    sql_flat = re.sub(r'"\s*\+\s*\n\s*"', " ", clean)
+
+    # HARD FAIL: DELETE FROM — destroys data that package rollback cannot restore
+    delete_match = re.search(r"\bDELETE\s+(?:FROM\s+)?(\w+)", sql_flat, re.IGNORECASE)
+    if delete_match:
+        table = delete_match.group(1)
         error(
-            f"{class_name}: BANNED — DELETE FROM INUnit in CustomizationPlugin.\n"
-            f"         Deleting INUnit records breaks UOM validation for ALL sales orders.\n"
-            f"         Root cause of 2026-03-29 P0 outage (30+ hours, snapshot restore required).\n"
-            f"         Use PXDatabase.Delete<INUnit>() via BQL instead of raw SQL DELETE."
+            f"{class_name}: BANNED — DELETE FROM {table} in CustomizationPlugin.\n"
+            f"         UpdateDatabase() must be additive only. DELETE cannot be undone by\n"
+            f"         package rollback — the old package's UpdateDatabase() doesn't know\n"
+            f"         to re-INSERT the deleted rows.\n"
+            f"         If this is a data migration, use a separate one-time project with\n"
+            f"         a pre-tested rollback plan."
         )
 
-    # HARD FAIL: Raw SQL INSERT into INUnit — records invisible to ORM
-    if re.search(r"INSERT\s+INTO\s+\bINUnit\b", clean, re.IGNORECASE):
+    # HARD FAIL: UPDATE ... SET — mutates data that package rollback cannot restore
+    # Exception: SiteMap updates are standard for custom screen registration
+    # and are owned by the customization (safe to re-run on rollback).
+    SAFE_UPDATE_TABLES = {"SiteMap"}
+    for update_match in re.finditer(r"\bUPDATE\s+(\w+)\s+SET\b", sql_flat, re.IGNORECASE):
+        table = update_match.group(1)
+        if table in SAFE_UPDATE_TABLES:
+            continue
         error(
-            f"{class_name}: BANNED — INSERT INTO INUnit in CustomizationPlugin.\n"
-            f"         Raw SQL INSERT creates records invisible to Acumatica's BQL/ORM layer\n"
-            f"         even with correct CompanyMask. Use PXDatabase.Insert<INUnit>() instead.\n"
-            f"         Root cause of 8 failed fix attempts during 2026-03-30 P0 restore."
+            f"{class_name}: BANNED — UPDATE {table} SET in CustomizationPlugin.\n"
+            f"         UpdateDatabase() must be additive only. UPDATE cannot be undone by\n"
+            f"         package rollback — the old package doesn't know the previous values.\n"
+            f"         If this is a data migration, use a separate one-time project with\n"
+            f"         a pre-tested rollback plan."
+        )
+
+    # HARD FAIL: DROP TABLE — destroys structure that package rollback cannot restore
+    if re.search(r"\bDROP\s+TABLE\b", sql_flat, re.IGNORECASE):
+        error(
+            f"{class_name}: BANNED — DROP TABLE in CustomizationPlugin.\n"
+            f"         UpdateDatabase() must be additive only. DROP TABLE destroys data\n"
+            f"         and structure that cannot be restored by package rollback."
+        )
+
+    # HARD FAIL: TRUNCATE TABLE — destroys data that package rollback cannot restore
+    if re.search(r"\bTRUNCATE\s+TABLE\b", sql_flat, re.IGNORECASE):
+        error(
+            f"{class_name}: BANNED — TRUNCATE TABLE in CustomizationPlugin.\n"
+            f"         UpdateDatabase() must be additive only. TRUNCATE destroys all rows\n"
+            f"         and cannot be restored by package rollback."
         )
 
 
 def validate_pxdb_has_sql(class_name: str, code: str, all_sql_text: str):
     """Check [PXDB*] fields on PXCacheExtension DACs.
 
-    HARD FAIL only for BANNED_PXDB_DACS (Vendor → phantom EPEmployee_Vendor table).
+    HARD FAIL only for BANNED_PXDB_DACS (Vendor -> phantom EPEmployee_Vendor table).
     For all other DACs, [PXDB*] attributes auto-create columns during publish on
     existing tables, so missing <Sql> is a WARNING not an error.
 
@@ -803,24 +862,111 @@ def validate_crm_dac_safety(class_name: str, code: str, strict: bool):
             )
 
 
+def validate_zip(zip_path: str) -> bool:
+    """Validate a .zip package before upload to Acumatica SM204505.
+
+    Catches packaging bugs that cause NullReferenceException on import.
+    Three guards:
+      1. Internal filename must be 'project.xml' (not 'rollback-project.xml' etc.)
+      2. <Customization level=""> must not be empty — use level="0"
+      3. Package must contain at least one <Graph> or <Sql> element
+
+    Root cause of 2026-03-29 rollback failure: the rollback zip had wrong
+    internal filename AND level="" — both caught by this check.
+    """
+    zpath = Path(zip_path)
+    if not zpath.exists():
+        error(f"Zip file not found: {zip_path}")
+        return False
+
+    try:
+        with _zipfile.ZipFile(str(zpath), "r") as zf:
+            names = zf.namelist()
+
+            # Guard 1: project.xml must be the internal filename (at zip root)
+            # Bug: `zip -j rollback-project.xml` creates wrong internal name 'rollback-project.xml'
+            # Acumatica requires the file to be named exactly 'project.xml' inside the zip.
+            if "project.xml" not in names:
+                root_xmls = [n for n in names if n.endswith(".xml") and "/" not in n]
+                error(
+                    f"Zip does not contain 'project.xml' as internal filename.\n"
+                    f"         Found XML files at root: {root_xmls or '(none)'}\n"
+                    f"         All files: {names[:10]}\n"
+                    f"         This causes NullReferenceException on Acumatica SM204505 import.\n"
+                    f"         Root cause: packaging with 'zip -j <other-name>.xml' creates wrong internal name.\n"
+                    f"         Fix: Use scripts/package.sh instead of raw zip commands.\n"
+                    f"         Root cause of 2026-03-29 rollback upload failure."
+                )
+                return False
+            ok("Internal filename is 'project.xml' (Acumatica import-safe)")
+
+            # Guard 2: Read project.xml from the zip and check level attribute
+            content = zf.read("project.xml").decode("utf-8", errors="replace")
+
+            level_match = re.search(r'<Customization[^>]+level="([^"]*)"', content)
+            if not level_match:
+                warn("No 'level' attribute found in zipped project.xml")
+            elif level_match.group(1) == "":
+                error(
+                    f"Zipped project.xml has empty level=\"\" attribute.\n"
+                    f"         Acumatica SM204505 XML parser throws NullReferenceException on empty level.\n"
+                    f"         Fix: Change <Customization level=\"\" ...> to <Customization level=\"0\" ...>\n"
+                    f"         Root cause of 2026-03-29 UOM migration rollback upload failure."
+                )
+            else:
+                ok(f"level=\"{level_match.group(1)}\" in zipped project.xml")
+
+            # Guard 3: Must have at least one <Graph> or <Sql> element
+            has_graph = bool(re.search(r"<Graph\s", content))
+            has_sql = bool(re.search(r"<Sql\s", content))
+            if not has_graph and not has_sql:
+                warn("Zipped project.xml has no <Graph> or <Sql> elements — package may be empty")
+            else:
+                elements = []
+                if has_graph:
+                    elements.append("<Graph>")
+                if has_sql:
+                    elements.append("<Sql>")
+                ok(f"Package contains code/SQL elements: {', '.join(elements)}")
+
+    except _zipfile.BadZipFile as e:
+        error(f"Not a valid zip file: {e}")
+        return False
+    except Exception as e:
+        error(f"Zip validation error: {e}")
+        return False
+
+    return len(errors) == 0
+
+
 def main():
     strict = "--strict" in sys.argv
     no_semantic = "--no-semantic" in sys.argv
+    validate_zip_flag = "--validate-zip" in sys.argv
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
 
     if not args:
-        print("Usage: python validate-project.py [--strict] [--no-semantic] <project.xml>")
+        print("Usage: python validate-project.py [--strict] [--no-semantic] [--validate-zip] <project.xml or package.zip>")
         print()
         print("Validates Acumatica customization project XML format.")
-        print("  --strict       Enable additional warnings for best practices")
-        print("  --no-semantic  Skip semantic cross-reference checks")
+        print("  --strict        Enable additional warnings for best practices")
+        print("  --no-semantic   Skip semantic cross-reference checks")
+        print("  --validate-zip  Validate a .zip package (internal filename, level attr, content)")
+        print()
+        print("Zip mode is auto-detected from .zip extension, or forced with --validate-zip.")
         sys.exit(1)
 
     path = args[0]
-    print(f"Validating: {path}")
-    print("=" * 60)
 
-    success = validate(path, strict, no_semantic=no_semantic)
+    # Auto-detect zip mode based on file extension or explicit flag
+    if validate_zip_flag or path.lower().endswith(".zip"):
+        print(f"Validating zip: {path}")
+        print("=" * 60)
+        success = validate_zip(path)
+    else:
+        print(f"Validating: {path}")
+        print("=" * 60)
+        success = validate(path, strict, no_semantic=no_semantic)
 
     print("=" * 60)
     if success:

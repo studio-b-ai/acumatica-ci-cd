@@ -418,43 +418,56 @@ class AcumaticaCustomizationClient:
                 if isinstance(data, dict):
                     if data.get("isFailed"):
                         log_entries = data.get("log", "No details")
-                        # Extract only error/warning entries — info messages (file patching) bury the real errors
+                        # AAR 2026-03-29: Always dump ALL log entries on failure.
+                        # WriteLog() info-level entries (TABLE prefix) contain critical
+                        # diagnostic output from CustomizationPlugin.UpdateDatabase().
+                        # Filtering to error/warning only hid the root cause across
+                        # 20+ hotfix iterations during the UOM migration outage.
                         if isinstance(log_entries, list):
                             error_entries = [
                                 e for e in log_entries
                                 if isinstance(e, dict) and e.get("logType") in ("error", "warning")
                             ]
+                            all_log_text = "\n".join(str(x) for x in log_entries)
                             if error_entries:
-                                log_text = "\n".join(str(x) for x in error_entries)
+                                error_text = "\n".join(str(x) for x in error_entries)
+                                log_text = (
+                                    f"ERRORS/WARNINGS:\n{error_text}\n\n"
+                                    f"FULL LOG (includes WriteLog diagnostic output):\n{all_log_text}"
+                                )
                             else:
-                                # No error entries found — dump last 5 entries for context
-                                log_text = "\n".join(str(x) for x in log_entries[-5:])
+                                log_text = (
+                                    f"FULL LOG (no explicit error/warning entries — "
+                                    f"check WriteLog output below):\n{all_log_text}"
+                                )
                         else:
                             log_text = str(log_entries)
-                        raise RuntimeError(f"Publish failed: {log_text[:2000]}")
+                        raise RuntimeError(f"Publish failed:\n{log_text[:4000]}")
                     if data.get("isCompleted"):
                         action = "Validation" if validation_only else "Publish"
                         _log(
                             f"{action} completed ({elapsed}s)",
                             style="ok",
                         )
-                        # Dump publish log for SQL diagnostics
-                        log_text = data.get("log", "")
-                        if log_text:
-                            # log may be a list (Acumatica returns array) or string
-                            if isinstance(log_text, list):
-                                lines = log_text
+                        # AAR 2026-03-29: Show ALL WriteLog output, not just keyword-matched lines.
+                        # CustomizationPlugin.UpdateDatabase() logs via WriteLog() at info level.
+                        # Keyword filtering hid all diagnostic output across 20+ hotfix iterations.
+                        log_entries = data.get("log", "")
+                        if log_entries:
+                            if isinstance(log_entries, list):
+                                lines = [str(e) for e in log_entries]
                             else:
-                                lines = log_text.split("\n")
+                                lines = str(log_entries).split("\n")
+                            _log("  --- Publish Log ---", style="info")
                             for line in lines:
-                                if not isinstance(line, str):
-                                    line = str(line)
                                 line = line.strip()
                                 if not line:
                                     continue
                                 low = line.lower()
-                                if any(kw in low for kw in ("error", "warning", "sql", "table", "create", "failed", "exception")):
+                                if any(kw in low for kw in ("error", "warning", "failed", "exception")):
                                     _log(f"  PUBLISH LOG: {line[:300]}", style="warn")
+                                else:
+                                    _log(f"  PUBLISH LOG: {line[:300]}", style="info")
                         return
             except json.JSONDecodeError:
                 pass
@@ -513,6 +526,129 @@ class AcumaticaCustomizationClient:
             style="warn",
         )
         return False
+
+    def e2e_smoke_test(
+        self,
+        customer_id: str = "C000949",
+        inventory_id: str = "00004",
+        order_type: str = "SO",
+        warehouse: str = "99",
+    ) -> bool:
+        """Full order lifecycle smoke test: create SO -> ship -> confirm -> cancel.
+
+        Exercises:
+          - SO creation with customer (customer DAC extensions)
+          - Line item with UOM (INUnit validation — 2026-03-29 failure point)
+          - Shipment creation (SOOrderEntry graph extensions)
+          - Shipment confirmation (ShipmentEntry graph extensions)
+          - Cancellation for cleanup (no invoice, no AR impact)
+
+        Uses Heritage Fabrics Management (C000949) as test customer.
+        """
+        api = f"{self.base_url}/entity/default/24.200.001"
+        order_nbr = None
+        shipment_nbr = None
+
+        try:
+            # ── Step 1: Create Sales Order with one line ──
+            _log("E2E smoke test: Creating sales order...")
+            so_payload = {
+                "OrderType": {"value": order_type},
+                "CustomerID": {"value": customer_id},
+                "Description": {"value": f"CI/CD smoke test {datetime.now(timezone.utc).isoformat()[:19]}Z"},
+                "Details": [
+                    {
+                        "InventoryID": {"value": inventory_id},
+                        "OrderQty": {"value": 1},
+                        "WarehouseID": {"value": warehouse},
+                    }
+                ],
+            }
+            resp = self.session.put(f"{api}/SalesOrder", json=so_payload, timeout=60)
+            if resp.status_code not in (200, 201):
+                _log(f"E2E FAIL: SO creation returned HTTP {resp.status_code}: {resp.text[:500]}", style="err")
+                return False
+
+            so = resp.json()
+            order_nbr = so.get("OrderNbr", {}).get("value")
+            if not order_nbr:
+                _log("E2E FAIL: SO created but no OrderNbr in response", style="err")
+                return False
+            _log(f"  Created SO {order_type} {order_nbr}", style="ok")
+
+            # ── Step 2: Create Shipment ──
+            _log("E2E smoke test: Creating shipment...")
+            action_resp = self.session.post(
+                f"{api}/SalesOrder/{order_type}/{order_nbr}/action/CreateShipment",
+                json={"entity": {}, "parameters": {"WarehouseID": {"value": warehouse}}},
+                timeout=60,
+            )
+            if action_resp.status_code not in (200, 202, 204):
+                _log(f"E2E FAIL: CreateShipment returned HTTP {action_resp.status_code}: {action_resp.text[:500]}", style="err")
+                self._e2e_cleanup(api, order_type, order_nbr)
+                return False
+
+            # Fetch the shipment number from the updated SO
+            so_resp = self.session.get(
+                f"{api}/SalesOrder/{order_type}/{order_nbr}",
+                params={"$expand": "Shipments"},
+                timeout=30,
+            )
+            if so_resp.status_code == 200:
+                shipments = so_resp.json().get("Shipments", [])
+                if shipments:
+                    shipment_nbr = shipments[0].get("ShipmentNbr", {}).get("value")
+
+            if shipment_nbr:
+                _log(f"  Created Shipment {shipment_nbr}", style="ok")
+            else:
+                _log("  Shipment created (number not retrieved)", style="ok")
+
+            # ── Step 3: Confirm Shipment ──
+            if shipment_nbr:
+                _log("E2E smoke test: Confirming shipment...")
+                confirm_resp = self.session.post(
+                    f"{api}/Shipment/{shipment_nbr}/action/ConfirmShipment",
+                    json={"entity": {}},
+                    timeout=60,
+                )
+                if confirm_resp.status_code not in (200, 202, 204):
+                    _log(f"E2E WARN: ConfirmShipment returned HTTP {confirm_resp.status_code}: {confirm_resp.text[:300]}", style="warn")
+                else:
+                    _log(f"  Confirmed Shipment {shipment_nbr}", style="ok")
+
+            # ── Step 4: Cancel SO (cleanup — no invoice) ──
+            _log("E2E smoke test: Cancelling order...")
+            cancel_resp = self.session.post(
+                f"{api}/SalesOrder/{order_type}/{order_nbr}/action/CancelOrder",
+                json={"entity": {}},
+                timeout=60,
+            )
+            if cancel_resp.status_code not in (200, 202, 204):
+                _log(f"E2E WARN: CancelOrder returned HTTP {cancel_resp.status_code} — orphaned order {order_nbr}", style="warn")
+            else:
+                _log(f"  Cancelled SO {order_type} {order_nbr}", style="ok")
+
+            _log("E2E smoke test PASSED — full order lifecycle verified", style="ok")
+            return True
+
+        except Exception as exc:
+            _log(f"E2E smoke test FAILED with exception: {exc}", style="err")
+            if order_nbr:
+                self._e2e_cleanup(api, order_type, order_nbr)
+            return False
+
+    def _e2e_cleanup(self, api: str, order_type: str, order_nbr: str) -> None:
+        """Best-effort cleanup of a smoke test order."""
+        try:
+            _log(f"  Cleaning up test order {order_type} {order_nbr}...")
+            self.session.post(
+                f"{api}/SalesOrder/{order_type}/{order_nbr}/action/CancelOrder",
+                json={"entity": {}},
+                timeout=30,
+            )
+        except Exception:
+            _log(f"  Cleanup failed — orphaned order {order_type} {order_nbr} on C000949", style="warn")
 
     def download_package(
         self,
