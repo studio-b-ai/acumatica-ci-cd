@@ -44,7 +44,7 @@ using PX.Data.BQL;
 
 namespace StudioB.AcuOps
 {
-    [PXTable("UsrAuditTrailView")]
+    [PXTable]
     [PXCacheName("Audit Trail")]
     public class UsrAuditTrailView : IBqlTable
     {
