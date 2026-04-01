@@ -83,8 +83,10 @@ namespace HeritageFabrics.SO
                 if ((line.OrderQty ?? 0m) <= 0m) continue;
                 if (!IsPieceGoodsItem(line.InventoryID)) continue;
 
-                // Skip lines marked for PO — user rejected allocation, DRP will handle
-                if (line.POCreate == true)
+                // Only auto-allocate newly added lines — if a user modifies an
+                // existing line (e.g. rejects a bolt), leave it alone for DRP
+                var lineStatus = Base.Transactions.Cache.GetStatus(line);
+                if (lineStatus != PXEntryStatus.Inserted)
                     continue;
 
                 // Skip lines that already have allocated splits with lot serials
