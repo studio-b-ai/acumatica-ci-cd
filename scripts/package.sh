@@ -57,7 +57,10 @@ EOF
 [[ $# -lt 1 ]] && usage
 
 INPUT="${1}"
+# Make output dir absolute — package.sh cd's into the project dir later,
+# so a relative path like "dist/" would break.
 OUTPUT_DIR="${2:-${REPO_ROOT}/dist}"
+[[ "${OUTPUT_DIR}" != /* ]] && OUTPUT_DIR="${REPO_ROOT}/${OUTPUT_DIR}"
 
 # ── Resolve project directory ─────────────────────────────────────────────
 if [[ -d "${INPUT}" ]]; then
