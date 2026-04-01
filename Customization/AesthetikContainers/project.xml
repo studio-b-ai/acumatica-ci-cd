@@ -357,23 +357,29 @@ namespace StudioB.Containers
     public sealed class StockItemExt : PXCacheExtension<InventoryItem>
     {
         public static bool IsActive() => true;
-        #region UsrHTSCode
-        public abstract class usrHTSCode : PX.Data.BQL.BqlString.Field<usrHTSCode> { }
-        [PXDBString(12, IsUnicode = true)]
-        [PXUIField(DisplayName = "HTS Code", Visibility = PXUIVisibility.SelectorVisible)]
-        public string UsrHTSCode { get; set; }
-        #endregion
-        #region UsrCountryOfOrigin
-        public abstract class usrCountryOfOrigin : PX.Data.BQL.BqlString.Field<usrCountryOfOrigin> { }
-        [PXDBString(2, IsFixed = true, IsUnicode = true)]
-        [PXUIField(DisplayName = "Country of Origin", Visibility = PXUIVisibility.SelectorVisible)]
-        public string UsrCountryOfOrigin { get; set; }
-        #endregion
         #region UsrFiberContent
         public abstract class usrFiberContent : PX.Data.BQL.BqlString.Field<usrFiberContent> { }
         [PXDBString(100, IsUnicode = true)]
         [PXUIField(DisplayName = "Fiber Content", Visibility = PXUIVisibility.SelectorVisible)]
         public string UsrFiberContent { get; set; }
+        #endregion
+        #region UsrDutyRate
+        public abstract class usrDutyRate : PX.Data.BQL.BqlDecimal.Field<usrDutyRate> { }
+        [PXDBDecimal(4)]
+        [PXUIField(DisplayName = "Duty Rate")]
+        public decimal? UsrDutyRate { get; set; }
+        #endregion
+        #region UsrPreferentialTariff
+        public abstract class usrPreferentialTariff : PX.Data.BQL.BqlBool.Field<usrPreferentialTariff> { }
+        [PXDBBool]
+        [PXUIField(DisplayName = "Preferential Tariff")]
+        public bool? UsrPreferentialTariff { get; set; }
+        #endregion
+        #region UsrFreightClass
+        public abstract class usrFreightClass : PX.Data.BQL.BqlString.Field<usrFreightClass> { }
+        [PXDBString(15, IsUnicode = true)]
+        [PXUIField(DisplayName = "Freight Class")]
+        public string UsrFreightClass { get; set; }
         #endregion
     }
 }
@@ -415,18 +421,6 @@ namespace StudioB.Containers
         [PXUIField(DisplayName = "Landed Cost/Unit", Enabled = false)]
         public decimal? UsrLandedCostPerUnit { get; set; }
         #endregion
-        #region UsrHTSCode
-        public abstract class usrHTSCode : PX.Data.BQL.BqlString.Field<usrHTSCode> { }
-        [PXDBString(12, IsUnicode = true)]
-        [PXUIField(DisplayName = "HTS Code", Enabled = false)]
-        public string UsrHTSCode { get; set; }
-        #endregion
-        #region UsrCountryOfOrigin
-        public abstract class usrCountryOfOrigin : PX.Data.BQL.BqlString.Field<usrCountryOfOrigin> { }
-        [PXDBString(2, IsFixed = true, IsUnicode = true)]
-        [PXUIField(DisplayName = "Origin", Enabled = false)]
-        public string UsrCountryOfOrigin { get; set; }
-        #endregion
     }
 }
 ]]></CDATA>
@@ -453,8 +447,6 @@ namespace StudioB.Containers
             if (item == null) return;
             var itemExt = PXCache<InventoryItem>.GetExtension<StockItemExt>((InventoryItem)item);
             if (itemExt == null) return;
-            lineExt.UsrHTSCode = itemExt.UsrHTSCode;
-            lineExt.UsrCountryOfOrigin = itemExt.UsrCountryOfOrigin;
             e.Cache.Update(e.Row);
         }
 
@@ -1093,9 +1085,7 @@ namespace StudioB.Containers
                     EnsureColumn(conn, "SOShipment", "UsrContainerID", "int NULL");
 
                     // ── InventoryItem tariff/customs fields ────────────────────
-                    EnsureColumn(conn, "InventoryItem", "UsrHTSCode", "nvarchar(30) NULL");
                     EnsureColumn(conn, "InventoryItem", "UsrDutyRate", "decimal(25,4) NULL");
-                    EnsureColumn(conn, "InventoryItem", "UsrCountryOfOrigin", "nvarchar(2) NULL");
                     EnsureColumn(conn, "InventoryItem", "UsrFiberContent", "nvarchar(100) NULL");
                     EnsureColumn(conn, "InventoryItem", "UsrPreferentialTariff", "bit NULL");
                     EnsureColumn(conn, "InventoryItem", "UsrFreightClass", "nvarchar(15) NULL");
@@ -1104,8 +1094,6 @@ namespace StudioB.Containers
                     EnsureColumn(conn, "POReceiptLine", "UsrActualDutyAmt", "decimal(25,4) NULL");
                     EnsureColumn(conn, "POReceiptLine", "UsrActualFreightAmt", "decimal(25,4) NULL");
                     EnsureColumn(conn, "POReceiptLine", "UsrBrokerageAmt", "decimal(25,4) NULL");
-                    EnsureColumn(conn, "POReceiptLine", "UsrHTSCode", "nvarchar(30) NULL");
-                    EnsureColumn(conn, "POReceiptLine", "UsrCountryOfOrigin", "nvarchar(2) NULL");
 
                     // ── SiteMap GraphType for SB501000 ────────────────────────
                     // Sets the GraphType so SM207060 can discover ContainerMaint
@@ -1373,6 +1361,89 @@ namespace StudioB.Containers
 </script>
 ]]></CDATA>
     </File>
+    <Page path="~/pages/in/in202500.aspx">
+        <PXFormView ID="form" ParentId="phF_form" TypeFullName="PX.Web.UI.PXFormView">
+            <Children Key="Template">
+                <AddItem>
+                    <PXNumberEdit TypeFullName="PX.Web.UI.PXNumberEdit">
+                        <Prop Key="Virtual:ApplyStylesheetSkin" />
+                        <Prop Key="ID" Value="edUsrDutyRate" />
+                        <Prop Key="DataField" Value="UsrDutyRate" />
+                    </PXNumberEdit>
+                </AddItem>
+                <AddItem>
+                    <PXTextEdit TypeFullName="PX.Web.UI.PXTextEdit">
+                        <Prop Key="Virtual:ApplyStylesheetSkin" />
+                        <Prop Key="ID" Value="edUsrFiberContent" />
+                        <Prop Key="DataField" Value="UsrFiberContent" />
+                    </PXTextEdit>
+                </AddItem>
+                <AddItem>
+                    <PXCheckBox TypeFullName="PX.Web.UI.PXCheckBox">
+                        <Prop Key="ID" Value="chkUsrPreferentialTariff" />
+                        <Prop Key="DataField" Value="UsrPreferentialTariff" />
+                    </PXCheckBox>
+                </AddItem>
+                <AddItem>
+                    <PXTextEdit TypeFullName="PX.Web.UI.PXTextEdit">
+                        <Prop Key="Virtual:ApplyStylesheetSkin" />
+                        <Prop Key="ID" Value="edUsrFreightClass" />
+                        <Prop Key="DataField" Value="UsrFreightClass" />
+                    </PXTextEdit>
+                </AddItem>
+            </Children>
+        </PXFormView>
+    </Page>
+    <Page path="~/pages/po/po302000.aspx">
+        <PXGridLevel DataMember="transactions" ParentId="phG_tab_Items#0_grid_Levels#0" TypeFullName="PX.Web.UI.PXGridLevel">
+            <Children Key="Columns">
+                <AddItem>
+                    <PXGridColumn TypeFullName="PX.Web.UI.PXGridColumn">
+                        <Prop Key="DataField" Value="UsrActualDutyAmt" />
+                        <Prop Key="Width" Value="100px" />
+                    </PXGridColumn>
+                </AddItem>
+                <AddItem>
+                    <PXGridColumn TypeFullName="PX.Web.UI.PXGridColumn">
+                        <Prop Key="DataField" Value="UsrActualFreightAmt" />
+                        <Prop Key="Width" Value="100px" />
+                    </PXGridColumn>
+                </AddItem>
+                <AddItem>
+                    <PXGridColumn TypeFullName="PX.Web.UI.PXGridColumn">
+                        <Prop Key="DataField" Value="UsrBrokerageAmt" />
+                        <Prop Key="Width" Value="100px" />
+                    </PXGridColumn>
+                </AddItem>
+                <AddItem>
+                    <PXGridColumn TypeFullName="PX.Web.UI.PXGridColumn">
+                        <Prop Key="DataField" Value="UsrLandedCostPerUnit" />
+                        <Prop Key="Width" Value="100px" />
+                    </PXGridColumn>
+                </AddItem>
+            </Children>
+        </PXGridLevel>
+    </Page>
+    <Page path="~/pages/ap/ap303000.aspx">
+        <PXFormView ID="form" ParentId="phF_form" TypeFullName="PX.Web.UI.PXFormView">
+            <Children Key="Template">
+                <AddItem>
+                    <PXSelector TypeFullName="PX.Web.UI.PXSelector">
+                        <Prop Key="Virtual:ApplyStylesheetSkin" />
+                        <Prop Key="ID" Value="edUsrDefaultInTransitSiteID" />
+                        <Prop Key="DataField" Value="UsrDefaultInTransitSiteID" />
+                    </PXSelector>
+                </AddItem>
+                <AddItem>
+                    <PXDropDown TypeFullName="PX.Web.UI.PXDropDown">
+                        <Prop Key="Virtual:ApplyStylesheetSkin" />
+                        <Prop Key="ID" Value="edUsrDefaultCarrierCode" />
+                        <Prop Key="DataField" Value="UsrDefaultCarrierCode" />
+                    </PXDropDown>
+                </AddItem>
+            </Children>
+        </PXFormView>
+    </Page>
     <File AppRelativePath="Pages\SB\SB501000.aspx" Source="#CDATA">
         <CDATA name="Source"><![CDATA[<%@ Page Language="C#" MasterPageFile="~/MasterPages/FormDetail.master" AutoEventWireup="true" ValidateRequest="false" CodeFile="SB501000.aspx.cs" Inherits="Page_SB_SB501000" Title="Container Maintenance" %>
 <%@ MasterType VirtualPath="~/MasterPages/FormDetail.master" %>
@@ -1395,12 +1466,19 @@ namespace StudioB.Containers
             <px:PXDropDown ID="edStatus" runat="server" DataField="Status" />
             <px:PXTextEdit ID="edCarrierCode" runat="server" DataField="CarrierCode" />
             <px:PXTextEdit ID="edVesselName" runat="server" DataField="VesselName" />
+            <px:PXTextEdit ID="edVesselIMO" runat="server" DataField="VesselIMO" />
+            <px:PXTextEdit ID="edContainerType" runat="server" DataField="ContainerType" />
             <px:PXLayoutRule ID="PXLayoutRule2" runat="server" StartColumn="True" LabelsWidth="SM" ControlSize="M" />
             <px:PXDateTimeEdit ID="edETD" runat="server" DataField="ETD" />
             <px:PXDateTimeEdit ID="edETA" runat="server" DataField="ETA" />
             <px:PXDateTimeEdit ID="edATA" runat="server" DataField="ATA" />
             <px:PXTextEdit ID="edPortOfLoading" runat="server" DataField="PortOfLoading" />
             <px:PXTextEdit ID="edPortOfDischarge" runat="server" DataField="PortOfDischarge" />
+            <px:PXLayoutRule ID="PXLayoutRule3" runat="server" StartColumn="True" LabelsWidth="SM" ControlSize="M" />
+            <px:PXTextEdit ID="edBookingRef" runat="server" DataField="BookingRef" />
+            <px:PXTextEdit ID="edBillOfLading" runat="server" DataField="BillOfLading" />
+            <px:PXTextEdit ID="edVoyageNbr" runat="server" DataField="VoyageNbr" />
+            <px:PXTextEdit ID="edSealNbr" runat="server" DataField="SealNbr" />
         </Template>
     </px:PXFormView>
 </asp:Content>
