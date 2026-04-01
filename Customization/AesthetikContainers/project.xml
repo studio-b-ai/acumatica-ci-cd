@@ -1350,17 +1350,6 @@ namespace StudioB.Containers
             </Children>
         </PXGridLevel>
     </Page>
-    <File AppRelativePath="Pages\IGCM\IGCM3098.aspx" Source="#CDATA">
-        <CDATA name="Source"><![CDATA[<%@ Page Language="C#" AutoEventWireup="true" %>
-<script runat="server">
-    protected void Page_Load(object sender, EventArgs e)
-    {
-        // Stub page: IGCM3098 replaced by SB501000 (Container Tracking)
-        Response.Redirect("~/Main?ScreenId=SB501000");
-    }
-</script>
-]]></CDATA>
-    </File>
     <Page path="~/pages/in/in202500.aspx">
         <PXFormView ID="form" ParentId="phF_form" TypeFullName="PX.Web.UI.PXFormView">
             <Children Key="Template">
