@@ -523,6 +523,9 @@ jobs:
             fi
           done
 
+          # Heritage Test is on the SAME Acumatica instance as production.
+          # publishBegin is instance-wide — must include ALL projects that should
+          # stay published, not just managed ones with zips.
           python scripts/deploy.py \
             --url "${{ secrets.ACUMATICA_URL }}" \
             --username "${{ secrets.ACUMATICA_USERNAME }}" \
@@ -530,7 +533,7 @@ jobs:
             --tenant "${{ vars.ACUMATICA_TEST_TENANT }}" \
             --project "${PROJECT_NAME}" \
             --package "${PACKAGE_FILE}" \
-            --also-publish "${HT_COPUBLISH}" \
+            --also-publish "${ALSO_PUBLISH}" \
             ${EXTRA_FLAGS}
 
       - name: Validate Heritage Test
