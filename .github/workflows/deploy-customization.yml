@@ -16,8 +16,8 @@
 #
 # Required GitHub Variables:
 #   CUSTOMIZATION_PROJECT_NAME      - Name of the customization project in Acumatica
-#   ALSO_PUBLISH_PROJECTS           - Comma-separated list of managed projects to co-publish
-#                                     (only CI/CD-managed projects — ISVs stay published via merge flag)
+#   ALSO_PUBLISH_PROJECTS           - Comma-separated list of ALL projects that must stay published
+#                                     (managed + ISVs — publishBegin sets the EXACT published set)
 #   MAINTENANCE_NOTIFY_RECIPIENTS   - Comma-separated emails for maintenance countdown notifications
 #   MAINTENANCE_NOTIFY_SENDER       - Sender email for notifications (default: kevin@heritagefabrics.com)
 #
@@ -747,7 +747,12 @@ jobs:
                 PKG_NAME=$(echo "${PKG_BASE}" | sed 's/_[0-9]\{8\}-[0-9]\{6\}$//')
                 mkdir -p "/tmp/extra-${PKG_NAME}"
                 unzip -o "${pkg}" -d "/tmp/extra-${PKG_NAME}/"
+                # Import only — do NOT publish individually. A single publishBegin
+                # at the end includes ALL projects. Publishing extras one-by-one
+                # would set the instance published list to just that one project,
+                # unpublishing every ISV. See: 2026-04-01 ISV unpublish incident.
                 PACKAGE_DIR="/tmp/extra-${PKG_NAME}" PROJECT_NAME="${PKG_NAME}" \
+                  IMPORT_ONLY=true \
                   python scripts/emergency-deploy-basic-auth.py
               fi
             done
