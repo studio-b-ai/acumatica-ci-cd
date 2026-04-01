@@ -845,6 +845,12 @@ def main():
         default="",
         help="Path to a .zip snapshot to restore (skips git tag lookup)",
     )
+    parser.add_argument(
+        "--pre-cleanup",
+        action="store_true",
+        help="Delete project from instance before importing. Fixes NullReferenceException "
+             "corruption in CustProject table.",
+    )
 
     args = parser.parse_args()
 
@@ -893,6 +899,15 @@ def main():
                     args.project, output_dir=args.output
                 )
                 _log(f"Backup saved: {backup_path}", style="ok")
+
+            # Pre-cleanup: delete projects before import to clear corrupted CustProject state.
+            if args.pre_cleanup and args.package:
+                _log("Pre-cleanup: deleting projects before import (--pre-cleanup)...", style="warn")
+                client.cleanup_orphan(args.project)
+                for extra in args.extra_import:
+                    if ":" in extra:
+                        extra_name = extra.split(":", 1)[0]
+                        client.cleanup_orphan(extra_name)
 
             # Import new package
             if args.package:
