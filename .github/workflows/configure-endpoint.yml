@@ -16,6 +16,7 @@ on:
           - discover-access-screens
           - fix-entities
           - diagnose
+          - get-schema
 
 jobs:
   configure:
@@ -46,6 +47,8 @@ jobs:
             python scripts/fix-container-entity-names.py
           elif [ "${{ inputs.mode }}" = "diagnose" ]; then
             python scripts/diagnose-endpoint.py
+          elif [ "${{ inputs.mode }}" = "get-schema" ]; then
+            python scripts/get-sm207060-schema.py
           else
             python scripts/configure-container-endpoint.py --${{ inputs.mode }}
           fi
