@@ -357,18 +357,6 @@ namespace StudioB.Containers
     public sealed class StockItemExt : PXCacheExtension<InventoryItem>
     {
         public static bool IsActive() => true;
-        #region UsrHTSCode
-        public abstract class usrHTSCode : PX.Data.BQL.BqlString.Field<usrHTSCode> { }
-        [PXDBString(12, IsUnicode = true)]
-        [PXUIField(DisplayName = "HTS Code", Visibility = PXUIVisibility.SelectorVisible)]
-        public string UsrHTSCode { get; set; }
-        #endregion
-        #region UsrCountryOfOrigin
-        public abstract class usrCountryOfOrigin : PX.Data.BQL.BqlString.Field<usrCountryOfOrigin> { }
-        [PXDBString(2, IsFixed = true, IsUnicode = true)]
-        [PXUIField(DisplayName = "Country of Origin", Visibility = PXUIVisibility.SelectorVisible)]
-        public string UsrCountryOfOrigin { get; set; }
-        #endregion
         #region UsrFiberContent
         public abstract class usrFiberContent : PX.Data.BQL.BqlString.Field<usrFiberContent> { }
         [PXDBString(100, IsUnicode = true)]
@@ -415,18 +403,6 @@ namespace StudioB.Containers
         [PXUIField(DisplayName = "Landed Cost/Unit", Enabled = false)]
         public decimal? UsrLandedCostPerUnit { get; set; }
         #endregion
-        #region UsrHTSCode
-        public abstract class usrHTSCode : PX.Data.BQL.BqlString.Field<usrHTSCode> { }
-        [PXDBString(12, IsUnicode = true)]
-        [PXUIField(DisplayName = "HTS Code", Enabled = false)]
-        public string UsrHTSCode { get; set; }
-        #endregion
-        #region UsrCountryOfOrigin
-        public abstract class usrCountryOfOrigin : PX.Data.BQL.BqlString.Field<usrCountryOfOrigin> { }
-        [PXDBString(2, IsFixed = true, IsUnicode = true)]
-        [PXUIField(DisplayName = "Origin", Enabled = false)]
-        public string UsrCountryOfOrigin { get; set; }
-        #endregion
     }
 }
 ]]></CDATA>
@@ -453,8 +429,6 @@ namespace StudioB.Containers
             if (item == null) return;
             var itemExt = PXCache<InventoryItem>.GetExtension<StockItemExt>((InventoryItem)item);
             if (itemExt == null) return;
-            lineExt.UsrHTSCode = itemExt.UsrHTSCode;
-            lineExt.UsrCountryOfOrigin = itemExt.UsrCountryOfOrigin;
             e.Cache.Update(e.Row);
         }
 
@@ -1093,9 +1067,7 @@ namespace StudioB.Containers
                     EnsureColumn(conn, "SOShipment", "UsrContainerID", "int NULL");
 
                     // ── InventoryItem tariff/customs fields ────────────────────
-                    EnsureColumn(conn, "InventoryItem", "UsrHTSCode", "nvarchar(30) NULL");
                     EnsureColumn(conn, "InventoryItem", "UsrDutyRate", "decimal(25,4) NULL");
-                    EnsureColumn(conn, "InventoryItem", "UsrCountryOfOrigin", "nvarchar(2) NULL");
                     EnsureColumn(conn, "InventoryItem", "UsrFiberContent", "nvarchar(100) NULL");
                     EnsureColumn(conn, "InventoryItem", "UsrPreferentialTariff", "bit NULL");
                     EnsureColumn(conn, "InventoryItem", "UsrFreightClass", "nvarchar(15) NULL");
@@ -1104,8 +1076,6 @@ namespace StudioB.Containers
                     EnsureColumn(conn, "POReceiptLine", "UsrActualDutyAmt", "decimal(25,4) NULL");
                     EnsureColumn(conn, "POReceiptLine", "UsrActualFreightAmt", "decimal(25,4) NULL");
                     EnsureColumn(conn, "POReceiptLine", "UsrBrokerageAmt", "decimal(25,4) NULL");
-                    EnsureColumn(conn, "POReceiptLine", "UsrHTSCode", "nvarchar(30) NULL");
-                    EnsureColumn(conn, "POReceiptLine", "UsrCountryOfOrigin", "nvarchar(2) NULL");
 
                     // ── SiteMap GraphType for SB501000 ────────────────────────
                     // Sets the GraphType so SM207060 can discover ContainerMaint
@@ -1377,25 +1347,11 @@ namespace StudioB.Containers
         <PXFormView ID="form" ParentId="phF_form" TypeFullName="PX.Web.UI.PXFormView">
             <Children Key="Template">
                 <AddItem>
-                    <PXTextEdit TypeFullName="PX.Web.UI.PXTextEdit">
-                        <Prop Key="Virtual:ApplyStylesheetSkin" />
-                        <Prop Key="ID" Value="edUsrHTSCode" />
-                        <Prop Key="DataField" Value="UsrHTSCode" />
-                    </PXTextEdit>
-                </AddItem>
-                <AddItem>
                     <PXNumberEdit TypeFullName="PX.Web.UI.PXNumberEdit">
                         <Prop Key="Virtual:ApplyStylesheetSkin" />
                         <Prop Key="ID" Value="edUsrDutyRate" />
                         <Prop Key="DataField" Value="UsrDutyRate" />
                     </PXNumberEdit>
-                </AddItem>
-                <AddItem>
-                    <PXTextEdit TypeFullName="PX.Web.UI.PXTextEdit">
-                        <Prop Key="Virtual:ApplyStylesheetSkin" />
-                        <Prop Key="ID" Value="edUsrCountryOfOrigin" />
-                        <Prop Key="DataField" Value="UsrCountryOfOrigin" />
-                    </PXTextEdit>
                 </AddItem>
                 <AddItem>
                     <PXTextEdit TypeFullName="PX.Web.UI.PXTextEdit">
@@ -1445,18 +1401,6 @@ namespace StudioB.Containers
                     <PXGridColumn TypeFullName="PX.Web.UI.PXGridColumn">
                         <Prop Key="DataField" Value="UsrLandedCostPerUnit" />
                         <Prop Key="Width" Value="100px" />
-                    </PXGridColumn>
-                </AddItem>
-                <AddItem>
-                    <PXGridColumn TypeFullName="PX.Web.UI.PXGridColumn">
-                        <Prop Key="DataField" Value="UsrHTSCode" />
-                        <Prop Key="Width" Value="100px" />
-                    </PXGridColumn>
-                </AddItem>
-                <AddItem>
-                    <PXGridColumn TypeFullName="PX.Web.UI.PXGridColumn">
-                        <Prop Key="DataField" Value="UsrCountryOfOrigin" />
-                        <Prop Key="Width" Value="80px" />
                     </PXGridColumn>
                 </AddItem>
             </Children>
