@@ -161,6 +161,10 @@ namespace HeritageFabrics.SO
 
                 if (assignedBolts.Count == 0) continue;
 
+                // Resolve InvtMult and Operation from order type config (PC/FO may leave these null)
+                string lineOperation = line.Operation ?? SOOperation.Issue;
+                short lineInvtMult = line.InvtMult ?? ResolveInvtMult(line.OrderType, lineOperation);
+
                 // Delete the default auto-created split (Acumatica creates one on line insert)
                 DeleteDefaultSplits(line, order);
 
@@ -179,6 +183,8 @@ namespace HeritageFabrics.SO
                     split.Qty = bolt.QtyOnHand;
                     split.UOM = line.UOM;
                     split.IsAllocated = true;
+                    split.Operation = lineOperation;
+                    split.InvtMult = lineInvtMult;
 
                     Base.Caches[typeof(SOLineSplit)].Insert(split);
 
@@ -304,6 +310,16 @@ namespace HeritageFabrics.SO
                 .OrderBy(c => c.ReceiptDate ?? DateTime.MaxValue)
                 .ThenByDescending(c => c.QtyOnHand)
                 .ToList();
+        }
+
+        private short ResolveInvtMult(string orderType, string operation)
+        {
+            SOOrderTypeOperation opConfig = SelectFrom<SOOrderTypeOperation>
+                .Where<SOOrderTypeOperation.orderType.IsEqual<@P.AsString>
+                    .And<SOOrderTypeOperation.operation.IsEqual<@P.AsString>>>
+                .View.ReadOnly.Select(Base, orderType, operation);
+
+            return opConfig?.InvtMult ?? (short)1;
         }
 
         private bool IsPieceGoodsItem(int? inventoryID)
