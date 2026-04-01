@@ -8,7 +8,7 @@ These tests replicate the bugs from Sarah's video (2026-04-01):
 Tests run against Heritage Test (live) and create/delete real PC orders.
 """
 import pytest
-from conftest import (
+from helpers import (
     create_pc_order,
     get_field_value,
     open_line_details,
