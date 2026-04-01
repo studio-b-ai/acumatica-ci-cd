@@ -14,6 +14,7 @@ on:
           - verify
           - grant-access
           - discover-access-screens
+          - fix-entities
 
 jobs:
   configure:
@@ -40,6 +41,8 @@ jobs:
             python scripts/configure-container-endpoint.py --schema
           elif [ "${{ inputs.mode }}" = "grant-access" ]; then
             python scripts/configure-container-endpoint.py --grant
+          elif [ "${{ inputs.mode }}" = "fix-entities" ]; then
+            python scripts/fix-container-entity-names.py
           else
             python scripts/configure-container-endpoint.py --${{ inputs.mode }}
           fi
