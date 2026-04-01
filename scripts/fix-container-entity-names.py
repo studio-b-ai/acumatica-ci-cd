@@ -313,39 +313,20 @@ def main():
         login(session)
         navigate_to_endpoint(session)
 
-        # Check current entities
-        print("\n--- Current entities ---")
-        current = export_entities(session)
-        print(f"  Found: {current}")
+        # NOTE: Export via SOAP returns [] for SM207060's tree-based entity list.
+        # Skip the Export check and unconditionally delete wrong names + add correct names.
 
-        # Delete wrong-named entities
-        wrong_names = [old for old, new in RENAME_MAP]
-        to_delete = [name for name in wrong_names if name in current]
-        to_add = [(new, "Top-Level") for old, new in RENAME_MAP if old in current]
+        print("\n--- Deleting wrong-named entities (best-effort) ---")
+        for old_name, _ in RENAME_MAP:
+            delete_entity(session, old_name)
+            time.sleep(1)
 
-        if not to_delete:
-            print("\nNo wrong-named entities found — may already be fixed or different names.")
-            # Check if correct names already exist
-            correct_names = [new for _, new in RENAME_MAP]
-            already_correct = [name for name in correct_names if name in current]
-            if already_correct:
-                print(f"  Already correct: {already_correct}")
-            else:
-                print(f"  Current entities: {current}")
-                print("  WARNING: Neither wrong nor correct names found!")
-        else:
-            print(f"\n--- Deleting wrong-named entities: {to_delete} ---")
-            for name in to_delete:
-                delete_entity(session, name)
-                time.sleep(1)
+        print(f"\n--- Adding correct-named entities ---")
+        for _, new_name in RENAME_MAP:
+            add_entity(session, new_name, "Top-Level")
+            time.sleep(1)
 
-            print(f"\n--- Adding correct-named entities ---")
-            for obj_name, obj_type in to_add:
-                add_entity(session, obj_name, obj_type)
-                time.sleep(1)
-
-            save_endpoint(session)
-
+        save_endpoint(session)
         logout(session)
 
         print("\n=== Verifying REST endpoint ===")
