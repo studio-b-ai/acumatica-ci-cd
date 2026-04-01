@@ -16,7 +16,7 @@ namespace HeritageFabrics.SO
     /// For each unallocated PIECENBR line:
     ///   1. Find available bolts from INLotSerialStatus (FIFO, then largest)
     ///   2. Create SOLineSplit rows for each bolt (native allocation pattern)
-    ///   3. Override SOLine.OrderQty to actual bolt total (120% overship cap)
+    ///   3. If bolts don't cover full request, create unallocated remainder split
     ///   4. If no bolts available, mark line POCreate = true
     ///
     /// Uses SOLineSplit (not SOLine splitting) to avoid openLineCntr aggregate
