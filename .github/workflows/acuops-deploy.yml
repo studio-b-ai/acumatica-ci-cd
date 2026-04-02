@@ -469,7 +469,7 @@ jobs:
     needs: [build, qualify]
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    if: |
+    if: >
       always() &&
       needs.build.result == 'success' &&
       needs.build.outputs.customization_changes == 'true' &&
@@ -609,7 +609,7 @@ jobs:
     name: Deploy to ${{ github.event.inputs.environment || (github.ref == 'refs/heads/main' && 'production' || 'staging') }}
     needs: [build, qualify, test-tenant-gate]
     runs-on: ubuntu-latest
-    if: |
+    if: >
       always() &&
       needs.build.result == 'success' &&
       needs.build.outputs.customization_changes == 'true' &&
@@ -871,7 +871,7 @@ jobs:
       # ── Auto-rollback on verification failure ─────────────────────────
       - name: Auto-rollback on verification failure
         id: rollback
-        if: |
+        if: >
           steps.deploy.outcome == 'success' &&
           (steps.verify.outcome == 'failure' || steps.e2e.outcome == 'failure') &&
           steps.env.outputs.target == 'production' &&
@@ -1258,7 +1258,7 @@ jobs:
     runs-on: ubuntu-latest
     # Run after successful publish OR when publish was skipped (CI-only changes).
     # This lets test/workflow-only pushes validate against the existing deployment.
-    if: |
+    if: >
       github.event_name != 'pull_request' && (
         needs.deploy.result == 'success' ||
         (needs.build.result == 'success' && needs.build.outputs.customization_changes == 'false')
