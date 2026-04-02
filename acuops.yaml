@@ -1,0 +1,85 @@
+# ============================================================================
+# AcuOps Pipeline Configuration — Heritage Fabrics (Ästhetik)
+# ============================================================================
+# Reference client implementation. All Heritage-specific values are here.
+# Pipeline scripts come from studio-b-ai/acuops-pipeline (shared package).
+# ============================================================================
+
+acuops:
+  version: "1.0"
+
+# ─── Project Settings ───────────────────────────────────────────────────────
+project:
+  name: "AesthetikWMS"
+  description: "Heritage Fabrics WMS + ERP customizations"
+  level: 0
+
+# ─── Environment Mapping ────────────────────────────────────────────────────
+environments:
+  production:
+    branch: "main"
+  staging:
+    branch: "staging"
+
+# ─── Publish Settings ───────────────────────────────────────────────────────
+publish:
+  co_publish:
+    - "AesthetikContainers"
+    - "AsthetikTheme"
+    - "StudioBAcuOps"
+  poll_interval: 10
+  poll_timeout: 600
+
+# ─── Backup & Rollback ──────────────────────────────────────────────────────
+backup:
+  enabled: true
+  retention_days: 365
+
+# ─── Validation ─────────────────────────────────────────────────────────────
+validation:
+  strict: true
+  isv_prefix: ""
+  min_acumatica_version: "24.2"
+
+# ─── Client Identity ────────────────────────────────────────────────────────
+client:
+  name: "Heritage Fabrics"
+  code: "heritage-fabrics"
+  timezone: "America/Chicago"
+  business_hours:
+    start: 6
+    end: 18
+
+# ─── Pipeline Settings ──────────────────────────────────────────────────────
+pipeline:
+  known_projects:
+    - "AesthetikWMS"
+    - "AesthetikContainers"
+    - "AsthetikTheme"
+    - "StudioBAcuOps"
+  isv_packages: []
+  also_publish_test:
+    - "AesthetikContainers"
+    - "StudioBAcuOps"
+  test_tenant_enabled: true
+
+# ─── Qualification (Pre-Deploy Gates) ──────────────────────────────────────
+qualification:
+  deploy_cooldown: 15
+  max_retries: 1
+  retry_delay: 60
+
+# ─── Smoke Test (Post-Publish Verification) ────────────────────────────────
+smoke_test:
+  enabled: true
+  customer_id: "C000949"
+  inventory_id: "00004"
+  order_type: "SO"
+  warehouse: "99"
+
+# ─── Notifications ──────────────────────────────────────────────────────────
+notifications:
+  slack_webhook: ""  # Set via SLACK_WEBHOOK_URL GitHub Secret
+  sender_email: "kevin@heritagefabrics.com"
+  on_success: true
+  on_failure: true
