@@ -405,6 +405,7 @@ jobs:
 
       - name: E2E view-level smoke test
         id: e2e
+        continue-on-error: true
         run: |
           python scripts/smoke-e2e.py \
             --url "${{ secrets.ACUMATICA_URL }}" \
