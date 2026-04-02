@@ -377,6 +377,10 @@ jobs:
           # Heritage Test uses only managed code — no ISV packages.
           # Separate ALSO_PUBLISH list so we don't reference packages
           # that don't exist in the test tenant.
+          # --no-merge: Heritage Test has orphaned ISV publish metadata
+          # (Pacejet, Ramp, KN, FusionWMS) that causes "previously published
+          # project cannot be found" errors with merge=True. Clean compile
+          # bypasses this. See: 2026-04-02 auto-allocation deploy failure.
           HT_ALSO_PUBLISH="${{ vars.ALSO_PUBLISH_HERITAGE_TEST || 'AesthetikContainers,StudioBAcuOps' }}"
           python scripts/deploy.py \
             --url "${{ secrets.ACUMATICA_URL }}" \
@@ -386,6 +390,7 @@ jobs:
             --project "${PROJECT_NAME}" \
             --package "${PACKAGE_FILE}" \
             --also-publish "${HT_ALSO_PUBLISH}" \
+            --no-merge \
             ${EXTRA_FLAGS}
 
       - name: Validate Heritage Test
