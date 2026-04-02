@@ -734,6 +734,8 @@ jobs:
           NOTIFY_RECIPIENTS: ${{ needs.build.outputs.notify_recipients }}
           NOTIFY_SENDER: ${{ needs.build.outputs.notify_sender }}
         run: |
+          if [ -f pipeline/scripts/notify.py ] && [ -n "${NOTIFY_RECIPIENTS}" ]; then
+            python pipeline/scripts/notify.py \
               --type countdown \
               --recipients "${NOTIFY_RECIPIENTS}" \
               --sender "${NOTIFY_SENDER}" \
@@ -1004,6 +1006,8 @@ jobs:
           NOTIFY_RECIPIENTS: ${{ needs.build.outputs.notify_recipients }}
           NOTIFY_SENDER: ${{ needs.build.outputs.notify_sender }}
         run: |
+          if [ -f pipeline/scripts/notify.py ] && [ -n "${NOTIFY_RECIPIENTS}" ]; then
+            python pipeline/scripts/notify.py \
               --type online \
               --recipients "${NOTIFY_RECIPIENTS}" \
               --sender "${NOTIFY_SENDER}" \
@@ -1024,6 +1028,8 @@ jobs:
           NOTIFY_RECIPIENTS: ${{ needs.build.outputs.notify_recipients }}
           NOTIFY_SENDER: ${{ needs.build.outputs.notify_sender }}
         run: |
+          if [ -f pipeline/scripts/notify.py ] && [ -n "${NOTIFY_RECIPIENTS}" ]; then
+            python pipeline/scripts/notify.py \
               --type failed \
               --recipients "${NOTIFY_RECIPIENTS}" \
               --sender "${NOTIFY_SENDER}" \
