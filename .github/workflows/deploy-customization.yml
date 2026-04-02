@@ -107,10 +107,39 @@ jobs:
       package_path: ${{ steps.package.outputs.path }}
       package_name: ${{ steps.package.outputs.name }}
       plugin_changes: ${{ steps.plugin_check.outputs.plugin_changes }}
+      customization_changes: ${{ steps.detect_cust_changes.outputs.customization_changes }}
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      # ── Guard: detect if Customization/ files actually changed ──────
+      # Prevents app pool restarts when only CI/test/script files change.
+      # The workflow path filter includes .github/workflows/* and scripts/*,
+      # which trigger the build but should NOT trigger a publish.
+      # See: 2026-04-02 incident — PR #124 (test-only) triggered 10 deploys.
+      - name: Detect customization changes
+        id: detect_cust_changes
+        run: |
+          # For workflow_dispatch, always treat as customization change (manual deploy)
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] || [ "${{ github.event_name }}" = "repository_dispatch" ]; then
+            echo "customization_changes=true" >> "$GITHUB_OUTPUT"
+            echo "Manual/scheduled dispatch — will publish"
+            exit 0
+          fi
+
+          # Compare against parent commit (push event)
+          CHANGED=$(git diff --name-only HEAD~1 HEAD -- 'Customization/' 2>/dev/null || true)
+          if [ -n "$CHANGED" ]; then
+            echo "customization_changes=true" >> "$GITHUB_OUTPUT"
+            echo "Customization files changed — will publish:"
+            echo "$CHANGED"
+          else
+            echo "customization_changes=false" >> "$GITHUB_OUTPUT"
+            echo "No Customization/ changes — skipping publish (CI/test/script-only change)"
+          fi
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -330,6 +359,7 @@ jobs:
     if: |
       always() &&
       needs.build.result == 'success' &&
+      needs.build.outputs.customization_changes == 'true' &&
       github.event_name != 'pull_request' &&
       github.event.inputs.force_qualify != 'true' && (
         needs.qualify.result == 'success' ||
@@ -462,6 +492,7 @@ jobs:
     if: |
       always() &&
       needs.build.result == 'success' &&
+      needs.build.outputs.customization_changes == 'true' &&
       (needs.heritage-test-gate.result == 'success' || needs.heritage-test-gate.result == 'skipped') &&
       github.event_name != 'pull_request' && (
         (needs.qualify.outputs.needs_countdown == 'true' && github.event.inputs.countdown_complete != 'true') ||
@@ -949,9 +980,15 @@ jobs:
   # ──────────────────────────────────────────────
   post-deploy-validation:
     name: Trigger Runtime Tests
-    needs: countdown-notify
+    needs: [build, countdown-notify]
     runs-on: ubuntu-latest
-    if: needs.countdown-notify.result == 'success' && github.event_name != 'pull_request'
+    # Run after successful publish OR when publish was skipped (CI-only changes).
+    # This lets test/workflow-only PRs validate against the existing deployment.
+    if: |
+      github.event_name != 'pull_request' && (
+        needs.countdown-notify.result == 'success' ||
+        (needs.build.result == 'success' && needs.build.outputs.customization_changes == 'false')
+      )
 
     steps:
       - name: Checkout repository
