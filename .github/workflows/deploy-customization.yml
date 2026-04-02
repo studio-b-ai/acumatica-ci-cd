@@ -938,7 +938,7 @@ jobs:
           fi
 
   # ──────────────────────────────────────────────
-  # Job 5: Post-Deploy Validation — trigger ui-test-suite
+  # Job 5: Post-Deploy Validation — run UI tests from tests/ui/
   # ──────────────────────────────────────────────
   post-deploy-validation:
     name: Trigger Runtime Tests
@@ -950,30 +950,24 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - name: Setup Python
+        uses: actions/setup-python@v5
         with:
-          node-version: '22'
+          python-version: '3.11'
 
-      - name: Trigger ui-test-suite
-        env:
-          GH_TOKEN: ${{ secrets.GH_PAT_DISPATCH }}
+      - name: Install test dependencies
         run: |
-          if [[ -z "${GH_TOKEN}" ]]; then
-            echo "::error::GH_PAT_DISPATCH secret not set — post-deploy tests REQUIRED"
-            exit 1
-          fi
-          gh api repos/studio-b-ai/ui-test-suite/dispatches \
-            --method POST \
-            -f event_type=post-deploy-validation \
-            -f "client_payload[commit]=${GITHUB_SHA::8}" \
-            -f "client_payload[project]=${PROJECT_NAME}" \
-            -f "client_payload[actor]=${GITHUB_ACTOR}" \
-            -f "client_payload[suite]=@acumatica"
-          echo "✅ Triggered ui-test-suite @acumatica suite — will verify schema + custom fields"
+          pip install playwright pytest
+          playwright install chromium
 
-      - name: Dispatch test config for new custom fields
-        if: success()
-        run: npx tsx scripts/post-publish-hook.ts Customization/${PROJECT_NAME}
+      - name: Run UI tests
         env:
-          GH_PAT_DISPATCH: ${{ secrets.GH_PAT_DISPATCH }}
+          ACUMATICA_URL: ${{ secrets.ACUMATICA_URL }}
+          ACUMATICA_USERNAME: ${{ secrets.ACUMATICA_USERNAME }}
+          ACUMATICA_PASSWORD: ${{ secrets.ACUMATICA_PASSWORD }}
+          ACUMATICA_TENANT: ${{ vars.ACUMATICA_TEST_TENANT }}
+        run: |
+          python -m pytest tests/ui/ -v --tb=long --timeout=120 || {
+            echo "::warning::UI tests failed — see logs above for details"
+            exit 1
+          }
