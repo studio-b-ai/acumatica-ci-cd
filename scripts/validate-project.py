@@ -264,6 +264,9 @@ def validate(path: str, strict: bool = False, no_semantic: bool = False):
                 # CRM DAC compatibility checks
                 validate_crm_dac_safety(class_name, code, strict)
 
+                # Persist() idempotency checks (AAR 2026-04-02)
+                validate_persist_idempotency(class_name, code, strict)
+
             elif source and source.endswith(".cs"):
                 # External file reference — validate the referenced .cs file exists
                 external_count += 1
@@ -287,6 +290,7 @@ def validate(path: str, strict: bool = False, no_semantic: bool = False):
                     validate_csharp(class_name, code, strict)
                     validate_extension_safety(class_name, code, strict)
                     validate_crm_dac_safety(class_name, code, strict)
+                    validate_persist_idempotency(class_name, code, strict)
             else:
                 error(f"<Graph ClassName=\"{class_name}\"> invalid Source: \"{source}\" (expected \"#CDATA\" or a .cs file path)")
 
@@ -848,6 +852,40 @@ def validate_crm_dac_safety(class_name: str, code: str, strict: bool):
                 f"         Non-CRM graph '{ext_target}' does not provide these views.\n"
                 f"         Solution: Use custom DACs with custom tables instead."
             )
+
+
+def validate_persist_idempotency(class_name: str, code: str, strict: bool):
+    """Detect Persist() overrides with non-idempotent patterns.
+
+    Two lessons from the auto-allocation v2 outage (2026-04-02):
+    1. Reading a field you also overwrite in Persist() → quantities double on re-save
+    2. Using View.ReadOnly.Select as idempotency check without checking graph cache →
+       misses uncommitted inserts from failed prior Persist() calls
+    """
+
+    # Strip comments
+    clean = re.sub(r"///.*$", "", code, flags=re.MULTILINE)
+    clean = re.sub(r"//.*$", "", clean, flags=re.MULTILINE)
+    clean = re.sub(r"/\*.*?\*/", "", clean, flags=re.DOTALL)
+
+    # Only check Persist() overrides
+    if "PersistDelegate" not in clean:
+        return
+
+    # Rule 1: View.ReadOnly.Select used as idempotency guard without cache check
+    # If code queries splits/children via ReadOnly.Select for "already done?" logic
+    # but doesn't also check Base.Caches[].Inserted, it will miss uncommitted rows.
+    has_readonly_select = bool(re.search(r"View\.ReadOnly\.Select", clean))
+    has_cache_inserted = bool(re.search(r"\.Inserted", clean))
+
+    if has_readonly_select and not has_cache_inserted:
+        warn(
+            f"{class_name}: Persist() override uses View.ReadOnly.Select without checking graph cache.\n"
+            f"         ReadOnly.Select only returns committed DB rows — misses uncommitted inserts\n"
+            f"         from the current or failed prior Persist() calls.\n"
+            f"         Add: foreach (T row in Base.Caches[typeof(T)].Inserted) to check cache too.\n"
+            f"         See: auto-allocation v2 bug (2026-04-02) — quantities doubled on re-save."
+        )
 
 
 def main():
