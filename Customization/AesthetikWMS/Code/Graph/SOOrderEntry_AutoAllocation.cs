@@ -353,9 +353,7 @@ namespace HeritageFabrics.SO
 
             foreach (PXResult<INLotSerialStatus> row in SelectFrom<INLotSerialStatus>
                 .Where<INLotSerialStatus.inventoryID.IsEqual<@P.AsInt>
-                    .And<INLotSerialStatus.siteID.IsEqual<@P.AsInt>>
-                    .And<INLotSerialStatus.qtyOnHand.IsGreater<decimal0>>
-                    .And<INLotSerialStatus.qtyAvail.IsGreater<decimal0>>>
+                    .And<INLotSerialStatus.siteID.IsEqual<@P.AsInt>>>
                 .View.ReadOnly.Select(Base, inventoryID, siteID))
             {
                 var status = (INLotSerialStatus)row;
@@ -449,7 +447,7 @@ namespace HeritageFabrics.SO
 
             foreach (var split in toRestore)
             {
-                splitCache.RevertDelete(split);
+                splitCache.SetStatus(split, PXEntryStatus.Notchanged);
             }
 
             // Revert SOLine updates (e.g. POCreate set during no-bolts path)
@@ -463,7 +461,7 @@ namespace HeritageFabrics.SO
 
             foreach (var line in linesToRevert)
             {
-                lineCache.RevertUpdate(line);
+                lineCache.SetStatus(line, PXEntryStatus.Notchanged);
             }
 
             PXTrace.WriteWarning(
