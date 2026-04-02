@@ -988,3 +988,16 @@ jobs:
             echo "::warning::UI tests failed — see logs above for details"
             exit 1
           }
+
+      - name: Publish test metrics
+        if: always()
+        env:
+          CI_METRICS_TOKEN: ${{ secrets.CI_METRICS_TOKEN }}
+          CI_METRICS_URL: ${{ vars.CI_METRICS_URL }}
+        run: |
+          if [ -n "$CI_METRICS_URL" ]; then
+            python scripts/count_tests.py --post "$CI_METRICS_URL" --token "$CI_METRICS_TOKEN" || true
+          else
+            echo "CI_METRICS_URL not set — skipping metrics publish"
+            python scripts/count_tests.py
+          fi
