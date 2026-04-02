@@ -33,7 +33,7 @@ class TestFixtureGeneration:
 
     def test_groups_by_screen_id(self, tmp_path):
         """Records from different screens produce separate fixture entries."""
-        from generate_ui_fixtures import generate_ui_fixtures
+        from generate_ui_fixtures import generate_ui_fixtures, CRITICAL_SCREENS
         from unittest.mock import patch
 
         records = [
@@ -47,10 +47,16 @@ class TestFixtureGeneration:
             MockFetcher.return_value.fetch_days.return_value = records
             fixtures = generate_ui_fixtures(days=30, output=output)
 
-        assert len(fixtures) == 2
         screen_ids = [f["screen_id"] for f in fixtures]
+        # Audit-observed screens are present
         assert "SO301000" in screen_ids
         assert "PO301000" in screen_ids
+        # Critical floor screens are also present
+        for sid in CRITICAL_SCREENS:
+            assert sid in screen_ids
+        # SO301000 has 2 audit records (SOOrder + SOLine)
+        so_fixture = next(f for f in fixtures if f["screen_id"] == "SO301000")
+        assert so_fixture["record_count"] == 2
 
     def test_extracts_custom_fields(self, tmp_path):
         """Usr* fields appear in the custom_fields list."""
@@ -70,14 +76,14 @@ class TestFixtureGeneration:
             MockFetcher.return_value.fetch_days.return_value = records
             fixtures = generate_ui_fixtures(days=30, output=output)
 
-        so_fixture = fixtures[0]
+        so_fixture = next(f for f in fixtures if f["screen_id"] == "SO301000")
         assert "UsrHubSpotDealId" in so_fixture["custom_fields"]
         assert "UsrBoltID" in so_fixture["custom_fields"]
         assert "Status" not in so_fixture["custom_fields"]
 
-    def test_empty_records_writes_empty_fixture(self, tmp_path):
-        """No audit records -> empty JSON array, not a crash."""
-        from generate_ui_fixtures import generate_ui_fixtures
+    def test_empty_audit_still_has_critical_screens(self, tmp_path):
+        """No audit records still produces critical screen floor fixtures."""
+        from generate_ui_fixtures import generate_ui_fixtures, CRITICAL_SCREENS
         from unittest.mock import patch
 
         output = str(tmp_path / "ui_screens.json")
@@ -85,9 +91,12 @@ class TestFixtureGeneration:
             MockFetcher.return_value.fetch_days.return_value = []
             fixtures = generate_ui_fixtures(days=30, output=output)
 
-        assert fixtures == []
-        with open(output) as f:
-            assert json.load(f) == []
+        assert len(fixtures) == len(CRITICAL_SCREENS)
+        screen_ids = [f["screen_id"] for f in fixtures]
+        for sid in CRITICAL_SCREENS:
+            assert sid in screen_ids
+        # All should have record_count 0 (from floor, not audit)
+        assert all(f["record_count"] == 0 for f in fixtures)
 
     def test_fixture_file_is_valid_json(self, tmp_path):
         """Output file is parseable JSON with expected structure."""
@@ -109,3 +118,23 @@ class TestFixtureGeneration:
         assert all("screen_id" in entry for entry in data)
         assert all("custom_fields" in entry for entry in data)
         assert all("record_count" in entry for entry in data)
+
+    def test_critical_floor_does_not_overwrite_audit_data(self, tmp_path):
+        """When audit data exists for a critical screen, audit data wins."""
+        from generate_ui_fixtures import generate_ui_fixtures
+        from unittest.mock import patch
+
+        records = [
+            _make_record("SO301000", "SOOrder", fields={"UsrHubSpotDealId": "123"}),
+            _make_record("SO301000", "SOLine"),
+        ]
+
+        output = str(tmp_path / "ui_screens.json")
+        with patch("generate_ui_fixtures.AuditFetcher") as MockFetcher:
+            MockFetcher.return_value.fetch_days.return_value = records
+            fixtures = generate_ui_fixtures(days=30, output=output)
+
+        so_fixture = next(f for f in fixtures if f["screen_id"] == "SO301000")
+        # Should have audit data, not the empty floor entry
+        assert so_fixture["record_count"] == 2
+        assert "UsrHubSpotDealId" in so_fixture["custom_fields"]
