@@ -316,6 +316,7 @@ jobs:
             ISV_PREFIX="${{ steps.config.outputs.isv_prefix }}"
             [[ -n "${ISV_PREFIX}" ]] && ARGS="${ARGS} --isv-prefix ${ISV_PREFIX}"
 
+            if ! python pipeline/scripts/validate-project.py ${STRICT_FLAG} ${ARGS} "$PROJECT_XML"; then
               echo "::error::Project '$proj' failed validation"
               FAILED=$((FAILED + 1))
             fi
