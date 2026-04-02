@@ -147,3 +147,48 @@ def close_popup(page: Page):
     """Close the current popup dialog."""
     page.locator("button:has-text('OK'), button:has-text('Close')").first.click()
     page.wait_for_timeout(500)
+
+
+# ── Generic Screen Navigation ─────────────────────────────────────────────
+
+def navigate_to_screen(page: Page, screen_id: str, timeout: int = 30_000):
+    """Navigate to an Acumatica screen by screen ID."""
+    url = f"{ACUMATICA_URL}/Main?ScreenId={screen_id}"
+    page.goto(url, wait_until="networkidle", timeout=timeout)
+
+
+def assert_screen_loaded(page: Page, screen_id: str, timeout: int = 15_000):
+    """Assert that an Acumatica screen loaded successfully.
+
+    Checks for either a form container or a grid — different screens use different layouts.
+    """
+    try:
+        page.wait_for_function(
+            """() => {
+                return document.querySelector('#ctl00_phF_form') !== null
+                    || document.querySelector('#ctl00_phG_grid') !== null
+                    || document.querySelector('#ctl00_phG_tab') !== null;
+            }""",
+            timeout=timeout,
+        )
+    except Exception:
+        raise AssertionError(
+            f"Screen {screen_id} did not load — no form, grid, or tab container found within {timeout}ms"
+        )
+
+
+def find_custom_fields(page: Page, field_names: list[str]) -> dict[str, bool]:
+    """Check which custom fields are present in the DOM.
+
+    Args:
+        page: Authenticated Acumatica page.
+        field_names: List of field names (e.g., ["UsrHubSpotDealId", "UsrBoltID"]).
+
+    Returns:
+        Dict mapping field_name -> True if found in DOM, False if not.
+    """
+    results = {}
+    for field_name in field_names:
+        locator = page.locator(f"[id*='{field_name}']")
+        results[field_name] = locator.count() > 0
+    return results
