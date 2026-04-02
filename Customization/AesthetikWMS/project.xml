@@ -217,8 +217,8 @@ namespace HeritageFabrics.SO
         public static bool IsActive() => true;
 
         #region UsrRequestedQty
-        [PXDBDecimal(4)]
-        [PXDefault(System.TypeCode.Decimal, "0.0", PersistingCheck = PXPersistingCheck.Nothing)]
+        [PXDecimal(4)]
+        [PXDefault(PersistingCheck = PXPersistingCheck.Nothing)]
         [PXUIField(DisplayName = "Requested Qty", Enabled = false)]
         public decimal? UsrRequestedQty { get; set; }
         public abstract class usrRequestedQty : BqlDecimal.Field<usrRequestedQty> { }
@@ -4141,14 +4141,6 @@ namespace HeritageFabrics.SO
 -- INItemXRef expiry date field (absorbed from WMSynergy ExpirationDateAtStockItems)
 IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('INItemXRef') AND name = 'UsrHFExpiryDate')
   ALTER TABLE INItemXRef ADD UsrHFExpiryDate date NULL;
-]]></CDATA>
-    </Sql>
-
-    <Sql Name="AesthetikWMS_SOLine_RequestedQty_v1" Script="#CDATA">
-        <CDATA name="Script"><![CDATA[
--- SOLine requested qty field for auto-allocation idempotency (PR #121, 2026-04-02)
-IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('SOLine') AND name = 'UsrRequestedQty')
-  ALTER TABLE SOLine ADD UsrRequestedQty decimal(19,4) NULL;
 ]]></CDATA>
     </Sql>
 
