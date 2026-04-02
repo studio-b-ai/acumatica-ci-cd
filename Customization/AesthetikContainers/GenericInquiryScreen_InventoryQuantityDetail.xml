@@ -86,6 +86,7 @@
             <GIRelation LineNbr="7" ChildTable="UsrContainerPOLink" IsActive="1" JoinType="L">
               <GIOn LineNbr="1" ParentField="OrderType" Condition="E " ChildField="OrderType" Operation="A" />
               <GIOn LineNbr="2" ParentField="OrderNbr" Condition="E " ChildField="OrderNbr" Operation="A" />
+              <GIOn LineNbr="3" ParentField="LineNbr" Condition="E " ChildField="LineNbr" Operation="A" />
             </GIRelation>
             <GIResult LineNbr="12" SortOrder="12" IsActive="1" Field="OpenQty" Width="80" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Open Qty on PO" RowID="a1000001-0000-0000-0000-000000000012" />
             <GIResult LineNbr="13" SortOrder="13" IsActive="1" Field="UsrExpArrivalDate" Width="100" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Expected Arrival" RowID="a1000001-0000-0000-0000-000000000013" />
@@ -96,7 +97,7 @@
             <GIResult LineNbr="11" SortOrder="11" IsActive="1" Field="OrderNbr" Width="100" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="PO Number" RowID="a1000001-0000-0000-0000-000000000011" />
           </GITable>
 
-          <!-- Table 8: UsrContainerPOLink (container-PO association) -->
+          <!-- Table 8: UsrContainerPOLink (container-to-PO link) -->
           <GITable Alias="UsrContainerPOLink" Name="StudioB.Containers.UsrContainerPOLink">
             <!-- JOIN 8: UsrContainerPOLink LEFT JOIN UsrContainer -->
             <GIRelation LineNbr="8" ChildTable="UsrContainer" IsActive="1" JoinType="L">
@@ -107,7 +108,6 @@
           <!-- Table 9: UsrContainer (container header) -->
           <GITable Alias="UsrContainer" Name="StudioB.Containers.UsrContainer">
             <GIResult LineNbr="14" SortOrder="14" IsActive="1" Field="ContainerCD" Width="100" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Container Number" RowID="a1000001-0000-0000-0000-000000000014" />
-            <GIResult LineNbr="15" SortOrder="15" IsActive="1" Field="Status" Width="80" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Container Status" RowID="a1000001-0000-0000-0000-000000000015" />
           </GITable>
 
           <!-- WHERE conditions using OR NULL pattern for LEFT JOIN compatibility -->

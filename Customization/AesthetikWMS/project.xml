@@ -3342,6 +3342,14 @@ IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('SOOrder') 
 -- BAccount pay link disable field
 IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('BAccount') AND name = 'UsrDisablePayLink')
   ALTER TABLE BAccount ADD UsrDisablePayLink bit NULL;
+-- SOShipment container fields (AesthetikContainers ShipmentExt)
+-- Belt-and-suspenders: also created by AesthetikContainers CustomizationPlugin,
+-- but plugin may not run if connection string is unavailable on Cloud.
+-- SEV-1 fix: SHIP006390 CommandPreparing error — columns missing from DB.
+IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('SOShipment') AND name = 'UsrIncludeInContainer')
+  ALTER TABLE SOShipment ADD UsrIncludeInContainer bit NULL DEFAULT 0;
+IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('SOShipment') AND name = 'UsrContainerID')
+  ALTER TABLE SOShipment ADD UsrContainerID int NULL;
 ]]></CDATA>
     </Sql>
         <Graph ClassName="SOShipmentEntry_LabelAutoPrint" Source="#CDATA" IsNew="True" FileType="NewFile">
@@ -3408,12 +3416,56 @@ namespace HeritageFabrics.SO
                 }
                 catch (Exception ex)
                 {
-                    PXTrace.WriteError($"[AUTO-ALLOC] Failed: {ex.Message}");
-                    // Don't block save — log and continue
+                    PXTrace.WriteError($"[AUTO-ALLOC] Failed: {ex.Message}\n{ex.StackTrace}");
+
+                    // Revert any partial cache mutations from failed allocation
+                    // by rolling back Inserted/Updated/Deleted splits for this order
+                    RevertPendingSplitChanges(order);
                 }
             }
 
             baseMethod();
+        }
+
+        #endregion
+
+        #region UI Warnings
+
+        protected void _(Events.RowSelected<SOLine> e)
+        {
+            if (e.Row == null) return;
+            SOLine line = e.Row;
+
+            // Gate on order description as a cheap pre-filter before querying splits.
+            // Note: this couples to the alloc stamp format — if the stamp text changes,
+            // update this check too. The split query is the source of truth.
+            SOOrder order = Base.Document.Current;
+            if (order?.OrderDesc != null && order.OrderDesc.Contains("unallocated"))
+            {
+                // Check if this specific line has unallocated splits
+                bool hasUnallocated = false;
+                bool hasAllocated = false;
+                foreach (SOLineSplit split in
+                    SelectFrom<SOLineSplit>
+                        .Where<SOLineSplit.orderType.IsEqual<@P.AsString>
+                            .And<SOLineSplit.orderNbr.IsEqual<@P.AsString>>
+                            .And<SOLineSplit.lineNbr.IsEqual<@P.AsInt>>>
+                        .View.ReadOnly.Select(Base, line.OrderType, line.OrderNbr, line.LineNbr))
+                {
+                    if (split.IsAllocated == true && !string.IsNullOrEmpty(split.LotSerialNbr))
+                        hasAllocated = true;
+                    if (split.IsAllocated != true && string.IsNullOrEmpty(split.LotSerialNbr))
+                        hasUnallocated = true;
+                }
+
+                if (hasAllocated && hasUnallocated)
+                {
+                    PXUIFieldAttribute.SetWarning<SOLine.orderQty>(
+                        e.Cache, line,
+                        "Partially allocated — not enough bolts in stock to cover full quantity. " +
+                        "Remainder is unallocated.");
+                }
+            }
         }
 
         #endregion
@@ -3457,6 +3509,12 @@ namespace HeritageFabrics.SO
                 if (line.InventoryID == null) continue;
                 if ((line.OrderQty ?? 0m) <= 0m) continue;
                 if (!IsPieceGoodsItem(line.InventoryID)) continue;
+
+                // Only auto-allocate newly added lines — if a user modifies an
+                // existing line (e.g. rejects a bolt), leave it alone for DRP
+                var lineStatus = Base.Transactions.Cache.GetStatus(line);
+                if (lineStatus != PXEntryStatus.Inserted)
+                    continue;
 
                 // Skip lines that already have allocated splits with lot serials
                 // Checks both DB and cache
@@ -3554,6 +3612,10 @@ namespace HeritageFabrics.SO
 
                 if (assignedBolts.Count == 0) continue;
 
+                // Resolve InvtMult and Operation from order type config (PC/FO may leave these null)
+                string lineOperation = line.Operation ?? SOOperation.Issue;
+                short lineInvtMult = line.InvtMult ?? ResolveInvtMult(line.OrderType, lineOperation);
+
                 // Delete the default auto-created split (Acumatica creates one on line insert)
                 DeleteDefaultSplits(line, order);
 
@@ -3572,6 +3634,8 @@ namespace HeritageFabrics.SO
                     split.Qty = bolt.QtyOnHand;
                     split.UOM = line.UOM;
                     split.IsAllocated = true;
+                    split.Operation = lineOperation;
+                    split.InvtMult = lineInvtMult;
 
                     Base.Caches[typeof(SOLineSplit)].Insert(split);
 
@@ -3579,12 +3643,36 @@ namespace HeritageFabrics.SO
                         $"[AUTO-ALLOC] Ln{line.LineNbr}: split {bolt.LotSerialNbr} qty={bolt.QtyOnHand}");
                 }
 
-                // Override line qty to actual bolt total
-                Base.Transactions.Cache.SetValueExt<SOLine.orderQty>(line, totalAllocated);
-                Base.Transactions.Cache.Update(line);
+                // If bolts don't cover full request, create unallocated remainder split
+                if (totalAllocated < requestedQty)
+                {
+                    decimal remainder = requestedQty - totalAllocated;
+                    var remainderSplit = (SOLineSplit)Base.Caches[typeof(SOLineSplit)].CreateInstance();
+                    remainderSplit.OrderType = line.OrderType;
+                    remainderSplit.OrderNbr = line.OrderNbr;
+                    remainderSplit.LineNbr = line.LineNbr;
+                    remainderSplit.InventoryID = line.InventoryID;
+                    remainderSplit.SubItemID = line.SubItemID;
+                    remainderSplit.SiteID = line.SiteID;
+                    remainderSplit.LocationID = line.LocationID;
+                    remainderSplit.Qty = remainder;
+                    remainderSplit.UOM = line.UOM;
+                    remainderSplit.IsAllocated = false;
+                    remainderSplit.Operation = lineOperation;
+                    remainderSplit.InvtMult = lineInvtMult;
+
+                    Base.Caches[typeof(SOLineSplit)].Insert(remainderSplit);
+
+                    PXTrace.WriteInformation(
+                        $"[AUTO-ALLOC] Ln{line.LineNbr}: remainder split qty={remainder} (unallocated)");
+                }
+                // Do NOT override SOLine.OrderQty — preserve user's requested quantity
 
                 totalBoltsAssigned += assignedBolts.Count;
-                allocSummary.Add($"Ln{line.LineNbr}: {assignedBolts.Count} bolt(s), {totalAllocated} {line.UOM}");
+                string partialNote = totalAllocated < requestedQty
+                    ? $" (partial — {requestedQty - totalAllocated} unallocated)"
+                    : "";
+                allocSummary.Add($"Ln{line.LineNbr}: {assignedBolts.Count} bolt(s), {totalAllocated} {line.UOM}{partialNote}");
 
                 PXTrace.WriteInformation(
                     $"[AUTO-ALLOC] Ln{line.LineNbr}: {assignedBolts.Count} bolts, " +
@@ -3685,19 +3773,24 @@ namespace HeritageFabrics.SO
                 .View.ReadOnly.Select(Base, inventoryID, siteID))
             {
                 var status = (INLotSerialStatus)row;
-                if (status.LotSerialNbr == null) continue;
+                if (string.IsNullOrEmpty(status.LotSerialNbr)) continue;
                 if (assignedSerials.Contains(status.LotSerialNbr)) continue;
 
                 decimal qtyOnHand = status.QtyOnHand ?? 0;
                 decimal qtyAvail = status.QtyAvail ?? 0;
 
-                if (qtyOnHand <= 0) continue;
-                if (qtyAvail != qtyOnHand) continue; // Skip partially allocated bolts
+                // Use QtyAvail (not QtyOnHand) as the allocatable amount —
+                // QtyAvail accounts for existing allocations on other orders
+                if (qtyAvail <= 0) continue;
+
+                // Skip bolts where availability doesn't match on-hand
+                // (partially allocated to other orders)
+                if (qtyAvail != qtyOnHand) continue;
 
                 candidates.Add(new BoltCandidate
                 {
                     LotSerialNbr = status.LotSerialNbr,
-                    QtyOnHand = qtyOnHand,
+                    QtyOnHand = qtyAvail,  // Use QtyAvail as the allocatable amount
                     ReceiptDate = status.ReceiptDate,
                 });
             }
@@ -3714,6 +3807,16 @@ namespace HeritageFabrics.SO
                 .ToList();
         }
 
+        private short ResolveInvtMult(string orderType, string operation)
+        {
+            SOOrderTypeOperation opConfig = SelectFrom<SOOrderTypeOperation>
+                .Where<SOOrderTypeOperation.orderType.IsEqual<@P.AsString>
+                    .And<SOOrderTypeOperation.operation.IsEqual<@P.AsString>>>
+                .View.ReadOnly.Select(Base, orderType, operation);
+
+            return opConfig?.InvtMult ?? (short)1;
+        }
+
         private bool IsPieceGoodsItem(int? inventoryID)
         {
             if (inventoryID == null) return false;
@@ -3725,6 +3828,60 @@ namespace HeritageFabrics.SO
                 ((InventoryItem)item).LotSerClassID,
                 PieceGoodsClassID,
                 StringComparison.OrdinalIgnoreCase);
+        }
+
+        /// <summary>
+        /// Revert any cache mutations made during a failed allocation attempt.
+        /// This prevents partial/corrupt split data from being persisted.
+        /// Covers SOLineSplit (inserted/deleted) and SOLine (updated POCreate).
+        /// </summary>
+        private void RevertPendingSplitChanges(SOOrder order)
+        {
+            var splitCache = Base.Caches[typeof(SOLineSplit)];
+
+            // Collect refs first to avoid modifying collection during iteration
+            var toRevert = new List<SOLineSplit>();
+
+            foreach (SOLineSplit split in splitCache.Inserted)
+            {
+                if (split.OrderType == order.OrderType && split.OrderNbr == order.OrderNbr)
+                    toRevert.Add(split);
+            }
+
+            foreach (var split in toRevert)
+            {
+                splitCache.Remove(split);
+            }
+
+            // Also revert any deleted default splits
+            var toRestore = new List<SOLineSplit>();
+            foreach (SOLineSplit split in splitCache.Deleted)
+            {
+                if (split.OrderType == order.OrderType && split.OrderNbr == order.OrderNbr)
+                    toRestore.Add(split);
+            }
+
+            foreach (var split in toRestore)
+            {
+                splitCache.SetStatus(split, PXEntryStatus.Notchanged);
+            }
+
+            // Revert SOLine updates (e.g. POCreate set during no-bolts path)
+            var lineCache = Base.Transactions.Cache;
+            var linesToRevert = new List<SOLine>();
+            foreach (SOLine line in lineCache.Updated)
+            {
+                if (line.OrderType == order.OrderType && line.OrderNbr == order.OrderNbr)
+                    linesToRevert.Add(line);
+            }
+
+            foreach (var line in linesToRevert)
+            {
+                lineCache.SetStatus(line, PXEntryStatus.Notchanged);
+            }
+
+            PXTrace.WriteWarning(
+                $"[AUTO-ALLOC] Reverted {toRevert.Count} inserted + {toRestore.Count} deleted splits + {linesToRevert.Count} updated lines after failure");
         }
 
         private class BoltCandidate
@@ -3933,6 +4090,52 @@ namespace HeritageFabrics.IN
 ]]></CDATA>
     </Graph>
 
+    <Graph ClassName="SOShipmentEntry_CutHangTag" Source="#CDATA" IsNew="True" FileType="ExistingGraph">
+        <CDATA name="Source"><![CDATA[using System.Collections;
+using System.Collections.Generic;
+using PX.Data;
+using PX.Objects.SO;
+
+namespace HeritageFabrics.SO
+{
+    /// <summary>
+    /// Absorbed from WMSynergy.HF.CutHangTagLabel.
+    /// Adds a "Print Cut Hang Tag" toolbar action to the Shipment screen (SO302000).
+    /// Launches report WM302000 (Cut Roll Hang Tag) pre-populated with the
+    /// current shipment number.
+    /// </summary>
+    public class SOShipmentEntry_CutHangTag : PXGraphExtension<SOShipmentEntry>
+    {
+        public static bool IsActive() => true;
+
+        #region Actions
+
+        public PXAction<SOShipment> PrintCutHangTag;
+
+        [PXButton(CommitChanges = true)]
+        [PXUIField(DisplayName = "Print Cut Hang Tag",
+            MapEnableRights = PXCacheRights.Select,
+            MapViewRights = PXCacheRights.Select)]
+        protected virtual IEnumerable printCutHangTag(PXAdapter adapter)
+        {
+            SOShipment shipment = Base.Document.Current;
+            if (shipment != null)
+            {
+                var parameters = new Dictionary<string, string>
+                {
+                    ["ShipmentNbr"] = shipment.ShipmentNbr?.Trim()
+                };
+                throw new PXReportRequiredException(parameters, "WM302000", "Cut Roll Hang Tag");
+            }
+            return adapter.Get();
+        }
+
+        #endregion
+    }
+}
+]]></CDATA>
+    </Graph>
+
     <Sql Name="AesthetikWMS_INItemXRef_ExpiryDate_v1" Script="#CDATA">
         <CDATA name="Script"><![CDATA[
 -- INItemXRef expiry date field (absorbed from WMSynergy ExpirationDateAtStockItems)
@@ -3941,5 +4144,137 @@ IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('INItemXRef
 ]]></CDATA>
     </Sql>
 
+    <Graph ClassName="SOOrderEntry_InvtMultFix" Source="#CDATA" IsNew="True" FileType="NewFile">
+        <CDATA name="Source"><![CDATA[using System;
+using PX.Data;
+using PX.Data.BQL;
+using PX.Data.BQL.Fluent;
+using PX.Objects.IN;
+using PX.Objects.SO;
+
+namespace HeritageFabrics.SO
+{
+    /// <summary>
+    /// Fixes "InvtMult cannot be empty" error on SOLine and SOLineSplit persist.
+    ///
+    /// InvtMult is set by SOOrderEntry when Operation is defaulted, but certain
+    /// order types (e.g. PC) or data-repair scenarios can leave it null.
+    /// This extension catches the gap at FieldDefaulting and RowSelected to
+    /// default InvtMult from SOOrderTypeOperation before PXDefaultAttribute
+    /// validates at RowPersisting.
+    ///
+    /// Covers both SOLine (original fix) and SOLineSplit (auto-allocation
+    /// creates splits that inherit null InvtMult from parent line).
+    ///
+    /// Issue: acumatica-ci-cd#101
+    /// Repro: Sales Order PC S004709 (FABRICUT) — Save throws
+    ///        "Error: 'InvtMult' cannot be empty"
+    /// </summary>
+    public class SOOrderEntry_InvtMultFix : PXGraphExtension<SOOrderEntry>
+    {
+        public static bool IsActive() => true;
+
+        /// <summary>
+        /// Provide InvtMult default from SOOrderTypeOperation when the framework
+        /// cannot resolve it (e.g. PC order type). Runs at FieldDefaulting so the
+        /// value is set before PXDefaultAttribute validates at RowPersisting.
+        /// </summary>
+        protected void _(Events.FieldDefaulting<SOLine, SOLine.invtMult> e)
+        {
+            if (e.Row == null || e.NewValue != null) return;
+
+            SOLine line = e.Row;
+            if (line.OrderType == null) return;
+
+            SOOrderTypeOperation operation = SelectFrom<SOOrderTypeOperation>
+                .Where<SOOrderTypeOperation.orderType.IsEqual<@P.AsString>
+                    .And<SOOrderTypeOperation.operation.IsEqual<@P.AsString>>>
+                .View.Select(Base, line.OrderType, line.Operation ?? SOOperation.Issue);
+
+            if (operation != null)
+            {
+                e.NewValue = operation.InvtMult ?? (short)1;
+            }
+        }
+
+        /// <summary>
+        /// Fix existing orders with null InvtMult at persist time.
+        /// Previously used RowSelected + SetValue, but that marks rows dirty
+        /// during read-only ContractBased API access, causing InvalidOperationException
+        /// on GET and empty $expand=Details results.
+        /// RowPersisting only fires on save, so it's safe for API reads.
+        /// </summary>
+        protected void _(Events.RowPersisting<SOLine> e)
+        {
+            if (e.Row == null) return;
+
+            SOLine line = e.Row;
+
+            if (line.InvtMult == null && line.InventoryID != null && line.OrderType != null)
+            {
+                SOOrderTypeOperation operation = SelectFrom<SOOrderTypeOperation>
+                    .Where<SOOrderTypeOperation.orderType.IsEqual<@P.AsString>
+                        .And<SOOrderTypeOperation.operation.IsEqual<@P.AsString>>>
+                    .View.Select(Base, line.OrderType, line.Operation ?? SOOperation.Issue);
+
+                if (operation != null)
+                {
+                    short invtMult = operation.InvtMult ?? (short)1;
+                    e.Cache.SetValue<SOLine.invtMult>(line, invtMult);
+                }
+            }
+        }
+
+        /// <summary>
+        /// Provide InvtMult default for SOLineSplit when the framework cannot
+        /// resolve it (auto-allocation creates splits inheriting null from parent).
+        /// </summary>
+        protected void _(Events.FieldDefaulting<SOLineSplit, SOLineSplit.invtMult> e)
+        {
+            if (e.Row == null || e.NewValue != null) return;
+
+            SOLineSplit split = e.Row;
+            if (split.OrderType == null) return;
+
+            SOOrderTypeOperation operation = SelectFrom<SOOrderTypeOperation>
+                .Where<SOOrderTypeOperation.orderType.IsEqual<@P.AsString>
+                    .And<SOOrderTypeOperation.operation.IsEqual<@P.AsString>>>
+                .View.Select(Base, split.OrderType, split.Operation ?? SOOperation.Issue);
+
+            if (operation != null)
+            {
+                e.NewValue = operation.InvtMult ?? (short)1;
+            }
+        }
+
+        /// <summary>
+        /// Fix existing splits with null InvtMult at persist time.
+        /// Same fix as SOLine — moved from RowSelected to RowPersisting
+        /// to avoid marking rows dirty during ContractBased API reads.
+        /// </summary>
+        protected void _(Events.RowPersisting<SOLineSplit> e)
+        {
+            if (e.Row == null) return;
+
+            SOLineSplit split = e.Row;
+
+            if (split.InvtMult == null && split.InventoryID != null && split.OrderType != null)
+            {
+                SOOrderTypeOperation operation = SelectFrom<SOOrderTypeOperation>
+                    .Where<SOOrderTypeOperation.orderType.IsEqual<@P.AsString>
+                        .And<SOOrderTypeOperation.operation.IsEqual<@P.AsString>>>
+                    .View.Select(Base, split.OrderType, split.Operation ?? SOOperation.Issue);
+
+                if (operation != null)
+                {
+                    short invtMult = operation.InvtMult ?? (short)1;
+                    e.Cache.SetValue<SOLineSplit.invtMult>(split, invtMult);
+                }
+            }
+        }
+    }
+}
+]]></CDATA>
+    </Graph>
 
 </Customization>

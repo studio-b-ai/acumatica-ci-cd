@@ -174,7 +174,7 @@ async def list_tools() -> list[types.Tool]:
                     },
                     "merge_with_existing": {
                         "type": "boolean",
-                        "description": "Merge with existing published packages (default: false)"
+                        "description": "Merge with existing published packages (default: true). Set to false only for clean recompile — WARNING: unpublishes any project not in project_names."
                     }
                 },
                 "required": ["project_names"]
@@ -278,7 +278,7 @@ def _dispatch(name: str, args: dict) -> Any:
     if name == "acumatica_customization_publish":
         project_names = args["project_names"]
         validation_only = args.get("validation_only", False)
-        merge = args.get("merge_with_existing", False)
+        merge = args.get("merge_with_existing", True)
         s = get_session()
         payload = {
             "isMergeWithExistingPackages": merge,

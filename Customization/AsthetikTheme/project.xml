@@ -188,7 +188,4 @@ a.link:hover {
 }
 ]]></CDATA>
     </File>
-    <Page PageID="SM200505" GraphName="PX.SM.PreferencesGeneral">
-        <Modify Container="SitePreferences" Field="CompanyName" Value="Ästhetik" />
-    </Page>
 </Customization>

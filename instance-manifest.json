@@ -1,153 +1,73 @@
 {
   "$schema": "Instance manifest — tracks ALL customization projects expected on heritagefabrics.acumatica.com",
-  "$updated": "2026-03-26",
-  "$source": "SM204505 screenshot audit",
+  "$updated": "2026-03-31T21:30:00Z",
+  "$source": "SM204505 live audit via Chrome (pages 1+2)",
   "projects": {
+    "AcumaticaPacejetCustomFields24.1001": {
+      "category": "isv",
+      "level": null,
+      "owner": "Pacejet (3PL shipping)",
+      "description": "[24.092.0107] Pacejet Custom Fields (CS207700)",
+      "published": true,
+      "repo_dir": null
+    },
+    "AesthetikContainers": {
+      "category": "managed",
+      "level": null,
+      "owner": "studio-b-ai/acumatica-ci-cd",
+      "description": "PO arrival dates, container tracking, trade compliance. Columns created via CustomizationPlugin + AesthetikWMS <Sql> belt-and-suspenders.",
+      "published": true,
+      "repo_dir": "Customization/AesthetikContainers"
+    },
     "AesthetikWMS": {
       "category": "managed",
-      "level": 1,
+      "level": null,
       "owner": "studio-b-ai/acumatica-ci-cd",
       "description": "Primary customization package — DAC extensions, graph extensions, WMS logic",
       "published": true,
       "repo_dir": "Customization/AesthetikWMS"
     },
-    "AsthetikTheme": {
-      "category": "managed",
-      "level": 1,
-      "owner": "studio-b-ai/acumatica-ci-cd",
-      "description": "UI theme and branding customization",
-      "published": true,
-      "repo_dir": "Customization/AsthetikTheme"
-    },
-    "AesthetikERP": {
-      "category": "deprecated",
-      "level": null,
-      "owner": "studio-b-ai/acumatica-ci-cd",
-      "description": "Legacy ERP customization — imported but NOT published. Safe to delete from instance.",
-      "published": false,
-      "repo_dir": "Customization/AesthetikERP"
-    },
-    "AesthetikSchemaFix": {
-      "category": "deprecated",
-      "level": null,
-      "owner": "studio-b-ai/acumatica-ci-cd",
-      "description": "One-time schema fix — imported but NOT published. Safe to delete from instance.",
-      "published": false,
-      "repo_dir": "Customization/AesthetikSchemaFix"
-    },
-    "AesthetikContainers": {
-      "category": "managed",
-      "level": 1,
-      "owner": "studio-b-ai/acumatica-ci-cd",
-      "description": "PO arrival dates, container tracking, trade compliance (StockItem tariff fields). <Sql> removed — columns created via [PXDB*] auto-create or manual SQL.",
-      "published": true,
-      "repo_dir": "Customization/AesthetikContainers"
-    },
-    "StudioBAuditTrail": {
-      "category": "managed",
-      "level": null,
-      "owner": "studio-b-ai",
-      "description": "GI: Studio B Audit Trail generic inquiry",
-      "published": true,
-      "repo_dir": null
-    },
-    "LotSerialGI": {
-      "category": "managed",
-      "level": null,
-      "owner": "api-bot",
-      "description": "Lot Serial Availability generic inquiry",
-      "published": true,
-      "repo_dir": null
-    },
-    "AcumaticaPacejet": {
-      "category": "isv",
-      "level": null,
-      "owner": "Pacejet (3PL shipping)",
-      "description": "[24.092.0107] Pacejet shipping integration",
-      "published": true,
-      "repo_dir": null
-    },
-    "ERPImportMatrixItems": {
-      "category": "isv",
-      "level": null,
-      "owner": "admin",
-      "description": "Matrix item import (IN202000, IN202520)",
-      "published": true,
-      "repo_dir": null
-    },
-    "InventoryLotSerialMaint": {
-      "category": "isv",
-      "level": null,
-      "owner": "admin",
-      "description": "Lot/serial maintenance (IN407000)",
-      "published": true,
-      "repo_dir": null
-    },
-    "Ramp": {
-      "category": "isv",
-      "level": null,
-      "owner": "Ramp",
-      "description": "Ramp expense management connector",
-      "published": true,
-      "repo_dir": null
-    },
-    "CustomerPriceClassUpdate": {
-      "category": "isv",
-      "level": 1,
-      "owner": "admin",
-      "description": "Customer price class update (AR303000)",
-      "published": false,
-      "repo_dir": null
-    },
-    "KNCentralizedLicensing": {
-      "category": "isv",
-      "level": 1,
-      "owner": "admin/KN",
-      "description": "KN Centralized Licensing (KNLR1000)",
-      "published": false,
-      "repo_dir": null
-    },
-    "PXLotSertialNbrAttribute": {
-      "category": "isv",
-      "level": 1,
-      "owner": "admin",
-      "description": "Lot/serial number attribute (AM300000)",
-      "published": false,
-      "repo_dir": null
-    },
-    "FusionDeleteTableRecords": {
-      "category": "isv",
-      "level": 94,
-      "owner": "Fusion (ISV)",
-      "description": "Fusion WMS — table record cleanup utility",
-      "published": false,
-      "repo_dir": null
-    },
-    "FusionWMSBasic": {
-      "category": "isv",
-      "level": 99,
-      "owner": "Fusion (ISV)",
-      "description": "Fusion WMS Basic — warehouse management",
-      "published": false,
-      "repo_dir": null
-    },
-    "AttributeUpdateScript": {
+    "AtrributteUpdateScript": {
       "category": "one-time",
       "level": null,
       "owner": "harish m",
       "description": "ONE TIME PUBLISH — attribute data migration",
-      "published": true,
-      "repo_dir": null
-    },
-    "KNMCHeritageSettings": {
-      "category": "one-time",
-      "level": null,
-      "owner": "admin",
-      "description": "ONE TIME — KN/MC Heritage-specific settings",
       "published": false,
       "repo_dir": null
     },
-    "KNOneTimeScript": {
+    "DropKNMCLogs": {
+      "category": "one-time",
+      "level": null,
+      "owner": "Sarah Bib",
+      "description": "Drop orphaned KNMCL tables",
+      "published": false,
+      "repo_dir": null
+    },
+    "ERPImportMatrixItems2023r10021": {
+      "category": "isv",
+      "level": null,
+      "owner": "admin",
+      "description": "Matrix item import (IN202000, IN202500)",
+      "published": false,
+      "repo_dir": null
+    },
+    "InventoryLotSerialHistory": {
+      "category": "isv",
+      "level": null,
+      "owner": "admin",
+      "description": "Inventory lot/serial history (IN407000)",
+      "published": false,
+      "repo_dir": null
+    },
+    "KNMCHeritageSalesPriceCleanUp[17DEC2025]": {
+      "category": "one-time",
+      "level": null,
+      "owner": "admin",
+      "description": "ONE TIME — KN/MC Heritage sales price cleanup",
+      "published": false,
+      "repo_dir": null
+    },
+    "KNOneTimeScriptPublish": {
       "category": "one-time",
       "level": null,
       "owner": "harish m",
@@ -155,11 +75,179 @@
       "published": false,
       "repo_dir": null
     },
-    "WayfairIntegration": {
+    "LotSerialGI": {
       "category": "deprecated",
       "level": null,
-      "owner": "Kevin",
-      "description": "Legacy Wayfair integration — replaced by Orderful EDI",
+      "owner": "api-bot",
+      "description": "Lot Serial Availability GI for OData. Deleted from Heritage Test, remove from production via SM204505.",
+      "published": false,
+      "repo_dir": null
+    },
+    "Ramp": {
+      "category": "isv",
+      "level": null,
+      "owner": "Ramp",
+      "description": "Ramp Connector",
+      "published": true,
+      "repo_dir": null
+    },
+    "StudioBAcuOps": {
+      "category": "managed",
+      "level": null,
+      "owner": "studio-b-ai/acumatica-ci-cd",
+      "description": "Studio B operational customizations",
+      "published": false,
+      "repo_dir": "Customization/StudioBAcuOps"
+    },
+    "StudioBAuditTrail": {
+      "category": "deprecated",
+      "level": null,
+      "owner": "studio-b-ai",
+      "description": "GI: Studio B Audit Trail with OData. Deleted from Heritage Test, remove from production via SM204505.",
+      "published": false,
+      "repo_dir": null
+    },
+    "AsthetikTheme": {
+      "category": "managed",
+      "level": 1,
+      "owner": "studio-b-ai/acumatica-ci-cd",
+      "description": "UI theme and branding customization",
+      "published": false,
+      "repo_dir": "Customization/AsthetikTheme"
+    },
+    "CustomerPriceClassRequired": {
+      "category": "isv",
+      "level": 1,
+      "owner": "admin",
+      "description": "Customer price class required (AR303000)",
+      "published": false,
+      "repo_dir": null
+    },
+    "KNCentralizedLicense[24.200.0118][19NOV2024][V03]3": {
+      "category": "isv",
+      "level": 1,
+      "owner": "admin/KN",
+      "description": "KN Centralized Licensing (KNLR1000)",
+      "published": true,
+      "repo_dir": null
+    },
+    "PXLotSertialNbrAttributeExtPkg": {
+      "category": "isv",
+      "level": 1,
+      "owner": "admin",
+      "description": "Lot/serial number attribute (AM300000)",
+      "published": true,
+      "repo_dir": null
+    },
+    "FusionDeleteTablaFRCommitShipmetErrorLog": {
+      "category": "isv",
+      "level": 94,
+      "owner": "Fusion (ISV)",
+      "description": "Fusion WMS — run if snapshot error occurs",
+      "published": false,
+      "repo_dir": null
+    },
+    "FusionWMSBasic[9.4.11][24.201.0052]": {
+      "category": "isv",
+      "level": 99,
+      "owner": "Fusion (ISV)",
+      "description": "Fusion WMS Basic — warehouse management (FR101020, FR4...)",
+      "published": true,
+      "repo_dir": null
+    },
+    "FusionWMSAdvanced[9.4.11][24.201.0052]": {
+      "category": "isv",
+      "level": 100,
+      "owner": "Fusion (ISV)",
+      "description": "Fusion WMS Advanced — advanced warehouse (AR303000, CS2...)",
+      "published": true,
+      "repo_dir": null
+    },
+    "IIGCONTAINERMGMT[24.204.0004][R19]1": {
+      "category": "isv",
+      "level": 111,
+      "owner": "IIG (ISV)",
+      "description": "Container Tracking 24R2 (AP301000, AP3...)",
+      "published": true,
+      "repo_dir": null
+    },
+    "IIGHFContainerMods[24.204.0004][R04]": {
+      "category": "isv",
+      "level": 112,
+      "owner": "IIG (ISV)",
+      "description": "IIG HF Container Mods",
+      "published": true,
+      "repo_dir": null
+    },
+    "ACPRLicensing[24R2][R04]": {
+      "category": "isv",
+      "level": 201,
+      "owner": "admin",
+      "description": "ACPR Licensing (ACPR6050)",
+      "published": false,
+      "repo_dir": null
+    },
+    "ACUPOWERARFactoring[24.208.0020][24.000.0016][R01]": {
+      "category": "isv",
+      "level": 201,
+      "owner": "admin",
+      "description": "ACUPOWER AR Factoring (ACPRAR20, AR...)",
+      "published": false,
+      "repo_dir": null
+    },
+    "WMSynergy.DefaultQty": {
+      "category": "isv",
+      "level": 399,
+      "owner": "admin",
+      "description": "WMSynergy default qty (SO301000)",
+      "published": false,
+      "repo_dir": null
+    },
+    "WMSynergy.HF.POReceiptLabel": {
+      "category": "isv",
+      "level": 3000,
+      "owner": "admin",
+      "description": "Adds Purchase Receipt label printing (PO302000)",
+      "published": false,
+      "repo_dir": null
+    },
+    "WMSynergy.HF.CutHangTagLabel": {
+      "category": "isv",
+      "level": 3001,
+      "owner": "admin",
+      "description": "Adds Cut Hang Tag to shipment (IN401000, SO3...)",
+      "published": false,
+      "repo_dir": null
+    },
+    "WMSynergy.HF.FusionLPUpdates": {
+      "category": "isv",
+      "level": 3002,
+      "owner": "admin",
+      "description": "HF specific Fusion LP requirements",
+      "published": false,
+      "repo_dir": null
+    },
+    "WMsynergy.HF.CustomerPriceList": {
+      "category": "isv",
+      "level": 3003,
+      "owner": "admin",
+      "description": "Customer Price List email (CR306000)",
+      "published": false,
+      "repo_dir": null
+    },
+    "WMSynergy.ForceLotSalesOrder": {
+      "category": "isv",
+      "level": 4000,
+      "owner": "admin",
+      "description": "Requires lot to be entered on SO",
+      "published": false,
+      "repo_dir": null
+    },
+    "WMSynergy.ExpirationDateAtStockItems": {
+      "category": "isv",
+      "level": 4001,
+      "owner": "admin",
+      "description": "HF - Add Expiry Date at Stock Items (IN202500)",
       "published": false,
       "repo_dir": null
     }
@@ -168,6 +256,7 @@
     "managed": "Deployed and maintained via CI/CD pipeline. Changes tracked in git.",
     "isv": "Third-party vendor packages. NOT managed by CI/CD. Updates come from vendor.",
     "one-time": "One-time migration/setup scripts. Should NOT be republished (may re-run seed SQL).",
+    "legacy": "Previously managed by CI/CD but now sunset. Stays published on instance but not actively deployed or maintained. Remove manually via SM204505 if no longer needed.",
     "deprecated": "No longer active. Safe to delete from instance. DO NOT publish."
   },
   "validation_rules": {

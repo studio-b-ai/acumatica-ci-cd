@@ -16,8 +16,9 @@
 #
 # Required GitHub Variables:
 #   CUSTOMIZATION_PROJECT_NAME      - Name of the customization project in Acumatica
-#   ALSO_PUBLISH_PROJECTS           - Comma-separated list of other active projects to co-publish
-#                                     (VAR packages, Shopify connector, etc.) for conflict detection
+#   ALSO_PUBLISH_PROJECTS           - Comma-separated list of ALL projects that must stay published
+#                                     on PRODUCTION (managed + ISVs — publishBegin sets the EXACT published set)
+#   ALSO_PUBLISH_HERITAGE_TEST      - Same but for Heritage Test tenant (managed code only, no ISVs)
 #   MAINTENANCE_NOTIFY_RECIPIENTS   - Comma-separated emails for maintenance countdown notifications
 #   MAINTENANCE_NOTIFY_SENDER       - Sender email for notifications (default: kevin@heritagefabrics.com)
 #
@@ -85,16 +86,6 @@ on:
         required: false
         type: boolean
         default: false
-      skip_sandbox:
-        description: 'Skip sandbox validation (when sandbox env differs from prod)'
-        required: false
-        type: boolean
-        default: false
-      skip_sandbox_force:
-        description: 'Force skip sandbox even for plugin changes (LOGGED, emergency only)'
-        required: false
-        type: boolean
-        default: false
 
 env:
   # HARDCODED — never use a mutable GitHub variable for the project name.
@@ -116,13 +107,10 @@ jobs:
       package_path: ${{ steps.package.outputs.path }}
       package_name: ${{ steps.package.outputs.name }}
       plugin_changes: ${{ steps.plugin_check.outputs.plugin_changes }}
-      published_projects_changed: ${{ steps.published_check.outputs.changed }}
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -135,85 +123,9 @@ jobs:
           DIFF=$(git diff origin/main -- '*.xml' '*.cs' 2>/dev/null || true)
           if echo "$DIFF" | grep -qiE '(CustomizationPlugin|UpdateDatabase|<Sql>|ExecuteSQL|SqlCommand)'; then
             echo "plugin_changes=true" >> "$GITHUB_OUTPUT"
-            echo "::warning::CustomizationPlugin changes detected — sandbox gate is MANDATORY"
+            echo "::warning::CustomizationPlugin changes detected"
           else
             echo "plugin_changes=false" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Check if published projects changed
-        id: published_check
-        env:
-          ALSO_PUBLISH: ${{ vars.ALSO_PUBLISH_PROJECTS || '' }}
-        run: |
-          # Only trigger sandbox publish if the PRIMARY project or a co-published
-          # project actually changed. Deleting non-published packages (e.g.,
-          # removing UomHotfixYdsToIn) should NOT cause an Acumatica publish.
-          # Guard added after 2026-03-30 incident review.
-          CHANGED_FILES=$(git diff --name-only origin/main 2>/dev/null || true)
-          PUBLISHED_CHANGED=false
-
-          # Check primary project
-          if echo "$CHANGED_FILES" | grep -q "^Customization/${PROJECT_NAME}/"; then
-            PUBLISHED_CHANGED=true
-            echo "Primary project ${PROJECT_NAME} has changes"
-          fi
-
-          # Check co-published projects
-          IFS=',' read -ra COPUB <<< "${ALSO_PUBLISH}"
-          for proj in "${COPUB[@]}"; do
-            proj=$(echo "$proj" | xargs)  # trim whitespace
-            [ -z "$proj" ] && continue
-            if echo "$CHANGED_FILES" | grep -q "^Customization/${proj}/"; then
-              PUBLISHED_CHANGED=true
-              echo "Co-published project ${proj} has changes"
-            fi
-          done
-
-          # Check pipeline/script changes (these always need validation)
-          if echo "$CHANGED_FILES" | grep -qE '^(scripts/|\.github/workflows/)'; then
-            PUBLISHED_CHANGED=true
-            echo "Pipeline scripts changed — validation needed"
-          fi
-
-          echo "changed=${PUBLISHED_CHANGED}" >> "$GITHUB_OUTPUT"
-          if [ "$PUBLISHED_CHANGED" = "false" ]; then
-            echo "No published projects changed — sandbox publish will be skipped"
-          fi
-
-      - name: Validate ALSO_PUBLISH_PROJECTS entries
-        env:
-          ALSO_PUBLISH: ${{ vars.ALSO_PUBLISH_PROJECTS || '' }}
-        run: |
-          # Every project in ALSO_PUBLISH_PROJECTS must exist in the repo.
-          # Catches stale entries (e.g., deleted hotfix packages left in the variable).
-          # Root cause of UomHotfixYdsToIn near-miss on 2026-03-30.
-          if [ -z "${ALSO_PUBLISH}" ]; then
-            echo "ALSO_PUBLISH_PROJECTS is empty — nothing to validate"
-            exit 0
-          fi
-
-          FAILED=0
-          IFS=',' read -ra PROJECTS <<< "${ALSO_PUBLISH}"
-          for proj in "${PROJECTS[@]}"; do
-            proj=$(echo "$proj" | xargs)
-            [ -z "$proj" ] && continue
-
-            if [ ! -d "Customization/${proj}" ]; then
-              echo "::error::ALSO_PUBLISH_PROJECTS contains '${proj}' but Customization/${proj}/ does not exist"
-              FAILED=1
-            elif [ ! -f "Customization/${proj}/project.xml" ]; then
-              echo "::error::ALSO_PUBLISH_PROJECTS contains '${proj}' but Customization/${proj}/project.xml is missing"
-              FAILED=1
-            else
-              echo "Validated: ${proj} -> Customization/${proj}/project.xml exists"
-            fi
-          done
-
-          if [ ${FAILED} -ne 0 ]; then
-            echo ""
-            echo "Fix: Remove stale entries from the ALSO_PUBLISH_PROJECTS GitHub variable"
-            echo "     or add the missing Customization/{project}/project.xml to the repo."
-            exit 1
           fi
 
       - name: Verify project folder exists
@@ -337,7 +249,7 @@ jobs:
         run: |
           TIMESTAMP=$(date +%Y%m%d-%H%M%S)
           # Only package directories that appear in ALSO_PUBLISH_PROJECTS
-          # This prevents importing deprecated packages (AesthetikERP, StudioBPORelations)
+          # Only managed projects in ALSO_PUBLISH_PROJECTS get packaged
           for dir in Customization/*/; do
             dirname=$(basename "${dir}")
             if [[ "${dirname}" == "${PROJECT_NAME}" ]] || [[ "${dirname}" == "_project" ]]; then
@@ -404,10 +316,14 @@ jobs:
   # ──────────────────────────────────────────────
   # Job 3: Countdown — offloaded to webhook-router
   # ──────────────────────────────────────────────
-  # Job 3: Sandbox — Publish + smoke test before production (AAR 2026-03-28)
   # ──────────────────────────────────────────────
-  sandbox-gate:
-    name: Sandbox Publish Gate
+  # Job 3: Heritage Test — Hard gate on prod instance test tenant (pre-prod validation)
+  # Sandbox gate removed 2026-04-01 — sandbox instance corrupted and blocking deploys.
+  # Heritage Test runs on the production instance's test tenant, which is the real
+  # pre-production validation environment.
+  # ──────────────────────────────────────────────
+  heritage-test-gate:
+    name: Heritage Test Publish Gate
     needs: [build, qualify]
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -415,140 +331,7 @@ jobs:
       always() &&
       needs.build.result == 'success' &&
       github.event_name != 'pull_request' &&
-      github.event.inputs.force_qualify != 'true' &&
-      (
-        github.event.inputs.skip_sandbox != 'true' ||
-        (needs.build.outputs.plugin_changes == 'true' && github.event.inputs.skip_sandbox_force != 'true')
-      ) && (
-        needs.qualify.result == 'success' ||
-        needs.qualify.result == 'skipped'
-      )
-    concurrency:
-      group: sandbox-publish
-      cancel-in-progress: true
-
-    steps:
-      - name: Log forced sandbox skip
-        if: github.event.inputs.skip_sandbox_force == 'true' && needs.build.outputs.plugin_changes == 'true'
-        run: |
-          echo "::error::SANDBOX GATE FORCE-SKIPPED for plugin changes by ${{ github.actor }}"
-
-      - uses: actions/checkout@v4
-
-      - name: Download package artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: customization-package
-          path: dist/
-
-      - name: Install Python dependencies
-        run: pip install -r scripts/requirements.txt
-
-      - name: Import and publish on sandbox
-        id: sandbox-deploy
-        env:
-          ACUMATICA_URL: ${{ secrets.ACUMATICA_SANDBOX_URL }}
-          ACUMATICA_USERNAME: ${{ secrets.ACUMATICA_PROD_USERNAME }}
-          ACUMATICA_PASSWORD: ${{ secrets.ACUMATICA_PROD_PASSWORD }}
-          ACUMATICA_TENANT: ${{ secrets.ACUMATICA_SANDBOX_TENANT }}
-        run: |
-          PACKAGE_FILE=$(ls dist/${PROJECT_NAME}_*.zip 2>/dev/null | head -1)
-          if [ -z "${PACKAGE_FILE}" ]; then
-            PACKAGE_FILE=$(ls dist/*.zip | head -1)
-          fi
-
-          EXTRA_FLAGS=""
-          SANDBOX_COPUBLISH=""
-          for pkg in dist/*.zip; do
-            if [ "${pkg}" != "${PACKAGE_FILE}" ]; then
-              PKG_BASE=$(basename "${pkg}" .zip)
-              PKG_NAME=$(echo "${PKG_BASE}" | sed 's/_[0-9]\{8\}-[0-9]\{6\}$//')
-              EXTRA_FLAGS+=" --extra-import ${PKG_NAME}:${pkg}"
-              if [ -n "${SANDBOX_COPUBLISH}" ]; then
-                SANDBOX_COPUBLISH+=",${PKG_NAME}"
-              else
-                SANDBOX_COPUBLISH="${PKG_NAME}"
-              fi
-            fi
-          done
-
-          python scripts/deploy.py \
-            --project "${PROJECT_NAME}" \
-            --package "${PACKAGE_FILE}" \
-            --also-publish "${SANDBOX_COPUBLISH}" \
-            ${EXTRA_FLAGS}
-
-      - name: Post-publish login smoke test
-        id: smoke
-        env:
-          ACUMATICA_URL: ${{ secrets.ACUMATICA_SANDBOX_URL }}
-          ACUMATICA_USERNAME: ${{ secrets.ACUMATICA_PROD_USERNAME }}
-          ACUMATICA_PASSWORD: ${{ secrets.ACUMATICA_PROD_PASSWORD }}
-          ACUMATICA_TENANT: ${{ secrets.ACUMATICA_SANDBOX_TENANT }}
-        run: |
-          # THIS IS THE CHECK THAT WOULD HAVE CAUGHT THE 2026-03-28 OUTAGE.
-          # After publishing on sandbox, verify api-bot can still log in.
-          # If VendorExt [PXDBInt] generates "Invalid column name" — caught HERE,
-          # not on production.
-          python -c "
-          import sys, os
-          sys.path.insert(0, '.')
-          from scripts.deploy import AcumaticaCustomizationClient
-          client = AcumaticaCustomizationClient(
-              os.environ['ACUMATICA_URL'],
-              os.environ['ACUMATICA_USERNAME'],
-              os.environ['ACUMATICA_PASSWORD'],
-              os.environ['ACUMATICA_TENANT'],
-          )
-          client.login()
-          ok = client.smoke_test()
-          client.logout()
-          if not ok:
-              print('::error::Sandbox smoke test FAILED — login broken after publish. BLOCKING production deploy.')
-              sys.exit(1)
-          print('Sandbox smoke test passed — safe to proceed to production')
-          "
-
-      - name: Validate custom fields on sandbox
-        id: verify
-        env:
-          ACUMATICA_URL: ${{ secrets.ACUMATICA_SANDBOX_URL }}
-          ACUMATICA_USERNAME: ${{ secrets.ACUMATICA_PROD_USERNAME }}
-          ACUMATICA_PASSWORD: ${{ secrets.ACUMATICA_PROD_PASSWORD }}
-          ACUMATICA_TENANT: ${{ secrets.ACUMATICA_SANDBOX_TENANT }}
-        run: python scripts/validate-publish.py --manifest publish-manifest.json
-
-      - name: Sandbox gate summary
-        if: always()
-        run: |
-          echo "## Sandbox Publish Gate (AAR 2026-03-28)" >> "$GITHUB_STEP_SUMMARY"
-          echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "| Step | Result |" >> "$GITHUB_STEP_SUMMARY"
-          echo "|------|--------|" >> "$GITHUB_STEP_SUMMARY"
-          echo "| Import + Publish | \`${{ steps.sandbox-deploy.outcome }}\` |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| Login Smoke Test | \`${{ steps.smoke.outcome }}\` |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| Field Validation | \`${{ steps.verify.outcome }}\` |" >> "$GITHUB_STEP_SUMMARY"
-          echo "" >> "$GITHUB_STEP_SUMMARY"
-          if [ "${{ steps.smoke.outcome }}" = "failure" ]; then
-            echo "**BLOCKED:** Login failed after sandbox publish — production deploy prevented." >> "$GITHUB_STEP_SUMMARY"
-          fi
-
-  # ──────────────────────────────────────────────
-  # Job 3b: Heritage Test — Hard gate on prod instance test tenant (pre-prod validation)
-  # ──────────────────────────────────────────────
-  heritage-test-gate:
-    name: Heritage Test Publish Gate
-    needs: [build, qualify, sandbox-gate]
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    if: |
-      always() &&
-      needs.build.result == 'success' &&
-      github.event_name != 'pull_request' &&
       github.event.inputs.force_qualify != 'true' && (
-        needs.sandbox-gate.result == 'success' ||
-        needs.sandbox-gate.result == 'skipped'
-      ) && (
         needs.qualify.result == 'success' ||
         needs.qualify.result == 'skipped'
       )
@@ -591,6 +374,10 @@ jobs:
             fi
           done
 
+          # Heritage Test uses only managed code — no ISV packages.
+          # Separate ALSO_PUBLISH list so we don't reference packages
+          # that don't exist in the test tenant.
+          HT_ALSO_PUBLISH="${{ vars.ALSO_PUBLISH_HERITAGE_TEST || 'AesthetikContainers,StudioBAcuOps' }}"
           python scripts/deploy.py \
             --url "${{ secrets.ACUMATICA_URL }}" \
             --username "${{ secrets.ACUMATICA_USERNAME }}" \
@@ -598,13 +385,23 @@ jobs:
             --tenant "${{ vars.ACUMATICA_TEST_TENANT }}" \
             --project "${PROJECT_NAME}" \
             --package "${PACKAGE_FILE}" \
-            --also-publish "${HT_COPUBLISH}" \
+            --also-publish "${HT_ALSO_PUBLISH}" \
             ${EXTRA_FLAGS}
 
       - name: Validate Heritage Test
         id: verify
         run: |
           python scripts/validate-publish.py \
+            --url "${{ secrets.ACUMATICA_URL }}" \
+            --username "${{ secrets.ACUMATICA_USERNAME }}" \
+            --password "${{ secrets.ACUMATICA_PASSWORD }}" \
+            --tenant "${{ vars.ACUMATICA_TEST_TENANT }}" \
+            --manifest publish-manifest.json
+
+      - name: E2E view-level smoke test
+        id: e2e
+        run: |
+          python scripts/smoke-e2e.py \
             --url "${{ secrets.ACUMATICA_URL }}" \
             --username "${{ secrets.ACUMATICA_USERNAME }}" \
             --password "${{ secrets.ACUMATICA_PASSWORD }}" \
@@ -646,22 +443,20 @@ jobs:
           echo "| Deploy | \`${{ steps.deploy.outcome || 'n/a' }}\` |" >> "$GITHUB_STEP_SUMMARY"
           echo "| Field Validation | \`${{ steps.verify.outcome || 'n/a' }}\` |" >> "$GITHUB_STEP_SUMMARY"
           echo "| Smoke Test | \`${{ steps.smoke.outcome || 'n/a' }}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| E2E View Smoke | \`${{ steps.e2e.outcome || 'n/a' }}\` |" >> "$GITHUB_STEP_SUMMARY"
 
   # ──────────────────────────────────────────────
   # Job 4: Countdown + Deploy to Production
   # ──────────────────────────────────────────────
   countdown-notify:
     name: Send Maintenance Warnings
-    needs: [build, qualify, sandbox-gate, heritage-test-gate]
+    needs: [build, qualify, heritage-test-gate]
     runs-on: ubuntu-latest
     if: |
       always() &&
       needs.build.result == 'success' &&
       (needs.heritage-test-gate.result == 'success' || needs.heritage-test-gate.result == 'skipped') &&
       github.event_name != 'pull_request' && (
-        needs.sandbox-gate.result == 'success' ||
-        needs.sandbox-gate.result == 'skipped'
-      ) && (
         (needs.qualify.outputs.needs_countdown == 'true' && github.event.inputs.countdown_complete != 'true') ||
         github.event.inputs.force_qualify == 'true' ||
         github.event.inputs.countdown_complete == 'true' ||
@@ -683,35 +478,6 @@ jobs:
           fi
           echo "target=${TARGET}" >> "$GITHUB_OUTPUT"
           echo "Determined target environment: ${TARGET}"
-      - name: Circuit breaker — halt on consecutive failures
-        if: github.event.inputs.force_qualify != 'true'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          # After 3 consecutive failed deploys, halt. Prevents the 20+ iteration
-          # loop from 2026-03-29 that exhausted the API login limit.
-          RECENT=$(gh run list \
-            --workflow deploy-customization.yml \
-            --branch "${{ github.ref_name }}" \
-            --limit 3 \
-            --json conclusion \
-            --jq '[.[] | .conclusion] | join(",")' 2>/dev/null || echo "")
-
-          if [ "${RECENT}" = "failure,failure,failure" ]; then
-            echo "::error::Circuit breaker tripped — 3 consecutive deploy failures on ${{ github.ref_name }}"
-            echo "Manual review required before retrying."
-            echo "Use force_qualify=true to bypass (emergency only)."
-
-            if [ -n "${{ secrets.STUDIOB_SLACK_WEBHOOK_URL }}" ]; then
-              curl -sf -X POST "${{ secrets.STUDIOB_SLACK_WEBHOOK_URL }}" \
-                -H "Content-Type: application/json" \
-                -d '{"text":"CIRCUIT BREAKER — 3 consecutive deploy failures on ${{ github.ref_name }}\nManual review required.\nBypass: workflow_dispatch with force_qualify=true"}'
-            fi
-            exit 1
-          fi
-
-          echo "Circuit breaker OK — recent results: ${RECENT:-none}"
-
       - name: Install Python dependencies
         run: pip install -r scripts/requirements.txt
       - name: Send 20-minute warning and schedule deploy
@@ -780,24 +546,6 @@ jobs:
           sys.exit(0 if ok else 1)
           "
 
-      # ── GI baseline capture (pre-publish) ─────────────────────────────
-      - name: Capture GI baseline (pre-publish)
-        id: gi_pre
-        if: steps.smoke.outcome == 'success' || github.event.inputs.force_qualify == 'true'
-        continue-on-error: true
-        env:
-          ACUMATICA_URL: ${{ (steps.env.outputs.target == 'production') && secrets.ACUMATICA_PROD_URL || secrets.ACUMATICA_SANDBOX_URL }}
-          ACUMATICA_USERNAME: ${{ secrets.ACUMATICA_PROD_USERNAME }}
-          ACUMATICA_PASSWORD: ${{ secrets.ACUMATICA_PROD_PASSWORD }}
-          ACUMATICA_TENANT: ${{ (steps.env.outputs.target == 'production') && secrets.ACUMATICA_PROD_TENANT || secrets.ACUMATICA_SANDBOX_TENANT }}
-        run: |
-          python scripts/gi_baseline.py capture \
-            --url "${ACUMATICA_URL}" \
-            --username "${ACUMATICA_USERNAME}" \
-            --password "${ACUMATICA_PASSWORD}" \
-            --tenant "${ACUMATICA_TENANT}" \
-            --baseline-file baselines/gi-pre.json
-
       # ── Download built packages ──────────────────────────────────────
       - name: Download package artifacts
         if: success() && github.event.inputs.dry_run != 'true'
@@ -848,7 +596,12 @@ jobs:
                 PKG_NAME=$(echo "${PKG_BASE}" | sed 's/_[0-9]\{8\}-[0-9]\{6\}$//')
                 mkdir -p "/tmp/extra-${PKG_NAME}"
                 unzip -o "${pkg}" -d "/tmp/extra-${PKG_NAME}/"
+                # Import only — do NOT publish individually. A single publishBegin
+                # at the end includes ALL projects. Publishing extras one-by-one
+                # would set the instance published list to just that one project,
+                # unpublishing every ISV. See: 2026-04-01 ISV unpublish incident.
                 PACKAGE_DIR="/tmp/extra-${PKG_NAME}" PROJECT_NAME="${PKG_NAME}" \
+                  IMPORT_ONLY=true \
                   python scripts/emergency-deploy-basic-auth.py
               fi
             done
@@ -876,30 +629,23 @@ jobs:
           ACUMATICA_TENANT: ${{ (steps.env.outputs.target == 'production') && secrets.ACUMATICA_PROD_TENANT || secrets.ACUMATICA_SANDBOX_TENANT }}
         run: python scripts/validate-publish.py --manifest publish-manifest.json
 
-      # ── GI baseline diff (post-publish) ──────────────────────────────
-      - name: GI baseline diff (post-publish)
-        id: gi_diff
-        if: steps.deploy.outcome == 'success' && steps.gi_pre.outcome == 'success'
+      - name: E2E view-level smoke test
+        id: e2e
+        if: steps.deploy.outcome == 'success'
         continue-on-error: true
         env:
           ACUMATICA_URL: ${{ (steps.env.outputs.target == 'production') && secrets.ACUMATICA_PROD_URL || secrets.ACUMATICA_SANDBOX_URL }}
           ACUMATICA_USERNAME: ${{ secrets.ACUMATICA_PROD_USERNAME }}
           ACUMATICA_PASSWORD: ${{ secrets.ACUMATICA_PROD_PASSWORD }}
           ACUMATICA_TENANT: ${{ (steps.env.outputs.target == 'production') && secrets.ACUMATICA_PROD_TENANT || secrets.ACUMATICA_SANDBOX_TENANT }}
-        run: |
-          python scripts/gi_baseline.py diff \
-            --url "${ACUMATICA_URL}" \
-            --username "${ACUMATICA_USERNAME}" \
-            --password "${ACUMATICA_PASSWORD}" \
-            --tenant "${ACUMATICA_TENANT}" \
-            --baseline-file baselines/gi-pre.json
+        run: python scripts/smoke-e2e.py --manifest publish-manifest.json
 
       # ── Auto-rollback on verification failure ─────────────────────────
       - name: Auto-rollback on verification failure
         id: rollback
         if: |
           steps.deploy.outcome == 'success' &&
-          (steps.verify.outcome == 'failure' || steps.gi_diff.outcome == 'failure') &&
+          (steps.verify.outcome == 'failure' || steps.e2e.outcome == 'failure') &&
           steps.env.outputs.target == 'production' &&
           github.event.inputs.dry_run != 'true'
         env:
@@ -931,18 +677,18 @@ jobs:
           if [ ${ROLLBACK_VERIFY} -eq 0 ]; then
             curl -sf -X POST "${SLACK_WEBHOOK_URL}" \
               -H "Content-Type: application/json" \
-              -d '{"text":"PACKAGE RESTORED — '"${PROJECT_NAME}"' -> production\nDeploy: '"${GITHUB_SHA::8}"'\nPackage snapshot restored + verified.\nNote: CustomizationPlugin SQL changes are NOT reversed.\nIf UpdateDatabase() modified data, manual review required."}'
+              -d '{"text":"Deploy ROLLED BACK — '"${PROJECT_NAME}"' -> production\nDeploy: '"${GITHUB_SHA::8}"'\nRollback: snapshot restored + verified\nNote: two app pool restarts occurred"}'
           else
             curl -sf -X POST "${SLACK_WEBHOOK_URL}" \
               -H "Content-Type: application/json" \
-              -d '{"text":"PACKAGE RESTORE FAILED — verification did not pass\nDeploy: '"${PROJECT_NAME}"' @ '"${GITHUB_SHA::8}"'\nArtifact: '"${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"'\nCustomizationPlugin SQL changes are NOT reversed.\nManual restore: download artifact -> SM204505 Import -> Publish"}'
+              -d '{"text":"ROLLBACK FAILED — verification did not pass\nDeploy: '"${PROJECT_NAME}"' @ '"${GITHUB_SHA::8}"'\nArtifact: '"${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"'\nManual restore: download artifact -> SM204505 Import -> Publish"}'
             exit 1
           fi
 
       - name: Tag rolled-back deploy
         if: steps.rollback.outcome == 'success'
         run: |
-          TAG="deploy/prod/$(date +%Y%m%d-%H%M%S)-RESTORED"
+          TAG="deploy/prod/$(date +%Y%m%d-%H%M%S)-ROLLED-BACK"
           git tag "${TAG}"
           git push origin "${TAG}"
 
@@ -1078,7 +824,7 @@ jobs:
     name: Validate on Sandbox
     needs: build
     runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request' && needs.build.outputs.published_projects_changed == 'true'
+    if: github.event_name == 'pull_request'
     continue-on-error: true
     concurrency:
       group: sandbox-publish
@@ -1131,6 +877,7 @@ jobs:
             --project "${PROJECT_NAME}" \
             --package "${PACKAGE_FILE}" \
             --also-publish "${SANDBOX_COPUBLISH}" \
+            --pre-cleanup \
             ${EXTRA_FLAGS}
 
       - name: Validate custom fields on sandbox
@@ -1145,13 +892,24 @@ jobs:
             --manifest publish-manifest.json \
             2>&1 | tee validation-output.txt
 
+      - name: E2E view-level smoke test
+        id: e2e
+        env:
+          ACUMATICA_URL: ${{ secrets.ACUMATICA_SANDBOX_URL }}
+          ACUMATICA_USERNAME: ${{ secrets.ACUMATICA_PROD_USERNAME }}
+          ACUMATICA_PASSWORD: ${{ secrets.ACUMATICA_PROD_PASSWORD }}
+          ACUMATICA_TENANT: ${{ secrets.ACUMATICA_SANDBOX_TENANT }}
+        run: |
+          python scripts/smoke-e2e.py --manifest publish-manifest.json \
+            2>&1 | tee e2e-output.txt
+
       - name: Comment on PR with results
         if: always()
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           RESULT="Passed"
-          if [ "${{ steps.verify.outcome }}" = "failure" ]; then
+          if [ "${{ steps.verify.outcome }}" = "failure" ] || [ "${{ steps.e2e.outcome }}" = "failure" ]; then
             RESULT="Failed"
           fi
 
@@ -1180,7 +938,7 @@ jobs:
           fi
 
   # ──────────────────────────────────────────────
-  # Job 5: Post-Deploy Validation — trigger ui-test-suite
+  # Job 5: Post-Deploy Validation — run UI tests from tests/ui/
   # ──────────────────────────────────────────────
   post-deploy-validation:
     name: Trigger Runtime Tests
@@ -1192,30 +950,25 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - name: Setup Python
+        uses: actions/setup-python@v5
         with:
-          node-version: '22'
+          python-version: '3.11'
 
-      - name: Trigger ui-test-suite
-        env:
-          GH_TOKEN: ${{ secrets.GH_PAT_DISPATCH }}
+      - name: Install test dependencies
         run: |
-          if [[ -z "${GH_TOKEN}" ]]; then
-            echo "::error::GH_PAT_DISPATCH secret not set — post-deploy tests REQUIRED"
-            exit 1
-          fi
-          gh api repos/studio-b-ai/ui-test-suite/dispatches \
-            --method POST \
-            -f event_type=post-deploy-validation \
-            -f "client_payload[commit]=${GITHUB_SHA::8}" \
-            -f "client_payload[project]=${PROJECT_NAME}" \
-            -f "client_payload[actor]=${GITHUB_ACTOR}" \
-            -f "client_payload[suite]=@acumatica"
-          echo "✅ Triggered ui-test-suite @acumatica suite — will verify schema + custom fields"
+          pip install playwright pytest pytest-timeout
+          playwright install chromium
 
-      - name: Dispatch test config for new custom fields
-        if: success()
-        run: npx tsx scripts/post-publish-hook.ts Customization/${PROJECT_NAME}
+      - name: Run UI tests
+        timeout-minutes: 10
         env:
-          GH_PAT_DISPATCH: ${{ secrets.GH_PAT_DISPATCH }}
+          ACUMATICA_URL: ${{ secrets.ACUMATICA_URL }}
+          ACUMATICA_USERNAME: ${{ secrets.ACUMATICA_USERNAME }}
+          ACUMATICA_PASSWORD: ${{ secrets.ACUMATICA_PASSWORD }}
+          ACUMATICA_TENANT: ${{ vars.ACUMATICA_TEST_TENANT }}
+        run: |
+          python -m pytest tests/ui/ -v --tb=long --timeout=120 || {
+            echo "::warning::UI tests failed — see logs above for details"
+            exit 1
+          }

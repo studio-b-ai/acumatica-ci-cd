@@ -47,8 +47,8 @@
 
 | Variable | Purpose |
 |----------|---------|
-| `CUSTOMIZATION_PROJECT_NAME` | Primary project (e.g., `HeritageFabricsPOv5`) |
-| `ALSO_PUBLISH_PROJECTS` | Comma-separated co-publish list (e.g., `HeritageFabricsPOv5,StudioBPORelations`) |
+| `CUSTOMIZATION_PROJECT_NAME` | Primary project (`AesthetikWMS`) |
+| `ALSO_PUBLISH_PROJECTS` | Comma-separated co-publish list — managed projects only (e.g., `AesthetikContainers,StudioBAcuOps`) |
 
 ---
 
@@ -90,14 +90,16 @@ If login succeeds but StockItem query fails, check for `NullReferenceException` 
 
 ### Orphans found
 
-Unknown customization projects exist on the Acumatica instance that are not in the `ALSO_PUBLISH_PROJECTS` list. This matters because co-publish must include all active projects to detect conflicts.
+Unknown customization projects exist on the Acumatica instance that are not in the instance manifest. This matters because untracked projects can cause unexpected compile interactions.
 
 **Resolution:**
 1. Log into Acumatica as admin
 2. Navigate to SM204505 (Customization Projects)
 3. Identify the orphan project name(s) from the qualify output
 4. Determine if they are legitimate (ISV packages, VAR packages) or leftover from failed experiments
-5. Either add them to `ALSO_PUBLISH_PROJECTS` in GitHub Variables, or delete them from SM204505
+5. Add them to `instance-manifest.json` with the appropriate category (isv, one-time, etc.), or delete them from SM204505
+
+**Note:** `ALSO_PUBLISH_PROJECTS` should only contain managed projects deployed via CI/CD. ISV/vendor packages stay published via `isMergeWithExistingPackages=True` — do NOT add them to the also-publish list.
 
 ### Cooldown not met
 
@@ -226,8 +228,8 @@ python scripts/deploy.py \
   --username $USERNAME \
   --password $PASSWORD \
   --tenant "$TENANT" \
-  --project HeritageFabricsPOv5 \
-  --package dist/HeritageFabricsPOv5.zip \
+  --project AesthetikWMS \
+  --package dist/AesthetikWMS.zip \
   --is-replace-if-exists
 ```
 
@@ -317,7 +319,7 @@ Use this before every production deploy:
 - [ ] Maintenance mode enabled on webhook-router
 - [ ] No other CI/CD runs in progress (check GitHub Actions)
 - [ ] Changes reviewed and merged to `main`
-- [ ] `ALSO_PUBLISH_PROJECTS` includes all active customization projects
+- [ ] `ALSO_PUBLISH_PROJECTS` includes only managed projects (currently: `AesthetikContainers,StudioBAcuOps`)
 - [ ] `publish-manifest.json` updated if new custom fields were added
 
 ## Post-Deploy Checklist

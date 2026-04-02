@@ -29,9 +29,9 @@ Usage:
   # Validate only (no publish)
   python deploy.py --validate-only --project MyProject --package dist/MyProject.zip
 
-  # Co-publish with other active projects
-  python deploy.py --project MyProject --package dist/MyProject.zip \\
-    --also-publish VARPackage ShopifyConnector
+  # Co-publish with other managed projects
+  python deploy.py --project AesthetikWMS --package dist/AesthetikWMS.zip \\
+    --also-publish AesthetikContainers StudioBAcuOps
 """
 
 import argparse
@@ -308,8 +308,15 @@ class AcumaticaCustomizationClient:
         _log("Pre-flight passed", style="ok")
 
     def cleanup_orphan(self, project_name: str) -> bool:
-        """Attempt to delete an orphaned project after failed import."""
+        """Attempt to delete a project, with fallback for corrupted CustProject rows.
+
+        If the standard delete API fails (corrupted CustProject entry returns
+        NullReferenceException), falls back to importing a minimal empty project
+        to overwrite the corrupted row, then deletes the clean entry.
+        """
         _log(f"Cleaning up potentially orphaned project '{project_name}'...", style="warn")
+
+        # Attempt 1: standard delete
         try:
             resp = self.session.post(
                 f"{self.base_url}/CustomizationApi/delete",
@@ -319,23 +326,63 @@ class AcumaticaCustomizationClient:
             if resp.status_code in (200, 204):
                 _log(f"Cleaned up orphan '{project_name}'", style="ok")
                 return True
-        except Exception:
-            pass
-        _log(f"Could not clean up orphan '{project_name}' — may need manual cleanup", style="warn")
+            _log(f"Delete returned HTTP {resp.status_code}: {resp.text[:200]}", style="warn")
+        except Exception as e:
+            _log(f"Delete threw: {e}", style="warn")
+
+        # Attempt 2: overwrite corrupted entry with a minimal empty project,
+        # then delete. The import overwrites the corrupted CustProject row with
+        # a clean one, making deletion possible.
+        _log(f"Attempting overwrite-then-delete for '{project_name}'...", style="warn")
+        try:
+            minimal_xml = (
+                '<Customization level="0" description="cleanup placeholder" '
+                'product-version="24.208"><Graph /></Customization>'
+            )
+            content_b64 = base64.b64encode(minimal_xml.encode("utf-8")).decode("ascii")
+            import_resp = self.session.post(
+                f"{self.base_url}/CustomizationApi/Import",
+                json={
+                    "projectName": project_name,
+                    "projectDescription": "cleanup placeholder",
+                    "projectLevel": 0,
+                    "isReplaceIfExists": True,
+                    "projectContentBase64": content_b64,
+                },
+                timeout=30,
+            )
+            if import_resp.status_code in (200, 204):
+                _log(f"Overwrote corrupted entry for '{project_name}', now deleting...", style="warn")
+                del_resp = self.session.post(
+                    f"{self.base_url}/CustomizationApi/delete",
+                    json={"projectName": project_name},
+                    timeout=30,
+                )
+                if del_resp.status_code in (200, 204):
+                    _log(f"Cleaned up '{project_name}' via overwrite-then-delete", style="ok")
+                    return True
+                _log(f"Post-overwrite delete returned HTTP {del_resp.status_code}: {del_resp.text[:200]}", style="warn")
+            else:
+                _log(f"Overwrite import returned HTTP {import_resp.status_code}: {import_resp.text[:200]}", style="warn")
+        except Exception as e:
+            _log(f"Overwrite-then-delete threw: {e}", style="warn")
+
+        _log(f"Could not clean up '{project_name}' — manual SM204505 cleanup required", style="warn")
         return False
 
     def publish(
         self,
         project_names: list[str],
         poll_interval: int = 10,
-        poll_timeout: int = 600,
+        poll_timeout: int = 1800,
         validation_only: bool = False,
+        merge_with_existing: bool = True,
     ) -> None:
         """Publish one or more customization projects and wait for completion."""
-        _log(f"Publishing: {', '.join(project_names)}")
+        _log(f"Publishing: {', '.join(project_names)} (merge={merge_with_existing})")
 
         payload = {
-            "isMergeWithExistingPackages": False,  # Clean compile — no ghost DAC extensions from old imports
+            "isMergeWithExistingPackages": merge_with_existing,
             "isOnlyValidation": validation_only,
             "isOnlyDbUpdates": False,
             "projectNames": project_names,
@@ -901,6 +948,11 @@ def main():
         help="Additional package NAME:FILE to import (repeatable)",
     )
     parser.add_argument(
+        "--no-merge",
+        action="store_true",
+        help="Use isMergeWithExistingPackages=False (clean compile, sandbox only)",
+    )
+    parser.add_argument(
         "--rollback",
         action="store_true",
         help="Rollback: download current package from instance, find previous git tag, "
@@ -915,6 +967,13 @@ def main():
         "--rollback-from-snapshot",
         default="",
         help="Path to a .zip snapshot to restore (skips git tag lookup)",
+    )
+    parser.add_argument(
+        "--pre-cleanup",
+        action="store_true",
+        help="Delete project from instance before importing. Fixes NullReferenceException "
+             "corruption in CustProject table (2026-03-22 / 2026-04-01 incidents). "
+             "Safe for sandbox — import immediately re-creates the project.",
     )
 
     args = parser.parse_args()
@@ -965,6 +1024,19 @@ def main():
                 )
                 _log(f"Backup saved: {backup_path}", style="ok")
 
+            # Pre-cleanup: delete projects before import to clear corrupted CustProject state.
+            # The 2026-03-22 and 2026-04-01 incidents showed that NullReferenceException
+            # during import means the CustProject table entry is corrupted — the only
+            # fix is to delete and re-import. Safe for sandbox; the import immediately
+            # re-creates the project.
+            if args.pre_cleanup and args.package:
+                _log("Pre-cleanup: deleting projects before import (--pre-cleanup)...", style="warn")
+                client.cleanup_orphan(args.project)
+                for extra in args.extra_import:
+                    if ":" in extra:
+                        extra_name = extra.split(":", 1)[0]
+                        client.cleanup_orphan(extra_name)
+
             # Import new package
             if args.package:
                 # Pre-flight validation
@@ -996,6 +1068,7 @@ def main():
                         project_names=all_projects,
                         poll_interval=args.poll_interval,
                         poll_timeout=args.poll_timeout,
+                        merge_with_existing=not args.no_merge,
                     )
 
             # Post-publish smoke test

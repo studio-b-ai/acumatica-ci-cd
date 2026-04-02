@@ -14,6 +14,9 @@ on:
           - verify
           - grant-access
           - discover-access-screens
+          - fix-entities
+          - diagnose
+          - get-schema
 
 jobs:
   configure:
@@ -40,6 +43,12 @@ jobs:
             python scripts/configure-container-endpoint.py --schema
           elif [ "${{ inputs.mode }}" = "grant-access" ]; then
             python scripts/configure-container-endpoint.py --grant
+          elif [ "${{ inputs.mode }}" = "fix-entities" ]; then
+            python scripts/fix-container-entity-names.py
+          elif [ "${{ inputs.mode }}" = "diagnose" ]; then
+            python scripts/diagnose-endpoint.py
+          elif [ "${{ inputs.mode }}" = "get-schema" ]; then
+            python scripts/get-sm207060-schema.py
           else
             python scripts/configure-container-endpoint.py --${{ inputs.mode }}
           fi
@@ -49,6 +58,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: schemas
-          path: /tmp/sm*.xml
+          path: /tmp/sm207060-schema.xml
           retention-days: 7
           if-no-files-found: ignore

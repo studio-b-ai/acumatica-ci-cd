@@ -357,42 +357,27 @@ namespace StudioB.Containers
     public sealed class StockItemExt : PXCacheExtension<InventoryItem>
     {
         public static bool IsActive() => true;
-        #region UsrHTSCode
-        public abstract class usrHTSCode : PX.Data.BQL.BqlString.Field<usrHTSCode> { }
-        [PXDBString(12, IsUnicode = true)]
-        [PXUIField(DisplayName = "HTS Code", Visibility = PXUIVisibility.SelectorVisible)]
-        public string UsrHTSCode { get; set; }
-        #endregion
-        #region UsrDutyRate
-        public abstract class usrDutyRate : PX.Data.BQL.BqlDecimal.Field<usrDutyRate> { }
-        [PXDBDecimal(4)]
-        [PXDefault(System.TypeCode.Decimal, "0.0000")]
-        [PXUIField(DisplayName = "Duty Rate %", Visibility = PXUIVisibility.SelectorVisible)]
-        public decimal? UsrDutyRate { get; set; }
-        #endregion
-        #region UsrCountryOfOrigin
-        public abstract class usrCountryOfOrigin : PX.Data.BQL.BqlString.Field<usrCountryOfOrigin> { }
-        [PXDBString(2, IsFixed = true, IsUnicode = true)]
-        [PXUIField(DisplayName = "Country of Origin", Visibility = PXUIVisibility.SelectorVisible)]
-        public string UsrCountryOfOrigin { get; set; }
-        #endregion
         #region UsrFiberContent
         public abstract class usrFiberContent : PX.Data.BQL.BqlString.Field<usrFiberContent> { }
         [PXDBString(100, IsUnicode = true)]
         [PXUIField(DisplayName = "Fiber Content", Visibility = PXUIVisibility.SelectorVisible)]
         public string UsrFiberContent { get; set; }
         #endregion
+        #region UsrDutyRate
+        public abstract class usrDutyRate : PX.Data.BQL.BqlDecimal.Field<usrDutyRate> { }
+        [PXDBDecimal(4)]
+        [PXUIField(DisplayName = "Duty Rate")]
+        public decimal? UsrDutyRate { get; set; }
+        #endregion
         #region UsrPreferentialTariff
         public abstract class usrPreferentialTariff : PX.Data.BQL.BqlBool.Field<usrPreferentialTariff> { }
         [PXDBBool]
-        [PXDefault(false)]
         [PXUIField(DisplayName = "Preferential Tariff")]
         public bool? UsrPreferentialTariff { get; set; }
         #endregion
         #region UsrFreightClass
         public abstract class usrFreightClass : PX.Data.BQL.BqlString.Field<usrFreightClass> { }
-        [PXDBString(10, IsUnicode = true)]
-        [PXDefault("70")]
+        [PXDBString(15, IsUnicode = true)]
         [PXUIField(DisplayName = "Freight Class")]
         public string UsrFreightClass { get; set; }
         #endregion
@@ -412,21 +397,21 @@ namespace StudioB.Containers
         #region UsrActualDutyAmt
         public abstract class usrActualDutyAmt : PX.Data.BQL.BqlDecimal.Field<usrActualDutyAmt> { }
         [PXDBDecimal(2)]
-        [PXDefault(System.TypeCode.Decimal, "0.00")]
+        [PXDefault(System.TypeCode.Decimal, "0.00", PersistingCheck = PXPersistingCheck.Nothing)]
         [PXUIField(DisplayName = "Actual Duty", Visibility = PXUIVisibility.SelectorVisible)]
         public decimal? UsrActualDutyAmt { get; set; }
         #endregion
         #region UsrActualFreightAmt
         public abstract class usrActualFreightAmt : PX.Data.BQL.BqlDecimal.Field<usrActualFreightAmt> { }
         [PXDBDecimal(2)]
-        [PXDefault(System.TypeCode.Decimal, "0.00")]
+        [PXDefault(System.TypeCode.Decimal, "0.00", PersistingCheck = PXPersistingCheck.Nothing)]
         [PXUIField(DisplayName = "Freight Allocated", Visibility = PXUIVisibility.SelectorVisible)]
         public decimal? UsrActualFreightAmt { get; set; }
         #endregion
         #region UsrBrokerageAmt
         public abstract class usrBrokerageAmt : PX.Data.BQL.BqlDecimal.Field<usrBrokerageAmt> { }
         [PXDBDecimal(2)]
-        [PXDefault(System.TypeCode.Decimal, "0.00")]
+        [PXDefault(System.TypeCode.Decimal, "0.00", PersistingCheck = PXPersistingCheck.Nothing)]
         [PXUIField(DisplayName = "Brokerage", Visibility = PXUIVisibility.SelectorVisible)]
         public decimal? UsrBrokerageAmt { get; set; }
         #endregion
@@ -435,18 +420,6 @@ namespace StudioB.Containers
         [PXDecimal(4)]
         [PXUIField(DisplayName = "Landed Cost/Unit", Enabled = false)]
         public decimal? UsrLandedCostPerUnit { get; set; }
-        #endregion
-        #region UsrHTSCode
-        public abstract class usrHTSCode : PX.Data.BQL.BqlString.Field<usrHTSCode> { }
-        [PXDBString(12, IsUnicode = true)]
-        [PXUIField(DisplayName = "HTS Code", Enabled = false)]
-        public string UsrHTSCode { get; set; }
-        #endregion
-        #region UsrCountryOfOrigin
-        public abstract class usrCountryOfOrigin : PX.Data.BQL.BqlString.Field<usrCountryOfOrigin> { }
-        [PXDBString(2, IsFixed = true, IsUnicode = true)]
-        [PXUIField(DisplayName = "Origin", Enabled = false)]
-        public string UsrCountryOfOrigin { get; set; }
         #endregion
     }
 }
@@ -474,34 +447,7 @@ namespace StudioB.Containers
             if (item == null) return;
             var itemExt = PXCache<InventoryItem>.GetExtension<StockItemExt>((InventoryItem)item);
             if (itemExt == null) return;
-            lineExt.UsrHTSCode = itemExt.UsrHTSCode;
-            lineExt.UsrCountryOfOrigin = itemExt.UsrCountryOfOrigin;
-            if (itemExt.UsrDutyRate.GetValueOrDefault() > 0 && e.Row.ExtCost.GetValueOrDefault() > 0)
-            {
-                lineExt.UsrActualDutyAmt = e.Row.ExtCost.Value * (itemExt.UsrDutyRate.Value / 100m);
-            }
             e.Cache.Update(e.Row);
-        }
-
-        protected virtual void _(Events.FieldUpdated<POReceiptLine, POReceiptLine.extCost> e)
-        {
-            if (e.Row == null) return;
-            var lineExt = PXCache<POReceiptLine>.GetExtension<POReceiptLineExt>(e.Row);
-            if (lineExt == null) return;
-            var item = PXSelect<InventoryItem,
-                Where<InventoryItem.inventoryID, Equal<Required<InventoryItem.inventoryID>>>>
-                .Select(Base, e.Row.InventoryID);
-            if (item == null) return;
-            var itemExt = PXCache<InventoryItem>.GetExtension<StockItemExt>((InventoryItem)item);
-            if (itemExt == null || itemExt.UsrDutyRate.GetValueOrDefault() == 0) return;
-            var oldExtCost = (decimal?)e.OldValue ?? 0m;
-            var oldAutoCalcDuty = oldExtCost * (itemExt.UsrDutyRate.Value / 100m);
-            if (lineExt.UsrActualDutyAmt == null ||
-                System.Math.Abs(lineExt.UsrActualDutyAmt.Value - System.Math.Round(oldAutoCalcDuty, 2)) < 0.01m)
-            {
-                lineExt.UsrActualDutyAmt = e.Row.ExtCost.GetValueOrDefault() * (itemExt.UsrDutyRate.Value / 100m);
-                lineExt.UsrActualDutyAmt = System.Math.Round(lineExt.UsrActualDutyAmt.Value, 2);
-            }
         }
 
         protected virtual void _(Events.RowSelected<POReceiptLine> e)
@@ -542,7 +488,7 @@ namespace StudioB.Containers
         #region UsrIncludeInContainer
         public abstract class usrIncludeInContainer : BqlBool.Field<usrIncludeInContainer> { }
         [PXDBBool]
-        [PXDefault(false)]
+        [PXDefault(false, PersistingCheck = PXPersistingCheck.Nothing)]
         [PXUIField(DisplayName = "Include in Container")]
         public bool? UsrIncludeInContainer { get; set; }
         #endregion
@@ -563,7 +509,7 @@ namespace StudioB.Containers
     <Graph ClassName="VendorExt" Source="#CDATA" IsNew="True" FileType="NewFile">
         <CDATA name="Source"><![CDATA[using PX.Data;
 using PX.Data.BQL;
-using PX.Objects.AP;
+using PX.Objects.CR;
 using PX.Objects.IN;
 
 namespace StudioB.Containers
@@ -571,14 +517,16 @@ namespace StudioB.Containers
     /// <summary>
     /// Replaces IIG UsrIGCMDefaultInTransitSiteID on Vendor.
     /// Default in-transit warehouse for vendor ocean containers.
+    /// Targets BAccount (not Vendor) because columns live on BAccount table,
+    /// and Vendor maps to Vendor_Vendor view which does not expose Usr* columns.
     /// </summary>
-    public sealed class VendorExt : PXCacheExtension<Vendor>
+    public sealed class BAccountContainerExt : PXCacheExtension<BAccount>
     {
         public static bool IsActive() => true;
 
         #region UsrDefaultInTransitSiteID
         public abstract class usrDefaultInTransitSiteID : BqlInt.Field<usrDefaultInTransitSiteID> { }
-        [PXInt]
+        [PXDBInt]
         [PXUIField(DisplayName = "Default In-Transit Warehouse")]
         [PXSelector(typeof(Search<INSite.siteID, Where<INSite.active, Equal<True>>>),
             SubstituteKey = typeof(INSite.siteCD),
@@ -588,7 +536,7 @@ namespace StudioB.Containers
 
         #region UsrDefaultCarrierCode
         public abstract class usrDefaultCarrierCode : BqlString.Field<usrDefaultCarrierCode> { }
-        [PXString(20, IsUnicode = true)]
+        [PXDBString(20, IsUnicode = true)]
         [PXUIField(DisplayName = "Default Carrier")]
         [PXStringList(new string[] { "MAERSK", "CHR", "OTS", "OTHER" },
                        new string[] { "Maersk", "CH Robinson", "OTS", "Other" })]
@@ -1137,9 +1085,7 @@ namespace StudioB.Containers
                     EnsureColumn(conn, "SOShipment", "UsrContainerID", "int NULL");
 
                     // ── InventoryItem tariff/customs fields ────────────────────
-                    EnsureColumn(conn, "InventoryItem", "UsrHTSCode", "nvarchar(30) NULL");
                     EnsureColumn(conn, "InventoryItem", "UsrDutyRate", "decimal(25,4) NULL");
-                    EnsureColumn(conn, "InventoryItem", "UsrCountryOfOrigin", "nvarchar(2) NULL");
                     EnsureColumn(conn, "InventoryItem", "UsrFiberContent", "nvarchar(100) NULL");
                     EnsureColumn(conn, "InventoryItem", "UsrPreferentialTariff", "bit NULL");
                     EnsureColumn(conn, "InventoryItem", "UsrFreightClass", "nvarchar(15) NULL");
@@ -1148,8 +1094,6 @@ namespace StudioB.Containers
                     EnsureColumn(conn, "POReceiptLine", "UsrActualDutyAmt", "decimal(25,4) NULL");
                     EnsureColumn(conn, "POReceiptLine", "UsrActualFreightAmt", "decimal(25,4) NULL");
                     EnsureColumn(conn, "POReceiptLine", "UsrBrokerageAmt", "decimal(25,4) NULL");
-                    EnsureColumn(conn, "POReceiptLine", "UsrHTSCode", "nvarchar(30) NULL");
-                    EnsureColumn(conn, "POReceiptLine", "UsrCountryOfOrigin", "nvarchar(2) NULL");
 
                     // ── SiteMap GraphType for SB501000 ────────────────────────
                     // Sets the GraphType so SM207060 can discover ContainerMaint
@@ -1428,12 +1372,19 @@ namespace StudioB.Containers
             <px:PXDropDown ID="edStatus" runat="server" DataField="Status" />
             <px:PXTextEdit ID="edCarrierCode" runat="server" DataField="CarrierCode" />
             <px:PXTextEdit ID="edVesselName" runat="server" DataField="VesselName" />
+            <px:PXTextEdit ID="edVesselIMO" runat="server" DataField="VesselIMO" />
+            <px:PXTextEdit ID="edContainerType" runat="server" DataField="ContainerType" />
             <px:PXLayoutRule ID="PXLayoutRule2" runat="server" StartColumn="True" LabelsWidth="SM" ControlSize="M" />
             <px:PXDateTimeEdit ID="edETD" runat="server" DataField="ETD" />
             <px:PXDateTimeEdit ID="edETA" runat="server" DataField="ETA" />
             <px:PXDateTimeEdit ID="edATA" runat="server" DataField="ATA" />
             <px:PXTextEdit ID="edPortOfLoading" runat="server" DataField="PortOfLoading" />
             <px:PXTextEdit ID="edPortOfDischarge" runat="server" DataField="PortOfDischarge" />
+            <px:PXLayoutRule ID="PXLayoutRule3" runat="server" StartColumn="True" LabelsWidth="SM" ControlSize="M" />
+            <px:PXTextEdit ID="edBookingRef" runat="server" DataField="BookingRef" />
+            <px:PXTextEdit ID="edBillOfLading" runat="server" DataField="BillOfLading" />
+            <px:PXTextEdit ID="edVoyageNbr" runat="server" DataField="VoyageNbr" />
+            <px:PXTextEdit ID="edSealNbr" runat="server" DataField="SealNbr" />
         </Template>
     </px:PXFormView>
 </asp:Content>

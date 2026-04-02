@@ -1,0 +1,209 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ContainerTracking REST Endpoint Definition — AesthetikContainers
+  Endpoint: ContainerTracking v24.200.001
+  Screen:   SB501000 (Container Maintenance — ContainerMaint graph)
+
+  Entities:
+    UsrContainer      — main container record  (view: Container)
+    UsrContainerEvent — tracking events grid   (view: Events)
+    UsrContainerPOLink — linked PO lines grid  (view: POLinks)
+
+  This file is processed by Acumatica during customization publish and
+  creates (or replaces) the ContainerTracking endpoint with correct entity
+  names. It supersedes the wrong-named entities (Container, ContainerEvent,
+  ContainerPOLink) that were created by IIGCONTAINERMGMT.
+
+  Naming convention: EntityEndpoint_{version_underscored}_{EndpointName}.xml
+-->
+<EntityEndpoint>
+    <Endpoint
+        xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xmlns="http://www.acumatica.com/entity/maintenance/5.31"
+        name="ContainerTracking"
+        version="24.200.001"
+        systemContractVersion="4">
+
+        <!-- ─── UsrContainer ───────────────────────────────────────────────── -->
+        <TopLevelEntity name="UsrContainer" screen="SB501000">
+            <Fields>
+                <Field name="ContainerID"          type="IntValue" />
+                <Field name="ContainerNbr"         type="StringValue" />
+                <Field name="CarrierCode"          type="StringValue" />
+                <Field name="BookingRef"           type="StringValue" />
+                <Field name="BillOfLading"         type="StringValue" />
+                <Field name="VesselName"           type="StringValue" />
+                <Field name="VesselIMO"            type="StringValue" />
+                <Field name="VoyageNbr"            type="StringValue" />
+                <Field name="PortOfLoading"        type="StringValue" />
+                <Field name="PortOfDischarge"      type="StringValue" />
+                <Field name="ETD"                  type="DateTimeValue" />
+                <Field name="ATD"                  type="DateTimeValue" />
+                <Field name="ETA"                  type="DateTimeValue" />
+                <Field name="ATA"                  type="DateTimeValue" />
+                <Field name="Status"               type="StringValue" />
+                <Field name="ContainerType"        type="StringValue" />
+                <Field name="SealNbr"              type="StringValue" />
+                <Field name="LastEventCode"        type="StringValue" />
+                <Field name="LastEventDate"        type="DateTimeValue" />
+                <Field name="LastSyncDate"         type="DateTimeValue" />
+                <Field name="NoteID"               type="GuidValue" />
+                <Field name="CreatedDateTime"      type="DateTimeValue" />
+                <Field name="LastModifiedDateTime" type="DateTimeValue" />
+            </Fields>
+            <Mappings>
+                <Mapping field="ContainerID">
+                    <To object="Container" field="ContainerID" />
+                </Mapping>
+                <Mapping field="ContainerNbr">
+                    <To object="Container" field="ContainerCD" />
+                </Mapping>
+                <Mapping field="CarrierCode">
+                    <To object="Container" field="CarrierCode" />
+                </Mapping>
+                <Mapping field="BookingRef">
+                    <To object="Container" field="BookingRef" />
+                </Mapping>
+                <Mapping field="BillOfLading">
+                    <To object="Container" field="BillOfLading" />
+                </Mapping>
+                <Mapping field="VesselName">
+                    <To object="Container" field="VesselName" />
+                </Mapping>
+                <Mapping field="VesselIMO">
+                    <To object="Container" field="VesselIMO" />
+                </Mapping>
+                <Mapping field="VoyageNbr">
+                    <To object="Container" field="VoyageNbr" />
+                </Mapping>
+                <Mapping field="PortOfLoading">
+                    <To object="Container" field="PortOfLoading" />
+                </Mapping>
+                <Mapping field="PortOfDischarge">
+                    <To object="Container" field="PortOfDischarge" />
+                </Mapping>
+                <Mapping field="ETD">
+                    <To object="Container" field="ETD" />
+                </Mapping>
+                <Mapping field="ATD">
+                    <To object="Container" field="ATD" />
+                </Mapping>
+                <Mapping field="ETA">
+                    <To object="Container" field="ETA" />
+                </Mapping>
+                <Mapping field="ATA">
+                    <To object="Container" field="ATA" />
+                </Mapping>
+                <Mapping field="Status">
+                    <To object="Container" field="Status" />
+                </Mapping>
+                <Mapping field="ContainerType">
+                    <To object="Container" field="ContainerType" />
+                </Mapping>
+                <Mapping field="SealNbr">
+                    <To object="Container" field="SealNbr" />
+                </Mapping>
+                <Mapping field="LastEventCode">
+                    <To object="Container" field="LastEventCode" />
+                </Mapping>
+                <Mapping field="LastEventDate">
+                    <To object="Container" field="LastEventDate" />
+                </Mapping>
+                <Mapping field="LastSyncDate">
+                    <To object="Container" field="LastSyncDate" />
+                </Mapping>
+                <Mapping field="NoteID">
+                    <To object="Container" field="NoteID" />
+                </Mapping>
+                <Mapping field="CreatedDateTime">
+                    <To object="Container" field="CreatedDateTime" />
+                </Mapping>
+                <Mapping field="LastModifiedDateTime">
+                    <To object="Container" field="LastModifiedDateTime" />
+                </Mapping>
+            </Mappings>
+        </TopLevelEntity>
+
+        <!-- ─── UsrContainerEvent ───────────────────────────────────────────── -->
+        <TopLevelEntity name="UsrContainerEvent" screen="SB501000">
+            <Fields>
+                <Field name="EventID"              type="IntValue" />
+                <Field name="ContainerID"          type="IntValue" />
+                <Field name="CarrierEventCode"     type="StringValue" />
+                <Field name="NormalizedEventCode"  type="StringValue" />
+                <Field name="EventDateTime"        type="DateTimeValue" />
+                <Field name="EventClassifier"      type="StringValue" />
+                <Field name="LocationName"         type="StringValue" />
+                <Field name="LocationCode"         type="StringValue" />
+                <Field name="VesselName"           type="StringValue" />
+                <Field name="Description"          type="StringValue" />
+                <Field name="CreatedDateTime"      type="DateTimeValue" />
+            </Fields>
+            <Mappings>
+                <Mapping field="EventID">
+                    <To object="Events" field="EventID" />
+                </Mapping>
+                <Mapping field="ContainerID">
+                    <To object="Events" field="ContainerID" />
+                </Mapping>
+                <Mapping field="CarrierEventCode">
+                    <To object="Events" field="CarrierEventCode" />
+                </Mapping>
+                <Mapping field="NormalizedEventCode">
+                    <To object="Events" field="NormalizedEventCode" />
+                </Mapping>
+                <Mapping field="EventDateTime">
+                    <To object="Events" field="EventDateTime" />
+                </Mapping>
+                <Mapping field="EventClassifier">
+                    <To object="Events" field="EventClassifier" />
+                </Mapping>
+                <Mapping field="LocationName">
+                    <To object="Events" field="LocationName" />
+                </Mapping>
+                <Mapping field="LocationCode">
+                    <To object="Events" field="LocationCode" />
+                </Mapping>
+                <Mapping field="VesselName">
+                    <To object="Events" field="VesselName" />
+                </Mapping>
+                <Mapping field="Description">
+                    <To object="Events" field="Description" />
+                </Mapping>
+                <Mapping field="CreatedDateTime">
+                    <To object="Events" field="CreatedDateTime" />
+                </Mapping>
+            </Mappings>
+        </TopLevelEntity>
+
+        <!-- ─── UsrContainerPOLink ──────────────────────────────────────────── -->
+        <TopLevelEntity name="UsrContainerPOLink" screen="SB501000">
+            <Fields>
+                <Field name="LinkID"      type="IntValue" />
+                <Field name="ContainerID" type="IntValue" />
+                <Field name="OrderType"   type="StringValue" />
+                <Field name="OrderNbr"    type="StringValue" />
+                <Field name="LineNbr"     type="IntValue" />
+            </Fields>
+            <Mappings>
+                <Mapping field="LinkID">
+                    <To object="POLinks" field="LinkID" />
+                </Mapping>
+                <Mapping field="ContainerID">
+                    <To object="POLinks" field="ContainerID" />
+                </Mapping>
+                <Mapping field="OrderType">
+                    <To object="POLinks" field="OrderType" />
+                </Mapping>
+                <Mapping field="OrderNbr">
+                    <To object="POLinks" field="OrderNbr" />
+                </Mapping>
+                <Mapping field="LineNbr">
+                    <To object="POLinks" field="LineNbr" />
+                </Mapping>
+            </Mappings>
+        </TopLevelEntity>
+
+    </Endpoint>
+</EntityEndpoint>
