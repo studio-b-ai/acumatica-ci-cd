@@ -121,7 +121,7 @@ jobs:
         with:
           repository: studio-b-ai/acuops-pipeline
           path: pipeline
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.GH_PAT_DISPATCH }}
 
       - name: Load acuops.yaml config
         id: config
@@ -632,7 +632,7 @@ jobs:
         with:
           repository: studio-b-ai/acuops-pipeline
           path: pipeline
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.GH_PAT_DISPATCH }}
 
       - name: Determine target environment
         id: env
@@ -1147,7 +1147,7 @@ jobs:
         with:
           repository: studio-b-ai/acuops-pipeline
           path: pipeline
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.GH_PAT_DISPATCH }}
 
       - name: Download package artifact
         uses: actions/download-artifact@v4
@@ -1275,7 +1275,7 @@ jobs:
         with:
           repository: studio-b-ai/acuops-pipeline
           path: pipeline
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.GH_PAT_DISPATCH }}
 
       - name: Setup Python
         uses: actions/setup-python@v5
