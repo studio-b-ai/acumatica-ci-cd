@@ -957,10 +957,11 @@ jobs:
 
       - name: Install test dependencies
         run: |
-          pip install playwright pytest
+          pip install playwright pytest pytest-timeout
           playwright install chromium
 
       - name: Run UI tests
+        timeout-minutes: 10
         env:
           ACUMATICA_URL: ${{ secrets.ACUMATICA_URL }}
           ACUMATICA_USERNAME: ${{ secrets.ACUMATICA_USERNAME }}
