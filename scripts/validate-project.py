@@ -582,13 +582,19 @@ def validate_pxdb_has_sql(class_name: str, code: str, all_sql_text: str):
         )
 
         for attr_type, field_name in pxdb_fields:
-            # [PXDB*] attributes auto-create columns on existing tables during publish.
-            # Missing <Sql> is informational — the columns WILL be created.
-            # Only warn so developers know to verify after publish.
+            # HARD FAIL: [PXDB*] without explicit <Sql> ALTER TABLE.
+            # Auto-column creation is UNRELIABLE on cloud Acumatica.
+            # Caused 1.5-hour production outage on 2026-04-02:
+            # [PXDBDecimal] UsrRequestedQty compiled but column was never
+            # created — "Invalid column name" crashed Shipments + Sales Orders.
+            # Every [PXDB*] field MUST have a matching <Sql> ALTER TABLE.
             if field_name not in all_sql_text:
-                warn(
+                error(
                     f"{class_name}: [{attr_type}] field '{field_name}' on PXCacheExtension<{base_dac}> "
-                    f"— no explicit <Sql> ALTER TABLE (columns auto-created by [PXDB*] during publish)"
+                    f"has NO matching <Sql> ALTER TABLE — WILL CRASH ON CLOUD.\n"
+                    f"         [PXDB*] auto-column creation is unreliable on cloud Acumatica.\n"
+                    f"         Caused production outage 2026-04-02 (Invalid column name).\n"
+                    f"         Fix: Add <Sql> with IF NOT EXISTS guard, or use non-persisted [{attr_type.replace('PXDB', 'PX')}]."
                 )
 
 
