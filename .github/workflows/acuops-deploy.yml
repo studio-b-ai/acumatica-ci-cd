@@ -458,6 +458,7 @@ jobs:
           KNOWN_PROJECTS: ${{ needs.build.outputs.known_projects }}
           ISV_PACKAGES: ${{ needs.build.outputs.isv_packages }}
           PROJECT_NAME: ${{ needs.build.outputs.project_name }}
+        run: python pipeline/scripts/qualify.py
 
   # ──────────────────────────────────────────────
   # Job 3: Test Tenant — Publish gate (pre-prod validation)
@@ -856,6 +857,7 @@ jobs:
           ACUMATICA_USERNAME: ${{ (steps.env.outputs.target == 'production') && secrets.ACUMATICA_PROD_USERNAME || (secrets.ACUMATICA_STG_USERNAME || secrets.ACUMATICA_PROD_USERNAME) }}
           ACUMATICA_PASSWORD: ${{ (steps.env.outputs.target == 'production') && secrets.ACUMATICA_PROD_PASSWORD || (secrets.ACUMATICA_STG_PASSWORD || secrets.ACUMATICA_PROD_PASSWORD) }}
           ACUMATICA_TENANT: ${{ (steps.env.outputs.target == 'production') && secrets.ACUMATICA_PROD_TENANT || (secrets.ACUMATICA_STG_TENANT || secrets.ACUMATICA_PROD_TENANT) }}
+        run: python pipeline/scripts/validate-publish.py --manifest publish-manifest.json
 
       - name: E2E view-level smoke test
         id: e2e
