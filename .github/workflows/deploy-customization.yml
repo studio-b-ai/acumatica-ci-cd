@@ -17,7 +17,8 @@
 # Required GitHub Variables:
 #   CUSTOMIZATION_PROJECT_NAME      - Name of the customization project in Acumatica
 #   ALSO_PUBLISH_PROJECTS           - Comma-separated list of ALL projects that must stay published
-#                                     (managed + ISVs — publishBegin sets the EXACT published set)
+#                                     on PRODUCTION (managed + ISVs — publishBegin sets the EXACT published set)
+#   ALSO_PUBLISH_HERITAGE_TEST      - Same but for Heritage Test tenant (managed code only, no ISVs)
 #   MAINTENANCE_NOTIFY_RECIPIENTS   - Comma-separated emails for maintenance countdown notifications
 #   MAINTENANCE_NOTIFY_SENDER       - Sender email for notifications (default: kevin@heritagefabrics.com)
 #
@@ -373,9 +374,10 @@ jobs:
             fi
           done
 
-          # Heritage Test is on the SAME Acumatica instance as production.
-          # publishBegin is instance-wide — must include ALL projects that should
-          # stay published, not just managed ones with zips.
+          # Heritage Test uses only managed code — no ISV packages.
+          # Separate ALSO_PUBLISH list so we don't reference packages
+          # that don't exist in the test tenant.
+          HT_ALSO_PUBLISH="${{ vars.ALSO_PUBLISH_HERITAGE_TEST || 'AesthetikContainers,StudioBAcuOps' }}"
           python scripts/deploy.py \
             --url "${{ secrets.ACUMATICA_URL }}" \
             --username "${{ secrets.ACUMATICA_USERNAME }}" \
@@ -383,7 +385,7 @@ jobs:
             --tenant "${{ vars.ACUMATICA_TEST_TENANT }}" \
             --project "${PROJECT_NAME}" \
             --package "${PACKAGE_FILE}" \
-            --also-publish "${ALSO_PUBLISH}" \
+            --also-publish "${HT_ALSO_PUBLISH}" \
             ${EXTRA_FLAGS}
 
       - name: Validate Heritage Test
