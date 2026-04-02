@@ -4144,6 +4144,14 @@ IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('INItemXRef
 ]]></CDATA>
     </Sql>
 
+    <Sql Name="AesthetikWMS_SOLine_RequestedQty_v1" Script="#CDATA">
+        <CDATA name="Script"><![CDATA[
+-- SOLine requested qty field for auto-allocation idempotency (PR #121, 2026-04-02)
+IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('SOLine') AND name = 'UsrRequestedQty')
+  ALTER TABLE SOLine ADD UsrRequestedQty decimal(19,4) NULL;
+]]></CDATA>
+    </Sql>
+
     <Graph ClassName="SOOrderEntry_InvtMultFix" Source="#CDATA" IsNew="True" FileType="NewFile">
         <CDATA name="Source"><![CDATA[using System;
 using PX.Data;
