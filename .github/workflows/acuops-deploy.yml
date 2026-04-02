@@ -452,6 +452,13 @@ jobs:
         with:
           fetch-depth: 0
           fetch-tags: true
+      - name: Checkout AcuOps pipeline
+        uses: actions/checkout@v4
+        with:
+          repository: studio-b-ai/acuops-pipeline
+          ref: ${{ vars.ACUOPS_PIPELINE_VERSION || 'main' }}
+          path: pipeline
+          token: ${{ secrets.GH_PAT_DISPATCH }}
       - name: Run qualification checks
         id: qualify
         timeout-minutes: 4
@@ -493,6 +500,13 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+      - name: Checkout AcuOps pipeline
+        uses: actions/checkout@v4
+        with:
+          repository: studio-b-ai/acuops-pipeline
+          ref: ${{ vars.ACUOPS_PIPELINE_VERSION || 'main' }}
+          path: pipeline
+          token: ${{ secrets.GH_PAT_DISPATCH }}
 
       - name: Download package artifact
         uses: actions/download-artifact@v4
