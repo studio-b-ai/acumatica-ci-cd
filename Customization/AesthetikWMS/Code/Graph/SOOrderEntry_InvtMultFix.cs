@@ -51,10 +51,13 @@ namespace HeritageFabrics.SO
         }
 
         /// <summary>
-        /// Fix existing orders with null InvtMult: set it during RowSelected
-        /// so it's populated before save even triggers RowPersisting.
+        /// Fix existing orders with null InvtMult at persist time.
+        /// Previously used RowSelected + SetValue, but that marks rows dirty
+        /// during read-only ContractBased API access, causing InvalidOperationException
+        /// on GET and empty $expand=Details results.
+        /// RowPersisting only fires on save, so it's safe for API reads.
         /// </summary>
-        protected void _(Events.RowSelected<SOLine> e)
+        protected void _(Events.RowPersisting<SOLine> e)
         {
             if (e.Row == null) return;
 
@@ -98,10 +101,11 @@ namespace HeritageFabrics.SO
         }
 
         /// <summary>
-        /// Fix existing splits with null InvtMult: set it during RowSelected
-        /// so it's populated before save even triggers RowPersisting.
+        /// Fix existing splits with null InvtMult at persist time.
+        /// Same fix as SOLine — moved from RowSelected to RowPersisting
+        /// to avoid marking rows dirty during ContractBased API reads.
         /// </summary>
-        protected void _(Events.RowSelected<SOLineSplit> e)
+        protected void _(Events.RowPersisting<SOLineSplit> e)
         {
             if (e.Row == null) return;
 
