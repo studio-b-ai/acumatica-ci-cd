@@ -3368,6 +3368,7 @@ namespace HeritageFabrics.SO
 
         private const string PieceGoodsClassID = "PIECENBR";
         private const decimal OvershipFactor = 1.20m;
+        private const string CutBinPrefix = "CUT";
 
         #region Persist Override
 
@@ -3702,6 +3703,10 @@ namespace HeritageFabrics.SO
                 if (string.IsNullOrEmpty(status.LotSerialNbr)) continue;
                 if (assignedSerials.Contains(status.LotSerialNbr)) continue;
 
+                // Skip items stored in cut bins (CUT, CUT1A, CUT2B, etc.)
+                if (status.LocationID != null && IsExcludedLocation(status.LocationID))
+                    continue;
+
                 decimal qtyOnHand = status.QtyOnHand ?? 0;
                 decimal qtyAvail = status.QtyAvail ?? 0;
 
@@ -3808,6 +3813,32 @@ namespace HeritageFabrics.SO
 
             PXTrace.WriteWarning(
                 $"[AUTO-ALLOC] Reverted {toRevert.Count} inserted + {toRestore.Count} deleted splits + {linesToRevert.Count} updated lines after failure");
+        }
+
+        /// <summary>
+        /// Check if a warehouse location is a cut bin (CUT, CUT1A, CUT2B, etc.).
+        /// Cut bins hold remnant pieces that should not be auto-allocated.
+        /// Caches lookups to avoid repeated DB hits within the same Persist cycle.
+        /// </summary>
+        private readonly Dictionary<int, bool> _excludedLocationCache = new Dictionary<int, bool>();
+
+        private bool IsExcludedLocation(int? locationID)
+        {
+            if (locationID == null) return false;
+            int locID = locationID.Value;
+
+            if (_excludedLocationCache.TryGetValue(locID, out bool excluded))
+                return excluded;
+
+            INLocation loc = SelectFrom<INLocation>
+                .Where<INLocation.locationID.IsEqual<@P.AsInt>>
+                .View.ReadOnly.Select(Base, locID);
+
+            string locationCD = loc?.LocationCD?.Trim() ?? "";
+            excluded = locationCD.StartsWith(CutBinPrefix, StringComparison.OrdinalIgnoreCase);
+            _excludedLocationCache[locID] = excluded;
+
+            return excluded;
         }
 
         private class BoltCandidate
