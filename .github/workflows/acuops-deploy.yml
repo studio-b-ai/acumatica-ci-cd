@@ -1,0 +1,1321 @@
+# AcuOps — Acumatica Customization CI/CD Pipeline
+# Scripts sourced from studio-b-ai/acuops-pipeline (shared package)
+# Deploys customization projects via the Customization API
+#
+# Triggers:
+#   - Push to main     → Deploy to PRODUCTION
+#   - Push to staging   → Deploy to STAGING
+#   - Pull request      → Validate against STAGING (no publish)
+#   - Manual dispatch   → Choose target environment
+#   - Repository dispatch → Scheduled deploy
+#
+# Required GitHub Secrets (per environment):
+#   ACUMATICA_PROD_URL        - Production instance URL
+#   ACUMATICA_PROD_USERNAME   - Production API user
+#   ACUMATICA_PROD_PASSWORD   - Production API password
+#   ACUMATICA_PROD_TENANT     - Production tenant name
+#   ACUMATICA_STG_*           - Staging equivalents (optional — falls back to PROD)
+#   SLACK_WEBHOOK_URL         - Slack incoming webhook (optional)
+#
+# Optional GitHub Secrets (for email notifications via Microsoft Graph API):
+#   AZURE_TENANT_ID       - Entra tenant ID
+#   AZURE_CLIENT_ID       - Entra app client ID (Mail.Send permission required)
+#   AZURE_CLIENT_SECRET   - Entra app client secret
+#
+# Configuration:
+#   All project-specific settings are read from acuops.yaml in the repo root.
+#   GitHub Variables (CUSTOMIZATION_PROJECT_NAME, ALSO_PUBLISH_PROJECTS) override
+#   acuops.yaml values when set.
+
+name: AcuOps Deploy
+
+# ━━━ CONCURRENCY CONTROL ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# Acumatica publishes restart the app pool and recompile ALL customization
+# projects. Overlapping publishes can corrupt the runtime state.
+# Only ONE deploy may run per branch at a time. If a new push arrives while
+# a deploy is in progress, the in-progress run is cancelled.
+concurrency:
+  group: acumatica-deploy-${{ github.ref }}
+  cancel-in-progress: true
+
+on:
+  repository_dispatch:
+    types: [scheduled-deploy]
+  push:
+    branches: [main, staging]
+    paths:
+      - 'Customization/**'
+      - '.github/workflows/acuops-deploy.yml'
+  pull_request:
+    branches: [main, staging]
+    paths:
+      - 'Customization/**'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Target environment'
+        required: true
+        type: choice
+        options:
+          - staging
+          - production
+      dry_run:
+        description: 'Validate only (no publish)'
+        required: false
+        type: boolean
+        default: false
+      skip_backup:
+        description: 'Skip pre-deploy backup'
+        required: false
+        type: boolean
+        default: false
+      skip_countdown:
+        description: 'Emergency deploy — skip countdown (still takes snapshot)'
+        required: false
+        type: boolean
+        default: false
+      force_qualify:
+        description: 'Skip qualification checks (emergency override)'
+        required: false
+        type: boolean
+        default: false
+      countdown_complete:
+        description: 'Set by scheduled deploy — skip countdown'
+        required: false
+        type: boolean
+        default: false
+
+jobs:
+  # ──────────────────────────────────────────────
+  # Job 1: Build — Package customization into .zip
+  # ──────────────────────────────────────────────
+  build:
+    name: Build Customization Package
+    runs-on: ubuntu-latest
+    outputs:
+      package_path: ${{ steps.package.outputs.path }}
+      package_name: ${{ steps.package.outputs.name }}
+      project_name: ${{ steps.config.outputs.project_name }}
+      also_publish: ${{ steps.config.outputs.also_publish }}
+      also_publish_test: ${{ steps.config.outputs.also_publish_test }}
+      backup_enabled: ${{ steps.config.outputs.backup_enabled }}
+      isv_prefix: ${{ steps.config.outputs.isv_prefix }}
+      strict: ${{ steps.config.outputs.strict }}
+      known_projects: ${{ steps.config.outputs.known_projects }}
+      isv_packages: ${{ steps.config.outputs.isv_packages }}
+      test_tenant_enabled: ${{ steps.config.outputs.test_tenant_enabled }}
+      timezone: ${{ steps.config.outputs.timezone }}
+      notify_recipients: ${{ steps.config.outputs.notify_recipients }}
+      notify_sender: ${{ steps.config.outputs.notify_sender }}
+      customization_changes: ${{ steps.detect_cust_changes.outputs.customization_changes }}
+      plugin_changes: ${{ steps.plugin_check.outputs.plugin_changes }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Checkout AcuOps pipeline
+        uses: actions/checkout@v4
+        with:
+          repository: studio-b-ai/acuops-pipeline
+          path: pipeline
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Load acuops.yaml config
+        id: config
+        run: |
+          # GitHub Variables override acuops.yaml; acuops.yaml overrides defaults
+          if command -v yq &>/dev/null || pip install yq 2>/dev/null; then
+            YQ="yq"
+          else
+            YQ=""
+          fi
+
+          cfg() {
+            local path="$1" default="$2"
+            if [[ -n "${YQ}" && -f acuops.yaml ]]; then
+              val=$(${YQ} -r "${path} // \"\"" acuops.yaml 2>/dev/null || echo "")
+              [[ -n "$val" ]] && echo "$val" && return
+            fi
+            echo "$default"
+          }
+
+          cfg_array() {
+            local path="$1"
+            if [[ -n "${YQ}" && -f acuops.yaml ]]; then
+              ${YQ} -r "(${path} // []) | join(\",\")" acuops.yaml 2>/dev/null || echo ""
+            fi
+          }
+
+          # Project name: GitHub var > acuops.yaml > error
+          PROJECT="${{ vars.CUSTOMIZATION_PROJECT_NAME }}"
+          if [[ -z "${PROJECT}" ]]; then
+            PROJECT=$(cfg '.project.name' '')
+          fi
+          if [[ -z "${PROJECT}" ]]; then
+            echo "::error::CUSTOMIZATION_PROJECT_NAME not set and no project.name in acuops.yaml"
+            exit 1
+          fi
+          echo "project_name=${PROJECT}" >> "$GITHUB_OUTPUT"
+
+          # Co-publish projects (production)
+          ALSO="${{ vars.ALSO_PUBLISH_PROJECTS }}"
+          if [[ -z "${ALSO}" ]]; then
+            ALSO=$(cfg_array '.publish.co_publish')
+          fi
+          echo "also_publish=${ALSO}" >> "$GITHUB_OUTPUT"
+
+          # Co-publish projects (test tenant — managed code only, no ISVs)
+          ALSO_TEST="${{ vars.ALSO_PUBLISH_TEST_TENANT }}"
+          if [[ -z "${ALSO_TEST}" ]]; then
+            ALSO_TEST=$(cfg_array '.publish.co_publish_test')
+          fi
+          echo "also_publish_test=${ALSO_TEST}" >> "$GITHUB_OUTPUT"
+
+          # Known projects (all projects that should exist on the instance)
+          KNOWN=$(cfg_array '.publish.known_projects')
+          echo "known_projects=${KNOWN}" >> "$GITHUB_OUTPUT"
+
+          # ISV packages (third-party packages — not managed by this repo)
+          ISV=$(cfg_array '.publish.isv_packages')
+          echo "isv_packages=${ISV}" >> "$GITHUB_OUTPUT"
+
+          # Backup enabled
+          BACKUP=$(cfg '.backup.enabled' 'true')
+          echo "backup_enabled=${BACKUP}" >> "$GITHUB_OUTPUT"
+
+          # ISV prefix for validation
+          ISV_PREFIX=$(cfg '.validation.isv_prefix' '')
+          echo "isv_prefix=${ISV_PREFIX}" >> "$GITHUB_OUTPUT"
+
+          # Strict mode
+          STRICT=$(cfg '.validation.strict' 'false')
+          echo "strict=${STRICT}" >> "$GITHUB_OUTPUT"
+
+          # Test tenant gate enabled
+          TEST_TENANT=$(cfg '.pipeline.test_tenant_enabled' 'false')
+          echo "test_tenant_enabled=${TEST_TENANT}" >> "$GITHUB_OUTPUT"
+
+          # Timezone for business hours detection
+          TZ_CFG=$(cfg '.pipeline.timezone' 'America/Chicago')
+          echo "timezone=${TZ_CFG}" >> "$GITHUB_OUTPUT"
+
+          # Notification config (non-sensitive — recipients + sender address)
+          RECIPIENTS="${{ vars.MAINTENANCE_NOTIFY_RECIPIENTS }}"
+          if [[ -z "${RECIPIENTS}" ]]; then
+            RECIPIENTS=$(cfg '.notifications.recipients' '')
+          fi
+          echo "notify_recipients=${RECIPIENTS}" >> "$GITHUB_OUTPUT"
+
+          SENDER="${{ vars.MAINTENANCE_NOTIFY_SENDER }}"
+          if [[ -z "${SENDER}" ]]; then
+            SENDER=$(cfg '.notifications.sender' '')
+          fi
+          echo "notify_sender=${SENDER}" >> "$GITHUB_OUTPUT"
+
+          echo "Project: ${PROJECT}"
+          echo "Co-publish: ${ALSO:-none}"
+          echo "Co-publish (test): ${ALSO_TEST:-none}"
+          echo "Known projects: ${KNOWN:-none}"
+          echo "Backup: ${BACKUP}"
+          echo "ISV prefix: ${ISV_PREFIX:-none}"
+          echo "Test tenant gate: ${TEST_TENANT}"
+          echo "Timezone: ${TZ_CFG}"
+
+      # ── Guard: detect if Customization/ files actually changed ──────
+      # Prevents app pool restarts when only CI/test/script files change.
+      # The workflow path filter includes scripts/* and .github/workflows/*,
+      # which trigger the build but should NOT trigger a publish.
+      - name: Detect customization changes
+        id: detect_cust_changes
+        run: |
+          # For workflow_dispatch/repository_dispatch, always treat as changed (manual deploy)
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] || [ "${{ github.event_name }}" = "repository_dispatch" ]; then
+            echo "customization_changes=true" >> "$GITHUB_OUTPUT"
+            echo "Manual/scheduled dispatch — will publish"
+            exit 0
+          fi
+
+          # Compare against parent commit (push event)
+          CHANGED=$(git diff --name-only HEAD~1 HEAD -- 'Customization/' 2>/dev/null || true)
+          if [ -n "$CHANGED" ]; then
+            echo "customization_changes=true" >> "$GITHUB_OUTPUT"
+            echo "Customization files changed — will publish:"
+            echo "$CHANGED"
+          else
+            echo "customization_changes=false" >> "$GITHUB_OUTPUT"
+            echo "No Customization/ changes — skipping publish (CI/test/script-only change)"
+          fi
+
+      - name: Detect plugin changes
+        id: plugin_check
+        run: |
+          DIFF=$(git diff origin/main -- '*.xml' '*.cs' 2>/dev/null || true)
+          if echo "$DIFF" | grep -qiE '(CustomizationPlugin|UpdateDatabase|<Sql>|ExecuteSQL|SqlCommand)'; then
+            echo "plugin_changes=true" >> "$GITHUB_OUTPUT"
+            echo "::warning::CustomizationPlugin changes detected"
+          else
+            echo "plugin_changes=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Verify project folder exists
+        run: |
+          PROJECT="${{ steps.config.outputs.project_name }}"
+          if [ ! -d "Customization/${PROJECT}" ]; then
+            echo "::error::FATAL: Customization/${PROJECT}/ does not exist."
+            echo "The project_name must match an existing folder under Customization/."
+            echo "Available folders:"
+            ls -d Customization/*/ 2>/dev/null || echo "  (none)"
+            exit 1
+          fi
+
+      - name: Validate ALL customization projects
+        run: |
+          # Validate EVERY project.xml in Customization/.
+          # Acumatica compiles ALL imported projects during publish — not just
+          # the ones in publishBegin's projectNames. Any project in this repo
+          # could end up on the instance and compiled. Validate everything.
+          PROJECT="${{ steps.config.outputs.project_name }}"
+          FAILED=0
+          VALIDATED=0
+          SKIPPED=0
+
+          for PROJECT_XML in Customization/*/project.xml; do
+            [ ! -f "$PROJECT_XML" ] && continue
+            proj=$(basename $(dirname "$PROJECT_XML"))
+
+            # Skip known test/rollback projects
+            if [[ "$proj" == "CICDRollbackTest" ]] || [[ "$proj" == "_project" ]]; then
+              echo "Skipping test project: $proj"
+              SKIPPED=$((SKIPPED + 1))
+              continue
+            fi
+
+            echo ""
+            echo "--- Validating: $proj ---"
+            STRICT_FLAG=""
+            if [[ "${{ github.ref }}" == "refs/heads/main" ]] && [[ "$proj" == "${PROJECT}" ]]; then
+              STRICT_FLAG="--strict"
+              echo "(strict mode — production primary project)"
+            fi
+
+            ARGS=""
+            ISV_PREFIX="${{ steps.config.outputs.isv_prefix }}"
+            [[ -n "${ISV_PREFIX}" ]] && ARGS="${ARGS} --isv-prefix ${ISV_PREFIX}"
+
+              echo "::error::Project '$proj' failed validation"
+              FAILED=$((FAILED + 1))
+            fi
+            VALIDATED=$((VALIDATED + 1))
+          done
+
+          echo ""
+          echo "--- Validation Summary ---"
+          echo "Validated: $VALIDATED | Failed: $FAILED | Skipped: $SKIPPED"
+
+          if [ "$FAILED" -gt 0 ]; then
+            echo "::error::$FAILED project(s) failed validation. Fix ALL before deploying."
+            exit 1
+          fi
+          echo "All $VALIDATED projects passed validation"
+
+      - name: Deploy Intelligence — Predict
+        if: always()
+        run: |
+          python pipeline/scripts/intelligence.py predict \
+            --project-xml Customization/_project/project.xml \
+            --history data/deploy-history.json \
+            --environment "${{ github.ref == 'refs/heads/main' && 'production' || 'staging' }}" || true
+
+      - name: Check for C# extension library
+        id: check_csproj
+        run: |
+          if ls Customization/*.csproj 1>/dev/null 2>&1; then
+            echo "has_csproj=true" >> "$GITHUB_OUTPUT"
+            echo "Found C# project — will build extension library"
+          else
+            echo "has_csproj=false" >> "$GITHUB_OUTPUT"
+            echo "No C# project — packaging XML/ASPX only"
+          fi
+
+      - name: Setup .NET (if C# extension exists)
+        if: steps.check_csproj.outputs.has_csproj == 'true'
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '6.0.x'
+
+      - name: Build C# extension library
+        if: steps.check_csproj.outputs.has_csproj == 'true'
+        run: |
+          cd Customization
+          dotnet restore
+          dotnet build --configuration Release --no-restore
+          echo "Extension library built successfully"
+
+      - name: Package customization project
+        id: package
+        run: |
+          PROJECT="${{ steps.config.outputs.project_name }}"
+          TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+          PACKAGE_NAME="${PROJECT}_${TIMESTAMP}.zip"
+          PACKAGE_PATH="dist/${PACKAGE_NAME}"
+
+          mkdir -p dist
+
+          cd Customization/${PROJECT}
+          zip -r "../../${PACKAGE_PATH}" . \
+            -x "*.DS_Store" \
+            -x "__MACOSX/*" \
+            -x "*.user" \
+            -x "bin/*" \
+            -x "obj/*"
+          cd ../..
+
+          # Include compiled DLLs if they exist
+          if [ -d "Customization/bin/Release" ]; then
+            cd Customization/bin/Release
+            zip -ur "../../../${PACKAGE_PATH}" *.dll 2>/dev/null || true
+            cd ../../..
+          fi
+
+          FILESIZE=$(du -h "${PACKAGE_PATH}" | cut -f1)
+          echo "Packaged: ${PACKAGE_NAME} (${FILESIZE})"
+
+          echo "path=${PACKAGE_PATH}" >> "$GITHUB_OUTPUT"
+          echo "name=${PACKAGE_NAME}" >> "$GITHUB_OUTPUT"
+
+      - name: Package extra customization projects
+        run: |
+          PROJECT="${{ steps.config.outputs.project_name }}"
+          ALSO_PUBLISH="${{ steps.config.outputs.also_publish }}"
+          TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+          # Only package directories that appear in ALSO_PUBLISH
+          for dir in Customization/*/; do
+            dirname=$(basename "${dir}")
+            if [[ "${dirname}" == "${PROJECT}" ]] || [[ "${dirname}" == "_project" ]]; then
+              continue
+            fi
+            # Skip if not in ALSO_PUBLISH list
+            if [[ ! ",${ALSO_PUBLISH}," == *",${dirname},"* ]]; then
+              echo "Skipping ${dirname} — not in co-publish list"
+              continue
+            fi
+            if [ -f "${dir}project.xml" ]; then
+              EXTRA_ZIP="dist/${dirname}_${TIMESTAMP}.zip"
+              cd "${dir}"
+              zip -r "../../${EXTRA_ZIP}" . \
+                -x "*.DS_Store" \
+                -x "__MACOSX/*" \
+                -x "*.user"
+              cd ../..
+              FILESIZE=$(du -h "${EXTRA_ZIP}" | cut -f1)
+              echo "Extra package: ${dirname} (${FILESIZE})"
+            fi
+          done
+
+      - name: Upload package artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: customization-package
+          path: dist/*.zip
+          retention-days: 30
+
+  # ──────────────────────────────────────────────
+  # Job 2: Qualify — Agentic pre-deploy checks
+  # ──────────────────────────────────────────────
+  qualify:
+    name: Pre-Deploy Qualification
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    if: github.event_name != 'pull_request' && github.event.inputs.force_qualify != 'true'
+    outputs:
+      decision: ${{ steps.qualify.outputs.decision }}
+      needs_countdown: ${{ steps.qualify.outputs.needs_countdown }}
+      summary: ${{ steps.qualify.outputs.summary }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+      - name: Run qualification checks
+        id: qualify
+        timeout-minutes: 4
+        env:
+          PYTHONUNBUFFERED: "1"
+          ACUMATICA_URL: ${{ secrets.ACUMATICA_PROD_URL }}
+          ACUMATICA_USERNAME: ${{ secrets.ACUMATICA_PROD_USERNAME }}
+          ACUMATICA_PASSWORD: ${{ secrets.ACUMATICA_PROD_PASSWORD }}
+          ACUMATICA_TENANT: ${{ secrets.ACUMATICA_PROD_TENANT }}
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          KNOWN_PROJECTS: ${{ needs.build.outputs.known_projects }}
+          ISV_PACKAGES: ${{ needs.build.outputs.isv_packages }}
+          PROJECT_NAME: ${{ needs.build.outputs.project_name }}
+
+  # ──────────────────────────────────────────────
+  # Job 3: Test Tenant — Publish gate (pre-prod validation)
+  # Publishes to a test tenant on the same instance, runs field validation
+  # and smoke tests. Hard gate — failure blocks production deploy.
+  # ──────────────────────────────────────────────
+  test-tenant-gate:
+    name: Test Tenant Publish Gate
+    needs: [build, qualify]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    if: |
+      always() &&
+      needs.build.result == 'success' &&
+      needs.build.outputs.customization_changes == 'true' &&
+      needs.build.outputs.test_tenant_enabled == 'true' &&
+      github.event_name != 'pull_request' &&
+      github.event.inputs.force_qualify != 'true' && (
+        needs.qualify.result == 'success' ||
+        needs.qualify.result == 'skipped'
+      )
+    concurrency:
+      group: test-tenant-publish
+      cancel-in-progress: true
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download package artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: customization-package
+          path: dist/
+
+      - name: Install Python dependencies
+        run: |
+          if [ -f pipeline/requirements.txt ]; then
+            pip install -r pipeline/requirements.txt
+          fi
+
+      - name: Deploy to test tenant
+        id: deploy
+        env:
+          ACUMATICA_URL: ${{ secrets.ACUMATICA_PROD_URL }}
+          ACUMATICA_USERNAME: ${{ secrets.ACUMATICA_PROD_USERNAME }}
+          ACUMATICA_PASSWORD: ${{ secrets.ACUMATICA_PROD_PASSWORD }}
+          ACUMATICA_TENANT: ${{ vars.ACUMATICA_TEST_TENANT }}
+        run: |
+          PROJECT="${{ needs.build.outputs.project_name }}"
+          PACKAGE_FILE=$(ls dist/${PROJECT}_*.zip 2>/dev/null | head -1)
+          if [ -z "${PACKAGE_FILE}" ]; then
+            PACKAGE_FILE=$(ls dist/*.zip | head -1)
+          fi
+
+          EXTRA_FLAGS=""
+          TEST_COPUBLISH=""
+          for pkg in dist/*.zip; do
+            if [ "${pkg}" != "${PACKAGE_FILE}" ]; then
+              PKG_BASE=$(basename "${pkg}" .zip)
+              PKG_NAME=$(echo "${PKG_BASE}" | sed 's/_[0-9]\{8\}-[0-9]\{6\}$//')
+              EXTRA_FLAGS+=" --extra-import ${PKG_NAME}:${pkg}"
+              if [ -n "${TEST_COPUBLISH}" ]; then
+                TEST_COPUBLISH+=",${PKG_NAME}"
+              else
+                TEST_COPUBLISH="${PKG_NAME}"
+              fi
+            fi
+          done
+
+          # Test tenant uses only managed code — no ISV packages.
+          # --no-merge: test tenants may have orphaned ISV publish metadata
+          # that causes errors with merge=True. Clean compile bypasses this.
+          TEST_ALSO="${{ needs.build.outputs.also_publish_test }}"
+            --project "${PROJECT}" \
+            --package "${PACKAGE_FILE}" \
+            --also-publish "${TEST_ALSO}" \
+            --no-merge \
+            --skip-e2e \
+            ${EXTRA_FLAGS}
+
+      - name: Validate test tenant
+        id: verify
+        env:
+          ACUMATICA_URL: ${{ secrets.ACUMATICA_PROD_URL }}
+          ACUMATICA_USERNAME: ${{ secrets.ACUMATICA_PROD_USERNAME }}
+          ACUMATICA_PASSWORD: ${{ secrets.ACUMATICA_PROD_PASSWORD }}
+          ACUMATICA_TENANT: ${{ vars.ACUMATICA_TEST_TENANT }}
+        run: |
+            --manifest publish-manifest.json
+
+      - name: E2E view-level smoke test
+        id: e2e
+        continue-on-error: true
+        env:
+          ACUMATICA_URL: ${{ secrets.ACUMATICA_PROD_URL }}
+          ACUMATICA_USERNAME: ${{ secrets.ACUMATICA_PROD_USERNAME }}
+          ACUMATICA_PASSWORD: ${{ secrets.ACUMATICA_PROD_PASSWORD }}
+          ACUMATICA_TENANT: ${{ vars.ACUMATICA_TEST_TENANT }}
+        run: |
+          python pipeline/scripts/smoke-e2e.py \
+            --manifest publish-manifest.json
+
+      - name: Post-publish login smoke test
+        id: smoke
+        env:
+          ACUMATICA_URL: ${{ secrets.ACUMATICA_PROD_URL }}
+          ACUMATICA_USERNAME: ${{ secrets.ACUMATICA_PROD_USERNAME }}
+          ACUMATICA_PASSWORD: ${{ secrets.ACUMATICA_PROD_PASSWORD }}
+          ACUMATICA_TENANT: ${{ vars.ACUMATICA_TEST_TENANT }}
+        run: |
+          python -c "
+          import sys, os
+          sys.path.insert(0, '.')
+          from scripts.deploy import AcumaticaCustomizationClient
+          client = AcumaticaCustomizationClient(
+              os.environ['ACUMATICA_URL'],
+              os.environ['ACUMATICA_USERNAME'],
+              os.environ['ACUMATICA_PASSWORD'],
+              os.environ['ACUMATICA_TENANT'],
+          )
+          client.login()
+          ok = client.smoke_test()
+          client.logout()
+          if not ok:
+              print('::error::Test tenant smoke test FAILED — login broken after publish. BLOCKING production deploy.')
+              sys.exit(1)
+          print('Test tenant smoke test passed — safe to proceed to production')
+          "
+
+      - name: Test tenant gate summary
+        if: always()
+        run: |
+          echo "## Test Tenant Publish Gate" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Validates publish on the test tenant before deploying to production." >> "$GITHUB_STEP_SUMMARY"
+          echo "**Hard gate — failure blocks prod.**" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Step | Result |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|------|--------|" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Deploy | \`${{ steps.deploy.outcome || 'n/a' }}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Field Validation | \`${{ steps.verify.outcome || 'n/a' }}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Smoke Test | \`${{ steps.smoke.outcome || 'n/a' }}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| E2E View Smoke | \`${{ steps.e2e.outcome || 'n/a' }}\` |" >> "$GITHUB_STEP_SUMMARY"
+
+  # ──────────────────────────────────────────────
+  # Job 4: Deploy — Snapshot, countdown, import + publish to Acumatica
+  # ──────────────────────────────────────────────
+  deploy:
+    name: Deploy to ${{ github.event.inputs.environment || (github.ref == 'refs/heads/main' && 'production' || 'staging') }}
+    needs: [build, qualify, test-tenant-gate]
+    runs-on: ubuntu-latest
+    if: |
+      always() &&
+      needs.build.result == 'success' &&
+      needs.build.outputs.customization_changes == 'true' &&
+      github.event_name != 'pull_request' &&
+      (needs.test-tenant-gate.result == 'success' || needs.test-tenant-gate.result == 'skipped') && (
+        needs.qualify.result == 'success' ||
+        needs.qualify.result == 'skipped' ||
+        github.event.inputs.force_qualify == 'true'
+      )
+    environment:
+      name: ${{ github.event.inputs.environment || (github.ref == 'refs/heads/main' && 'production' || 'staging') }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Checkout AcuOps pipeline
+        uses: actions/checkout@v4
+        with:
+          repository: studio-b-ai/acuops-pipeline
+          path: pipeline
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Determine target environment
+        id: env
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            TARGET="${{ github.event.inputs.environment }}"
+          elif [ "${{ github.event_name }}" = "repository_dispatch" ]; then
+            TARGET="${{ github.event.client_payload.environment || 'production' }}"
+          elif [ "${{ github.ref }}" = "refs/heads/main" ]; then
+            TARGET="production"
+          else
+            TARGET="staging"
+          fi
+          echo "target=${TARGET}" >> "$GITHUB_OUTPUT"
+          echo "Determined target environment: ${TARGET}"
+
+      - name: Load pipeline config from acuops.yaml
+        id: pipeline_cfg
+        run: |
+          # Read pipeline-specific config (lockout_url, regression_url)
+          # These are infrastructure endpoints, not credentials — safe for outputs
+          if command -v yq &>/dev/null || pip install yq 2>/dev/null; then
+            YQ="yq"
+          else
+            YQ=""
+          fi
+          LOCKOUT=""
+          REGRESSION=""
+          if [[ -n "${YQ}" && -f acuops.yaml ]]; then
+            LOCKOUT=$(${YQ} -r '.pipeline.lockout_url // ""' acuops.yaml 2>/dev/null || echo "")
+            REGRESSION=$(${YQ} -r '.pipeline.regression_url // ""' acuops.yaml 2>/dev/null || echo "")
+          fi
+          echo "lockout_url=${LOCKOUT}" >> "$GITHUB_OUTPUT"
+          echo "regression_url=${REGRESSION}" >> "$GITHUB_OUTPUT"
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Python dependencies
+        run: |
+          if [ -f pipeline/requirements.txt ]; then
+            pip install -r pipeline/requirements.txt
+          fi
+
+      # ── Pre-deploy snapshot ──────────────────────────────────────────
+      - name: Pre-deploy snapshot
+        id: snapshot
+        if: >
+          needs.build.outputs.backup_enabled == 'true' &&
+          github.event.inputs.skip_backup != 'true' &&
+          github.event.inputs.dry_run != 'true'
+        env:
+          ACUMATICA_URL: ${{ (steps.env.outputs.target == 'production') && secrets.ACUMATICA_PROD_URL || (secrets.ACUMATICA_STG_URL || secrets.ACUMATICA_PROD_URL) }}
+          ACUMATICA_USERNAME: ${{ (steps.env.outputs.target == 'production') && secrets.ACUMATICA_PROD_USERNAME || (secrets.ACUMATICA_STG_USERNAME || secrets.ACUMATICA_PROD_USERNAME) }}
+          ACUMATICA_PASSWORD: ${{ (steps.env.outputs.target == 'production') && secrets.ACUMATICA_PROD_PASSWORD || (secrets.ACUMATICA_STG_PASSWORD || secrets.ACUMATICA_PROD_PASSWORD) }}
+          ACUMATICA_TENANT: ${{ (steps.env.outputs.target == 'production') && secrets.ACUMATICA_PROD_TENANT || (secrets.ACUMATICA_STG_TENANT || secrets.ACUMATICA_PROD_TENANT) }}
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: |
+            --project "${{ needs.build.outputs.project_name }}" \
+            --output backups/
+
+      - name: Upload pre-deploy snapshot
+        if: steps.snapshot.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: pre-deploy-snapshot-${{ github.run_number }}
+          path: backups/*.zip
+          retention-days: 365
+
+      # ── Business hours detection ─────────────────────────────────────
+      - name: Check if after-hours
+        id: hours
+        run: |
+          TIMEZONE="${{ needs.build.outputs.timezone }}"
+          TIMEZONE="${TIMEZONE:-America/Chicago}"
+          HOUR=$(TZ="${TIMEZONE}" date +%H)
+          if [ "$HOUR" -ge 18 ] || [ "$HOUR" -lt 6 ]; then
+            echo "after_hours=true" >> "$GITHUB_OUTPUT"
+            echo "After-hours deploy (${HOUR}:00 ${TIMEZONE}) — employee emails suppressed"
+          else
+            echo "after_hours=false" >> "$GITHUB_OUTPUT"
+            echo "Business-hours deploy (${HOUR}:00 ${TIMEZONE}) — employee emails will be sent"
+          fi
+
+      # ── Countdown notification ───────────────────────────────────────
+      - name: Send maintenance countdown warnings
+        if: >
+          steps.env.outputs.target == 'production' &&
+          github.event.inputs.skip_countdown != 'true' &&
+          github.event.inputs.countdown_complete != 'true' &&
+          github.event.inputs.force_qualify != 'true' &&
+          github.event.inputs.dry_run != 'true'
+        env:
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          NOTIFY_RECIPIENTS: ${{ needs.build.outputs.notify_recipients }}
+          NOTIFY_SENDER: ${{ needs.build.outputs.notify_sender }}
+        run: |
+              --type countdown \
+              --recipients "${NOTIFY_RECIPIENTS}" \
+              --sender "${NOTIFY_SENDER}" \
+              --project "${{ needs.build.outputs.project_name }}" \
+              --environment "${{ steps.env.outputs.target }}" \
+              --slack-webhook "${SLACK_WEBHOOK_URL}" \
+              ${{ steps.hours.outputs.after_hours == 'true' && '--skip-email' || '' }}
+          fi
+
+      # ── Pre-deploy smoke test ────────────────────────────────────────
+      - name: Pre-deploy smoke test
+        if: github.event.inputs.force_qualify != 'true' && github.event.inputs.dry_run != 'true'
+        env:
+          ACUMATICA_URL: ${{ (steps.env.outputs.target == 'production') && secrets.ACUMATICA_PROD_URL || (secrets.ACUMATICA_STG_URL || secrets.ACUMATICA_PROD_URL) }}
+          ACUMATICA_USERNAME: ${{ (steps.env.outputs.target == 'production') && secrets.ACUMATICA_PROD_USERNAME || (secrets.ACUMATICA_STG_USERNAME || secrets.ACUMATICA_PROD_USERNAME) }}
+          ACUMATICA_PASSWORD: ${{ (steps.env.outputs.target == 'production') && secrets.ACUMATICA_PROD_PASSWORD || (secrets.ACUMATICA_STG_PASSWORD || secrets.ACUMATICA_PROD_PASSWORD) }}
+          ACUMATICA_TENANT: ${{ (steps.env.outputs.target == 'production') && secrets.ACUMATICA_PROD_TENANT || (secrets.ACUMATICA_STG_TENANT || secrets.ACUMATICA_PROD_TENANT) }}
+        run: |
+          # Verifies instance is alive before importing. Emergency deploys
+          # (force_qualify=true) skip this — the instance may be down due to
+          # a bad customization that this deploy is fixing.
+          python -c "
+          import sys, os; sys.path.insert(0, '.')
+          from scripts.deploy import AcumaticaCustomizationClient
+          client = AcumaticaCustomizationClient(
+              os.environ['ACUMATICA_URL'], os.environ['ACUMATICA_USERNAME'],
+              os.environ['ACUMATICA_PASSWORD'], os.environ['ACUMATICA_TENANT'],
+          )
+          client.login()
+          ok = client.smoke_test()
+          client.logout()
+          sys.exit(0 if ok else 1)
+          "
+
+      # ── Download built packages ──────────────────────────────────────
+      - name: Download package artifacts
+        if: github.event.inputs.dry_run != 'true'
+        uses: actions/download-artifact@v4
+        with:
+          name: customization-package
+          path: dist/
+
+      # ── DEPLOY — Import + Publish to Acumatica ──────────────────────
+      - name: Import and publish customization
+        id: deploy
+        if: github.event.inputs.dry_run != 'true'
+        env:
+          ACUMATICA_URL: ${{ (steps.env.outputs.target == 'production') && secrets.ACUMATICA_PROD_URL || (secrets.ACUMATICA_STG_URL || secrets.ACUMATICA_PROD_URL) }}
+          ACUMATICA_USERNAME: ${{ (steps.env.outputs.target == 'production') && secrets.ACUMATICA_PROD_USERNAME || (secrets.ACUMATICA_STG_USERNAME || secrets.ACUMATICA_PROD_USERNAME) }}
+          ACUMATICA_PASSWORD: ${{ (steps.env.outputs.target == 'production') && secrets.ACUMATICA_PROD_PASSWORD || (secrets.ACUMATICA_STG_PASSWORD || secrets.ACUMATICA_PROD_PASSWORD) }}
+          ACUMATICA_TENANT: ${{ (steps.env.outputs.target == 'production') && secrets.ACUMATICA_PROD_TENANT || (secrets.ACUMATICA_STG_TENANT || secrets.ACUMATICA_PROD_TENANT) }}
+        run: |
+          PROJECT="${{ needs.build.outputs.project_name }}"
+          ALSO="${{ needs.build.outputs.also_publish }}"
+          PACKAGE_FILE=$(ls dist/${PROJECT}_*.zip 2>/dev/null | head -1)
+          if [ -z "${PACKAGE_FILE}" ]; then
+            echo "::error::No package found in dist/ for ${PROJECT}"
+            exit 1
+          fi
+
+          # Build extra import flags for co-managed packages
+          EXTRA_FLAGS=""
+          for pkg in dist/*.zip; do
+            if [ "${pkg}" != "${PACKAGE_FILE}" ]; then
+              PKG_BASE=$(basename "${pkg}" .zip)
+              PKG_NAME=$(echo "${PKG_BASE}" | sed 's/_[0-9]\{8\}-[0-9]\{6\}$//')
+              EXTRA_FLAGS+=" --extra-import ${PKG_NAME}:${pkg}"
+            fi
+          done
+
+          DEPLOY_START=$(date +%s)
+
+          echo "Deploying ${PACKAGE_FILE} to ${{ steps.env.outputs.target }}"
+
+          # Emergency path: use basic auth when session login is broken
+          if [ "${{ github.event.inputs.force_qualify }}" = "true" ]; then
+            echo "::warning::force_qualify=true — using emergency deploy path (bypasses broken session login)"
+            mkdir -p /tmp/emergency-pkg
+            unzip -o "${PACKAGE_FILE}" -d /tmp/emergency-pkg/
+
+            # Also unzip and import extra packages
+            for pkg in dist/*.zip; do
+              if [ "${pkg}" != "${PACKAGE_FILE}" ]; then
+                PKG_BASE=$(basename "${pkg}" .zip)
+                PKG_NAME=$(echo "${PKG_BASE}" | sed 's/_[0-9]\{8\}-[0-9]\{6\}$//')
+                mkdir -p "/tmp/extra-${PKG_NAME}"
+                unzip -o "${pkg}" -d "/tmp/extra-${PKG_NAME}/"
+                # Import only — do NOT publish individually. A single publishBegin
+                # at the end includes ALL projects. Publishing extras one-by-one
+                # would set the instance published list to just that one project.
+                PACKAGE_DIR="/tmp/extra-${PKG_NAME}" PROJECT_NAME="${PKG_NAME}" \
+                  IMPORT_ONLY=true \
+                  python pipeline/scripts/emergency-deploy.py
+              fi
+            done
+
+            PACKAGE_DIR=/tmp/emergency-pkg PROJECT_NAME="${PROJECT}" \
+              ALSO_PUBLISH_PROJECTS="${ALSO}" \
+              python pipeline/scripts/emergency-deploy.py
+          else
+              --project "${PROJECT}" \
+              --package "${PACKAGE_FILE}" \
+              --also-publish "${ALSO}" \
+              ${EXTRA_FLAGS}
+          fi
+
+          DEPLOY_END=$(date +%s)
+          echo "duration_ms=$(( (DEPLOY_END - DEPLOY_START) * 1000 ))" >> "$GITHUB_OUTPUT"
+          echo "outcome=success" >> "$GITHUB_OUTPUT"
+
+      # ── Post-publish field validation ────────────────────────────────
+      - name: Post-publish field validation
+        id: verify
+        if: steps.deploy.outcome == 'success'
+        continue-on-error: true
+        env:
+          ACUMATICA_URL: ${{ (steps.env.outputs.target == 'production') && secrets.ACUMATICA_PROD_URL || (secrets.ACUMATICA_STG_URL || secrets.ACUMATICA_PROD_URL) }}
+          ACUMATICA_USERNAME: ${{ (steps.env.outputs.target == 'production') && secrets.ACUMATICA_PROD_USERNAME || (secrets.ACUMATICA_STG_USERNAME || secrets.ACUMATICA_PROD_USERNAME) }}
+          ACUMATICA_PASSWORD: ${{ (steps.env.outputs.target == 'production') && secrets.ACUMATICA_PROD_PASSWORD || (secrets.ACUMATICA_STG_PASSWORD || secrets.ACUMATICA_PROD_PASSWORD) }}
+          ACUMATICA_TENANT: ${{ (steps.env.outputs.target == 'production') && secrets.ACUMATICA_PROD_TENANT || (secrets.ACUMATICA_STG_TENANT || secrets.ACUMATICA_PROD_TENANT) }}
+
+      - name: E2E view-level smoke test
+        id: e2e
+        if: steps.deploy.outcome == 'success'
+        continue-on-error: true
+        env:
+          ACUMATICA_URL: ${{ (steps.env.outputs.target == 'production') && secrets.ACUMATICA_PROD_URL || (secrets.ACUMATICA_STG_URL || secrets.ACUMATICA_PROD_URL) }}
+          ACUMATICA_USERNAME: ${{ (steps.env.outputs.target == 'production') && secrets.ACUMATICA_PROD_USERNAME || (secrets.ACUMATICA_STG_USERNAME || secrets.ACUMATICA_PROD_USERNAME) }}
+          ACUMATICA_PASSWORD: ${{ (steps.env.outputs.target == 'production') && secrets.ACUMATICA_PROD_PASSWORD || (secrets.ACUMATICA_STG_PASSWORD || secrets.ACUMATICA_PROD_PASSWORD) }}
+          ACUMATICA_TENANT: ${{ (steps.env.outputs.target == 'production') && secrets.ACUMATICA_PROD_TENANT || (secrets.ACUMATICA_STG_TENANT || secrets.ACUMATICA_PROD_TENANT) }}
+        run: python pipeline/scripts/smoke-e2e.py --manifest publish-manifest.json
+
+      # ── Auto-rollback on verification failure ─────────────────────────
+      - name: Auto-rollback on verification failure
+        id: rollback
+        if: |
+          steps.deploy.outcome == 'success' &&
+          (steps.verify.outcome == 'failure' || steps.e2e.outcome == 'failure') &&
+          steps.env.outputs.target == 'production' &&
+          github.event.inputs.dry_run != 'true'
+        env:
+          ACUMATICA_URL: ${{ secrets.ACUMATICA_PROD_URL }}
+          ACUMATICA_USERNAME: ${{ secrets.ACUMATICA_PROD_USERNAME }}
+          ACUMATICA_PASSWORD: ${{ secrets.ACUMATICA_PROD_PASSWORD }}
+          ACUMATICA_TENANT: ${{ secrets.ACUMATICA_PROD_TENANT }}
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: |
+          PROJECT="${{ needs.build.outputs.project_name }}"
+          ALSO="${{ needs.build.outputs.also_publish }}"
+          SNAPSHOT=$(ls backups/${PROJECT}_backup_*.zip 2>/dev/null | head -1)
+          if [ -z "${SNAPSHOT}" ]; then
+            echo "::error::No snapshot available — cannot rollback"
+            if [ -n "${SLACK_WEBHOOK_URL}" ]; then
+              curl -sf -X POST "${SLACK_WEBHOOK_URL}" \
+                -H "Content-Type: application/json" \
+                -d "{\"text\":\"ROLLBACK FAILED — no snapshot available\nDeploy: ${PROJECT} @ ${GITHUB_SHA::8}\nManual restore required via SM204505\"}"
+            fi
+            exit 1
+          fi
+
+          echo "Rolling back to snapshot: ${SNAPSHOT}"
+            --project "${PROJECT}" \
+            --package "${SNAPSHOT}" \
+            --also-publish "${ALSO}"
+
+          # Post-rollback verification
+          ROLLBACK_VERIFY=$?
+
+          if [ ${ROLLBACK_VERIFY} -eq 0 ]; then
+            if [ -n "${SLACK_WEBHOOK_URL}" ]; then
+              curl -sf -X POST "${SLACK_WEBHOOK_URL}" \
+                -H "Content-Type: application/json" \
+                -d "{\"text\":\"Deploy ROLLED BACK — ${PROJECT} -> production\nDeploy: ${GITHUB_SHA::8}\nRollback: snapshot restored + verified\nNote: two app pool restarts occurred\"}"
+            fi
+          else
+            if [ -n "${SLACK_WEBHOOK_URL}" ]; then
+              curl -sf -X POST "${SLACK_WEBHOOK_URL}" \
+                -H "Content-Type: application/json" \
+                -d "{\"text\":\"ROLLBACK FAILED — verification did not pass\nDeploy: ${PROJECT} @ ${GITHUB_SHA::8}\nArtifact: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}\nManual restore: download artifact -> SM204505 Import -> Publish\"}"
+            fi
+            exit 1
+          fi
+
+      - name: Tag rolled-back deploy
+        if: steps.rollback.outcome == 'success'
+        run: |
+          TAG="deploy/prod/$(date +%Y%m%d-%H%M%S)-ROLLED-BACK"
+          git tag "${TAG}"
+          git push origin "${TAG}"
+
+      # ── Trigger regression tests ─────────────────────────────────────
+      - name: Trigger regression tests
+        if: always() && steps.env.outputs.target == 'production' && github.event.inputs.dry_run != 'true'
+        continue-on-error: true
+        env:
+          REGRESSION_WEBHOOK_URL: ${{ steps.pipeline_cfg.outputs.regression_url }}
+          REGRESSION_AUTH: ${{ secrets.REGRESSION_WEBHOOK_SECRET }}
+        run: |
+          if [ -z "${REGRESSION_WEBHOOK_URL}" ] || [ -z "${REGRESSION_AUTH}" ]; then
+            echo "Regression URL or auth not configured — skipping"
+            exit 0
+          fi
+          TARGET="${{ steps.env.outputs.target }}"
+          COMMIT="${{ github.sha }}"
+          RESPONSE=$(curl -sf -X POST "${REGRESSION_WEBHOOK_URL}/api/regression/trigger" \
+            -H "Content-Type: application/json" \
+            -H "X-Webhook-Auth: ${REGRESSION_AUTH}" \
+            -d "{\"environment\": \"${TARGET}\", \"deployCommit\": \"${COMMIT}\", \"trigger\": \"post-deploy\"}" \
+            --max-time 10 || true)
+          echo "Regression trigger response: ${RESPONSE}"
+
+      # ── Deploy Intelligence — Record + Report ────────────────────────
+      - name: Deploy Intelligence — Record outcome
+        if: always()
+        run: |
+          OUTCOME="${{ steps.deploy.outcome == 'success' && 'success' || 'publish_failure' }}"
+          DURATION="${{ steps.deploy.outputs.duration_ms || '0' }}"
+
+          python pipeline/scripts/intelligence.py record \
+            --project-xml Customization/_project/project.xml \
+            --history data/deploy-history.json \
+            --outcome "${OUTCOME}" \
+            --duration-ms "${DURATION}" \
+            --commit-sha "${GITHUB_SHA}" \
+            --environment "${{ steps.env.outputs.target }}" || true
+
+      - name: Deploy Intelligence — Generate report
+        if: always()
+        run: |
+          python pipeline/scripts/intelligence.py report \
+            --project-xml Customization/_project/project.xml \
+            --history data/deploy-history.json \
+            --output intelligence-report.md || true
+
+          if [[ -f intelligence-report.md ]]; then
+            cat intelligence-report.md >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload intelligence report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: intelligence-report
+          path: |
+            intelligence-report.md
+            data/deploy-history.json
+          retention-days: 90
+
+      - name: Commit deploy history
+        if: success() && github.event_name == 'push'
+        run: |
+          git config user.name "AcuOps Intelligence"
+          git config user.email "acuops@users.noreply.github.com"
+          git add data/deploy-history.json
+          git diff --cached --quiet || \
+            git commit -m "[skip ci] Update deploy history — ${{ steps.env.outputs.target }}" && \
+            git push || true
+
+      # ── Post-deploy notifications ─────────────────────────────────────
+      - name: Notify system back online
+        if: success() && steps.env.outputs.target == 'production'
+        continue-on-error: true
+        env:
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          NOTIFY_RECIPIENTS: ${{ needs.build.outputs.notify_recipients }}
+          NOTIFY_SENDER: ${{ needs.build.outputs.notify_sender }}
+        run: |
+              --type online \
+              --recipients "${NOTIFY_RECIPIENTS}" \
+              --sender "${NOTIFY_SENDER}" \
+              --project "${{ needs.build.outputs.project_name }}" \
+              --environment "${{ steps.env.outputs.target }}" \
+              --slack-webhook "${SLACK_WEBHOOK_URL}" \
+              ${{ steps.hours.outputs.after_hours == 'true' && '--skip-email' || '' }}
+          fi
+
+      - name: Notify deploy failed
+        if: failure() && steps.env.outputs.target == 'production'
+        continue-on-error: true
+        env:
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          NOTIFY_RECIPIENTS: ${{ needs.build.outputs.notify_recipients }}
+          NOTIFY_SENDER: ${{ needs.build.outputs.notify_sender }}
+        run: |
+              --type failed \
+              --recipients "${NOTIFY_RECIPIENTS}" \
+              --sender "${NOTIFY_SENDER}" \
+              --project "${{ needs.build.outputs.project_name }}" \
+              --environment "${{ steps.env.outputs.target }}" \
+              --slack-webhook "${SLACK_WEBHOOK_URL}" \
+              ${{ steps.hours.outputs.after_hours == 'true' && '--skip-email' || '' }}
+          fi
+
+      # ── Auto-lockout on deploy failure ───────────────────────────────
+      # Prevents other services from hammering a broken Acumatica instance
+      # while the deploy failure is being investigated.
+      - name: Auto-lockout on deploy failure
+        if: failure() && steps.deploy.outcome == 'failure' && steps.env.outputs.target == 'production'
+        continue-on-error: true
+        run: |
+          LOCKOUT_URL="${{ steps.pipeline_cfg.outputs.lockout_url }}"
+          if [ -n "${LOCKOUT_URL}" ]; then
+            curl -sf -X POST "${LOCKOUT_URL}/maintenance/start" \
+              -H "Content-Type: application/json" \
+              -d '{"ttl": 3600, "reason": "Auto-lockout: CI/CD deploy failed — preventing retry storm"}' \
+              --max-time 5 || echo "Lockout endpoint unreachable — manual lockout may be needed"
+            echo "::warning::Auto-lockout enabled for 1 hour. Clear with POST ${LOCKOUT_URL}/maintenance/end when resolved."
+          else
+            echo "No lockout_url configured — skipping auto-lockout"
+          fi
+
+      # ── Slack failure notification ───────────────────────────────────
+      - name: Slack notification on failure
+        if: failure()
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: |
+          PROJECT="${{ needs.build.outputs.project_name }}"
+          TARGET="${{ steps.env.outputs.target }}"
+          if [ -n "${SLACK_WEBHOOK_URL}" ]; then
+            curl -s -X POST "${SLACK_WEBHOOK_URL}" \
+              -H "Content-Type: application/json" \
+              -d "{\"text\":\":x: *AcuOps Deploy FAILED*\nProject: \`${PROJECT}\`\nEnvironment: \`${TARGET}\`\nCommit: \`${GITHUB_SHA::8}\`\nActor: @${GITHUB_ACTOR}\nRun: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}\"}"
+          fi
+
+      - name: Post deployment summary
+        if: always()
+        run: |
+          PROJECT="${{ needs.build.outputs.project_name }}"
+          TARGET="${{ steps.env.outputs.target }}"
+          echo "## Deployment Summary" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Field | Value |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|-------|-------|" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Environment | \`${TARGET}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Project | \`${PROJECT}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Package | \`${{ needs.build.outputs.package_name }}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Commit | \`${GITHUB_SHA::8}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Actor | @${GITHUB_ACTOR} |" >> "$GITHUB_STEP_SUMMARY"
+          SNAPSHOT_FILES=$(ls backups/*.zip 2>/dev/null | xargs -I{} basename {} | tr '\n' ', ' || echo "N/A")
+          echo "| Snapshot | ${SNAPSHOT_FILES:-N/A} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Verify | \`${{ steps.verify.outcome || 'n/a' }}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| E2E | \`${{ steps.e2e.outcome || 'n/a' }}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Rollback | \`${{ steps.rollback.outcome || 'n/a' }}\` |" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Tag successful deploy
+        if: success() && steps.env.outputs.target == 'production'
+        run: |
+          TAG="deploy/prod/$(date +%Y%m%d-%H%M%S)"
+          git tag "${TAG}"
+          git push origin "${TAG}"
+          echo "Tagged: ${TAG}"
+
+      - name: Notify Slack on success
+        if: success()
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: |
+          PROJECT="${{ needs.build.outputs.project_name }}"
+          TARGET="${{ steps.env.outputs.target }}"
+          if [ -n "${SLACK_WEBHOOK_URL}" ]; then
+            curl -s -X POST "${SLACK_WEBHOOK_URL}" \
+              -H "Content-Type: application/json" \
+              -d "{
+                \"text\": \":white_check_mark: AcuOps Deploy: *${PROJECT}* -> \`${TARGET}\` — success\",
+                \"blocks\": [
+                  {
+                    \"type\": \"section\",
+                    \"text\": {
+                      \"type\": \"mrkdwn\",
+                      \"text\": \":white_check_mark: *AcuOps Deploy*\n*Project:* ${PROJECT}\n*Environment:* ${TARGET}\n*Commit:* \`${GITHUB_SHA::8}\`\n*Actor:* ${GITHUB_ACTOR}\"
+                    }
+                  }
+                ]
+              }" || true
+          fi
+
+  # ──────────────────────────────────────────────
+  # Job 5: Validate — PR check (no publish)
+  # ──────────────────────────────────────────────
+  validate:
+    name: Validate on Staging
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    continue-on-error: true
+    concurrency:
+      group: staging-validate
+      cancel-in-progress: true
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Checkout AcuOps pipeline
+        uses: actions/checkout@v4
+        with:
+          repository: studio-b-ai/acuops-pipeline
+          path: pipeline
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Download package artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: customization-package
+          path: dist/
+
+      - name: Install Python dependencies
+        run: |
+          if [ -f pipeline/requirements.txt ]; then
+            pip install -r pipeline/requirements.txt
+          fi
+
+      - name: Import and publish on staging
+        env:
+          ACUMATICA_URL: ${{ secrets.ACUMATICA_STG_URL || secrets.ACUMATICA_PROD_URL }}
+          ACUMATICA_USERNAME: ${{ secrets.ACUMATICA_STG_USERNAME || secrets.ACUMATICA_PROD_USERNAME }}
+          ACUMATICA_PASSWORD: ${{ secrets.ACUMATICA_STG_PASSWORD || secrets.ACUMATICA_PROD_PASSWORD }}
+          ACUMATICA_TENANT: ${{ secrets.ACUMATICA_STG_TENANT || secrets.ACUMATICA_PROD_TENANT }}
+        run: |
+          PROJECT="${{ needs.build.outputs.project_name }}"
+          PACKAGE_FILE=$(ls dist/${PROJECT}_*.zip 2>/dev/null | head -1)
+          if [ -z "${PACKAGE_FILE}" ]; then
+            PACKAGE_FILE=$(ls dist/*.zip | head -1)
+          fi
+
+          EXTRA_FLAGS=""
+          STG_COPUBLISH=""
+          for pkg in dist/*.zip; do
+            if [ "${pkg}" != "${PACKAGE_FILE}" ]; then
+              PKG_BASE=$(basename "${pkg}" .zip)
+              PKG_NAME=$(echo "${PKG_BASE}" | sed 's/_[0-9]\{8\}-[0-9]\{6\}$//')
+              EXTRA_FLAGS+=" --extra-import ${PKG_NAME}:${pkg}"
+              if [ -n "${STG_COPUBLISH}" ]; then
+                STG_COPUBLISH+=",${PKG_NAME}"
+              else
+                STG_COPUBLISH="${PKG_NAME}"
+              fi
+            fi
+          done
+
+            --project "${PROJECT}" \
+            --package "${PACKAGE_FILE}" \
+            --also-publish "${STG_COPUBLISH}" \
+            --pre-cleanup \
+            ${EXTRA_FLAGS}
+
+      - name: Validate custom fields on staging
+        id: verify
+        env:
+          ACUMATICA_URL: ${{ secrets.ACUMATICA_STG_URL || secrets.ACUMATICA_PROD_URL }}
+          ACUMATICA_USERNAME: ${{ secrets.ACUMATICA_STG_USERNAME || secrets.ACUMATICA_PROD_USERNAME }}
+          ACUMATICA_PASSWORD: ${{ secrets.ACUMATICA_STG_PASSWORD || secrets.ACUMATICA_PROD_PASSWORD }}
+          ACUMATICA_TENANT: ${{ secrets.ACUMATICA_STG_TENANT || secrets.ACUMATICA_PROD_TENANT }}
+        run: |
+            --manifest publish-manifest.json \
+            2>&1 | tee validation-output.txt
+
+      - name: E2E view-level smoke test
+        id: e2e
+        env:
+          ACUMATICA_URL: ${{ secrets.ACUMATICA_STG_URL || secrets.ACUMATICA_PROD_URL }}
+          ACUMATICA_USERNAME: ${{ secrets.ACUMATICA_STG_USERNAME || secrets.ACUMATICA_PROD_USERNAME }}
+          ACUMATICA_PASSWORD: ${{ secrets.ACUMATICA_STG_PASSWORD || secrets.ACUMATICA_PROD_PASSWORD }}
+          ACUMATICA_TENANT: ${{ secrets.ACUMATICA_STG_TENANT || secrets.ACUMATICA_PROD_TENANT }}
+        run: |
+          python pipeline/scripts/smoke-e2e.py --manifest publish-manifest.json \
+            2>&1 | tee e2e-output.txt
+
+      - name: Comment on PR with results
+        if: always() && github.event.pull_request.number
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          RESULT="Passed"
+          if [ "${{ steps.verify.outcome }}" = "failure" ] || [ "${{ steps.e2e.outcome }}" = "failure" ]; then
+            RESULT="Failed"
+          fi
+
+          BODY=""
+          if [ -f validation-output.txt ]; then
+            BODY=$(cat validation-output.txt | head -50)
+          fi
+
+          gh pr comment ${{ github.event.pull_request.number }} --body "### Staging Validation ${RESULT}
+
+          \`\`\`
+          ${BODY}
+          \`\`\`
+
+          [Full run log](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})"
+
+      - name: Post validation summary
+        if: always()
+        run: |
+          echo "## Staging Validation" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          if [ -f validation-output.txt ]; then
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+            head -50 validation-output.txt >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+  # ──────────────────────────────────────────────
+  # Job 6: Post-Deploy Validation — run UI/runtime tests
+  # ──────────────────────────────────────────────
+  post-deploy-validation:
+    name: Trigger Runtime Tests
+    needs: [build, deploy]
+    runs-on: ubuntu-latest
+    # Run after successful publish OR when publish was skipped (CI-only changes).
+    # This lets test/workflow-only pushes validate against the existing deployment.
+    if: |
+      github.event_name != 'pull_request' && (
+        needs.deploy.result == 'success' ||
+        (needs.build.result == 'success' && needs.build.outputs.customization_changes == 'false')
+      )
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Checkout AcuOps pipeline
+        uses: actions/checkout@v4
+        with:
+          repository: studio-b-ai/acuops-pipeline
+          path: pipeline
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install test dependencies
+        run: |
+          pip install playwright pytest pytest-timeout
+          playwright install chromium
+
+      - name: Generate UI fixtures from audit data
+        timeout-minutes: 3
+        env:
+          ACUMATICA_URL: ${{ secrets.ACUMATICA_PROD_URL }}
+          ACUMATICA_USERNAME: ${{ secrets.ACUMATICA_PROD_USERNAME }}
+          ACUMATICA_PASSWORD: ${{ secrets.ACUMATICA_PROD_PASSWORD }}
+          ACUMATICA_TENANT: ${{ vars.ACUMATICA_TEST_TENANT }}
+        run: |
+          if [ -f scripts/heritage/generate_ui_fixtures.py ]; then
+            python scripts/heritage/generate_ui_fixtures.py --days 30 --output tests/fixtures/ui_screens.json
+          fi
+
+      - name: Run UI tests
+        timeout-minutes: 10
+        env:
+          ACUMATICA_URL: ${{ secrets.ACUMATICA_PROD_URL }}
+          ACUMATICA_USERNAME: ${{ secrets.ACUMATICA_PROD_USERNAME }}
+          ACUMATICA_PASSWORD: ${{ secrets.ACUMATICA_PROD_PASSWORD }}
+          ACUMATICA_TENANT: ${{ vars.ACUMATICA_TEST_TENANT }}
+        run: |
+          if [ -d tests/ui/ ]; then
+            python -m pytest tests/ui/ -v --tb=long --timeout=120 || {
+              echo "::warning::UI tests failed — see logs above for details"
+              exit 1
+            }
+          else
+            echo "No tests/ui/ directory — skipping UI tests"
+          fi
+
+      - name: Publish test metrics
+        if: always()
+        env:
+          CI_METRICS_URL: ${{ vars.CI_METRICS_URL }}
+          CI_METRICS_AUTH: ${{ secrets.CI_METRICS_AUTH }}
+        run: |
+          if [ -n "${CI_METRICS_URL}" ] && [ -f pipeline/scripts/count-tests.py ]; then
+            python pipeline/scripts/count-tests.py --post "${CI_METRICS_URL}" --auth "${CI_METRICS_AUTH}" || true
+          elif [ -f pipeline/scripts/count-tests.py ]; then
+            python pipeline/scripts/count-tests.py
+          fi
