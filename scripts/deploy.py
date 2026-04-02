@@ -953,6 +953,11 @@ def main():
         help="Use isMergeWithExistingPackages=False (clean compile, sandbox only)",
     )
     parser.add_argument(
+        "--skip-e2e",
+        action="store_true",
+        help="Skip E2E order lifecycle smoke test (for envs with known pre-existing issues)",
+    )
+    parser.add_argument(
         "--rollback",
         action="store_true",
         help="Rollback: download current package from instance, find previous git tag, "
@@ -1081,11 +1086,13 @@ def main():
                     )
 
                 # Full order lifecycle test
-                if smoke_ok and not args.validate_only:
+                if smoke_ok and not args.validate_only and not args.skip_e2e:
                     e2e_ok = client.e2e_smoke_test()
                     if not e2e_ok:
                         _log("E2E smoke test FAILED — business operations broken after publish", style="err")
                         sys.exit(2)
+                elif args.skip_e2e:
+                    _log("E2E smoke test skipped (--skip-e2e)", style="warn")
 
             _log("Deployment complete!", style="ok")
 

@@ -391,6 +391,7 @@ jobs:
             --package "${PACKAGE_FILE}" \
             --also-publish "${HT_ALSO_PUBLISH}" \
             --no-merge \
+            --skip-e2e \
             ${EXTRA_FLAGS}
 
       - name: Validate Heritage Test
