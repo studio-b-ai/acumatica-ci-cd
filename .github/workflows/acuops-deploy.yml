@@ -26,6 +26,11 @@
 #   All project-specific settings are read from acuops.yaml in the repo root.
 #   GitHub Variables (CUSTOMIZATION_PROJECT_NAME, ALSO_PUBLISH_PROJECTS) override
 #   acuops.yaml values when set.
+#
+# Pipeline Version:
+#   Set ACUOPS_PIPELINE_VERSION GitHub Variable to pin to a specific release
+#   (e.g., "v1.2.0"). Defaults to "main" (latest). Heritage stays on main
+#   (canary). Commercial clients pin to semver tags for stability.
 
 name: AcuOps Deploy
 
@@ -120,6 +125,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: studio-b-ai/acuops-pipeline
+          ref: ${{ vars.ACUOPS_PIPELINE_VERSION || 'main' }}
           path: pipeline
           token: ${{ secrets.GH_PAT_DISPATCH }}
 
@@ -631,6 +637,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: studio-b-ai/acuops-pipeline
+          ref: ${{ vars.ACUOPS_PIPELINE_VERSION || 'main' }}
           path: pipeline
           token: ${{ secrets.GH_PAT_DISPATCH }}
 
@@ -1146,6 +1153,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: studio-b-ai/acuops-pipeline
+          ref: ${{ vars.ACUOPS_PIPELINE_VERSION || 'main' }}
           path: pipeline
           token: ${{ secrets.GH_PAT_DISPATCH }}
 
@@ -1274,6 +1282,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: studio-b-ai/acuops-pipeline
+          ref: ${{ vars.ACUOPS_PIPELINE_VERSION || 'main' }}
           path: pipeline
           token: ${{ secrets.GH_PAT_DISPATCH }}
 
