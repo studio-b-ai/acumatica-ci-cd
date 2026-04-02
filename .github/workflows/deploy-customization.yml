@@ -967,6 +967,15 @@ jobs:
           pip install playwright pytest pytest-timeout
           playwright install chromium
 
+      - name: Generate UI fixtures from audit data
+        timeout-minutes: 3
+        env:
+          ACUMATICA_URL: ${{ secrets.ACUMATICA_URL }}
+          ACUMATICA_USERNAME: ${{ secrets.ACUMATICA_USERNAME }}
+          ACUMATICA_PASSWORD: ${{ secrets.ACUMATICA_PASSWORD }}
+          ACUMATICA_TENANT: ${{ vars.ACUMATICA_TEST_TENANT }}
+        run: python scripts/generate_ui_fixtures.py --days 30 --output tests/fixtures/ui_screens.json
+
       - name: Run UI tests
         timeout-minutes: 10
         env:
