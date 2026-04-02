@@ -16,11 +16,14 @@ namespace HeritageFabrics.SO
     /// For each unallocated PIECENBR line:
     ///   1. Find available bolts from INLotSerialStatus (FIFO, then largest)
     ///   2. Create SOLineSplit rows for each bolt (native allocation pattern)
-    ///   3. If bolts don't cover full request, create unallocated remainder split
+    ///   3. Store original qty in UsrRequestedQty, override OrderQty to bolt total
     ///   4. If no bolts available, mark line POCreate = true
     ///
     /// Uses SOLineSplit (not SOLine splitting) to avoid openLineCntr aggregate
     /// corruption that occurs when inserting SOLine rows in event handlers.
+    ///
+    /// Idempotency: checks both DB and graph cache for existing lot splits.
+    /// Uses UsrRequestedQty (not OrderQty) so re-saves never inflate quantities.
     /// </summary>
     public class SOOrderEntry_AutoAllocation : PXGraphExtension<SOOrderEntry>
     {
@@ -106,7 +109,10 @@ namespace HeritageFabrics.SO
         private void AllocateBoltsForOrder(SOOrder order)
         {
             // Collect all lot serials already assigned across the entire order
+            // Check BOTH database and graph cache to catch uncommitted splits
             var usedSerials = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            // DB splits (committed from prior saves)
             foreach (SOLineSplit existingSplit in
                 SelectFrom<SOLineSplit>
                     .Where<SOLineSplit.orderType.IsEqual<@P.AsString>
@@ -115,6 +121,17 @@ namespace HeritageFabrics.SO
             {
                 if (!string.IsNullOrEmpty(existingSplit.LotSerialNbr))
                     usedSerials.Add(existingSplit.LotSerialNbr);
+            }
+
+            // Cache splits (uncommitted from current Persist cycle)
+            foreach (SOLineSplit cachedSplit in Base.Caches[typeof(SOLineSplit)].Inserted)
+            {
+                if (cachedSplit.OrderType == order.OrderType
+                    && cachedSplit.OrderNbr == order.OrderNbr
+                    && !string.IsNullOrEmpty(cachedSplit.LotSerialNbr))
+                {
+                    usedSerials.Add(cachedSplit.LotSerialNbr);
+                }
             }
 
             int totalBoltsAssigned = 0;
@@ -134,13 +151,31 @@ namespace HeritageFabrics.SO
                     continue;
 
                 // Skip lines that already have allocated splits with lot serials
+                // Checks both DB and cache
                 if (LineHasAllocatedSplits(line, order))
                     continue;
 
                 int? siteID = line.SiteID ?? order.DefaultSiteID;
                 if (siteID == null) continue;
 
-                decimal requestedQty = line.OrderQty ?? 0m;
+                // Use UsrRequestedQty if already set (re-save scenario),
+                // otherwise use current OrderQty (first allocation)
+                var lineExt = line.GetExtension<SOLineExt>();
+                decimal requestedQty;
+
+                if (lineExt?.UsrRequestedQty != null && lineExt.UsrRequestedQty > 0m)
+                {
+                    // Re-save: use the stored original request
+                    requestedQty = lineExt.UsrRequestedQty.Value;
+                }
+                else
+                {
+                    // First allocation: capture and store the user's original qty
+                    requestedQty = line.OrderQty ?? 0m;
+                    Base.Transactions.Cache.SetValueExt<SOLineExt.usrRequestedQty>(line, requestedQty);
+                    Base.Transactions.Cache.Update(line);
+                }
+
                 decimal maxQty = requestedQty * OvershipFactor;
 
                 // Find available bolts
@@ -304,10 +339,12 @@ namespace HeritageFabrics.SO
 
         /// <summary>
         /// Check if a line already has allocated splits with lot serials.
-        /// If so, skip — already allocated from prior save or manual entry.
+        /// Checks BOTH database (committed) and graph cache (uncommitted)
+        /// to prevent re-allocation when Persist() fires multiple times.
         /// </summary>
         private bool LineHasAllocatedSplits(SOLine line, SOOrder order)
         {
+            // Check database (committed splits from prior saves)
             foreach (SOLineSplit split in
                 SelectFrom<SOLineSplit>
                     .Where<SOLineSplit.orderType.IsEqual<@P.AsString>
@@ -318,6 +355,19 @@ namespace HeritageFabrics.SO
                 if (!string.IsNullOrEmpty(split.LotSerialNbr))
                     return true;
             }
+
+            // Check graph cache (uncommitted splits from current Persist cycle)
+            foreach (SOLineSplit cachedSplit in Base.Caches[typeof(SOLineSplit)].Inserted)
+            {
+                if (cachedSplit.OrderType == order.OrderType
+                    && cachedSplit.OrderNbr == order.OrderNbr
+                    && cachedSplit.LineNbr == line.LineNbr
+                    && !string.IsNullOrEmpty(cachedSplit.LotSerialNbr))
+                {
+                    return true;
+                }
+            }
+
             return false;
         }
 
