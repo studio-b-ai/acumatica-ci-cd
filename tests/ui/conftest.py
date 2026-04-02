@@ -1,4 +1,5 @@
 """Playwright fixtures for Acumatica UI tests."""
+import json
 import pytest
 from playwright.sync_api import sync_playwright, Page
 
@@ -106,3 +107,24 @@ def capture_dialogs(acumatica_page, dialog_messages):
     acumatica_page.on("dialog", handle_dialog)
     yield
     acumatica_page.remove_listener("dialog", handle_dialog)
+
+
+FIXTURES_PATH = os.path.join(os.path.dirname(__file__), "..", "fixtures", "ui_screens.json")
+
+
+def load_screen_fixtures():
+    """Load UI screen fixtures from JSON file."""
+    if not os.path.exists(FIXTURES_PATH):
+        return []
+    with open(FIXTURES_PATH) as f:
+        return json.load(f)
+
+
+@pytest.fixture
+def screen_page(acumatica_page):
+    """Return the authenticated page for screen navigation tests.
+
+    Unlike so301000 which navigates to a specific screen, this just
+    returns the authenticated page for the test to navigate wherever needed.
+    """
+    return acumatica_page
