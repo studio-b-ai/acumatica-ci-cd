@@ -218,7 +218,7 @@ namespace HeritageFabrics.SO
 
         #region UsrRequestedQty
         [PXDBDecimal(4)]
-        [PXDefault(TypeCode.Decimal, "0.0", PersistingCheck = PXPersistingCheck.Nothing)]
+        [PXDefault(System.TypeCode.Decimal, "0.0", PersistingCheck = PXPersistingCheck.Nothing)]
         [PXUIField(DisplayName = "Requested Qty", Enabled = false)]
         public decimal? UsrRequestedQty { get; set; }
         public abstract class usrRequestedQty : BqlDecimal.Field<usrRequestedQty> { }
