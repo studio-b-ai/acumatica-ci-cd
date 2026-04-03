@@ -1341,22 +1341,10 @@ namespace StudioB.Containers
                 WriteLog(string.Format("  IGCM migration: {0} PO links migrated", rows));
             }
 
-            // Step 3: Update PO headers with container refs
-            string updatePOs = @"
-                UPDATE po
-                SET po.UsrContainerRef = u.ContainerCD
-                FROM POOrder po
-                INNER JOIN UsrContainerPOLink lk
-                    ON lk.CompanyID = po.CompanyID AND lk.OrderType = po.OrderType AND lk.OrderNbr = po.OrderNbr
-                INNER JOIN UsrContainer u
-                    ON u.CompanyID = lk.CompanyID AND u.ContainerID = lk.ContainerID
-                WHERE po.UsrContainerRef IS NULL";
-            using (var cmd = new SqlCommand(updatePOs, conn))
-            {
-                cmd.CommandTimeout = 120;
-                int rows = cmd.ExecuteNonQuery();
-                WriteLog(string.Format("  IGCM migration: {0} PO headers updated with container ref", rows));
-            }
+            // Step 3: PO header UsrContainerRef backfill deferred —
+            // UPDATE on POOrder is blocked by validate-project.py guard.
+            // ContainerMaint graph sets UsrContainerRef on save.
+            // Historical POs can be backfilled via SM302050 if needed.
         }
     }
 }
