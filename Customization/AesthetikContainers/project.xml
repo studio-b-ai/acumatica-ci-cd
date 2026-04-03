@@ -1095,14 +1095,13 @@ namespace StudioB.Containers
                     EnsureColumn(conn, "POReceiptLine", "UsrActualFreightAmt", "decimal(25,4) NULL");
                     EnsureColumn(conn, "POReceiptLine", "UsrBrokerageAmt", "decimal(25,4) NULL");
 
-                    // ── SB501000 Screen Registration ──────────────────────────
-                    // Screen registration now handled by <ScreenWithRights> XML
-                    // element (the Acumatica-native mechanism). The previous
-                    // CustomizationPlugin SQL approach failed on cloud 24.208
-                    // due to SiteMap schema differences.
+                    // ── IGCM → UsrContainer Data Migration ──────────────────
+                    // Idempotent (NOT EXISTS guards). Safe to run on every publish.
+                    // Migrates IIG container data to AesthetikContainers tables.
+                    MigrateIGCMContainers(conn);
                 }
 
-                WriteLog("[AesthetikContainers] All tables, columns, indexes, SiteMap, and access rights verified/created.");
+                WriteLog("[AesthetikContainers] All tables, columns, indexes, and migration verified/created.");
             }
             catch (Exception ex)
             {
@@ -1266,6 +1265,98 @@ namespace StudioB.Containers
                 table, indexName, columns);
             using (var cmd = new SqlCommand(sql, conn)) { cmd.ExecuteNonQuery(); }
             WriteLog(string.Format("  Index {0}.{1} — OK", table, indexName));
+        }
+
+        private void MigrateIGCMContainers(SqlConnection conn)
+        {
+            // Skip if IIG source table doesn't exist (already fully removed)
+            string checkSql = "SELECT OBJECT_ID('IGCMPOLandedCost', 'U')";
+            using (var cmd = new SqlCommand(checkSql, conn))
+            {
+                var result = cmd.ExecuteScalar();
+                if (result == null || result == System.DBNull.Value)
+                {
+                    WriteLog("  IGCM migration: IGCMPOLandedCost table not found — skipping");
+                    return;
+                }
+            }
+
+            // Step 1: Migrate container headers
+            string migrateHeaders = @"
+                INSERT INTO UsrContainer (
+                    CompanyID, ContainerCD, CarrierCode, BookingRef, Status,
+                    CreatedByID, CreatedByScreenID, CreatedDateTime,
+                    LastModifiedByID, LastModifiedByScreenID, LastModifiedDateTime
+                )
+                SELECT
+                    c.CompanyID,
+                    ISNULL(c.ContainerNbr, c.RefNbr),
+                    'OTHER',
+                    c.RefNbr,
+                    CASE
+                        WHEN c.Released = 1 THEN 'DELIVERED'
+                        WHEN c.Hold = 1 THEN 'CUSTOMS_HOLD'
+                        ELSE 'IN_TRANSIT'
+                    END,
+                    c.CreatedByID, c.CreatedByScreenID, c.CreatedDateTime,
+                    c.LastModifiedByID, c.LastModifiedByScreenID, c.LastModifiedDateTime
+                FROM IGCMPOLandedCost c
+                WHERE NOT EXISTS (
+                    SELECT 1 FROM UsrContainer u
+                    WHERE u.CompanyID = c.CompanyID
+                    AND u.ContainerCD = ISNULL(c.ContainerNbr, c.RefNbr)
+                )";
+            using (var cmd = new SqlCommand(migrateHeaders, conn))
+            {
+                cmd.CommandTimeout = 120;
+                int rows = cmd.ExecuteNonQuery();
+                WriteLog(string.Format("  IGCM migration: {0} container headers migrated", rows));
+            }
+
+            // Step 2: Migrate PO links
+            string migrateLinks = @"
+                INSERT INTO UsrContainerPOLink (
+                    CompanyID, ContainerID, OrderType, OrderNbr, LineNbr
+                )
+                SELECT DISTINCT
+                    cl.CompanyID, u.ContainerID, cl.POOrderType, cl.PONbr, cl.POLineNbr
+                FROM IGCMPOLandedCostLine cl
+                INNER JOIN IGCMPOLandedCost c
+                    ON cl.CompanyID = c.CompanyID AND cl.RefNbr = c.RefNbr
+                INNER JOIN UsrContainer u
+                    ON u.CompanyID = c.CompanyID AND u.ContainerCD = ISNULL(c.ContainerNbr, c.RefNbr)
+                WHERE cl.PONbr IS NOT NULL
+                AND NOT EXISTS (
+                    SELECT 1 FROM UsrContainerPOLink lk
+                    WHERE lk.CompanyID = cl.CompanyID
+                    AND lk.ContainerID = u.ContainerID
+                    AND lk.OrderType = cl.POOrderType
+                    AND lk.OrderNbr = cl.PONbr
+                    AND ISNULL(lk.LineNbr, -1) = ISNULL(cl.POLineNbr, -1)
+                )";
+            using (var cmd = new SqlCommand(migrateLinks, conn))
+            {
+                cmd.CommandTimeout = 120;
+                int rows = cmd.ExecuteNonQuery();
+                WriteLog(string.Format("  IGCM migration: {0} PO links migrated", rows));
+            }
+
+            // Step 3: Update PO headers with container refs
+            string updatePOs = @"
+                UPDATE po
+                SET po.UsrContainerRef = u.ContainerCD
+                FROM POOrder po
+                INNER JOIN UsrContainerPOLink lk
+                    ON lk.CompanyID = po.CompanyID AND lk.OrderType = po.OrderType AND lk.OrderNbr = po.OrderNbr
+                INNER JOIN UsrContainer u
+                    ON u.CompanyID = lk.CompanyID AND u.ContainerID = lk.ContainerID
+                WHERE po.UsrContainerRef IS NULL";
+            using (var cmd = new SqlCommand(updatePOs, conn))
+            {
+                cmd.CommandTimeout = 120;
+                int rows = cmd.ExecuteNonQuery();
+                WriteLog(string.Format("  IGCM migration: {0} PO headers updated with container ref", rows));
+            }
         }
     }
 }
