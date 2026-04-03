@@ -553,6 +553,22 @@ jobs:
           print('Heritage Test smoke test passed — safe to proceed to production')
           "
 
+      - name: UOM migration UI verification
+        id: uom_verify
+        continue-on-error: true
+        env:
+          ACUMATICA_URL: ${{ secrets.ACUMATICA_URL }}
+          ACUMATICA_USERNAME: ${{ secrets.ACUMATICA_USERNAME }}
+          ACUMATICA_PASSWORD: ${{ secrets.ACUMATICA_PASSWORD }}
+          ACUMATICA_TENANT: ${{ vars.ACUMATICA_TEST_TENANT }}
+        run: |
+          pip install playwright pytest
+          python -m playwright install chromium
+          pytest tests/ui/test_uom_migration.py -v --tb=short -m "ui and not slow" 2>&1 || {
+            echo "::warning::UOM migration UI tests failed — review results before proceeding to production"
+            exit 1
+          }
+
       - name: Heritage Test gate summary
         if: always()
         run: |
@@ -566,6 +582,7 @@ jobs:
           echo "| Deploy | \`${{ steps.deploy.outcome || 'n/a' }}\` |" >> "$GITHUB_STEP_SUMMARY"
           echo "| Field Validation | \`${{ steps.verify.outcome || 'n/a' }}\` |" >> "$GITHUB_STEP_SUMMARY"
           echo "| Smoke Test | \`${{ steps.smoke.outcome || 'n/a' }}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| UOM Migration UI | \`${{ steps.uom_verify.outcome || 'n/a' }}\` |" >> "$GITHUB_STEP_SUMMARY"
 
   # ──────────────────────────────────────────────
   # Job 4: Countdown + Deploy to Production
