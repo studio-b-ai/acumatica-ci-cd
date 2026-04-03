@@ -1414,7 +1414,7 @@ namespace StudioB.Containers
         </PXGridLevel>
     </Page>
     <Page path="~/pages/ap/ap303000.aspx">
-        <PXFormView ID="form" ParentId="phF_form" TypeFullName="PX.Web.UI.PXFormView">
+        <PXFormView ID="form" ParentId="phG_tab" TypeFullName="PX.Web.UI.PXFormView">
             <Children Key="Template">
                 <AddItem>
                     <PXSelector TypeFullName="PX.Web.UI.PXSelector">
