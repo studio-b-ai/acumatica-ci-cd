@@ -1290,9 +1290,9 @@ namespace StudioB.Containers
                 )
                 SELECT
                     c.CompanyID,
-                    ISNULL(c.ContainerNbr, c.RefNbr),
+                    ISNULL(c.ContainerNbr, c.LandedCostNbr),
                     'OTHER',
-                    c.RefNbr,
+                    c.LandedCostNbr,
                     CASE
                         WHEN c.Released = 1 THEN 'DELIVERED'
                         WHEN c.Hold = 1 THEN 'CUSTOMS_HOLD'
@@ -1304,7 +1304,7 @@ namespace StudioB.Containers
                 WHERE NOT EXISTS (
                     SELECT 1 FROM UsrContainer u
                     WHERE u.CompanyID = c.CompanyID
-                    AND u.ContainerCD = ISNULL(c.ContainerNbr, c.RefNbr)
+                    AND u.ContainerCD = ISNULL(c.ContainerNbr, c.LandedCostNbr)
                 )";
             using (var cmd = new SqlCommand(migrateHeaders, conn))
             {
@@ -1322,9 +1322,9 @@ namespace StudioB.Containers
                     cl.CompanyID, u.ContainerID, cl.POOrderType, cl.PONbr, cl.POLineNbr
                 FROM IGCMPOLandedCostLine cl
                 INNER JOIN IGCMPOLandedCost c
-                    ON cl.CompanyID = c.CompanyID AND cl.RefNbr = c.RefNbr
+                    ON cl.CompanyID = c.CompanyID AND cl.LandedCostNbr = c.LandedCostNbr
                 INNER JOIN UsrContainer u
-                    ON u.CompanyID = c.CompanyID AND u.ContainerCD = ISNULL(c.ContainerNbr, c.RefNbr)
+                    ON u.CompanyID = c.CompanyID AND u.ContainerCD = ISNULL(c.ContainerNbr, c.LandedCostNbr)
                 WHERE cl.PONbr IS NOT NULL
                 AND NOT EXISTS (
                     SELECT 1 FROM UsrContainerPOLink lk
