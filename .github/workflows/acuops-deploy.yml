@@ -594,7 +594,7 @@ jobs:
         run: |
           python -c "
           import sys, os
-          sys.path.insert(0, '.')
+          sys.path.insert(0, 'pipeline')
           from scripts.deploy import AcumaticaCustomizationClient
           client = AcumaticaCustomizationClient(
               os.environ['ACUMATICA_URL'],
@@ -763,6 +763,7 @@ jobs:
           if [ -f pipeline/scripts/notify.py ] && [ -n "${NOTIFY_RECIPIENTS}" ]; then
             python pipeline/scripts/notify.py \
               --type countdown \
+              --minutes 20 \
               --recipients "${NOTIFY_RECIPIENTS}" \
               --sender "${NOTIFY_SENDER}" \
               --project "${{ needs.build.outputs.project_name }}" \
