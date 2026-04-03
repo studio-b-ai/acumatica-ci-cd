@@ -867,6 +867,7 @@ jobs:
               --project "${PROJECT}" \
               --package "${PACKAGE_FILE}" \
               --also-publish "${ALSO}" \
+              --no-merge \
               ${EXTRA_FLAGS}
           fi
 
