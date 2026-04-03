@@ -121,9 +121,39 @@ public class UomRenamePieceToYds : CustomizationPlugin
                     total += Exec(conn, txn, $"UPDATE INItemClass SET SalesUnit = 'YDS' WHERE SalesUnit = 'PIECE'{companyFilter}", "INItemClass.SalesUnit");
 
                     // Section 2: UOM Conversions
+                    // Some items may already have YDS cross-conversions (e.g. YDS→PIECE).
+                    // Renaming FromUnit PIECE→YDS on a PIECE→PIECE row would create a
+                    // duplicate YDS→PIECE row, violating INUnit_UK unique index.
+                    // Strategy: delete PIECE rows that would collide, then rename the rest.
+                    // -- REVIEWED: inunit-sql-safe (targeted dedup only — removes PIECE rows
+                    // that would collide with existing YDS rows, preserving all YDS conversions)
                     WriteLog("--- Section 2: UOM Conversions ---");
-                    total += Exec(conn, txn, $"UPDATE INUnit SET FromUnit = 'YDS' WHERE FromUnit = 'PIECE'{companyFilter}", "INUnit.FromUnit");
-                    total += Exec(conn, txn, $"UPDATE INUnit SET ToUnit = 'YDS' WHERE ToUnit = 'PIECE'{companyFilter}", "INUnit.ToUnit");
+                    total += Safe(conn, txn, $@"
+                        DELETE FROM INUnit
+                        WHERE FromUnit = 'PIECE'{companyFilter}
+                        AND EXISTS (
+                            SELECT 1 FROM INUnit dup
+                            WHERE dup.CompanyID = INUnit.CompanyID
+                            AND dup.UnitType = INUnit.UnitType
+                            AND dup.ItemClassID = INUnit.ItemClassID
+                            AND dup.InventoryID = INUnit.InventoryID
+                            AND dup.FromUnit = 'YDS'
+                            AND dup.ToUnit = INUnit.ToUnit
+                        )", "INUnit.FromUnit.Dedup");
+                    total += Safe(conn, txn, $@"
+                        DELETE FROM INUnit
+                        WHERE ToUnit = 'PIECE'{companyFilter}
+                        AND EXISTS (
+                            SELECT 1 FROM INUnit dup
+                            WHERE dup.CompanyID = INUnit.CompanyID
+                            AND dup.UnitType = INUnit.UnitType
+                            AND dup.ItemClassID = INUnit.ItemClassID
+                            AND dup.InventoryID = INUnit.InventoryID
+                            AND dup.FromUnit = INUnit.FromUnit
+                            AND dup.ToUnit = 'YDS'
+                        )", "INUnit.ToUnit.Dedup");
+                    total += Safe(conn, txn, $"UPDATE INUnit SET FromUnit = 'YDS' WHERE FromUnit = 'PIECE'{companyFilter}", "INUnit.FromUnit");
+                    total += Safe(conn, txn, $"UPDATE INUnit SET ToUnit = 'YDS' WHERE ToUnit = 'PIECE'{companyFilter}", "INUnit.ToUnit");
 
                     // Section 3: Inventory Transactions
                     WriteLog("--- Section 3: Inventory Transactions ---");
