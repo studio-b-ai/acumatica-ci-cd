@@ -785,7 +785,7 @@ jobs:
           # (force_qualify=true) skip this — the instance may be down due to
           # a bad customization that this deploy is fixing.
           python -c "
-          import sys, os; sys.path.insert(0, '.')
+          import sys, os; sys.path.insert(0, 'pipeline')
           from scripts.deploy import AcumaticaCustomizationClient
           client = AcumaticaCustomizationClient(
               os.environ['ACUMATICA_URL'], os.environ['ACUMATICA_USERNAME'],
