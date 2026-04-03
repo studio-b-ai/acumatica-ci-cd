@@ -1534,10 +1534,6 @@ public partial class Page_SB_SB501000 : PX.Web.UI.PXPage
 }
 ]]></CDATA>
     </File>
-    <!-- ─── Screen Registration: SB501000 Container Maintenance ──────────── -->
-    <!-- Uses <ScreenWithRights> (the Acumatica-native mechanism) instead of
-         CustomizationPlugin SQL — which failed on cloud 24.208 due to SiteMap
-         schema differences. Modeled after IIG's IGCM3098 registration pattern. -->
     <ScreenWithRights AccessRightsMergeRule="ApplyAndKeep">
         <data-set>
             <relations format-version="3" relations-version="20240201" main-table="SiteMap">
@@ -1569,7 +1565,6 @@ public partial class Page_SB_SB501000 : PX.Web.UI.PXPage
             </data>
         </data-set>
     </ScreenWithRights>
-    <!-- Full navigation registration — workspace, subcategory, area, tile -->
     <ScreenWithRights AccessRightsMergeRule="ApplyAndKeep">
         <data-set>
             <relations format-version="3" relations-version="20240201" main-table="SiteMap">
