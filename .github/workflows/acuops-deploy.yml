@@ -569,8 +569,8 @@ jobs:
           ACUMATICA_PASSWORD: ${{ secrets.ACUMATICA_PROD_PASSWORD }}
           ACUMATICA_TENANT: ${{ vars.ACUMATICA_TEST_TENANT }}
         run: |
-          python3 pipeline/scripts/deploy.py --verify \
-            --manifest publish-manifest.json
+          python3 pipeline/scripts/deploy.py --validate-only \
+            --project "${PROJECT}"
 
       - name: E2E view-level smoke test
         id: e2e
@@ -717,7 +717,7 @@ jobs:
           ACUMATICA_TENANT: ${{ (steps.env.outputs.target == 'production') && secrets.ACUMATICA_PROD_TENANT || (secrets.ACUMATICA_STG_TENANT || secrets.ACUMATICA_PROD_TENANT) }}
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
         run: |
-          python3 pipeline/scripts/deploy.py --backup \
+          python3 pipeline/scripts/deploy.py --download \
             --project "${{ needs.build.outputs.project_name }}" \
             --output backups/
 
