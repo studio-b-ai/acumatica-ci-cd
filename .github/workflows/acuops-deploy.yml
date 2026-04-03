@@ -553,11 +553,12 @@ jobs:
           # --no-merge: test tenants may have orphaned ISV publish metadata
           # that causes errors with merge=True. Clean compile bypasses this.
           TEST_ALSO="${{ needs.build.outputs.also_publish_test }}"
+          python3 pipeline/scripts/deploy.py \
             --project "${PROJECT}" \
             --package "${PACKAGE_FILE}" \
             --also-publish "${TEST_ALSO}" \
             --no-merge \
-            --skip-e2e \
+            --skip-smoke-test \
             ${EXTRA_FLAGS}
 
       - name: Validate test tenant
@@ -568,6 +569,7 @@ jobs:
           ACUMATICA_PASSWORD: ${{ secrets.ACUMATICA_PROD_PASSWORD }}
           ACUMATICA_TENANT: ${{ vars.ACUMATICA_TEST_TENANT }}
         run: |
+          python3 pipeline/scripts/deploy.py --verify \
             --manifest publish-manifest.json
 
       - name: E2E view-level smoke test
@@ -715,6 +717,7 @@ jobs:
           ACUMATICA_TENANT: ${{ (steps.env.outputs.target == 'production') && secrets.ACUMATICA_PROD_TENANT || (secrets.ACUMATICA_STG_TENANT || secrets.ACUMATICA_PROD_TENANT) }}
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
         run: |
+          python3 pipeline/scripts/deploy.py --backup \
             --project "${{ needs.build.outputs.project_name }}" \
             --output backups/
 
@@ -859,6 +862,7 @@ jobs:
               ALSO_PUBLISH_PROJECTS="${ALSO}" \
               python pipeline/scripts/emergency-deploy.py
           else
+            python3 pipeline/scripts/deploy.py \
               --project "${PROJECT}" \
               --package "${PACKAGE_FILE}" \
               --also-publish "${ALSO}" \

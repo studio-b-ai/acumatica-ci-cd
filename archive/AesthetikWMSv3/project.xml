@@ -1,0 +1,279 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Customization level="2" description="AesthetikWMS — Consolidated WMS, ERP extensions, PO Relations/Activities" product-version="24.208">
+    <Graph ClassName="INLotSerialStatusExt" Source="Code\DAC\INLotSerialStatusExt.cs" IsNew="True" FileType="NewFile" />
+    <Graph ClassName="INLotSerialClassExt" Source="Code\DAC\INLotSerialClassExt.cs" IsNew="True" FileType="NewFile" />
+    <Graph ClassName="INSetupExt" Source="Code\DAC\INSetupExt.cs" IsNew="True" FileType="NewFile" />
+    <Graph ClassName="SOOrderExt" Source="Code\DAC\SOOrderExt.cs" IsNew="True" FileType="NewFile" />
+    <Graph ClassName="CustomerExt" Source="Code\DAC\CustomerExt.cs" IsNew="True" FileType="NewFile" />
+    <Graph ClassName="UsrPORelation" Source="Code\DAC\UsrPORelation.cs" IsNew="True" FileType="NewFile" />
+    <Graph ClassName="UsrPOActivity" Source="Code\DAC\UsrPOActivity.cs" IsNew="True" FileType="NewFile" />
+    <Graph ClassName="CrossDockManager" Source="Code\Graph\CrossDockManager.cs" IsNew="True" FileType="NewFile" />
+    <Graph ClassName="PieceGoodsScanExtension" Source="Code\Graph\PieceGoodsScanExtension.cs" IsNew="True" FileType="NewFile" />
+    <Graph ClassName="TextilePickOptimizer" Source="Code\Graph\TextilePickOptimizer.cs" IsNew="True" FileType="NewFile" />
+    <Graph ClassName="PieceGoodsReceivingExt" Source="Code\Graph\PieceGoodsReceivingExt.cs" IsNew="True" FileType="NewFile" />
+    <Graph ClassName="INSetupMaintExt" Source="Code\Graph\INSetupMaintExt.cs" IsNew="True" FileType="NewFile" />
+    <Graph ClassName="SOOrderEntry_AutoAllocation" Source="Code\Graph\SOOrderEntry_AutoAllocation.cs" IsNew="True" FileType="NewFile" />
+    <Graph ClassName="SOOrderEntry_ComplianceHold" Source="Code\Graph\SOOrderEntry_ComplianceHold.cs" IsNew="True" FileType="NewFile" />
+    <Graph ClassName="ARInvoiceEntry_PayLink_Extension" Source="Code\Graph\ARInvoiceEntry_PayLink_Extension.cs" IsNew="True" FileType="NewFile" />
+    <Graph ClassName="POReceiptEntry_Extension" Source="Code\Graph\POReceiptEntry_Extension.cs" IsNew="True" FileType="NewFile" />
+    <Graph ClassName="POOrderEntry_RelationsExt" Source="Code\Graph\POOrderEntry_RelationsExt.cs" IsNew="True" FileType="NewFile" />
+    <Graph ClassName="PORelationsInstaller" Source="Code\Graph\PORelationsInstaller.cs" IsNew="True" FileType="NewFile" />
+    <Graph ClassName="CutToOrderEngine" Source="Code\Logic\CutToOrderEngine.cs" IsNew="True" FileType="NewFile" />
+    <Graph ClassName="PreReceivingEngine" Source="Code\Logic\PreReceivingEngine.cs" IsNew="True" FileType="NewFile" />
+    <Graph ClassName="PieceGoodsConstants" Source="Code\Helpers\PieceGoodsConstants.cs" IsNew="True" FileType="NewFile" />
+    <Graph ClassName="BarcodeParser" Source="Code\Helpers\BarcodeParser.cs" IsNew="True" FileType="NewFile" />
+    <Sql Name="AesthetikWMS_Columns_v1" Script="#CDATA">
+        <CDATA name="Script"><![CDATA[
+-- SOOrder extension fields (4 columns) — from AesthetikERP
+IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('SOOrder') AND name = 'UsrHubSpotDealId')
+  ALTER TABLE SOOrder ADD UsrHubSpotDealId nvarchar(50) NULL;
+IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('SOOrder') AND name = 'UsrWMSStatus')
+  ALTER TABLE SOOrder ADD UsrWMSStatus nvarchar(20) NULL;
+IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('SOOrder') AND name = 'UsrComplianceHold')
+  ALTER TABLE SOOrder ADD UsrComplianceHold bit NULL;
+IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('SOOrder') AND name = 'UsrComplianceHoldReason')
+  ALTER TABLE SOOrder ADD UsrComplianceHoldReason nvarchar(500) NULL;
+-- BAccount extension field (1 column) — from AesthetikERP
+IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('BAccount') AND name = 'UsrDisablePayLink')
+  ALTER TABLE BAccount ADD UsrDisablePayLink bit NULL;
+-- INLotSerialClass extension fields (4 columns) — from AesthetikWMS
+IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('INLotSerialClass') AND name = 'UsrMinRemnant')
+  ALTER TABLE INLotSerialClass ADD UsrMinRemnant decimal(18,2) NULL;
+IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('INLotSerialClass') AND name = 'UsrAutoPrint')
+  ALTER TABLE INLotSerialClass ADD UsrAutoPrint bit NULL;
+IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('INLotSerialClass') AND name = 'UsrDefaultWidth')
+  ALTER TABLE INLotSerialClass ADD UsrDefaultWidth decimal(18,1) NULL;
+IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('INLotSerialClass') AND name = 'UsrPreRecvEnabled')
+  ALTER TABLE INLotSerialClass ADD UsrPreRecvEnabled bit NULL;
+-- INLotSerialStatus extension fields (9 columns) — from AesthetikWMS
+IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('INLotSerialStatus') AND name = 'UsrActualYardage')
+  ALTER TABLE INLotSerialStatus ADD UsrActualYardage decimal(18,2) NULL;
+IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('INLotSerialStatus') AND name = 'UsrDyeLot')
+  ALTER TABLE INLotSerialStatus ADD UsrDyeLot nvarchar(30) NULL;
+IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('INLotSerialStatus') AND name = 'UsrWidth')
+  ALTER TABLE INLotSerialStatus ADD UsrWidth decimal(18,1) NULL;
+IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('INLotSerialStatus') AND name = 'UsrShadeCode')
+  ALTER TABLE INLotSerialStatus ADD UsrShadeCode nvarchar(10) NULL;
+IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('INLotSerialStatus') AND name = 'UsrSourceRoll')
+  ALTER TABLE INLotSerialStatus ADD UsrSourceRoll nvarchar(30) NULL;
+IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('INLotSerialStatus') AND name = 'UsrDefectFlag')
+  ALTER TABLE INLotSerialStatus ADD UsrDefectFlag bit NULL;
+IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('INLotSerialStatus') AND name = 'UsrInventoryStatus')
+  ALTER TABLE INLotSerialStatus ADD UsrInventoryStatus nvarchar(15) NULL;
+IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('INLotSerialStatus') AND name = 'UsrPreAssignedBin')
+  ALTER TABLE INLotSerialStatus ADD UsrPreAssignedBin nvarchar(30) NULL;
+IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('INLotSerialStatus') AND name = 'UsrContainerNo')
+  ALTER TABLE INLotSerialStatus ADD UsrContainerNo nvarchar(30) NULL;
+-- INSetup extension fields (15 columns) — from AesthetikWMS
+IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('INSetup') AND name = 'UsrPGMinRemnant')
+  ALTER TABLE INSetup ADD UsrPGMinRemnant decimal(18,2) NULL;
+IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('INSetup') AND name = 'UsrPGAutoQtyMode')
+  ALTER TABLE INSetup ADD UsrPGAutoQtyMode bit NULL;
+IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('INSetup') AND name = 'UsrPGAutoPrint')
+  ALTER TABLE INSetup ADD UsrPGAutoPrint bit NULL;
+IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('INSetup') AND name = 'UsrPGCutSuffix')
+  ALTER TABLE INSetup ADD UsrPGCutSuffix nvarchar(20) NULL;
+IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('INSetup') AND name = 'UsrPGPreRecv')
+  ALTER TABLE INSetup ADD UsrPGPreRecv bit NULL;
+IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('INSetup') AND name = 'UsrPGCrossDock')
+  ALTER TABLE INSetup ADD UsrPGCrossDock bit NULL;
+IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('INSetup') AND name = 'UsrPGXDockAge')
+  ALTER TABLE INSetup ADD UsrPGXDockAge int NULL;
+IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('INSetup') AND name = 'UsrPGInTransitWt')
+  ALTER TABLE INSetup ADD UsrPGInTransitWt int NULL;
+IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('INSetup') AND name = 'UsrPGYardageVar')
+  ALTER TABLE INSetup ADD UsrPGYardageVar decimal(18,4) NULL;
+IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('INSetup') AND name = 'UsrPGWtExact')
+  ALTER TABLE INSetup ADD UsrPGWtExact int NULL;
+IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('INSetup') AND name = 'UsrPGWtRemnant')
+  ALTER TABLE INSetup ADD UsrPGWtRemnant int NULL;
+IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('INSetup') AND name = 'UsrPGWtDyeLot')
+  ALTER TABLE INSetup ADD UsrPGWtDyeLot int NULL;
+IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('INSetup') AND name = 'UsrPGWtLocation')
+  ALTER TABLE INSetup ADD UsrPGWtLocation int NULL;
+IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('INSetup') AND name = 'UsrPGWtFIFO')
+  ALTER TABLE INSetup ADD UsrPGWtFIFO int NULL;
+]]></CDATA>
+    </Sql>
+    <Page path="~/pages/so/so301000.aspx">
+        <PXFormView ID="form" ParentId="phF_form" TypeFullName="PX.Web.UI.PXFormView">
+            <Children Key="Template">
+                <AddItem>
+                    <PXTextEdit TypeFullName="PX.Web.UI.PXTextEdit">
+                        <Prop Key="Virtual:ApplyStylesheetSkin" />
+                        <Prop Key="ID" Value="edUsrHubSpotDealId" />
+                        <Prop Key="DataField" Value="UsrHubSpotDealId" />
+                    </PXTextEdit>
+                </AddItem>
+                <AddItem>
+                    <PXDropDown TypeFullName="PX.Web.UI.PXDropDown">
+                        <Prop Key="Virtual:ApplyStylesheetSkin" />
+                        <Prop Key="ID" Value="edUsrWMSStatus" />
+                        <Prop Key="DataField" Value="UsrWMSStatus" />
+                        <Prop Key="Enabled" Value="False" />
+                    </PXDropDown>
+                </AddItem>
+                <AddItem>
+                    <PXCheckBox TypeFullName="PX.Web.UI.PXCheckBox">
+                        <Prop Key="ID" Value="chkUsrComplianceHold" />
+                        <Prop Key="DataField" Value="UsrComplianceHold" />
+                        <Prop Key="Enabled" Value="False" />
+                    </PXCheckBox>
+                </AddItem>
+                <AddItem>
+                    <PXTextEdit TypeFullName="PX.Web.UI.PXTextEdit">
+                        <Prop Key="ID" Value="edUsrComplianceHoldReason" />
+                        <Prop Key="DataField" Value="UsrComplianceHoldReason" />
+                        <Prop Key="TextMode" Value="MultiLine" />
+                        <Prop Key="Height" Value="60px" />
+                        <Prop Key="Enabled" Value="False" />
+                    </PXTextEdit>
+                </AddItem>
+            </Children>
+        </PXFormView>
+    </Page>
+    <Page path="~/pages/po/po301000.aspx">
+        <PXTab ID="tab" ParentId="phG_tab" TypeFullName="PX.Web.UI.PXTab">
+            <Children Key="Items">
+                <AddItem>
+                    <PXTabItem TypeFullName="PX.Web.UI.PXTabItem">
+                        <Prop Key="Text" Value="Relations" />
+                        <Children Key="Template">
+                            <AddItem>
+                                <PXGrid TypeFullName="PX.Web.UI.PXGrid">
+                                    <Prop Key="ID" Value="gridRelations" />
+                                    <Prop Key="SkinID" Value="Details" />
+                                    <Prop Key="DataSourceID" Value="ds" />
+                                    <Prop Key="Width" Value="100%" />
+                                    <Prop Key="AllowFilter" Value="True" />
+                                    <Children Key="Levels">
+                                        <AddItem>
+                                            <PXGridLevel TypeFullName="PX.Web.UI.PXGridLevel">
+                                                <Prop Key="DataMember" Value="Relations" />
+                                                <Children Key="Columns">
+                                                    <AddItem>
+                                                        <PXGridColumn TypeFullName="PX.Web.UI.PXGridColumn">
+                                                            <Prop Key="DataField" Value="Role" />
+                                                            <Prop Key="Width" Value="120px" />
+                                                        </PXGridColumn>
+                                                    </AddItem>
+                                                    <AddItem>
+                                                        <PXGridColumn TypeFullName="PX.Web.UI.PXGridColumn">
+                                                            <Prop Key="DataField" Value="ContactName" />
+                                                            <Prop Key="Width" Value="150px" />
+                                                        </PXGridColumn>
+                                                    </AddItem>
+                                                    <AddItem>
+                                                        <PXGridColumn TypeFullName="PX.Web.UI.PXGridColumn">
+                                                            <Prop Key="DataField" Value="Email" />
+                                                            <Prop Key="Width" Value="200px" />
+                                                        </PXGridColumn>
+                                                    </AddItem>
+                                                    <AddItem>
+                                                        <PXGridColumn TypeFullName="PX.Web.UI.PXGridColumn">
+                                                            <Prop Key="DataField" Value="Phone" />
+                                                            <Prop Key="Width" Value="120px" />
+                                                        </PXGridColumn>
+                                                    </AddItem>
+                                                    <AddItem>
+                                                        <PXGridColumn TypeFullName="PX.Web.UI.PXGridColumn">
+                                                            <Prop Key="DataField" Value="Company" />
+                                                            <Prop Key="Width" Value="150px" />
+                                                        </PXGridColumn>
+                                                    </AddItem>
+                                                    <AddItem>
+                                                        <PXGridColumn TypeFullName="PX.Web.UI.PXGridColumn">
+                                                            <Prop Key="DataField" Value="AddToCC" />
+                                                            <Prop Key="Width" Value="70px" />
+                                                            <Prop Key="Type" Value="CheckBox" />
+                                                            <Prop Key="TextAlign" Value="Center" />
+                                                        </PXGridColumn>
+                                                    </AddItem>
+                                                    <AddItem>
+                                                        <PXGridColumn TypeFullName="PX.Web.UI.PXGridColumn">
+                                                            <Prop Key="DataField" Value="IsActive" />
+                                                            <Prop Key="Width" Value="70px" />
+                                                            <Prop Key="Type" Value="CheckBox" />
+                                                            <Prop Key="TextAlign" Value="Center" />
+                                                        </PXGridColumn>
+                                                    </AddItem>
+                                                </Children>
+                                            </PXGridLevel>
+                                        </AddItem>
+                                    </Children>
+                                </PXGrid>
+                            </AddItem>
+                        </Children>
+                    </PXTabItem>
+                </AddItem>
+                <AddItem>
+                    <PXTabItem TypeFullName="PX.Web.UI.PXTabItem">
+                        <Prop Key="Text" Value="Activities" />
+                        <Children Key="Template">
+                            <AddItem>
+                                <PXGrid TypeFullName="PX.Web.UI.PXGrid">
+                                    <Prop Key="ID" Value="gridActivities" />
+                                    <Prop Key="SkinID" Value="Details" />
+                                    <Prop Key="DataSourceID" Value="ds" />
+                                    <Prop Key="Width" Value="100%" />
+                                    <Prop Key="AllowFilter" Value="True" />
+                                    <Children Key="Levels">
+                                        <AddItem>
+                                            <PXGridLevel TypeFullName="PX.Web.UI.PXGridLevel">
+                                                <Prop Key="DataMember" Value="Activities" />
+                                                <Children Key="Columns">
+                                                    <AddItem>
+                                                        <PXGridColumn TypeFullName="PX.Web.UI.PXGridColumn">
+                                                            <Prop Key="DataField" Value="Type" />
+                                                            <Prop Key="Width" Value="100px" />
+                                                        </PXGridColumn>
+                                                    </AddItem>
+                                                    <AddItem>
+                                                        <PXGridColumn TypeFullName="PX.Web.UI.PXGridColumn">
+                                                            <Prop Key="DataField" Value="Subject" />
+                                                            <Prop Key="Width" Value="250px" />
+                                                        </PXGridColumn>
+                                                    </AddItem>
+                                                    <AddItem>
+                                                        <PXGridColumn TypeFullName="PX.Web.UI.PXGridColumn">
+                                                            <Prop Key="DataField" Value="StartDate" />
+                                                            <Prop Key="Width" Value="120px" />
+                                                        </PXGridColumn>
+                                                    </AddItem>
+                                                    <AddItem>
+                                                        <PXGridColumn TypeFullName="PX.Web.UI.PXGridColumn">
+                                                            <Prop Key="DataField" Value="Status" />
+                                                            <Prop Key="Width" Value="100px" />
+                                                        </PXGridColumn>
+                                                    </AddItem>
+                                                    <AddItem>
+                                                        <PXGridColumn TypeFullName="PX.Web.UI.PXGridColumn">
+                                                            <Prop Key="DataField" Value="Priority" />
+                                                            <Prop Key="Width" Value="80px" />
+                                                        </PXGridColumn>
+                                                    </AddItem>
+                                                    <AddItem>
+                                                        <PXGridColumn TypeFullName="PX.Web.UI.PXGridColumn">
+                                                            <Prop Key="DataField" Value="OwnerID" />
+                                                            <Prop Key="Width" Value="120px" />
+                                                        </PXGridColumn>
+                                                    </AddItem>
+                                                    <AddItem>
+                                                        <PXGridColumn TypeFullName="PX.Web.UI.PXGridColumn">
+                                                            <Prop Key="DataField" Value="CreatedDateTime" />
+                                                            <Prop Key="Width" Value="150px" />
+                                                        </PXGridColumn>
+                                                    </AddItem>
+                                                </Children>
+                                            </PXGridLevel>
+                                        </AddItem>
+                                    </Children>
+                                </PXGrid>
+                            </AddItem>
+                        </Children>
+                    </PXTabItem>
+                </AddItem>
+            </Children>
+        </PXTab>
+    </Page>
+</Customization>

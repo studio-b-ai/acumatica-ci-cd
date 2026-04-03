@@ -1,0 +1,58 @@
+{
+  "kits": [
+    {
+      "id": "SAMPKIT-CIWRITE",
+      "description": "CI write Sample Kit",
+      "components": [
+        "CITEST56409628",
+        "CITEST56417644"
+      ]
+    },
+    {
+      "id": "SAMPKIT-CHILTON",
+      "description": "Chilton Sample Kit",
+      "components": [
+        "40160",
+        "40161",
+        "40162",
+        "40163",
+        "40164",
+        "40165"
+      ]
+    },
+    {
+      "id": "SAMPKIT-DELRAY",
+      "description": "Delray Sample Kit",
+      "components": [
+        "38997",
+        "38998",
+        "38999",
+        "39000",
+        "39001",
+        "39002"
+      ]
+    },
+    {
+      "id": "SAMPKIT-KIRBY",
+      "description": "Kirby Sample Kit",
+      "components": [
+        "40237",
+        "40238",
+        "40239",
+        "40240"
+      ]
+    },
+    {
+      "id": "SAMPKIT-MADAKETSTRIPE",
+      "description": "Madaket Stripe Sample Kit",
+      "components": [
+        "39295",
+        "39296",
+        "39297",
+        "39298",
+        "39299",
+        "39300"
+      ]
+    }
+  ]
+}

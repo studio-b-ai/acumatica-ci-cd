@@ -1,0 +1,3165 @@
+{
+  "kits": [
+    {
+      "id": "SAMPKIT-118SUPERBATISTE",
+      "description": "118 Super Batiste Sample Kit",
+      "components": [
+        "28068",
+        "28069",
+        "28070",
+        "28071",
+        "29518",
+        "29743",
+        "30013",
+        "31745",
+        "31747",
+        "31749",
+        "31759",
+        "31858",
+        "31860",
+        "36568",
+        "38217",
+        "38218",
+        "38220"
+      ]
+    },
+    {
+      "id": "SAMPKIT-118SUPERVOILE",
+      "description": "118 Super Voile Sample Kit",
+      "components": [
+        "28064",
+        "28065",
+        "28066",
+        "28067",
+        "29519",
+        "29521",
+        "29746",
+        "30006",
+        "30007",
+        "31683",
+        "31856",
+        "31923",
+        "35370",
+        "36576",
+        "36577",
+        "38222",
+        "38223",
+        "38224"
+      ]
+    },
+    {
+      "id": "SAMPKIT-130SUPERBATISTE",
+      "description": "130 Super Batiste Sample Kit",
+      "components": [
+        "39184",
+        "39186",
+        "39187",
+        "39188"
+      ]
+    },
+    {
+      "id": "SAMPKIT-130SUPERVOILE",
+      "description": "130 Super Voile Sample Kit",
+      "components": [
+        "39189",
+        "39190",
+        "39209"
+      ]
+    },
+    {
+      "id": "SAMPKIT-ABBEY",
+      "description": "Abbey Sample Kit",
+      "components": [
+        "37358",
+        "37359",
+        "37360",
+        "37361",
+        "37363",
+        "37364",
+        "37365"
+      ]
+    },
+    {
+      "id": "SAMPKIT-ACE",
+      "description": "Ace Sample Kit",
+      "components": [
+        "37873",
+        "37874",
+        "37875",
+        "37876",
+        "37877",
+        "37878",
+        "37880",
+        "37882",
+        "37889",
+        "37892",
+        "37893",
+        "37895",
+        "37896",
+        "37897",
+        "37901",
+        "37902",
+        "37903",
+        "37904",
+        "37907",
+        "37908",
+        "37909",
+        "37910",
+        "37911",
+        "37912",
+        "37914",
+        "37916",
+        "37917",
+        "37918",
+        "39191",
+        "39192",
+        "39193",
+        "39194",
+        "39195",
+        "39196",
+        "39197",
+        "39198",
+        "39199",
+        "39200",
+        "39201",
+        "39202",
+        "39203",
+        "39204",
+        "39205",
+        "39206"
+      ]
+    },
+    {
+      "id": "SAMPKIT-ADELE",
+      "description": "Adele Sample Kit",
+      "components": [
+        "39129",
+        "39130",
+        "39131"
+      ]
+    },
+    {
+      "id": "SAMPKIT-AIKEN",
+      "description": "Aiken Sample Kit",
+      "components": [
+        "35950",
+        "35951"
+      ]
+    },
+    {
+      "id": "SAMPKIT-ALEXANDER",
+      "description": "Alexander Sample Kit",
+      "components": [
+        "37718",
+        "37723",
+        "37725",
+        "37726",
+        "37728"
+      ]
+    },
+    {
+      "id": "SAMPKIT-ALINTA",
+      "description": "Alinta Sample Kit",
+      "components": [
+        "39245",
+        "39246",
+        "39247",
+        "39248"
+      ]
+    },
+    {
+      "id": "SAMPKIT-ALLURE",
+      "description": "Allure Sample Kit",
+      "components": [
+        "37489",
+        "37492",
+        "37493",
+        "37769"
+      ]
+    },
+    {
+      "id": "SAMPKIT-AMELIA",
+      "description": "Amelia Sample Kit",
+      "components": [
+        "37317",
+        "37326",
+        "37328",
+        "37330",
+        "37331",
+        "37332",
+        "37334",
+        "37341"
+      ]
+    },
+    {
+      "id": "SAMPKIT-AMHERST",
+      "description": "Amherst Sample Kit",
+      "components": [
+        "33194",
+        "33195",
+        "36940"
+      ]
+    },
+    {
+      "id": "SAMPKIT-ANALISE",
+      "description": "Analise Sample Kit",
+      "components": [
+        "38535",
+        "38536",
+        "38537",
+        "38538",
+        "38539",
+        "38540",
+        "38541",
+        "38542",
+        "38543",
+        "38545",
+        "38546"
+      ]
+    },
+    {
+      "id": "SAMPKIT-APACHE",
+      "description": "Apache Sample Kit",
+      "components": [
+        "38235",
+        "39386",
+        "39387",
+        "39388",
+        "39463",
+        "39464",
+        "39465"
+      ]
+    },
+    {
+      "id": "SAMPKIT-ARBOR",
+      "description": "Arbor Sample Kit",
+      "components": [
+        "37526",
+        "37527",
+        "37528",
+        "37529",
+        "37532"
+      ]
+    },
+    {
+      "id": "SAMPKIT-ARTESIA",
+      "description": "Artesia Sample Kit",
+      "components": [
+        "39089",
+        "39095",
+        "39096",
+        "39097"
+      ]
+    },
+    {
+      "id": "SAMPKIT-ASHTON",
+      "description": "Ashton Sample Kit",
+      "components": [
+        "34898",
+        "34899",
+        "34900",
+        "38200",
+        "38201",
+        "38202"
+      ]
+    },
+    {
+      "id": "SAMPKIT-ASHWOOD",
+      "description": "Ashwood Sample Kit",
+      "components": [
+        "36648",
+        "36650"
+      ]
+    },
+    {
+      "id": "SAMPKIT-ASPEN",
+      "description": "Aspen Sample Kit",
+      "components": [
+        "36919",
+        "36920",
+        "36921",
+        "36922",
+        "36923",
+        "38203",
+        "38204",
+        "38205",
+        "38206",
+        "38207"
+      ]
+    },
+    {
+      "id": "SAMPKIT-ATHENA",
+      "description": "Athena Sample Kit",
+      "components": [
+        "38762",
+        "38763",
+        "38764"
+      ]
+    },
+    {
+      "id": "SAMPKIT-AUGUSTA",
+      "description": "Augusta Sample Kit",
+      "components": [
+        "32988",
+        "32989"
+      ]
+    },
+    {
+      "id": "SAMPKIT-AUGUSTINE",
+      "description": "Augustine Sample Kit",
+      "components": [
+        "39042",
+        "39043",
+        "39044"
+      ]
+    },
+    {
+      "id": "SAMPKIT-AVIGNON",
+      "description": "Avignon Sample Kit",
+      "components": [
+        "38115",
+        "38117",
+        "38118",
+        "38559",
+        "40566",
+        "40567",
+        "40568"
+      ]
+    },
+    {
+      "id": "SAMPKIT-BERGAMO",
+      "description": "BERGAMO Sample Kit",
+      "components": [
+        "40457",
+        "40458",
+        "40459",
+        "40460",
+        "40461",
+        "40462"
+      ]
+    },
+    {
+      "id": "SAMPKIT-BRINDISI",
+      "description": "BRINDISI Sample Kit",
+      "components": [
+        "40727",
+        "40728",
+        "40729",
+        "40730"
+      ]
+    },
+    {
+      "id": "SAMPKIT-BRINKLEY",
+      "description": "BRINKLEY Sample Kit",
+      "components": [
+        "00004",
+        "00005",
+        "00006"
+      ]
+    },
+    {
+      "id": "SAMPKIT-BALLARD",
+      "description": "Ballard Sample Kit",
+      "components": [
+        "39359",
+        "39360",
+        "39361",
+        "39362",
+        "39363",
+        "39364",
+        "39365",
+        "39366",
+        "39367"
+      ]
+    },
+    {
+      "id": "SAMPKIT-BARANI",
+      "description": "Barani Sample Kit",
+      "components": [
+        "38914",
+        "38915",
+        "38916",
+        "39011"
+      ]
+    },
+    {
+      "id": "SAMPKIT-BATISTE60",
+      "description": "Batiste 60 Sample Kit",
+      "components": [
+        "25027",
+        "25028",
+        "25030",
+        "25097"
+      ]
+    },
+    {
+      "id": "SAMPKIT-BELINDA",
+      "description": "Belinda Sample Kit",
+      "components": [
+        "40194",
+        "40195",
+        "40196",
+        "40197"
+      ]
+    },
+    {
+      "id": "SAMPKIT-BELLAGIO",
+      "description": "Bellagio Sample Kit",
+      "components": [
+        "39410",
+        "39411",
+        "39412",
+        "39413",
+        "39414",
+        "39415",
+        "39416",
+        "39417",
+        "39418",
+        "39419",
+        "39420",
+        "39421"
+      ]
+    },
+    {
+      "id": "SAMPKIT-BERGEN",
+      "description": "Bergen Sample Kit",
+      "components": [
+        "38927",
+        "38928",
+        "38929",
+        "38930",
+        "38931"
+      ]
+    },
+    {
+      "id": "SAMPKIT-BISCAYNE",
+      "description": "Biscayne Sample Kit",
+      "components": [
+        "38965",
+        "38966"
+      ]
+    },
+    {
+      "id": "SAMPKIT-BLUFFTON",
+      "description": "Bluffton Sample Kit",
+      "components": [
+        "40291",
+        "40292",
+        "40293",
+        "40294"
+      ]
+    },
+    {
+      "id": "SAMPKIT-BOUCLE",
+      "description": "Boucle Sample Kit",
+      "components": [
+        "38932",
+        "38933",
+        "38934",
+        "38935"
+      ]
+    },
+    {
+      "id": "SAMPKIT-BRIDGEWATER",
+      "description": "Bridgewater Sample Kit",
+      "components": [
+        "00058",
+        "38247",
+        "39355",
+        "39356",
+        "39357",
+        "39358",
+        "39518",
+        "39519",
+        "39520",
+        "40575"
+      ]
+    },
+    {
+      "id": "SAMPKIT-BURMA",
+      "description": "Burma Sample Kit",
+      "components": [
+        "37374",
+        "37375",
+        "37376",
+        "37380",
+        "37388",
+        "37389",
+        "37391",
+        "37396",
+        "37399",
+        "37401",
+        "37402",
+        "37403"
+      ]
+    },
+    {
+      "id": "SAMPKIT-CASSIL",
+      "description": "CASSIL Sample Kit",
+      "components": [
+        "00007",
+        "00008"
+      ]
+    },
+    {
+      "id": "SAMPKIT-CIWRITE",
+      "description": "CI write Sample Kit",
+      "components": [
+        "CITEST56409628",
+        "CITEST56417644"
+      ]
+    },
+    {
+      "id": "SAMPKIT-CALISTA",
+      "description": "Calista Sample Kit",
+      "components": [
+        "39161",
+        "39162",
+        "39163",
+        "39164",
+        "39165"
+      ]
+    },
+    {
+      "id": "SAMPKIT-CALLOWAY",
+      "description": "Calloway Sample Kit",
+      "components": [
+        "40220",
+        "40221",
+        "40222",
+        "40223",
+        "40224"
+      ]
+    },
+    {
+      "id": "SAMPKIT-CAMBRIA",
+      "description": "Cambria Sample Kit",
+      "components": [
+        "39090",
+        "39098",
+        "39099"
+      ]
+    },
+    {
+      "id": "SAMPKIT-CANTON",
+      "description": "Canton Sample Kit",
+      "components": [
+        "37979",
+        "37980",
+        "37981",
+        "37982",
+        "37983",
+        "37984",
+        "37985",
+        "38684"
+      ]
+    },
+    {
+      "id": "SAMPKIT-CAROUSEL",
+      "description": "Carousel Sample Kit",
+      "components": [
+        "40154",
+        "40155",
+        "40156",
+        "40157",
+        "40158"
+      ]
+    },
+    {
+      "id": "SAMPKIT-CARSON",
+      "description": "Carson Sample Kit",
+      "components": [
+        "38714",
+        "38717",
+        "38722"
+      ]
+    },
+    {
+      "id": "SAMPKIT-CATALINA",
+      "description": "Catalina Sample Kit",
+      "components": [
+        "38254",
+        "39548",
+        "39552",
+        "39554"
+      ]
+    },
+    {
+      "id": "SAMPKIT-CAYMEN",
+      "description": "Caymen Sample Kit",
+      "components": [
+        "35823",
+        "35824"
+      ]
+    },
+    {
+      "id": "SAMPKIT-CHAPMAN",
+      "description": "Chapman Sample Kit",
+      "components": [
+        "40201",
+        "40202",
+        "40203",
+        "40204",
+        "40205",
+        "40243"
+      ]
+    },
+    {
+      "id": "SAMPKIT-CHASE",
+      "description": "Chase Sample Kit",
+      "components": [
+        "39255",
+        "39256",
+        "39257",
+        "39258"
+      ]
+    },
+    {
+      "id": "SAMPKIT-CHELSEA",
+      "description": "Chelsea Sample Kit",
+      "components": [
+        "37051",
+        "37052",
+        "37855",
+        "37856",
+        "37857"
+      ]
+    },
+    {
+      "id": "SAMPKIT-CHESTER",
+      "description": "Chester Sample Kit",
+      "components": [
+        "00010",
+        "00011",
+        "00012",
+        "00013",
+        "00014",
+        "00015",
+        "00016",
+        "38232",
+        "39456",
+        "39458",
+        "39564",
+        "39566",
+        "39567",
+        "39571",
+        "39572",
+        "39573",
+        "39574",
+        "39578",
+        "40119"
+      ]
+    },
+    {
+      "id": "SAMPKIT-CHEYENNESTRIPE",
+      "description": "Cheyenne Stripe Sample Kit",
+      "components": [
+        "40463",
+        "40465",
+        "40493",
+        "40495"
+      ]
+    },
+    {
+      "id": "SAMPKIT-CHILTON",
+      "description": "Chilton Sample Kit",
+      "components": [
+        "40160",
+        "40161",
+        "40162",
+        "40163",
+        "40164",
+        "40165"
+      ]
+    },
+    {
+      "id": "SAMPKIT-CLIPPER",
+      "description": "Clipper Sample Kit",
+      "components": [
+        "38258",
+        "38438",
+        "39582",
+        "39583",
+        "39584",
+        "39586",
+        "39588",
+        "39592",
+        "39593",
+        "39596",
+        "39597",
+        "39598",
+        "39599",
+        "39601",
+        "39602",
+        "39604"
+      ]
+    },
+    {
+      "id": "SAMPKIT-CLOUDS",
+      "description": "Clouds Sample Kit",
+      "components": [
+        "37849",
+        "37850",
+        "37852",
+        "37854"
+      ]
+    },
+    {
+      "id": "SAMPKIT-COMO",
+      "description": "Como Sample Kit",
+      "components": [
+        "36852",
+        "36870",
+        "40276",
+        "40277"
+      ]
+    },
+    {
+      "id": "SAMPKIT-CONFETTI",
+      "description": "Confetti Sample Kit",
+      "components": [
+        "39262",
+        "39263",
+        "39264",
+        "39283",
+        "39284"
+      ]
+    },
+    {
+      "id": "SAMPKIT-COPLEYSOLID",
+      "description": "Copley Solid Sample Kit",
+      "components": [
+        "39630",
+        "39631"
+      ]
+    },
+    {
+      "id": "SAMPKIT-COPLEYSQUARE",
+      "description": "Copley Square Sample Kit",
+      "components": [
+        "38263",
+        "39080",
+        "39081",
+        "39082",
+        "39083",
+        "39091",
+        "39633",
+        "39634",
+        "39635",
+        "39636",
+        "39637",
+        "39638",
+        "39639",
+        "39640",
+        "39641"
+      ]
+    },
+    {
+      "id": "SAMPKIT-COPLEYSTRIPE",
+      "description": "Copley Stripe Sample Kit",
+      "components": [
+        "38264",
+        "39075",
+        "39076",
+        "39077",
+        "39078",
+        "39079",
+        "39642",
+        "39643",
+        "39644",
+        "39645",
+        "39646",
+        "39647",
+        "39648",
+        "39649",
+        "39650",
+        "39651",
+        "39653"
+      ]
+    },
+    {
+      "id": "SAMPKIT-CORDUROY",
+      "description": "Corduroy Sample Kit",
+      "components": [
+        "40483",
+        "40485",
+        "40487",
+        "40489",
+        "40491"
+      ]
+    },
+    {
+      "id": "SAMPKIT-CORTINA",
+      "description": "Cortina Sample Kit",
+      "components": [
+        "38688",
+        "38689",
+        "38690",
+        "38692"
+      ]
+    },
+    {
+      "id": "SAMPKIT-COTSWALD",
+      "description": "Cotswald Sample Kit",
+      "components": [
+        "39229",
+        "39230",
+        "39231",
+        "39232",
+        "39233",
+        "39234"
+      ]
+    },
+    {
+      "id": "SAMPKIT-COURTLAND",
+      "description": "Courtland Sample Kit",
+      "components": [
+        "40120",
+        "40121",
+        "40122",
+        "40123",
+        "40124"
+      ]
+    },
+    {
+      "id": "SAMPKIT-COURTNEY",
+      "description": "Courtney Sample Kit",
+      "components": [
+        "39260",
+        "39261"
+      ]
+    },
+    {
+      "id": "SAMPKIT-COZY",
+      "description": "Cozy Sample Kit",
+      "components": [
+        "39142",
+        "39143",
+        "39144",
+        "39145"
+      ]
+    },
+    {
+      "id": "SAMPKIT-CRUZ",
+      "description": "Cruz Sample Kit",
+      "components": [
+        "35796",
+        "35797",
+        "35798",
+        "35799",
+        "35800",
+        "35801",
+        "35803",
+        "35804",
+        "35832",
+        "38723",
+        "38724",
+        "38725",
+        "38726",
+        "38727",
+        "38729"
+      ]
+    },
+    {
+      "id": "SAMPKIT-CUBIC",
+      "description": "Cubic Sample Kit",
+      "components": [
+        "39058",
+        "39065",
+        "39066",
+        "39067"
+      ]
+    },
+    {
+      "id": "SAMPKIT-DUNLIN",
+      "description": "DUNLIN Sample Kit",
+      "components": [
+        "40467",
+        "40469",
+        "40471",
+        "40562"
+      ]
+    },
+    {
+      "id": "SAMPKIT-DAVANTE",
+      "description": "Davante Sample Kit",
+      "components": [
+        "39238",
+        "39239"
+      ]
+    },
+    {
+      "id": "SAMPKIT-DELRAY",
+      "description": "Delray Sample Kit",
+      "components": [
+        "38997",
+        "38998",
+        "38999",
+        "39000",
+        "39001",
+        "39002"
+      ]
+    },
+    {
+      "id": "SAMPKIT-DEVILLE",
+      "description": "Deville Sample Kit",
+      "components": [
+        "36653",
+        "36654",
+        "36655"
+      ]
+    },
+    {
+      "id": "SAMPKIT-DEVON",
+      "description": "Devon Sample Kit",
+      "components": [
+        "38776",
+        "38778",
+        "38779",
+        "38780",
+        "38781"
+      ]
+    },
+    {
+      "id": "SAMPKIT-ELLINGTON",
+      "description": "Ellington Sample Kit",
+      "components": [
+        "39210",
+        "39211",
+        "39212",
+        "39213",
+        "39214"
+      ]
+    },
+    {
+      "id": "SAMPKIT-EMILY",
+      "description": "Emily Sample Kit",
+      "components": [
+        "39167",
+        "39168",
+        "39169",
+        "39180"
+      ]
+    },
+    {
+      "id": "SAMPKIT-ENCHANTED",
+      "description": "Enchanted Sample Kit",
+      "components": [
+        "40373",
+        "40374",
+        "40375"
+      ]
+    },
+    {
+      "id": "SAMPKIT-ESCAPE",
+      "description": "Escape Sample Kit",
+      "components": [
+        "39005",
+        "39006",
+        "39007",
+        "39008"
+      ]
+    },
+    {
+      "id": "SAMPKIT-ESSEX",
+      "description": "Essex Sample Kit",
+      "components": [
+        "00017",
+        "00018",
+        "00019",
+        "00020",
+        "00021",
+        "00022",
+        "00023",
+        "38433",
+        "38801",
+        "38802",
+        "38803",
+        "38804",
+        "38805",
+        "38826",
+        "38827",
+        "39672",
+        "39673",
+        "39674",
+        "39679",
+        "39681",
+        "39682",
+        "39683",
+        "39689",
+        "39691",
+        "39693",
+        "39694",
+        "40118"
+      ]
+    },
+    {
+      "id": "SAMPKIT-EVERLY",
+      "description": "Everly Sample Kit",
+      "components": [
+        "39285",
+        "39286",
+        "39287",
+        "39288",
+        "39289"
+      ]
+    },
+    {
+      "id": "SAMPKIT-FAIRCLOTH",
+      "description": "Faircloth Sample Kit",
+      "components": [
+        "38092",
+        "38093",
+        "38094",
+        "38095"
+      ]
+    },
+    {
+      "id": "SAMPKIT-FAIRFAX",
+      "description": "Fairfax Sample Kit",
+      "components": [
+        "38548",
+        "38549",
+        "38550",
+        "38551",
+        "38553",
+        "38554",
+        "38555",
+        "38556",
+        "38557",
+        "38558"
+      ]
+    },
+    {
+      "id": "SAMPKIT-FENWICK",
+      "description": "Fenwick Sample Kit",
+      "components": [
+        "00032",
+        "38816",
+        "38817",
+        "38819",
+        "38820",
+        "38821",
+        "38822",
+        "38823",
+        "39259"
+      ]
+    },
+    {
+      "id": "SAMPKIT-FLEETWOOD",
+      "description": "Fleetwood Sample Kit",
+      "components": [
+        "38697",
+        "38698",
+        "38699",
+        "38700",
+        "38701",
+        "38702",
+        "38703",
+        "38704",
+        "38705",
+        "38706"
+      ]
+    },
+    {
+      "id": "SAMPKIT-FONTAINE",
+      "description": "Fontaine Sample Kit",
+      "components": [
+        "40229",
+        "40230",
+        "40231",
+        "40232",
+        "40233",
+        "40234",
+        "40235",
+        "40236"
+      ]
+    },
+    {
+      "id": "SAMPKIT-FRAZIER",
+      "description": "Frazier Sample Kit",
+      "components": [
+        "38277",
+        "38906",
+        "38909",
+        "38910",
+        "38911",
+        "38912",
+        "39697",
+        "39698",
+        "39700",
+        "39702",
+        "39703",
+        "39704",
+        "39705",
+        "39709",
+        "39710"
+      ]
+    },
+    {
+      "id": "SAMPKIT-GENEVA",
+      "description": "Geneva Sample Kit",
+      "components": [
+        "39319",
+        "39320",
+        "39321",
+        "39322"
+      ]
+    },
+    {
+      "id": "SAMPKIT-GILLETTE",
+      "description": "Gillette Sample Kit",
+      "components": [
+        "38809",
+        "38810",
+        "38811",
+        "38812",
+        "38813",
+        "38814",
+        "38825"
+      ]
+    },
+    {
+      "id": "SAMPKIT-GILLIGAN",
+      "description": "Gilligan Sample Kit",
+      "components": [
+        "40283",
+        "40284",
+        "40287"
+      ]
+    },
+    {
+      "id": "SAMPKIT-GLENMORE",
+      "description": "Glenmore Sample Kit",
+      "components": [
+        "39378",
+        "39379",
+        "39380",
+        "39381",
+        "39382",
+        "39383",
+        "39384",
+        "39385"
+      ]
+    },
+    {
+      "id": "SAMPKIT-HALO",
+      "description": "Halo Sample Kit",
+      "components": [
+        "39225",
+        "39226",
+        "39227",
+        "39228"
+      ]
+    },
+    {
+      "id": "SAMPKIT-HARMONY",
+      "description": "Harmony Sample Kit",
+      "components": [
+        "36887",
+        "36889",
+        "36890"
+      ]
+    },
+    {
+      "id": "SAMPKIT-HARRIS",
+      "description": "Harris Sample Kit",
+      "components": [
+        "38284",
+        "39740",
+        "39742",
+        "39744"
+      ]
+    },
+    {
+      "id": "SAMPKIT-HASHTAG",
+      "description": "Hashtag Sample Kit",
+      "components": [
+        "37986",
+        "37987",
+        "37989",
+        "37993"
+      ]
+    },
+    {
+      "id": "SAMPKIT-HATCHEL",
+      "description": "Hatchel Sample Kit",
+      "components": [
+        "40213",
+        "40214",
+        "40216"
+      ]
+    },
+    {
+      "id": "SAMPKIT-HELENA",
+      "description": "Helena Sample Kit",
+      "components": [
+        "37783",
+        "37785",
+        "37787",
+        "37922"
+      ]
+    },
+    {
+      "id": "SAMPKIT-HEMSLEY",
+      "description": "Hemsley Sample Kit",
+      "components": [
+        "37505",
+        "37508",
+        "37509",
+        "37510",
+        "37519",
+        "37521",
+        "37522",
+        "37523"
+      ]
+    },
+    {
+      "id": "SAMPKIT-HILLCREST",
+      "description": "Hillcrest Sample Kit",
+      "components": [
+        "39121",
+        "39122",
+        "39123",
+        "39124"
+      ]
+    },
+    {
+      "id": "SAMPKIT-HOMESTEAD",
+      "description": "Homestead Sample Kit",
+      "components": [
+        "39106",
+        "39107",
+        "39108",
+        "39109",
+        "39110",
+        "39111",
+        "39112",
+        "39113"
+      ]
+    },
+    {
+      "id": "SAMPKIT-HOUNDSTOOTH",
+      "description": "Houndstooth Sample Kit",
+      "components": [
+        "38291",
+        "39302",
+        "39303",
+        "39304",
+        "39305",
+        "39306",
+        "39783",
+        "39785",
+        "39788",
+        "39789",
+        "39790",
+        "39791",
+        "39792",
+        "39793",
+        "39794",
+        "39795",
+        "39796",
+        "39799",
+        "39801",
+        "39802",
+        "39803",
+        "39804",
+        "39805"
+      ]
+    },
+    {
+      "id": "SAMPKIT-INCA",
+      "description": "INCA Sample Kit",
+      "components": [
+        "00047",
+        "00048"
+      ]
+    },
+    {
+      "id": "SAMPKIT-IBIZA",
+      "description": "Ibiza Sample Kit",
+      "components": [
+        "39316",
+        "39317",
+        "39318"
+      ]
+    },
+    {
+      "id": "SAMPKIT-INFINITY",
+      "description": "Infinity Sample Kit",
+      "components": [
+        "36585",
+        "36586"
+      ]
+    },
+    {
+      "id": "SAMPKIT-INTERCHANGE",
+      "description": "Interchange Sample Kit",
+      "components": [
+        "39391",
+        "39392",
+        "39393",
+        "39394",
+        "39395",
+        "39396",
+        "39397",
+        "39398",
+        "39399",
+        "39400",
+        "39401",
+        "39402",
+        "39409"
+      ]
+    },
+    {
+      "id": "SAMPKIT-ISADORA",
+      "description": "Isadora Sample Kit",
+      "components": [
+        "39326",
+        "39327",
+        "39329"
+      ]
+    },
+    {
+      "id": "SAMPKIT-ISLAY",
+      "description": "Islay Sample Kit",
+      "components": [
+        "38936",
+        "38938",
+        "38940",
+        "38942"
+      ]
+    },
+    {
+      "id": "SAMPKIT-IVYLEAGUE",
+      "description": "Ivy League Sample Kit",
+      "components": [
+        "39332",
+        "39333",
+        "39334",
+        "39335",
+        "39336",
+        "39337"
+      ]
+    },
+    {
+      "id": "SAMPKIT-JAKARTA",
+      "description": "Jakarta Sample Kit",
+      "components": [
+        "38869",
+        "38870",
+        "38871",
+        "38872",
+        "38873",
+        "38874",
+        "38875",
+        "38878",
+        "38879",
+        "38880",
+        "38882",
+        "38883",
+        "38884",
+        "38886",
+        "38887",
+        "38888"
+      ]
+    },
+    {
+      "id": "SAMPKIT-JASMINE",
+      "description": "Jasmine Sample Kit",
+      "components": [
+        "37799",
+        "37801",
+        "37803",
+        "37804"
+      ]
+    },
+    {
+      "id": "SAMPKIT-JASPER",
+      "description": "Jasper Sample Kit",
+      "components": [
+        "37806",
+        "37807",
+        "37808",
+        "37809",
+        "37810",
+        "37811",
+        "37813",
+        "37814",
+        "37815",
+        "37816",
+        "37830"
+      ]
+    },
+    {
+      "id": "SAMPKIT-JEREMY",
+      "description": "Jeremy Sample Kit",
+      "components": [
+        "37943",
+        "37946",
+        "37947",
+        "37949",
+        "37950",
+        "37951"
+      ]
+    },
+    {
+      "id": "SAMPKIT-JERICO",
+      "description": "Jerico Sample Kit",
+      "components": [
+        "38918",
+        "38919",
+        "38920",
+        "38921",
+        "38922"
+      ]
+    },
+    {
+      "id": "SAMPKIT-JESSICA",
+      "description": "Jessica Sample Kit",
+      "components": [
+        "37931",
+        "37932",
+        "37933",
+        "37934",
+        "37935",
+        "37937",
+        "37938",
+        "37939",
+        "37940",
+        "37941",
+        "37942"
+      ]
+    },
+    {
+      "id": "SAMPKIT-JETSON",
+      "description": "Jetson Sample Kit",
+      "components": [
+        "36589",
+        "36590",
+        "36592"
+      ]
+    },
+    {
+      "id": "SAMPKIT-JOHANNA",
+      "description": "Johanna Sample Kit",
+      "components": [
+        "37861",
+        "37862",
+        "37863",
+        "37864",
+        "37865",
+        "37866",
+        "37867",
+        "37868",
+        "37869",
+        "37870",
+        "37871",
+        "37872"
+      ]
+    },
+    {
+      "id": "SAMPKIT-JORDAN",
+      "description": "Jordan Sample Kit",
+      "components": [
+        "37788",
+        "37789",
+        "37790",
+        "37793",
+        "37797"
+      ]
+    },
+    {
+      "id": "SAMPKIT-JOY",
+      "description": "Joy Sample Kit",
+      "components": [
+        "37473",
+        "37474",
+        "37476",
+        "37477",
+        "37478",
+        "37524",
+        "37525",
+        "38461",
+        "38462",
+        "38463"
+      ]
+    },
+    {
+      "id": "SAMPKIT-KALINDA",
+      "description": "Kalinda Sample Kit",
+      "components": [
+        "38976",
+        "38979",
+        "38980",
+        "39025",
+        "39236"
+      ]
+    },
+    {
+      "id": "SAMPKIT-KENT",
+      "description": "Kent Sample Kit",
+      "components": [
+        "38923",
+        "38924",
+        "38925",
+        "38926"
+      ]
+    },
+    {
+      "id": "SAMPKIT-KIERA",
+      "description": "Kiera Sample Kit",
+      "components": [
+        "39218",
+        "39219",
+        "39220",
+        "39221",
+        "39222",
+        "39223",
+        "39224",
+        "39301"
+      ]
+    },
+    {
+      "id": "SAMPKIT-KINSON",
+      "description": "Kinson Sample Kit",
+      "components": [
+        "39291",
+        "39292",
+        "39293",
+        "39294"
+      ]
+    },
+    {
+      "id": "SAMPKIT-KIRBY",
+      "description": "Kirby Sample Kit",
+      "components": [
+        "40237",
+        "40238",
+        "40239",
+        "40240"
+      ]
+    },
+    {
+      "id": "SAMPKIT-LANA",
+      "description": "LANA Sample Kit",
+      "components": [
+        "40497",
+        "40498",
+        "40499",
+        "40500",
+        "40501",
+        "40502",
+        "40556",
+        "40557"
+      ]
+    },
+    {
+      "id": "SAMPKIT-LEOSTRIPE",
+      "description": "LEOSTRIPE Sample Kit",
+      "components": [
+        "40532",
+        "40533",
+        "40534",
+        "40535",
+        "40536"
+      ]
+    },
+    {
+      "id": "SAMPKIT-LUCIE",
+      "description": "LUCIE Sample Kit",
+      "components": [
+        "40503",
+        "40504",
+        "40505",
+        "40506",
+        "40507",
+        "40508",
+        "40509",
+        "40510",
+        "40511",
+        "40512",
+        "40513",
+        "40514",
+        "40515",
+        "40516",
+        "40517",
+        "40553",
+        "40558"
+      ]
+    },
+    {
+      "id": "SAMPKIT-LAKEN",
+      "description": "Laken Sample Kit",
+      "components": [
+        "39153",
+        "39154",
+        "39155",
+        "39156"
+      ]
+    },
+    {
+      "id": "SAMPKIT-LAKESIDE",
+      "description": "Lakeside Sample Kit",
+      "components": [
+        "36124",
+        "36126"
+      ]
+    },
+    {
+      "id": "SAMPKIT-LAVIDA",
+      "description": "Lavida Sample Kit",
+      "components": [
+        "39132",
+        "39133",
+        "39134",
+        "39135",
+        "39136",
+        "39137"
+      ]
+    },
+    {
+      "id": "SAMPKIT-LINENVOILE",
+      "description": "Linen Voile Sample Kit",
+      "components": [
+        "39026",
+        "39027",
+        "39028",
+        "39029",
+        "39033"
+      ]
+    },
+    {
+      "id": "SAMPKIT-LOGAN",
+      "description": "Logan Sample Kit",
+      "components": [
+        "39277",
+        "39278",
+        "39279",
+        "39280",
+        "39281"
+      ]
+    },
+    {
+      "id": "SAMPKIT-LOLA",
+      "description": "Lola Sample Kit",
+      "components": [
+        "40198",
+        "40199",
+        "40200"
+      ]
+    },
+    {
+      "id": "SAMPKIT-LUCERNE",
+      "description": "Lucerne Sample Kit",
+      "components": [
+        "39374",
+        "39375",
+        "39376",
+        "39377"
+      ]
+    },
+    {
+      "id": "SAMPKIT-LUCKY",
+      "description": "Lucky Sample Kit",
+      "components": [
+        "36293",
+        "36297",
+        "38606",
+        "38607",
+        "38608",
+        "38609",
+        "38610",
+        "38611",
+        "38612",
+        "38613",
+        "38614",
+        "38615",
+        "38616",
+        "38617",
+        "38618",
+        "38619",
+        "38620",
+        "38621",
+        "38622",
+        "38623",
+        "38624",
+        "38625",
+        "38626",
+        "38627",
+        "38628",
+        "38629",
+        "38630",
+        "38632",
+        "38633",
+        "38634",
+        "38635",
+        "38636",
+        "38637",
+        "38638",
+        "38639",
+        "38640",
+        "38642",
+        "38643",
+        "38644",
+        "38647",
+        "38648",
+        "38649",
+        "38650",
+        "38651",
+        "38652",
+        "38653",
+        "38654",
+        "38655",
+        "38656",
+        "38657",
+        "38658",
+        "38659",
+        "38660",
+        "38661",
+        "38662",
+        "38663",
+        "38665",
+        "38666",
+        "38667",
+        "38668",
+        "38669",
+        "38670",
+        "38671",
+        "38672",
+        "38720",
+        "40177",
+        "40178",
+        "40179",
+        "40180",
+        "40181",
+        "40182",
+        "40183",
+        "40184",
+        "40185",
+        "40186"
+      ]
+    },
+    {
+      "id": "SAMPKIT-LUGANO",
+      "description": "Lugano Sample Kit",
+      "components": [
+        "40244",
+        "40245",
+        "40246",
+        "40247",
+        "40248"
+      ]
+    },
+    {
+      "id": "SAMPKIT-LYME",
+      "description": "Lyme Sample Kit",
+      "components": [
+        "00049",
+        "00050",
+        "00051",
+        "00052",
+        "38793",
+        "38794",
+        "38795",
+        "38796",
+        "38797",
+        "38799",
+        "38800",
+        "38828",
+        "39855",
+        "39857",
+        "39858",
+        "39863",
+        "39864",
+        "39865",
+        "39866",
+        "39867",
+        "39872",
+        "39876",
+        "40117"
+      ]
+    },
+    {
+      "id": "SAMPKIT-LYON",
+      "description": "Lyon Sample Kit",
+      "components": [
+        "38961",
+        "38962",
+        "38963",
+        "38964"
+      ]
+    },
+    {
+      "id": "SAMPKIT-MATERASTRIPE",
+      "description": "MATERA STRIPE Sample Kit",
+      "components": [
+        "40737",
+        "40738",
+        "40739",
+        "40740",
+        "40741",
+        "40742"
+      ]
+    },
+    {
+      "id": "SAMPKIT-MIRAVAL",
+      "description": "MIRAVAL Sample Kit",
+      "components": [
+        "40539",
+        "40559"
+      ]
+    },
+    {
+      "id": "SAMPKIT-MACON",
+      "description": "Macon Sample Kit",
+      "components": [
+        "35583",
+        "35584"
+      ]
+    },
+    {
+      "id": "SAMPKIT-MADAKETSTRIPE",
+      "description": "Madaket Stripe Sample Kit",
+      "components": [
+        "39295",
+        "39296",
+        "39297",
+        "39298",
+        "39299",
+        "39300"
+      ]
+    },
+    {
+      "id": "SAMPKIT-MAGNOLIA118",
+      "description": "Magnolia 118 Sample Kit",
+      "components": [
+        "27993",
+        "27994",
+        "29576",
+        "32964",
+        "32965",
+        "35552",
+        "37764",
+        "37765",
+        "37766",
+        "37767",
+        "37768"
+      ]
+    },
+    {
+      "id": "SAMPKIT-MAIZE",
+      "description": "Maize Sample Kit",
+      "components": [
+        "39369",
+        "39370",
+        "39371",
+        "39372",
+        "39373"
+      ]
+    },
+    {
+      "id": "SAMPKIT-MANHATTAN",
+      "description": "Manhattan Sample Kit",
+      "components": [
+        "39017",
+        "39018",
+        "39019",
+        "39020"
+      ]
+    },
+    {
+      "id": "SAMPKIT-MANOR",
+      "description": "Manor Sample Kit",
+      "components": [
+        "38209",
+        "38212"
+      ]
+    },
+    {
+      "id": "SAMPKIT-MARGOT",
+      "description": "Margot Sample Kit",
+      "components": [
+        "40225",
+        "40226",
+        "40227",
+        "40228"
+      ]
+    },
+    {
+      "id": "SAMPKIT-MARLEE",
+      "description": "Marlee Sample Kit",
+      "components": [
+        "38952",
+        "38953",
+        "38954",
+        "38955"
+      ]
+    },
+    {
+      "id": "SAMPKIT-MAYA",
+      "description": "Maya Sample Kit",
+      "components": [
+        "37656",
+        "38421"
+      ]
+    },
+    {
+      "id": "SAMPKIT-MAYBELLE",
+      "description": "Maybelle Sample Kit",
+      "components": [
+        "40296",
+        "40298",
+        "40299",
+        "40300"
+      ]
+    },
+    {
+      "id": "SAMPKIT-MEADOWS",
+      "description": "Meadows Sample Kit",
+      "components": [
+        "40111",
+        "40113",
+        "40114",
+        "40115",
+        "40144",
+        "40145"
+      ]
+    },
+    {
+      "id": "SAMPKIT-MERCEDES",
+      "description": "Mercedes Sample Kit",
+      "components": [
+        "38947",
+        "38948",
+        "38949",
+        "38951"
+      ]
+    },
+    {
+      "id": "SAMPKIT-METROCHECK",
+      "description": "Metro Check Sample Kit",
+      "components": [
+        "38524",
+        "38526",
+        "38527",
+        "38570",
+        "38641",
+        "39903",
+        "39904"
+      ]
+    },
+    {
+      "id": "SAMPKIT-MILANO",
+      "description": "Milano Sample Kit",
+      "components": [
+        "34345",
+        "34369",
+        "34393",
+        "34394",
+        "34410",
+        "34423",
+        "34429",
+        "34520",
+        "34522",
+        "36036",
+        "36037"
+      ]
+    },
+    {
+      "id": "SAMPKIT-MILOS",
+      "description": "Milos Sample Kit",
+      "components": [
+        "39323",
+        "39324",
+        "39325"
+      ]
+    },
+    {
+      "id": "SAMPKIT-MONTANASTRIPE",
+      "description": "Montana Stripe Sample Kit",
+      "components": [
+        "39241",
+        "39309",
+        "39310",
+        "39311"
+      ]
+    },
+    {
+      "id": "SAMPKIT-MONTECITO",
+      "description": "Montecito Sample Kit",
+      "components": [
+        "38731",
+        "38732",
+        "38733",
+        "38734",
+        "38735",
+        "38736",
+        "38737",
+        "38900",
+        "38901",
+        "38902"
+      ]
+    },
+    {
+      "id": "SAMPKIT-MUIR",
+      "description": "Muir Sample Kit",
+      "components": [
+        "40263",
+        "40264",
+        "40265"
+      ]
+    },
+    {
+      "id": "SAMPKIT-MULLIGAN",
+      "description": "Mulligan Sample Kit",
+      "components": [
+        "40320",
+        "40321",
+        "40322",
+        "40323",
+        "40324",
+        "40325",
+        "40326",
+        "40327",
+        "40328",
+        "40329",
+        "40330",
+        "40331",
+        "40332",
+        "40333"
+      ]
+    },
+    {
+      "id": "SAMPKIT-MUSTIQUE",
+      "description": "Mustique Sample Kit",
+      "components": [
+        "40207",
+        "40208",
+        "40209"
+      ]
+    },
+    {
+      "id": "SAMPKIT-MYKONOS",
+      "description": "Mykonos Sample Kit",
+      "components": [
+        "40105",
+        "40106",
+        "40107"
+      ]
+    },
+    {
+      "id": "SAMPKIT-MYSTIC",
+      "description": "Mystic Sample Kit",
+      "components": [
+        "33720",
+        "33725",
+        "34712",
+        "34715",
+        "34783",
+        "38227",
+        "38228"
+      ]
+    },
+    {
+      "id": "SAMPKIT-NEVIS",
+      "description": "Nevis Sample Kit",
+      "components": [
+        "39338",
+        "39339",
+        "39340",
+        "39341",
+        "39342"
+      ]
+    },
+    {
+      "id": "SAMPKIT-NEWVILLE",
+      "description": "Newville Sample Kit",
+      "components": [
+        "38163",
+        "38164",
+        "38165",
+        "38166",
+        "38167",
+        "38168",
+        "38169",
+        "38170",
+        "38171",
+        "38172",
+        "38173",
+        "38175",
+        "38176",
+        "38177",
+        "38178",
+        "38179",
+        "38180",
+        "38181",
+        "38182",
+        "38183",
+        "38184",
+        "38185",
+        "38186",
+        "38187",
+        "38188",
+        "38189",
+        "38190",
+        "38191"
+      ]
+    },
+    {
+      "id": "SAMPKIT-OASIS",
+      "description": "Oasis Sample Kit",
+      "components": [
+        "34622",
+        "38214"
+      ]
+    },
+    {
+      "id": "SAMPKIT-ODESSA",
+      "description": "Odessa Sample Kit",
+      "components": [
+        "39157",
+        "39158",
+        "39159",
+        "39160"
+      ]
+    },
+    {
+      "id": "SAMPKIT-OGEE",
+      "description": "Ogee Sample Kit",
+      "components": [
+        "37956",
+        "37958",
+        "37959",
+        "37963",
+        "37964",
+        "37966",
+        "37967",
+        "37968",
+        "37977",
+        "38112"
+      ]
+    },
+    {
+      "id": "SAMPKIT-OKEEFE",
+      "description": "Okeefe Sample Kit",
+      "components": [
+        "38577",
+        "38580",
+        "38581",
+        "38602"
+      ]
+    },
+    {
+      "id": "SAMPKIT-OSCAR",
+      "description": "Oscar Sample Kit",
+      "components": [
+        "40304",
+        "40305",
+        "40306",
+        "40307",
+        "40308",
+        "40309",
+        "40310",
+        "40311",
+        "40312",
+        "40313",
+        "40314",
+        "40315",
+        "40316",
+        "40317",
+        "40318",
+        "40319"
+      ]
+    },
+    {
+      "id": "SAMPKIT-PALMER",
+      "description": "PALMER Sample Kit",
+      "components": [
+        "40717",
+        "40718",
+        "40719",
+        "40720"
+      ]
+    },
+    {
+      "id": "SAMPKIT-PINA",
+      "description": "PINA Sample Kit",
+      "components": [
+        "40712",
+        "40713",
+        "40714"
+      ]
+    },
+    {
+      "id": "SAMPKIT-PIPPA",
+      "description": "PIPPA Sample Kit",
+      "components": [
+        "40541",
+        "40542",
+        "40543"
+      ]
+    },
+    {
+      "id": "SAMPKIT-PARADISIO",
+      "description": "Paradisio Sample Kit",
+      "components": [
+        "39036",
+        "39037",
+        "39038"
+      ]
+    },
+    {
+      "id": "SAMPKIT-PARKHILL",
+      "description": "Parkhill Sample Kit",
+      "components": [
+        "38319",
+        "39959",
+        "39960",
+        "39962",
+        "40130",
+        "40131",
+        "40132",
+        "40133"
+      ]
+    },
+    {
+      "id": "SAMPKIT-PEARSON",
+      "description": "Pearson Sample Kit",
+      "components": [
+        "38403",
+        "38404",
+        "38405",
+        "38406",
+        "38407",
+        "38412",
+        "38413",
+        "38414",
+        "38458",
+        "39138",
+        "39139",
+        "39140",
+        "39141"
+      ]
+    },
+    {
+      "id": "SAMPKIT-PEMBROOK",
+      "description": "Pembrook Sample Kit",
+      "components": [
+        "38355",
+        "40088",
+        "40089",
+        "40091"
+      ]
+    },
+    {
+      "id": "SAMPKIT-PINEHURST",
+      "description": "Pinehurst Sample Kit",
+      "components": [
+        "37079",
+        "37080"
+      ]
+    },
+    {
+      "id": "SAMPKIT-PIPER",
+      "description": "Piper Sample Kit",
+      "components": [
+        "38321",
+        "38787",
+        "38788",
+        "38789",
+        "38790",
+        "38791",
+        "38792",
+        "39965",
+        "39966",
+        "39967",
+        "39968",
+        "39969",
+        "39970",
+        "39971",
+        "39972",
+        "39973",
+        "39974",
+        "39975",
+        "39976"
+      ]
+    },
+    {
+      "id": "SAMPKIT-PRATO",
+      "description": "Prato Sample Kit",
+      "components": [
+        "37153",
+        "37154",
+        "37157"
+      ]
+    },
+    {
+      "id": "SAMPKIT-PRESTON",
+      "description": "Preston Sample Kit",
+      "components": [
+        "40190",
+        "40191",
+        "40192",
+        "40193",
+        "40241"
+      ]
+    },
+    {
+      "id": "SAMPKIT-PRISMS",
+      "description": "Prisms Sample Kit",
+      "components": [
+        "38956",
+        "38957",
+        "38958",
+        "38959",
+        "38960",
+        "38972"
+      ]
+    },
+    {
+      "id": "SAMPKIT-PROSPECT",
+      "description": "Prospect Sample Kit",
+      "components": [
+        "40187",
+        "40188",
+        "40189"
+      ]
+    },
+    {
+      "id": "SAMPKIT-PUNJAB",
+      "description": "Punjab Sample Kit",
+      "components": [
+        "37097",
+        "37098",
+        "37099",
+        "37104",
+        "37105",
+        "37111",
+        "37113",
+        "37114",
+        "37121",
+        "37122",
+        "37127",
+        "37128",
+        "37129",
+        "37131",
+        "37132",
+        "37135",
+        "37228",
+        "37229",
+        "38833",
+        "38834",
+        "38835",
+        "38836",
+        "38837",
+        "38838",
+        "38839",
+        "38840",
+        "38841",
+        "38843",
+        "38844",
+        "38845",
+        "38847",
+        "38848",
+        "38867"
+      ]
+    },
+    {
+      "id": "SAMPKIT-QUINN",
+      "description": "Quinn Sample Kit",
+      "components": [
+        "37995",
+        "37998",
+        "37999",
+        "38001",
+        "38002",
+        "38003",
+        "38004",
+        "38005",
+        "38008",
+        "38009",
+        "38010",
+        "38013"
+      ]
+    },
+    {
+      "id": "SAMPKIT-RAINDROPS",
+      "description": "Raindrops Sample Kit",
+      "components": [
+        "38738",
+        "38739",
+        "38740",
+        "38741",
+        "38742",
+        "38743"
+      ]
+    },
+    {
+      "id": "SAMPKIT-RAWSILKCREPE",
+      "description": "Raw Silk Crepe Sample Kit",
+      "components": [
+        "31877",
+        "31880",
+        "31883",
+        "32300",
+        "37544",
+        "38415",
+        "38416",
+        "38417",
+        "38418",
+        "38419",
+        "38454",
+        "38455"
+      ]
+    },
+    {
+      "id": "SAMPKIT-RAYA",
+      "description": "Raya Sample Kit",
+      "components": [
+        "39249",
+        "39250",
+        "39251"
+      ]
+    },
+    {
+      "id": "SAMPKIT-REAGAN",
+      "description": "Reagan Sample Kit",
+      "components": [
+        "38371",
+        "38372",
+        "38373",
+        "38374",
+        "38375",
+        "38377",
+        "38378"
+      ]
+    },
+    {
+      "id": "SAMPKIT-REGALSATIN",
+      "description": "Regal Satin Sample Kit",
+      "components": [
+        "27854",
+        "27855",
+        "27863",
+        "27868",
+        "31960"
+      ]
+    },
+    {
+      "id": "SAMPKIT-REYNOLDS",
+      "description": "Reynolds Sample Kit",
+      "components": [
+        "38397",
+        "38398",
+        "38399",
+        "38400",
+        "38401",
+        "38402",
+        "38719",
+        "40171",
+        "40172"
+      ]
+    },
+    {
+      "id": "SAMPKIT-RHODES",
+      "description": "Rhodes Sample Kit",
+      "components": [
+        "40140",
+        "40141",
+        "40142",
+        "40143"
+      ]
+    },
+    {
+      "id": "SAMPKIT-RHYTHM",
+      "description": "Rhythm Sample Kit",
+      "components": [
+        "40135",
+        "40136",
+        "40137",
+        "40138",
+        "40139"
+      ]
+    },
+    {
+      "id": "SAMPKIT-RYLEE",
+      "description": "Rylee Sample Kit",
+      "components": [
+        "39125",
+        "39126",
+        "39127",
+        "39128"
+      ]
+    },
+    {
+      "id": "SAMPKIT-SHAMBALA",
+      "description": "SHAMBALA Sample Kit",
+      "components": [
+        "40545",
+        "40546",
+        "40560"
+      ]
+    },
+    {
+      "id": "SAMPKIT-SIMONE",
+      "description": "SIMONE Sample Kit",
+      "components": [
+        "40569",
+        "40570",
+        "40571",
+        "40572",
+        "40573"
+      ]
+    },
+    {
+      "id": "SAMPKIT-SANDALAY",
+      "description": "Sandalay Sample Kit",
+      "components": [
+        "38967",
+        "38968",
+        "38969",
+        "38970",
+        "38971"
+      ]
+    },
+    {
+      "id": "SAMPKIT-SANDBERG",
+      "description": "Sandberg Sample Kit",
+      "components": [
+        "37350",
+        "37351",
+        "37352",
+        "37354"
+      ]
+    },
+    {
+      "id": "SAMPKIT-SANTORINI",
+      "description": "Santorini Sample Kit",
+      "components": [
+        "39147",
+        "39148",
+        "39149",
+        "39150",
+        "39151"
+      ]
+    },
+    {
+      "id": "SAMPKIT-SAUSALITO",
+      "description": "Sausalito Sample Kit",
+      "components": [
+        "40260",
+        "40261",
+        "40262"
+      ]
+    },
+    {
+      "id": "SAMPKIT-SCOTTSDALE",
+      "description": "Scottsdale Sample Kit",
+      "components": [
+        "38694",
+        "38695",
+        "38696"
+      ]
+    },
+    {
+      "id": "SAMPKIT-SEQUOIA",
+      "description": "Sequoia Sample Kit",
+      "components": [
+        "40257",
+        "40258",
+        "40259"
+      ]
+    },
+    {
+      "id": "SAMPKIT-SERENDIPITY",
+      "description": "Serendipity Sample Kit",
+      "components": [
+        "39344",
+        "39345",
+        "39346",
+        "39347",
+        "39348",
+        "39349"
+      ]
+    },
+    {
+      "id": "SAMPKIT-SERINA",
+      "description": "Serina Sample Kit",
+      "components": [
+        "40125",
+        "40126",
+        "40127",
+        "40128",
+        "40129"
+      ]
+    },
+    {
+      "id": "SAMPKIT-SEYCHELLES",
+      "description": "Seychelles Sample Kit",
+      "components": [
+        "40702",
+        "40703",
+        "40704",
+        "40706",
+        "40716"
+      ]
+    },
+    {
+      "id": "SAMPKIT-SHASTA",
+      "description": "Shasta Sample Kit",
+      "components": [
+        "34980",
+        "34981",
+        "34983"
+      ]
+    },
+    {
+      "id": "SAMPKIT-SIERRA",
+      "description": "Sierra Sample Kit",
+      "components": [
+        "40250",
+        "40251",
+        "40252"
+      ]
+    },
+    {
+      "id": "SAMPKIT-SNOWVOILE",
+      "description": "Snow Voile Sample Kit",
+      "components": [
+        "29852",
+        "29853",
+        "29871",
+        "38225",
+        "38226"
+      ]
+    },
+    {
+      "id": "SAMPKIT-SONGBIRD",
+      "description": "Songbird Sample Kit",
+      "components": [
+        "38986",
+        "38987",
+        "38988"
+      ]
+    },
+    {
+      "id": "SAMPKIT-SONOMASTRIPE",
+      "description": "Sonoma Stripe Sample Kit",
+      "components": [
+        "38782",
+        "38783",
+        "38784",
+        "38785",
+        "38831",
+        "38889",
+        "39389",
+        "39390"
+      ]
+    },
+    {
+      "id": "SAMPKIT-SPHERES",
+      "description": "Spheres Sample Kit",
+      "components": [
+        "38765",
+        "38767",
+        "38768",
+        "38770"
+      ]
+    },
+    {
+      "id": "SAMPKIT-STCROIX",
+      "description": "St Croix Sample Kit",
+      "components": [
+        "39171",
+        "39172",
+        "39173",
+        "39174"
+      ]
+    },
+    {
+      "id": "SAMPKIT-STARDUST",
+      "description": "Stardust Sample Kit",
+      "components": [
+        "29703",
+        "29704",
+        "29705"
+      ]
+    },
+    {
+      "id": "SAMPKIT-STEWART",
+      "description": "Stewart Sample Kit",
+      "components": [
+        "38380",
+        "38381",
+        "38382",
+        "38383",
+        "38385",
+        "38386",
+        "38387",
+        "38721"
+      ]
+    },
+    {
+      "id": "SAMPKIT-STONEHEDGE",
+      "description": "Stonehedge Sample Kit",
+      "components": [
+        "38917",
+        "39009"
+      ]
+    },
+    {
+      "id": "SAMPKIT-STRIE",
+      "description": "Strie Sample Kit",
+      "components": [
+        "39267",
+        "39268",
+        "39269",
+        "39270",
+        "39271"
+      ]
+    },
+    {
+      "id": "SAMPKIT-SUMMIT",
+      "description": "Summit Sample Kit",
+      "components": [
+        "39114",
+        "39115",
+        "39116",
+        "39117",
+        "39118"
+      ]
+    },
+    {
+      "id": "SAMPKIT-SUSSEX",
+      "description": "Sussex Sample Kit",
+      "components": [
+        "39176",
+        "39177",
+        "39178",
+        "39179"
+      ]
+    },
+    {
+      "id": "SAMPKIT-SWEETGRASS",
+      "description": "Sweet Grass Sample Kit",
+      "components": [
+        "38040",
+        "38041",
+        "38044",
+        "38045"
+      ]
+    },
+    {
+      "id": "SAMPKIT-SYCAMORE",
+      "description": "Sycamore Sample Kit",
+      "components": [
+        "40254",
+        "40255",
+        "40256"
+      ]
+    },
+    {
+      "id": "SAMPKIT-SYDNEY",
+      "description": "Sydney Sample Kit",
+      "components": [
+        "38757",
+        "38759",
+        "38760",
+        "38761"
+      ]
+    },
+    {
+      "id": "SAMPKIT-TALISE",
+      "description": "TALISE Sample Kit",
+      "components": [
+        "40547",
+        "40548",
+        "40549",
+        "40561"
+      ]
+    },
+    {
+      "id": "SAMPKIT-TALIA",
+      "description": "Talia Sample Kit",
+      "components": [
+        "39252",
+        "39253",
+        "39254"
+      ]
+    },
+    {
+      "id": "SAMPKIT-TESSA",
+      "description": "Tessa Sample Kit",
+      "components": [
+        "40166",
+        "40167",
+        "40168",
+        "40169",
+        "40170"
+      ]
+    },
+    {
+      "id": "SAMPKIT-THAISILK",
+      "description": "Thai Silk Sample Kit",
+      "components": [
+        "28653",
+        "39422",
+        "39423",
+        "39424",
+        "39425",
+        "39426",
+        "39427",
+        "39428",
+        "39429",
+        "39430",
+        "39431",
+        "39432",
+        "39433",
+        "39434",
+        "39435",
+        "39436",
+        "39437",
+        "39438"
+      ]
+    },
+    {
+      "id": "SAMPKIT-TIBURON",
+      "description": "Tiburon Sample Kit",
+      "components": [
+        "38030",
+        "38031",
+        "38032",
+        "38033",
+        "38034",
+        "38035",
+        "38036",
+        "38037",
+        "38038",
+        "38039"
+      ]
+    },
+    {
+      "id": "SAMPKIT-TRAFALGARSTRIPE",
+      "description": "Trafalgar Stripe Sample Kit",
+      "components": [
+        "39312",
+        "39313",
+        "39314",
+        "39315"
+      ]
+    },
+    {
+      "id": "SAMPKIT-TUCKER",
+      "description": "Tucker Sample Kit",
+      "components": [
+        "38344",
+        "40037",
+        "40039",
+        "40040",
+        "40041",
+        "40042"
+      ]
+    },
+    {
+      "id": "SAMPKIT-TULSA",
+      "description": "Tulsa Sample Kit",
+      "components": [
+        "36478",
+        "36479",
+        "36480",
+        "36481",
+        "36482",
+        "36484",
+        "36485",
+        "36488",
+        "37569",
+        "38100",
+        "38101",
+        "38102",
+        "38104",
+        "38107",
+        "38108",
+        "38466",
+        "38467"
+      ]
+    },
+    {
+      "id": "SAMPKIT-TUSCANA",
+      "description": "Tuscana Sample Kit",
+      "components": [
+        "38989",
+        "38990",
+        "38991"
+      ]
+    },
+    {
+      "id": "SAMPKIT-TUSSAHSILK",
+      "description": "Tussah Silk Sample Kit",
+      "components": [
+        "39439",
+        "39440",
+        "39441",
+        "39442",
+        "39443",
+        "39444",
+        "39445",
+        "39446",
+        "39447",
+        "39448",
+        "39449",
+        "39450",
+        "39451",
+        "39452",
+        "39453",
+        "39454"
+      ]
+    },
+    {
+      "id": "SAMPKIT-TWEEDY",
+      "description": "Tweedy Sample Kit",
+      "components": [
+        "40278",
+        "40280",
+        "40303"
+      ]
+    },
+    {
+      "id": "SAMPKIT-TYSON",
+      "description": "Tyson Sample Kit",
+      "components": [
+        "35827",
+        "35828"
+      ]
+    },
+    {
+      "id": "SAMPKIT-UNIONSQUARE",
+      "description": "Union Square Sample Kit",
+      "components": [
+        "39100",
+        "39101",
+        "39102",
+        "39103"
+      ]
+    },
+    {
+      "id": "SAMPKIT-VALMONTSTRIPE",
+      "description": "VALMONTSTRIPE Sample Kit",
+      "components": [
+        "40550",
+        "40551",
+        "40552"
+      ]
+    },
+    {
+      "id": "SAMPKIT-VESPACHECK",
+      "description": "VESPA CHECK Sample Kit",
+      "components": [
+        "40731",
+        "40732",
+        "40733",
+        "40734",
+        "40735",
+        "40736"
+      ]
+    },
+    {
+      "id": "SAMPKIT-VANCOUVER",
+      "description": "Vancouver Sample Kit",
+      "components": [
+        "38484",
+        "38485",
+        "38486",
+        "38487",
+        "38490",
+        "38492",
+        "38493",
+        "38497",
+        "38498",
+        "38499",
+        "38500",
+        "38530",
+        "38532",
+        "38533"
+      ]
+    },
+    {
+      "id": "SAMPKIT-VERANDA",
+      "description": "Veranda Sample Kit",
+      "components": [
+        "36096",
+        "36097",
+        "36101"
+      ]
+    },
+    {
+      "id": "SAMPKIT-VERONA",
+      "description": "Verona Sample Kit",
+      "components": [
+        "38129",
+        "38130",
+        "38131",
+        "38132",
+        "38133",
+        "38134",
+        "38135",
+        "38137",
+        "38138",
+        "38139",
+        "38140",
+        "38141",
+        "38142",
+        "38143",
+        "38144",
+        "38145",
+        "38146",
+        "38149",
+        "38150",
+        "38151",
+        "38152",
+        "38153",
+        "38155",
+        "38157",
+        "38159",
+        "38160",
+        "38161",
+        "38162",
+        "40147",
+        "40148",
+        "40149",
+        "40150",
+        "40151",
+        "40152",
+        "40153"
+      ]
+    },
+    {
+      "id": "SAMPKIT-VICTORIA",
+      "description": "Victoria Sample Kit",
+      "components": [
+        "38348",
+        "39350",
+        "39351",
+        "39352",
+        "39353",
+        "39354",
+        "40064",
+        "40065",
+        "40066",
+        "40067"
+      ]
+    },
+    {
+      "id": "SAMPKIT-VOILE60",
+      "description": "Voile 60 Sample Kit",
+      "components": [
+        "25098",
+        "25099",
+        "25100",
+        "25101"
+      ]
+    },
+    {
+      "id": "SAMPKIT-WARREN",
+      "description": "Warren Sample Kit",
+      "components": [
+        "38349",
+        "39059",
+        "39060",
+        "39061",
+        "39062",
+        "39084",
+        "40068",
+        "40069",
+        "40070",
+        "40071",
+        "40072",
+        "40073"
+      ]
+    },
+    {
+      "id": "SAMPKIT-WASHEDLINEN",
+      "description": "Washed Linen Sample Kit",
+      "components": [
+        "39021",
+        "39022",
+        "39023",
+        "39024"
+      ]
+    },
+    {
+      "id": "SAMPKIT-WESTINDIES",
+      "description": "West Indies Sample Kit",
+      "components": [
+        "39403",
+        "39404",
+        "39405",
+        "39406",
+        "39407",
+        "39408"
+      ]
+    },
+    {
+      "id": "SAMPKIT-WINCHESTER",
+      "description": "Winchester Sample Kit",
+      "components": [
+        "39242",
+        "39243",
+        "39244"
+      ]
+    },
+    {
+      "id": "SAMPKIT-WINDSONGCOTTON",
+      "description": "Windsong Cotton Sample Kit",
+      "components": [
+        "39056",
+        "39057",
+        "39166"
+      ]
+    },
+    {
+      "id": "SAMPKIT-YARDLEY",
+      "description": "Yardley Sample Kit",
+      "components": [
+        "38856",
+        "38857",
+        "38859",
+        "38860",
+        "38861"
+      ]
+    },
+    {
+      "id": "SAMPKIT-ZAIRE",
+      "description": "Zaire Sample Kit",
+      "components": [
+        "38981",
+        "38982"
+      ]
+    },
+    {
+      "id": "SAMPKIT-ZENITH",
+      "description": "Zenith Sample Kit",
+      "components": [
+        "39069",
+        "39070",
+        "39071",
+        "39072",
+        "39073",
+        "39074",
+        "39085",
+        "39086",
+        "39087",
+        "39088"
+      ]
+    },
+    {
+      "id": "SAMPKIT-ZION",
+      "description": "Zion Sample Kit",
+      "components": [
+        "39039",
+        "39040",
+        "39041"
+      ]
+    }
+  ]
+}

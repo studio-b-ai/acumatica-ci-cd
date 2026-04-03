@@ -1,0 +1,22 @@
+<Customization level="0" product-version="24.210.0016">
+  <Graph ClassName="CICDRollbackTestExtension" Source="#CDATA" IsNew="True" FileType="NewFile">
+    <CDATA name="Source"><![CDATA[
+using PX.Data;
+
+namespace CICDRollbackTest
+{
+    // INTENTIONALLY BROKEN — missing semicolons, undefined type
+    public class BrokenExtension : PXCacheExtension<UndefinedDACType>
+    {
+        public static bool IsActive() => true
+
+        public abstract class usrBrokenField : PX.Data.BQL.BqlString.Field<usrBrokenField> { }
+
+        [PXDBString(50)]
+        [PXUIField(DisplayName = "Broken Field")]
+        public virtual string UsrBrokenField { get set; }
+    }
+}
+]]></CDATA>
+  </Graph>
+</Customization>

@@ -1,0 +1,9 @@
+{
+  "kits": [
+    {
+      "id": "SAMPKIT-ADELE",
+      "description": "Adele Collection Sample Kit",
+      "components": ["ADELE1"]
+    }
+  ]
+}

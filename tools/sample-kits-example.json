@@ -1,0 +1,19 @@
+{
+  "kits": [
+    {
+      "id": "SAMPKIT-ACE",
+      "description": "Ace Collection Sample Kit",
+      "components": ["ACE2"]
+    },
+    {
+      "id": "SAMPKIT-ADELE",
+      "description": "Adele Collection Sample Kit",
+      "components": ["ADELE1"]
+    },
+    {
+      "id": "SAMPKIT-ALEXANDER",
+      "description": "Alexander Collection Sample Kit",
+      "components": ["ALEXANDER2"]
+    }
+  ]
+}
