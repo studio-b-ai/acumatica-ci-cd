@@ -1350,6 +1350,89 @@ namespace StudioB.Containers
             </Children>
         </PXGridLevel>
     </Page>
+    <Page path="~/pages/in/in202500.aspx">
+        <PXFormView ID="form" ParentId="phF_form" TypeFullName="PX.Web.UI.PXFormView">
+            <Children Key="Template">
+                <AddItem>
+                    <PXNumberEdit TypeFullName="PX.Web.UI.PXNumberEdit">
+                        <Prop Key="Virtual:ApplyStylesheetSkin" />
+                        <Prop Key="ID" Value="edUsrDutyRate" />
+                        <Prop Key="DataField" Value="UsrDutyRate" />
+                    </PXNumberEdit>
+                </AddItem>
+                <AddItem>
+                    <PXTextEdit TypeFullName="PX.Web.UI.PXTextEdit">
+                        <Prop Key="Virtual:ApplyStylesheetSkin" />
+                        <Prop Key="ID" Value="edUsrFiberContent" />
+                        <Prop Key="DataField" Value="UsrFiberContent" />
+                    </PXTextEdit>
+                </AddItem>
+                <AddItem>
+                    <PXCheckBox TypeFullName="PX.Web.UI.PXCheckBox">
+                        <Prop Key="ID" Value="chkUsrPreferentialTariff" />
+                        <Prop Key="DataField" Value="UsrPreferentialTariff" />
+                    </PXCheckBox>
+                </AddItem>
+                <AddItem>
+                    <PXTextEdit TypeFullName="PX.Web.UI.PXTextEdit">
+                        <Prop Key="Virtual:ApplyStylesheetSkin" />
+                        <Prop Key="ID" Value="edUsrFreightClass" />
+                        <Prop Key="DataField" Value="UsrFreightClass" />
+                    </PXTextEdit>
+                </AddItem>
+            </Children>
+        </PXFormView>
+    </Page>
+    <Page path="~/pages/po/po302000.aspx">
+        <PXGridLevel DataMember="transactions" ParentId="phG_tab_Items#0_grid_Levels#0" TypeFullName="PX.Web.UI.PXGridLevel">
+            <Children Key="Columns">
+                <AddItem>
+                    <PXGridColumn TypeFullName="PX.Web.UI.PXGridColumn">
+                        <Prop Key="DataField" Value="UsrActualDutyAmt" />
+                        <Prop Key="Width" Value="100px" />
+                    </PXGridColumn>
+                </AddItem>
+                <AddItem>
+                    <PXGridColumn TypeFullName="PX.Web.UI.PXGridColumn">
+                        <Prop Key="DataField" Value="UsrActualFreightAmt" />
+                        <Prop Key="Width" Value="100px" />
+                    </PXGridColumn>
+                </AddItem>
+                <AddItem>
+                    <PXGridColumn TypeFullName="PX.Web.UI.PXGridColumn">
+                        <Prop Key="DataField" Value="UsrBrokerageAmt" />
+                        <Prop Key="Width" Value="100px" />
+                    </PXGridColumn>
+                </AddItem>
+                <AddItem>
+                    <PXGridColumn TypeFullName="PX.Web.UI.PXGridColumn">
+                        <Prop Key="DataField" Value="UsrLandedCostPerUnit" />
+                        <Prop Key="Width" Value="100px" />
+                    </PXGridColumn>
+                </AddItem>
+            </Children>
+        </PXGridLevel>
+    </Page>
+    <Page path="~/pages/ap/ap303000.aspx">
+        <PXFormView ID="form" ParentId="phF_form" TypeFullName="PX.Web.UI.PXFormView">
+            <Children Key="Template">
+                <AddItem>
+                    <PXSelector TypeFullName="PX.Web.UI.PXSelector">
+                        <Prop Key="Virtual:ApplyStylesheetSkin" />
+                        <Prop Key="ID" Value="edUsrDefaultInTransitSiteID" />
+                        <Prop Key="DataField" Value="UsrDefaultInTransitSiteID" />
+                    </PXSelector>
+                </AddItem>
+                <AddItem>
+                    <PXDropDown TypeFullName="PX.Web.UI.PXDropDown">
+                        <Prop Key="Virtual:ApplyStylesheetSkin" />
+                        <Prop Key="ID" Value="edUsrDefaultCarrierCode" />
+                        <Prop Key="DataField" Value="UsrDefaultCarrierCode" />
+                    </PXDropDown>
+                </AddItem>
+            </Children>
+        </PXFormView>
+    </Page>
     <File AppRelativePath="Pages\SB\SB501000.aspx" Source="#CDATA">
         <CDATA name="Source"><![CDATA[<%@ Page Language="C#" MasterPageFile="~/MasterPages/FormDetail.master" AutoEventWireup="true" ValidateRequest="false" CodeFile="SB501000.aspx.cs" Inherits="Page_SB_SB501000" Title="Container Maintenance" %>
 <%@ MasterType VirtualPath="~/MasterPages/FormDetail.master" %>
