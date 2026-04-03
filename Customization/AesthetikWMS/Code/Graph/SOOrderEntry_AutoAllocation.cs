@@ -10,10 +10,10 @@ using PX.Objects.SO;
 namespace HeritageFabrics.SO
 {
     /// <summary>
-    /// Auto-allocation for piece goods (PIECENBR lot class) on PC/FO orders.
+    /// Auto-allocation for piece goods (BOLTID lot class) on PC/FO orders.
     ///
     /// Runs in Persist() override — after all user edits, before DB write.
-    /// For each unallocated PIECENBR line:
+    /// For each unallocated BOLTID line:
     ///   1. Find available bolts from INLotSerialStatus (FIFO, then largest)
     ///   2. Create SOLineSplit rows for each bolt (native allocation pattern)
     ///   3. Store original qty in UsrRequestedQty, override OrderQty to bolt total
@@ -29,7 +29,7 @@ namespace HeritageFabrics.SO
     {
         public static bool IsActive() => true;
 
-        private const string PieceGoodsClassID = "PIECENBR";
+        private const string PieceGoodsClassID = "BOLTID";
         private const decimal OvershipFactor = 1.20m;
 
         #region Persist Override

@@ -68,8 +68,8 @@
           <GIWhere LineNbr="4" IsActive="1" CloseBrackets="1" DataFieldName="SOOrder.Status" Condition="EQ" Value1="H" Operator="A" />
           <!-- WHERE: Lot/Serial Nbr is empty (unallocated) -->
           <GIWhere LineNbr="5" IsActive="1" DataFieldName="SOLine.LotSerialNbr" Condition="NU" Operator="A" />
-          <!-- WHERE: PIECENBR lot class -->
-          <GIWhere LineNbr="6" IsActive="1" DataFieldName="InventoryItem.LotSerClassID" Condition="EQ" Value1="PIECENBR" />
+          <!-- WHERE: BOLTID lot class -->
+          <GIWhere LineNbr="6" IsActive="1" DataFieldName="InventoryItem.LotSerClassID" Condition="EQ" Value1="BOLTID" />
 
           <!-- SORT by Order Date DESC, Order Nbr -->
           <GISort LineNbr="1" IsActive="1" DataFieldName="SOOrder.OrderDate" SortOrder="D" />
