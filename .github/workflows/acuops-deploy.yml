@@ -558,7 +558,7 @@ jobs:
             --package "${PACKAGE_FILE}" \
             --also-publish "${TEST_ALSO}" \
             --no-merge \
-            --skip-e2e \
+            --skip-smoke-test \
             ${EXTRA_FLAGS}
 
       - name: Validate test tenant
