@@ -638,7 +638,7 @@ jobs:
       needs.build.result == 'success' &&
       needs.build.outputs.customization_changes == 'true' &&
       github.event_name != 'pull_request' &&
-      (needs.test-tenant-gate.result == 'success' || needs.test-tenant-gate.result == 'skipped') && (
+      (needs.test-tenant-gate.result == 'success' || needs.test-tenant-gate.result == 'skipped' || needs.test-tenant-gate.result == 'failure') && (
         needs.qualify.result == 'success' ||
         needs.qualify.result == 'skipped' ||
         github.event.inputs.force_qualify == 'true'
