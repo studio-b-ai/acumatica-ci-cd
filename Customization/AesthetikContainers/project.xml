@@ -1565,45 +1565,4 @@ public partial class Page_SB_SB501000 : PX.Web.UI.PXPage
             </data>
         </data-set>
     </ScreenWithRights>
-    <ScreenWithRights AccessRightsMergeRule="ApplyAndKeep">
-        <data-set>
-            <relations format-version="3" relations-version="20240201" main-table="SiteMap">
-                <link from="MUIScreen (NodeID)" to="SiteMap (NodeID)" />
-                <link from="MUITile (ScreenID)" to="SiteMap (ScreenID)" />
-            </relations>
-            <layout>
-                <table name="SiteMap">
-                    <table name="MUIScreen" uplink="(NodeID) = (NodeID)">
-                        <table name="MUIPinnedScreen" uplink="(ScreenID, IsPortal) = (ScreenID, IsPortal)" />
-                    </table>
-                    <table name="MUITile" uplink="(ScreenID) = (ScreenID)" />
-                </table>
-                <table name="MUIWorkspace">
-                    <table name="MUIFavoriteWorkspace" uplink="(WorkspaceID) = (WorkspaceID)" />
-                </table>
-                <table name="MUISubcategory" />
-                <table name="MUIArea" />
-            </layout>
-            <data>
-                <SiteMap>
-                    <row Position="7.5" Title="Container Maintenance" Url="~/Pages/SB/SB501000.aspx" ScreenID="SB501000" NodeID="b88b362d-cad6-44c3-8656-a418f2f08923" ParentID="9c89e3db-7c47-43c0-8554-5d2c9f2c0e87" SelectedUI="E">
-                        <MUIScreen IsPortal="0" WorkspaceID="95191203-a0b8-4fc0-8b20-4efe831708e9" Order="6" SubcategoryID="38d13a6e-3076-42fb-9fce-62fa33897da6">
-                            <MUIPinnedScreen IsPortal="0" Username="" IsPinned="1" />
-                        </MUIScreen>
-                    </row>
-                </SiteMap>
-                <MUIWorkspace>
-                    <row IsPortal="0" WorkspaceID="95191203-a0b8-4fc0-8b20-4efe831708e9" Order="230" Title="Container Tracking" Icon="directions_car" AreaID="62cfd5dc-8eb9-4e92-bbcd-e0a99eb5e5df" IsSystem="0">
-                        <MUIFavoriteWorkspace IsPortal="0" Username="" IsFavorite="1" />
-                    </row>
-                </MUIWorkspace>
-                <MUISubcategory>
-                    <row IsPortal="0" SubcategoryID="38d13a6e-3076-42fb-9fce-62fa33897da6" Order="64" Name="Transactions" Icon="" IsSystem="0" />
-                </MUISubcategory>
-                <MUIArea>
-                    <row IsPortal="0" AreaID="62cfd5dc-8eb9-4e92-bbcd-e0a99eb5e5df" Order="20" Name="Operations" />
-                </MUIArea>
-            </data>
-        </data-set>
-    </ScreenWithRights>
 </Customization>
