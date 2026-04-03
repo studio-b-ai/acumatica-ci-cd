@@ -19,7 +19,7 @@ from collections import defaultdict
 from datetime import datetime
 
 # Add scripts/ to path so workflow_extractor is importable
-sys.path.insert(0, os.path.dirname(__file__))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from workflow_extractor.fetcher import AuditFetcher
 from workflow_extractor.parser import screen_name
