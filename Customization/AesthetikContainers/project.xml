@@ -1095,6 +1095,31 @@ namespace StudioB.Containers
                     EnsureColumn(conn, "POReceiptLine", "UsrActualFreightAmt", "decimal(25,4) NULL");
                     EnsureColumn(conn, "POReceiptLine", "UsrBrokerageAmt", "decimal(25,4) NULL");
 
+                    // ── Freight Forwarders Table ──────────────────────────────
+                    EnsureTable(conn, "UsrFreightForwarder", @"
+                        CompanyID int NOT NULL DEFAULT 0,
+                        ForwarderID int IDENTITY(1,1) NOT NULL,
+                        ForwarderCD nvarchar(15) NOT NULL,
+                        Name nvarchar(100) NOT NULL,
+                        ContactName nvarchar(100) NULL,
+                        Phone nvarchar(30) NULL,
+                        Email nvarchar(100) NULL,
+                        Website nvarchar(200) NULL,
+                        CarrierAPIType nvarchar(20) NULL,
+                        CarrierAPIKey nvarchar(200) NULL,
+                        Active bit NOT NULL DEFAULT 1,
+                        NoteID uniqueidentifier NULL,
+                        CreatedByID uniqueidentifier NULL,
+                        CreatedByScreenID char(8) NULL,
+                        CreatedDateTime datetime NULL,
+                        LastModifiedByID uniqueidentifier NULL,
+                        LastModifiedByScreenID char(8) NULL,
+                        LastModifiedDateTime datetime NULL,
+                        tstamp timestamp NOT NULL,
+                        CONSTRAINT PK_UsrFreightForwarder PRIMARY KEY (CompanyID, ForwarderID)
+                    ");
+                    EnsureIndex(conn, "UsrFreightForwarder", "IX_UsrFreightForwarder_CD", "CompanyID, ForwarderCD");
+
                     // ── IGCM → UsrContainer Data Migration ──────────────────
                     // Idempotent (NOT EXISTS guards). Safe to run on every publish.
                     // Migrates IIG container data to AesthetikContainers tables.
@@ -1106,6 +1131,12 @@ namespace StudioB.Containers
                     // cause "type not found: IGCM.DAC.IGCMPOLandedCost" errors
                     // when SB501000 PO Links tab loads. Delete them.
                     CleanupIGCMArtifacts(conn);
+
+                    // ── Container Tracking GI Definitions ─────────────────────
+                    EnsureContainerTrackingGIs(conn);
+
+                    // ── Container Tracking SiteMap Entries ─────────────────────
+                    EnsureContainerTrackingSiteMap(conn);
                 }
 
                 WriteLog("[AesthetikContainers] All tables, columns, indexes, and migration verified/created.");
@@ -1444,6 +1475,313 @@ namespace StudioB.Containers
 
             WriteLog(string.Format("  IGCM cleanup: complete ({0} total rows removed)", totalRows));
         }
+
+        private void EnsureContainerTrackingGIs(SqlConnection conn)
+        {
+            // -- REVIEWED: gi-sql-safe
+            // 4 GIs created by gi_builder.py — idempotent (IF EXISTS check per GI)
+            string[] giSqls = new[]
+            {
+                // ── PO Containers (SB401000) ──────────────────────────────
+                @"IF NOT EXISTS (SELECT 1 FROM GIDesign WHERE Name = N'POContainers' AND CompanyID = 2)
+                BEGIN
+                    BEGIN TRANSACTION;
+                    BEGIN TRY
+                        INSERT INTO GIDesign (DesignID, Name, ScreenID, CompanyID, CreatedByID, CreatedByScreenID, NoteID) VALUES (N'0a2b8dab-1987-46c5-bde1-44f4c6730897', N'POContainers', N'SB401000', 2, N'B5344897-037E-4D58-B5C3-1BDFD0F47BF4', N'SM208000', N'4b5862fb-bb1b-47bd-9f52-60d5822e7fb7');
+                        INSERT INTO GITable (DesignID, Alias, Name, CompanyID) VALUES (N'0a2b8dab-1987-46c5-bde1-44f4c6730897', N'Container', N'StudioB.Containers.UsrContainer', 2);
+                        INSERT INTO GIResult (DesignID, LineNbr, Field, CompanyID, RowID) VALUES (N'0a2b8dab-1987-46c5-bde1-44f4c6730897', 1, N'ContainerCD', 2, N'60e47900-9f24-4f83-baac-65fa346f9735');
+                        INSERT INTO GIResult (DesignID, LineNbr, Field, CompanyID, RowID) VALUES (N'0a2b8dab-1987-46c5-bde1-44f4c6730897', 2, N'Status', 2, N'4c13fa66-4b87-42c7-8e3b-f7b1f2d51974');
+                        INSERT INTO GIResult (DesignID, LineNbr, Field, CompanyID, RowID) VALUES (N'0a2b8dab-1987-46c5-bde1-44f4c6730897', 3, N'CarrierCode', 2, N'949c5714-f220-42df-9964-016565399810');
+                        INSERT INTO GIResult (DesignID, LineNbr, Field, CompanyID, RowID) VALUES (N'0a2b8dab-1987-46c5-bde1-44f4c6730897', 4, N'VesselName', 2, N'4162fe30-afa4-471e-95c8-af50e47775a9');
+                        INSERT INTO GIResult (DesignID, LineNbr, Field, CompanyID, RowID) VALUES (N'0a2b8dab-1987-46c5-bde1-44f4c6730897', 5, N'PortOfLoading', 2, N'ef306f39-ae6e-4df7-b39b-ad2ee82db31f');
+                        INSERT INTO GIResult (DesignID, LineNbr, Field, CompanyID, RowID) VALUES (N'0a2b8dab-1987-46c5-bde1-44f4c6730897', 6, N'PortOfDischarge', 2, N'16ee8909-e9b0-4096-8b90-1b3af4fce6b1');
+                        INSERT INTO GIResult (DesignID, LineNbr, Field, CompanyID, RowID) VALUES (N'0a2b8dab-1987-46c5-bde1-44f4c6730897', 7, N'ETD', 2, N'9d56892b-5010-49a2-b090-44eacb1b1c4e');
+                        INSERT INTO GIResult (DesignID, LineNbr, Field, CompanyID, RowID) VALUES (N'0a2b8dab-1987-46c5-bde1-44f4c6730897', 8, N'ETA', 2, N'bb431ee3-7be2-4f87-bf6e-665ad469472a');
+                        INSERT INTO GIResult (DesignID, LineNbr, Field, CompanyID, RowID) VALUES (N'0a2b8dab-1987-46c5-bde1-44f4c6730897', 9, N'ATA', 2, N'4b642ed3-3171-4b46-bf95-1cc0849db496');
+                        INSERT INTO GIResult (DesignID, LineNbr, Field, CompanyID, RowID) VALUES (N'0a2b8dab-1987-46c5-bde1-44f4c6730897', 10, N'ContainerType', 2, N'03e993f9-34e5-4734-bff1-a42c2a12bacf');
+                        INSERT INTO GIResult (DesignID, LineNbr, Field, CompanyID, RowID) VALUES (N'0a2b8dab-1987-46c5-bde1-44f4c6730897', 11, N'BookingRef', 2, N'2fcee3af-b8c5-4fe8-8259-f240cbaab9b9');
+                        INSERT INTO GIFilter (DesignID, LineNbr, Name, CompanyID) VALUES (N'0a2b8dab-1987-46c5-bde1-44f4c6730897', 1, N'StatusFilter', 2);
+                        INSERT INTO GIFilter (DesignID, LineNbr, Name, CompanyID) VALUES (N'0a2b8dab-1987-46c5-bde1-44f4c6730897', 2, N'CarrierFilter', 2);
+                        INSERT INTO GIWhere (DesignID, LineNbr, DataFieldName, CompanyID) VALUES (N'0a2b8dab-1987-46c5-bde1-44f4c6730897', 1, N'Container.Status', 2);
+                        INSERT INTO GIWhere (DesignID, LineNbr, DataFieldName, CompanyID) VALUES (N'0a2b8dab-1987-46c5-bde1-44f4c6730897', 2, N'Container.CarrierCode', 2);
+                        INSERT INTO GISort (DesignID, LineNbr, DataFieldName, CompanyID) VALUES (N'0a2b8dab-1987-46c5-bde1-44f4c6730897', 1, N'Container.ETA', 2);
+                        COMMIT TRANSACTION;
+                        PRINT 'GI [POContainers] created.';
+                    END TRY
+                    BEGIN CATCH
+                        IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION;
+                        PRINT 'GI [POContainers] FAILED: ' + ERROR_MESSAGE();
+                    END CATCH
+                END",
+
+                // ── SO Containers (SB401010) ──────────────────────────────
+                @"IF NOT EXISTS (SELECT 1 FROM GIDesign WHERE Name = N'SOContainers' AND CompanyID = 2)
+                BEGIN
+                    BEGIN TRANSACTION;
+                    BEGIN TRY
+                        INSERT INTO GIDesign (DesignID, Name, ScreenID, CompanyID, CreatedByID, CreatedByScreenID, NoteID) VALUES (N'bb6ccce3-12ba-4f8d-8b6b-714305d579ef', N'SOContainers', N'SB401010', 2, N'B5344897-037E-4D58-B5C3-1BDFD0F47BF4', N'SM208000', N'e4bfce1a-9d92-423d-bd9d-c6bc1059c182');
+                        INSERT INTO GITable (DesignID, Alias, Name, CompanyID) VALUES (N'bb6ccce3-12ba-4f8d-8b6b-714305d579ef', N'Shipment', N'PX.Objects.SO.SOShipment', 2);
+                        INSERT INTO GIResult (DesignID, LineNbr, Field, CompanyID, RowID) VALUES (N'bb6ccce3-12ba-4f8d-8b6b-714305d579ef', 1, N'ShipmentNbr', 2, N'2729b009-cfca-472e-8400-0ef5cfd3992d');
+                        INSERT INTO GIResult (DesignID, LineNbr, Field, CompanyID, RowID) VALUES (N'bb6ccce3-12ba-4f8d-8b6b-714305d579ef', 2, N'Status', 2, N'6204fa19-6814-411a-9b3a-9b9128a1434a');
+                        INSERT INTO GIResult (DesignID, LineNbr, Field, CompanyID, RowID) VALUES (N'bb6ccce3-12ba-4f8d-8b6b-714305d579ef', 3, N'CustomerID', 2, N'ae0b25d7-ab2a-4999-8579-7d19701f8f04');
+                        INSERT INTO GIResult (DesignID, LineNbr, Field, CompanyID, RowID) VALUES (N'bb6ccce3-12ba-4f8d-8b6b-714305d579ef', 4, N'ShipDate', 2, N'82d32081-98aa-49bb-bfc2-b6329dc5ae7b');
+                        INSERT INTO GIResult (DesignID, LineNbr, Field, CompanyID, RowID) VALUES (N'bb6ccce3-12ba-4f8d-8b6b-714305d579ef', 5, N'UsrContainerID', 2, N'36b548f1-e768-4a1a-8efd-15ebba36df22');
+                        INSERT INTO GIResult (DesignID, LineNbr, Field, CompanyID, RowID) VALUES (N'bb6ccce3-12ba-4f8d-8b6b-714305d579ef', 6, N'UsrIncludeInContainer', 2, N'714189fb-24e7-46c7-97cb-a69ff730b624');
+                        INSERT INTO GIFilter (DesignID, LineNbr, Name, CompanyID) VALUES (N'bb6ccce3-12ba-4f8d-8b6b-714305d579ef', 1, N'StatusFilter', 2);
+                        INSERT INTO GIWhere (DesignID, LineNbr, DataFieldName, CompanyID) VALUES (N'bb6ccce3-12ba-4f8d-8b6b-714305d579ef', 1, N'Shipment.Status', 2);
+                        INSERT INTO GISort (DesignID, LineNbr, DataFieldName, CompanyID) VALUES (N'bb6ccce3-12ba-4f8d-8b6b-714305d579ef', 1, N'Shipment.ShipDate', 2);
+                        COMMIT TRANSACTION;
+                        PRINT 'GI [SOContainers] created.';
+                    END TRY
+                    BEGIN CATCH
+                        IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION;
+                        PRINT 'GI [SOContainers] FAILED: ' + ERROR_MESSAGE();
+                    END CATCH
+                END",
+
+                // ── Container Events (SB401020) ───────────────────────────
+                @"IF NOT EXISTS (SELECT 1 FROM GIDesign WHERE Name = N'ContainerEvents' AND CompanyID = 2)
+                BEGIN
+                    BEGIN TRANSACTION;
+                    BEGIN TRY
+                        INSERT INTO GIDesign (DesignID, Name, ScreenID, CompanyID, CreatedByID, CreatedByScreenID, NoteID) VALUES (N'84272c7f-4e52-484b-b4bf-0cdb40e38257', N'ContainerEvents', N'SB401020', 2, N'B5344897-037E-4D58-B5C3-1BDFD0F47BF4', N'SM208000', N'2e35e69c-9a9c-40f8-8974-30edfd5f81f2');
+                        INSERT INTO GITable (DesignID, Alias, Name, CompanyID) VALUES (N'84272c7f-4e52-484b-b4bf-0cdb40e38257', N'Event', N'StudioB.Containers.UsrContainerEvent', 2);
+                        INSERT INTO GITable (DesignID, Alias, Name, CompanyID) VALUES (N'84272c7f-4e52-484b-b4bf-0cdb40e38257', N'Container', N'StudioB.Containers.UsrContainer', 2);
+                        INSERT INTO GIResult (DesignID, LineNbr, Field, CompanyID, RowID) VALUES (N'84272c7f-4e52-484b-b4bf-0cdb40e38257', 1, N'ContainerCD', 2, N'00124187-88b5-4f14-b248-06673e459a98');
+                        INSERT INTO GIResult (DesignID, LineNbr, Field, CompanyID, RowID) VALUES (N'84272c7f-4e52-484b-b4bf-0cdb40e38257', 2, N'EventDateTime', 2, N'4fb223f9-71b9-43e5-a2ba-1b45bd4d616c');
+                        INSERT INTO GIResult (DesignID, LineNbr, Field, CompanyID, RowID) VALUES (N'84272c7f-4e52-484b-b4bf-0cdb40e38257', 3, N'NormalizedEventCode', 2, N'97497633-27fe-49cd-8142-2bd5965c399f');
+                        INSERT INTO GIResult (DesignID, LineNbr, Field, CompanyID, RowID) VALUES (N'84272c7f-4e52-484b-b4bf-0cdb40e38257', 4, N'EventClassifier', 2, N'6dbcbcb6-d298-46fc-bbf4-4313f743e5f3');
+                        INSERT INTO GIResult (DesignID, LineNbr, Field, CompanyID, RowID) VALUES (N'84272c7f-4e52-484b-b4bf-0cdb40e38257', 5, N'LocationName', 2, N'0ea28e22-67ba-4d46-bc7d-bae111e14c63');
+                        INSERT INTO GIResult (DesignID, LineNbr, Field, CompanyID, RowID) VALUES (N'84272c7f-4e52-484b-b4bf-0cdb40e38257', 6, N'VesselName', 2, N'4d1ae20b-6d95-4dc9-90d8-4c33e32e126c');
+                        INSERT INTO GIResult (DesignID, LineNbr, Field, CompanyID, RowID) VALUES (N'84272c7f-4e52-484b-b4bf-0cdb40e38257', 7, N'Description', 2, N'62ed1858-64a8-42a3-9198-7150f869715f');
+                        INSERT INTO GIFilter (DesignID, LineNbr, Name, CompanyID) VALUES (N'84272c7f-4e52-484b-b4bf-0cdb40e38257', 1, N'ContainerFilter', 2);
+                        INSERT INTO GIFilter (DesignID, LineNbr, Name, CompanyID) VALUES (N'84272c7f-4e52-484b-b4bf-0cdb40e38257', 2, N'EventCodeFilter', 2);
+                        INSERT INTO GIWhere (DesignID, LineNbr, DataFieldName, CompanyID) VALUES (N'84272c7f-4e52-484b-b4bf-0cdb40e38257', 1, N'Container.ContainerCD', 2);
+                        INSERT INTO GIWhere (DesignID, LineNbr, DataFieldName, CompanyID) VALUES (N'84272c7f-4e52-484b-b4bf-0cdb40e38257', 2, N'Event.NormalizedEventCode', 2);
+                        INSERT INTO GISort (DesignID, LineNbr, DataFieldName, CompanyID) VALUES (N'84272c7f-4e52-484b-b4bf-0cdb40e38257', 1, N'Event.EventDateTime', 2);
+                        COMMIT TRANSACTION;
+                        PRINT 'GI [ContainerEvents] created.';
+                    END TRY
+                    BEGIN CATCH
+                        IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION;
+                        PRINT 'GI [ContainerEvents] FAILED: ' + ERROR_MESSAGE();
+                    END CATCH
+                END",
+
+                // ── Custom Classification (SB401030) ──────────────────────
+                @"IF NOT EXISTS (SELECT 1 FROM GIDesign WHERE Name = N'CustomClassification' AND CompanyID = 2)
+                BEGIN
+                    BEGIN TRANSACTION;
+                    BEGIN TRY
+                        INSERT INTO GIDesign (DesignID, Name, ScreenID, CompanyID, CreatedByID, CreatedByScreenID, NoteID) VALUES (N'79538136-ed3f-47f8-9ab1-7efdb53fc1aa', N'CustomClassification', N'SB401030', 2, N'B5344897-037E-4D58-B5C3-1BDFD0F47BF4', N'SM208000', N'fa0fcf3d-880c-4210-a455-75318e547863');
+                        INSERT INTO GITable (DesignID, Alias, Name, CompanyID) VALUES (N'79538136-ed3f-47f8-9ab1-7efdb53fc1aa', N'Item', N'PX.Objects.IN.InventoryItem', 2);
+                        INSERT INTO GIResult (DesignID, LineNbr, Field, CompanyID, RowID) VALUES (N'79538136-ed3f-47f8-9ab1-7efdb53fc1aa', 1, N'InventoryCD', 2, N'4ae7f836-7648-4f1a-bf16-b9d1db852817');
+                        INSERT INTO GIResult (DesignID, LineNbr, Field, CompanyID, RowID) VALUES (N'79538136-ed3f-47f8-9ab1-7efdb53fc1aa', 2, N'Descr', 2, N'b44a65ae-d870-4706-b69a-5c8d96ca40b7');
+                        INSERT INTO GIResult (DesignID, LineNbr, Field, CompanyID, RowID) VALUES (N'79538136-ed3f-47f8-9ab1-7efdb53fc1aa', 3, N'ItemClassID', 2, N'bcf2c4b7-b19c-45bb-82d3-7db0ac761844');
+                        INSERT INTO GIResult (DesignID, LineNbr, Field, CompanyID, RowID) VALUES (N'79538136-ed3f-47f8-9ab1-7efdb53fc1aa', 4, N'UsrFiberContent', 2, N'a5e693c1-55ff-4424-a821-c54850e588cd');
+                        INSERT INTO GIResult (DesignID, LineNbr, Field, CompanyID, RowID) VALUES (N'79538136-ed3f-47f8-9ab1-7efdb53fc1aa', 5, N'UsrDutyRate', 2, N'32b92b71-0d3b-41d9-a6f1-a2e2be1ff8f6');
+                        INSERT INTO GIResult (DesignID, LineNbr, Field, CompanyID, RowID) VALUES (N'79538136-ed3f-47f8-9ab1-7efdb53fc1aa', 6, N'UsrPreferentialTariff', 2, N'bc0d7ab3-2e7d-44be-a6c6-0114a6db4fea');
+                        INSERT INTO GIResult (DesignID, LineNbr, Field, CompanyID, RowID) VALUES (N'79538136-ed3f-47f8-9ab1-7efdb53fc1aa', 7, N'UsrFreightClass', 2, N'e15b7a90-3ab0-4667-b6a6-09b4f8d0d12b');
+                        INSERT INTO GIFilter (DesignID, LineNbr, Name, CompanyID) VALUES (N'79538136-ed3f-47f8-9ab1-7efdb53fc1aa', 1, N'ItemClassFilter', 2);
+                        INSERT INTO GIWhere (DesignID, LineNbr, DataFieldName, CompanyID) VALUES (N'79538136-ed3f-47f8-9ab1-7efdb53fc1aa', 1, N'Item.ItemClassID', 2);
+                        INSERT INTO GISort (DesignID, LineNbr, DataFieldName, CompanyID) VALUES (N'79538136-ed3f-47f8-9ab1-7efdb53fc1aa', 1, N'Item.InventoryCD', 2);
+                        COMMIT TRANSACTION;
+                        PRINT 'GI [CustomClassification] created.';
+                    END TRY
+                    BEGIN CATCH
+                        IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION;
+                        PRINT 'GI [CustomClassification] FAILED: ' + ERROR_MESSAGE();
+                    END CATCH
+                END",
+            };
+
+            foreach (var sql in giSqls)
+            {
+                using (var cmd = new SqlCommand(sql, conn)) { cmd.CommandTimeout = 60; cmd.ExecuteNonQuery(); }
+            }
+            WriteLog("[AesthetikContainers] Container Tracking GIs (4) — OK");
+        }
+
+        private void EnsureContainerTrackingSiteMap(SqlConnection conn)
+        {
+            // SiteMap entries for 5 new Container Tracking screens.
+            // ParentID = 9c89e3db-7c47-43c0-8554-5d2c9f2c0e87 (Container Tracking workspace)
+            // Idempotent: IF NOT EXISTS check per ScreenID.
+            var entries = new[]
+            {
+                new { NodeID = "a1b2c3d4-0001-4000-8000-000000000001", ScreenID = "SB401000", Title = "PO Containers", Url = "~/GenericInquiry/GenericInquiry.aspx?id=SB401000", Position = "7.6" },
+                new { NodeID = "a1b2c3d4-0002-4000-8000-000000000002", ScreenID = "SB401010", Title = "SO Containers", Url = "~/GenericInquiry/GenericInquiry.aspx?id=SB401010", Position = "7.7" },
+                new { NodeID = "a1b2c3d4-0003-4000-8000-000000000003", ScreenID = "SB401020", Title = "Container Events", Url = "~/GenericInquiry/GenericInquiry.aspx?id=SB401020", Position = "7.8" },
+                new { NodeID = "a1b2c3d4-0004-4000-8000-000000000004", ScreenID = "SB302000", Title = "Freight Forwarders", Url = "~/Pages/SB/SB302000.aspx", Position = "7.9" },
+                new { NodeID = "a1b2c3d4-0005-4000-8000-000000000005", ScreenID = "SB401030", Title = "Custom Classification", Url = "~/GenericInquiry/GenericInquiry.aspx?id=SB401030", Position = "8.0" },
+            };
+
+            foreach (var e in entries)
+            {
+                string sql = string.Format(
+                    @"IF NOT EXISTS (SELECT 1 FROM SiteMap WHERE ScreenID = '{0}' AND CompanyID = 2)
+                    INSERT INTO SiteMap (CompanyID, NodeID, ScreenID, Title, Url, Position, ParentID, Expanded, SelectedUI)
+                    VALUES (2, '{1}', '{0}', N'{2}', N'{3}', N'{4}', '9c89e3db-7c47-43c0-8554-5d2c9f2c0e87', 0, N'E');",
+                    e.ScreenID, e.NodeID, e.Title, e.Url, e.Position);
+                using (var cmd = new SqlCommand(sql, conn)) { cmd.ExecuteNonQuery(); }
+            }
+            WriteLog("[AesthetikContainers] Container Tracking SiteMap (5 screens) — OK");
+        }
+    }
+}
+]]></CDATA>
+    </Graph>
+    <Graph ClassName="UsrFreightForwarder" Source="#CDATA" IsNew="True" FileType="NewFile">
+        <CDATA name="Source"><![CDATA[using System;
+using PX.Data;
+using PX.Data.BQL;
+
+namespace StudioB.Containers
+{
+    [Serializable]
+    [PXCacheName("Freight Forwarder")]
+    public class UsrFreightForwarder : IBqlTable
+    {
+        #region ForwarderID
+        public abstract class forwarderID : BqlInt.Field<forwarderID> { }
+        [PXDBIdentity]
+        public int? ForwarderID { get; set; }
+        #endregion
+
+        #region ForwarderCD
+        public abstract class forwarderCD : BqlString.Field<forwarderCD> { }
+        [PXDBString(15, IsUnicode = true, IsKey = true, InputMask = ">CCCCCCCCCCCCCCC")]
+        [PXDefault]
+        [PXUIField(DisplayName = "Forwarder ID", Visibility = PXUIVisibility.SelectorVisible)]
+        [PXSelector(typeof(Search<UsrFreightForwarder.forwarderCD>),
+            typeof(UsrFreightForwarder.forwarderCD),
+            typeof(UsrFreightForwarder.name),
+            typeof(UsrFreightForwarder.carrierAPIType),
+            typeof(UsrFreightForwarder.active))]
+        public string ForwarderCD { get; set; }
+        #endregion
+
+        #region Name
+        public abstract class name : BqlString.Field<name> { }
+        [PXDBString(100, IsUnicode = true)]
+        [PXDefault]
+        [PXUIField(DisplayName = "Company Name")]
+        public string Name { get; set; }
+        #endregion
+
+        #region ContactName
+        public abstract class contactName : BqlString.Field<contactName> { }
+        [PXDBString(100, IsUnicode = true)]
+        [PXUIField(DisplayName = "Contact Name")]
+        public string ContactName { get; set; }
+        #endregion
+
+        #region Phone
+        public abstract class phone : BqlString.Field<phone> { }
+        [PXDBString(30, IsUnicode = true)]
+        [PXUIField(DisplayName = "Phone")]
+        public string Phone { get; set; }
+        #endregion
+
+        #region Email
+        public abstract class email : BqlString.Field<email> { }
+        [PXDBString(100, IsUnicode = true)]
+        [PXUIField(DisplayName = "Email")]
+        public string Email { get; set; }
+        #endregion
+
+        #region Website
+        public abstract class website : BqlString.Field<website> { }
+        [PXDBString(200, IsUnicode = true)]
+        [PXUIField(DisplayName = "Website")]
+        public string Website { get; set; }
+        #endregion
+
+        #region CarrierAPIType
+        public abstract class carrierAPIType : BqlString.Field<carrierAPIType> { }
+        [PXDBString(20, IsUnicode = true)]
+        [PXUIField(DisplayName = "API Type")]
+        [PXStringList(
+            new[] { "SEATRATES", "MAERSK", "FEDEX", "UPS", "OTHER" },
+            new[] { "Seatrates", "Maersk", "FedEx", "UPS", "Other" })]
+        public string CarrierAPIType { get; set; }
+        #endregion
+
+        #region CarrierAPIKey
+        public abstract class carrierAPIKey : BqlString.Field<carrierAPIKey> { }
+        [PXRSACryptString(200, IsUnicode = true)]
+        [PXUIField(DisplayName = "API Key")]
+        public string CarrierAPIKey { get; set; }
+        #endregion
+
+        #region Active
+        public abstract class active : BqlBool.Field<active> { }
+        [PXDBBool]
+        [PXDefault(true)]
+        [PXUIField(DisplayName = "Active")]
+        public bool? Active { get; set; }
+        #endregion
+
+        #region NoteID
+        public abstract class noteID : BqlGuid.Field<noteID> { }
+        [PXNote]
+        public Guid? NoteID { get; set; }
+        #endregion
+
+        #region CreatedByID
+        public abstract class createdByID : BqlGuid.Field<createdByID> { }
+        [PXDBCreatedByID]
+        public Guid? CreatedByID { get; set; }
+        #endregion
+
+        #region CreatedByScreenID
+        public abstract class createdByScreenID : BqlString.Field<createdByScreenID> { }
+        [PXDBCreatedByScreenID]
+        public string CreatedByScreenID { get; set; }
+        #endregion
+
+        #region CreatedDateTime
+        public abstract class createdDateTime : BqlDateTime.Field<createdDateTime> { }
+        [PXDBCreatedDateTime]
+        public DateTime? CreatedDateTime { get; set; }
+        #endregion
+
+        #region LastModifiedByID
+        public abstract class lastModifiedByID : BqlGuid.Field<lastModifiedByID> { }
+        [PXDBLastModifiedByID]
+        public Guid? LastModifiedByID { get; set; }
+        #endregion
+
+        #region LastModifiedByScreenID
+        public abstract class lastModifiedByScreenID : BqlString.Field<lastModifiedByScreenID> { }
+        [PXDBLastModifiedByScreenID]
+        public string LastModifiedByScreenID { get; set; }
+        #endregion
+
+        #region LastModifiedDateTime
+        public abstract class lastModifiedDateTime : BqlDateTime.Field<lastModifiedDateTime> { }
+        [PXDBLastModifiedDateTime]
+        public DateTime? LastModifiedDateTime { get; set; }
+        #endregion
+
+        #region Tstamp
+        public abstract class tstamp : BqlByteArray.Field<tstamp> { }
+        [PXDBTimestamp]
+        public byte[] Tstamp { get; set; }
+        #endregion
+    }
+}
+]]></CDATA>
+    </Graph>
+    <Graph ClassName="FreightForwarderMaint" Source="#CDATA" IsNew="True" FileType="NewFile">
+        <CDATA name="Source"><![CDATA[using PX.Data;
+using PX.Data.BQL.Fluent;
+
+namespace StudioB.Containers
+{
+    public class FreightForwarderMaint : PXGraph<FreightForwarderMaint, UsrFreightForwarder>
+    {
+        public SelectFrom<UsrFreightForwarder>.View Forwarder;
     }
 }
 ]]></CDATA>
@@ -1711,6 +2049,53 @@ public partial class Page_SB_SB501000 : PX.Web.UI.PXPage
 }
 ]]></CDATA>
     </File>
+    <File AppRelativePath="Pages\SB\SB302000.aspx" Source="#CDATA">
+        <CDATA name="Source"><![CDATA[<%@ Page Language="C#" MasterPageFile="~/MasterPages/FormView.master" AutoEventWireup="true" ValidateRequest="false" CodeFile="SB302000.aspx.cs" Inherits="Page_SB_SB302000" Title="Freight Forwarders" %>
+<%@ MasterType VirtualPath="~/MasterPages/FormView.master" %>
+<asp:Content ID="cont1" ContentPlaceHolderID="phDS" Runat="Server">
+    <px:PXDataSource ID="ds" runat="server" Visible="True" Width="100%"
+        TypeName="StudioB.Containers.FreightForwarderMaint" PrimaryView="Forwarder">
+        <CallbackCommands>
+            <px:PXDSCallbackCommand Name="Insert" PostData="Self" />
+            <px:PXDSCallbackCommand CommitChanges="True" Name="Save" />
+            <px:PXDSCallbackCommand Name="Delete" PostData="Self" />
+            <px:PXDSCallbackCommand Name="First" PostData="Self" StartNewGroup="True" />
+            <px:PXDSCallbackCommand Name="Last" PostData="Self" />
+        </CallbackCommands>
+    </px:PXDataSource>
+</asp:Content>
+<asp:Content ID="cont2" ContentPlaceHolderID="phF" Runat="Server">
+    <px:PXFormView ID="form" runat="server" DataSourceID="ds" DataMember="Forwarder" Width="100%">
+        <Template>
+            <px:PXLayoutRule ID="PXLayoutRule1" runat="server" StartColumn="True" LabelsWidth="SM" ControlSize="M" />
+            <px:PXSelector ID="edForwarderCD" runat="server" DataField="ForwarderCD" />
+            <px:PXTextEdit ID="edName" runat="server" DataField="Name" />
+            <px:PXCheckBox ID="chkActive" runat="server" DataField="Active" />
+            <px:PXLayoutRule ID="PXLayoutRule2" runat="server" StartColumn="True" LabelsWidth="SM" ControlSize="M" />
+            <px:PXTextEdit ID="edContactName" runat="server" DataField="ContactName" />
+            <px:PXTextEdit ID="edPhone" runat="server" DataField="Phone" />
+            <px:PXMaskEdit ID="edEmail" runat="server" DataField="Email" />
+            <px:PXTextEdit ID="edWebsite" runat="server" DataField="Website" />
+            <px:PXLayoutRule ID="PXLayoutRule3" runat="server" StartGroup="True" GroupCaption="API Configuration" />
+            <px:PXDropDown ID="edCarrierAPIType" runat="server" DataField="CarrierAPIType" />
+            <px:PXTextEdit ID="edCarrierAPIKey" runat="server" DataField="CarrierAPIKey" />
+        </Template>
+    </px:PXFormView>
+</asp:Content>
+]]></CDATA>
+    </File>
+    <File AppRelativePath="Pages\SB\SB302000.aspx.cs" Source="#CDATA">
+        <CDATA name="Source"><![CDATA[using System;
+using PX.Web.UI;
+
+public partial class Page_SB_SB302000 : PXPage
+{
+    protected void Page_Load(object sender, EventArgs e)
+    {
+    }
+}
+]]></CDATA>
+    </File>
     <ScreenWithRights AccessRightsMergeRule="ApplyAndKeep">
         <data-set>
             <relations format-version="3" relations-version="20240201" main-table="SiteMap">
@@ -1732,6 +2117,10 @@ public partial class Page_SB_SB501000 : PX.Web.UI.PXPage
             <data>
                 <SiteMap>
                     <row Position="7.5" Title="Container Maintenance" Url="~/Pages/SB/SB501000.aspx" ScreenID="SB501000" NodeID="b88b362d-cad6-44c3-8656-a418f2f08923" ParentID="9c89e3db-7c47-43c0-8554-5d2c9f2c0e87" SelectedUI="E">
+                        <RolesInGraph Rolename="Administrator" ApplicationName="/" Accessrights="4" />
+                        <RolesInGraph Rolename="*" ApplicationName="/" Accessrights="0" />
+                    </row>
+                    <row Position="7.9" Title="Freight Forwarders" Url="~/Pages/SB/SB302000.aspx" ScreenID="SB302000" NodeID="a1b2c3d4-0004-4000-8000-000000000004" ParentID="9c89e3db-7c47-43c0-8554-5d2c9f2c0e87" SelectedUI="E">
                         <RolesInGraph Rolename="Administrator" ApplicationName="/" Accessrights="4" />
                         <RolesInGraph Rolename="*" ApplicationName="/" Accessrights="0" />
                     </row>

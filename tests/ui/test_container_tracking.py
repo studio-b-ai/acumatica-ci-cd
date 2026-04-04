@@ -249,3 +249,124 @@ class TestContainerTrackingWorkspace:
 
         assert "ScreenId=ERROR" not in acumatica_page.url, \
             "Container Tracking workspace click caused error"
+
+
+# ════════════════════════════════════════════════════════════════════════
+# New Container Tracking Screens (AesthetikContainers Feature Parity)
+# ════════════════════════════════════════════════════════════════════════
+
+NEW_CONTAINER_SCREENS = {
+    "SB401000": "PO Containers",
+    "SB401010": "SO Containers",
+    "SB401020": "Container Events",
+    "SB302000": "Freight Forwarders",
+    "SB401030": "Custom Classification",
+}
+
+
+class TestContainerTrackingGIs:
+    """Verify new container tracking GI screens load and display data."""
+
+    @pytest.mark.parametrize("screen_id,name", [
+        ("SB401000", "PO Containers"),
+        ("SB401010", "SO Containers"),
+        ("SB401020", "Container Events"),
+        ("SB401030", "Custom Classification"),
+    ])
+    def test_gi_screen_loads(self, acumatica_page, screen_id, name):
+        """GI screen should load without error."""
+        navigate_to_screen_safe(acumatica_page, screen_id)
+        wait_for_screen(acumatica_page, screen_id)
+
+        assert "ScreenId=ERROR" not in acumatica_page.url, \
+            f"{name} ({screen_id}) redirected to error page"
+
+    @pytest.mark.parametrize("screen_id,name", [
+        ("SB401000", "PO Containers"),
+        ("SB401010", "SO Containers"),
+        ("SB401020", "Container Events"),
+        ("SB401030", "Custom Classification"),
+    ])
+    def test_gi_grid_visible(self, acumatica_page, screen_id, name):
+        """GI screen should show a data grid."""
+        navigate_to_screen_safe(acumatica_page, screen_id)
+        wait_for_screen(acumatica_page, screen_id)
+
+        grid = acumatica_page.locator("div[class*='GridContent'], div[id*='grid']").first
+        assert grid.is_visible(timeout=5000), \
+            f"{name} ({screen_id}) — grid not visible"
+
+    def test_po_containers_has_status_filter(self, acumatica_page):
+        """PO Containers GI should have a Status filter."""
+        navigate_to_screen_safe(acumatica_page, "SB401000")
+        wait_for_screen(acumatica_page, "SB401000")
+
+        filter_area = acumatica_page.locator("text=Status")
+        assert filter_area.count() > 0, \
+            "PO Containers GI missing Status filter"
+
+
+class TestFreightForwarders:
+    """Verify Freight Forwarders maintenance screen (SB302000)."""
+
+    def test_screen_loads(self, acumatica_page):
+        """SB302000 should load without error."""
+        navigate_to_screen_safe(acumatica_page, "SB302000")
+        wait_for_screen(acumatica_page, "SB302000")
+
+        assert "ScreenId=ERROR" not in acumatica_page.url, \
+            "SB302000 Freight Forwarders redirected to error page"
+
+    def test_form_fields_visible(self, acumatica_page):
+        """Form should display key fields."""
+        navigate_to_screen_safe(acumatica_page, "SB302000")
+        wait_for_screen(acumatica_page, "SB302000")
+
+        fields = find_custom_fields(acumatica_page, [
+            "ForwarderCD", "Name", "Active", "CarrierAPIType"
+        ])
+
+        for field_name, found in fields.items():
+            assert found, f"Freight Forwarders — field {field_name} not found"
+
+    def test_new_record_button(self, acumatica_page):
+        """Should be able to click Add New Record."""
+        navigate_to_screen_safe(acumatica_page, "SB302000")
+        wait_for_screen(acumatica_page, "SB302000")
+
+        add_btn = acumatica_page.locator("div[icon='AddNew'], [id*='btnInsert']").first
+        if add_btn.is_visible(timeout=3000):
+            add_btn.click()
+            acumatica_page.wait_for_timeout(2000)
+
+        assert "ScreenId=ERROR" not in acumatica_page.url, \
+            "Add New Record on Freight Forwarders caused error"
+
+
+class TestContainerTrackingWorkspaceComplete:
+    """Verify all container tracking screens appear in the workspace."""
+
+    def test_all_screens_in_workspace(self, acumatica_page):
+        """Container Tracking workspace should list all 6 screens."""
+        navigate_to_screen_safe(acumatica_page, "SB501000")
+        acumatica_page.wait_for_timeout(2000)
+
+        workspace_link = acumatica_page.locator("text=Container Tracking").first
+        if workspace_link.is_visible(timeout=3000):
+            workspace_link.click()
+            acumatica_page.wait_for_timeout(2000)
+
+        page_text = acumatica_page.locator("body").text_content() or ""
+
+        expected_screens = [
+            "Container Maintenance",
+            "PO Containers",
+            "SO Containers",
+            "Container Events",
+            "Freight Forwarders",
+            "Custom Classification",
+        ]
+
+        for screen_name in expected_screens:
+            assert screen_name in page_text, \
+                f"'{screen_name}' not found in Container Tracking workspace"
