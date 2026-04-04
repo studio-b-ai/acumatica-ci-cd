@@ -173,19 +173,31 @@ class GIBuilder:
             expected_counts["GITable"] = len(spec.tables)
 
         # 3. GIResult rows
+        # CRITICAL: IsActive=1 and IsVisible=1 are REQUIRED for columns to render.
+        # Without them, the GI silently falls back to the Activities GI (EP4040PL).
+        # Width, Caption, SortOrder, DefaultNav, FastFilter are also required.
         if spec.results:
             lines.append("    -- GIResult rows")
             for i, res in enumerate(spec.results):
                 result_row = self._build_row("GIResult", {
                     "DesignID": design_id,
                     "LineNbr": i + 1,
+                    "SortOrder": i + 1,
+                    "IsActive": 1,
                     "Field": res["field"],
+                    "Width": res.get("width", 120),
+                    "IsVisible": 1,
+                    "DefaultNav": 1 if i == 0 else 0,
+                    "QuickFilter": 0,
+                    "FastFilter": 1,
+                    "Caption": res.get("caption", res["field"]),
                 })
                 lines.append(f"    {self._insert_sql('GIResult', result_row)}")
             lines.append("")
             expected_counts["GIResult"] = len(spec.results)
 
         # 4. GIFilter rows
+        # DisplayName and DataType are required for filters to appear in the UI.
         if spec.filters:
             lines.append("    -- GIFilter rows")
             for i, flt in enumerate(spec.filters):
@@ -193,32 +205,44 @@ class GIBuilder:
                     "DesignID": design_id,
                     "LineNbr": i + 1,
                     "Name": flt["name"],
+                    "DisplayName": flt.get("display_name", flt["name"]),
+                    "DataType": flt.get("data_type", 6),  # 6=string
+                    "IsExpression": 0,
                 })
                 lines.append(f"    {self._insert_sql('GIFilter', filter_row)}")
             lines.append("")
             expected_counts["GIFilter"] = len(spec.filters)
 
         # 5. GIWhere rows
+        # Condition, Value1, IsExpression, Operation, IsActive are all required.
         if spec.where:
             lines.append("    -- GIWhere rows")
             for i, wh in enumerate(spec.where):
                 where_row = self._build_row("GIWhere", {
                     "DesignID": design_id,
                     "LineNbr": i + 1,
+                    "IsActive": 1,
                     "DataFieldName": wh["field"],
+                    "Condition": wh.get("condition", "E "),
+                    "Value1": wh.get("value", ""),
+                    "IsExpression": wh.get("is_expression", 0),
+                    "Operation": wh.get("operation", "A"),
                 })
                 lines.append(f"    {self._insert_sql('GIWhere', where_row)}")
             lines.append("")
             expected_counts["GIWhere"] = len(spec.where)
 
         # 6. GISort rows
+        # SortOrder ("A"/"D") and IsActive are required.
         if spec.sort:
             lines.append("    -- GISort rows")
             for i, srt in enumerate(spec.sort):
                 sort_row = self._build_row("GISort", {
                     "DesignID": design_id,
                     "LineNbr": i + 1,
+                    "IsActive": 1,
                     "DataFieldName": srt["field"],
+                    "SortOrder": srt.get("order", "A"),
                 })
                 lines.append(f"    {self._insert_sql('GISort', sort_row)}")
             lines.append("")
