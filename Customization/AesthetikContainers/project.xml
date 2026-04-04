@@ -1224,6 +1224,39 @@ namespace StudioB.Containers
                     // Migrates IIG container data to AesthetikContainers tables.
                     MigrateIGCMContainers(conn);
 
+                    // ── Schema diagnostic: column names + nullability ─────────
+                    foreach (string table in new[] { "GIDesign", "GIResult", "GIFilter", "GIWhere", "GISort", "GITable", "SiteMap" })
+                    {
+                        try
+                        {
+                            var notNull = new System.Collections.Generic.List<string>();
+                            var nullable = new System.Collections.Generic.List<string>();
+                            using (var cmd = new SqlCommand(
+                                "SELECT COLUMN_NAME, IS_NULLABLE, COLUMN_DEFAULT FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = @t ORDER BY ORDINAL_POSITION", conn))
+                            {
+                                cmd.Parameters.AddWithValue("@t", table);
+                                cmd.CommandTimeout = 15;
+                                using (var rdr = cmd.ExecuteReader())
+                                    while (rdr.Read())
+                                    {
+                                        string col = rdr.GetString(0);
+                                        string isn = rdr.GetString(1);
+                                        string def = rdr.IsDBNull(2) ? "" : rdr.GetString(2);
+                                        if (isn == "NO" && def == "")
+                                            notNull.Add(col);
+                                        else
+                                            nullable.Add(col);
+                                    }
+                            }
+                            WriteLog(string.Format("[SCHEMA-NN] {0} NOT NULL (no default): {1}", table, string.Join(", ", notNull)));
+                            WriteLog(string.Format("[SCHEMA-OK] {0} nullable/has-default: {1}", table, string.Join(", ", nullable)));
+                        }
+                        catch (Exception ex)
+                        {
+                            WriteLog(string.Format("[SCHEMA] {0}: FAILED — {1}", table, ex.Message));
+                        }
+                    }
+
                     // ── Per-company DML (GIs, SiteMap, cleanup) ───────────────
                     // These tables are CompanyID-scoped. Discover all companies
                     // dynamically so the plugin works on any tenant (test or prod).
