@@ -1,6 +1,6 @@
 """Playwright UI tests for UOM migration verification.
 
-Verifies that the PIECE -> YDS base UOM rename and PIECENBR -> BOLTID
+Verifies that the PIECE -> YDS base UOM rename and BOLTID -> BOLTID
 lot/serial class rename completed successfully.
 
 NOTE: Acumatica renders all screen content inside a 'main' iframe.

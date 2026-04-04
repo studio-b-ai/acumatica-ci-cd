@@ -22,7 +22,7 @@ from helpers import (
 # ── Test Data ──────────────────────────────────────────────────────────────
 
 CUSTOMER_DRAPERY_HOUSE = "C000221"
-ITEM_SUPER_BATISTE = "28021"  # 118 Super Batiste - White Snow (PIECENBR)
+ITEM_SUPER_BATISTE = "28021"  # 118 Super Batiste - White Snow (BOLTID)
 WAREHOUSE_98 = "98"
 
 
