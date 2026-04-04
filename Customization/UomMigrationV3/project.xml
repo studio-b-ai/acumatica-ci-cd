@@ -6,7 +6,7 @@ using Customization;
 public class UomMigrationV3 : CustomizationPlugin
 {
     // Set to null for Phase 2 (all companies)
-    private const string TARGET_COMPANY = "Heritage Test";
+    private const string TARGET_COMPANY = null; // null = ALL companies
 
     private Microsoft.Data.SqlClient.SqlConnection _conn;
     private Microsoft.Data.SqlClient.SqlTransaction _tx;
@@ -138,11 +138,12 @@ public class UomMigrationV3 : CustomizationPlugin
                     Safe($"UPDATE INItemCustSalesStats SET BaseUOM = 'YDS' WHERE BaseUOM = 'PIECE'{_companyFilter}", "INItemCustSalesStats.BaseUOM");
 
                     // ── Section 9: Lot/Serial Class rename PIECENBR → BOLTID ──
+                    // Uses Safe() because INLotSerClassSegment may not exist in all versions
                     WriteLog("--- Section 9: Lot/Serial Class rename PIECENBR → BOLTID ---");
-                    Exec($"UPDATE InventoryItem SET LotSerClassID = 'BOLTID' WHERE LotSerClassID = 'PIECENBR'{_companyFilter}", "InventoryItem.LotSerClassID");
-                    Exec($"UPDATE INItemClass SET LotSerClassID = 'BOLTID' WHERE LotSerClassID = 'PIECENBR'{_companyFilter}", "INItemClass.LotSerClassID");
-                    Exec($"UPDATE INLotSerClassSegment SET LotSerClassID = 'BOLTID' WHERE LotSerClassID = 'PIECENBR'{_companyFilter}", "INLotSerClassSegment.LotSerClassID");
-                    Exec($"UPDATE INLotSerClass SET LotSerClassID = 'BOLTID' WHERE LotSerClassID = 'PIECENBR'{_companyFilter}", "INLotSerClass.LotSerClassID");
+                    Safe($"UPDATE InventoryItem SET LotSerClassID = 'BOLTID' WHERE LotSerClassID = 'PIECENBR'{_companyFilter}", "InventoryItem.LotSerClassID");
+                    Safe($"UPDATE INItemClass SET LotSerClassID = 'BOLTID' WHERE LotSerClassID = 'PIECENBR'{_companyFilter}", "INItemClass.LotSerClassID");
+                    Safe($"UPDATE INLotSerClassSegment SET LotSerClassID = 'BOLTID' WHERE LotSerClassID = 'PIECENBR'{_companyFilter}", "INLotSerClassSegment.LotSerClassID");
+                    Safe($"UPDATE INLotSerClass SET LotSerClassID = 'BOLTID' WHERE LotSerClassID = 'PIECENBR'{_companyFilter}", "INLotSerClass.LotSerClassID");
 
                     // ── COMMIT ──
                     _tx.Commit();
