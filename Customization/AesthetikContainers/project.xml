@@ -1125,18 +1125,19 @@ namespace StudioB.Containers
                     // Migrates IIG container data to AesthetikContainers tables.
                     MigrateIGCMContainers(conn);
 
-                    // ── Clean up stale IIG/IGCM artifacts ─────────────────────
-                    // IIG Container Management ISV has been unpublished. Its GI
-                    // definitions and user preferences remain in the database and
-                    // cause "type not found: IGCM.DAC.IGCMPOLandedCost" errors
-                    // when SB501000 PO Links tab loads. Delete them.
-                    CleanupIGCMArtifacts(conn);
+                    // ── Per-company DML (GIs, SiteMap, cleanup) ───────────────
+                    // These tables are CompanyID-scoped. Discover all companies
+                    // dynamically so the plugin works on any tenant (test or prod).
+                    var companies = DiscoverCompanies(conn);
+                    foreach (var kvp in companies)
+                    {
+                        int companyId = kvp.Value;
+                        WriteLog(string.Format("[AesthetikContainers] Processing company '{0}' (CompanyID={1})", kvp.Key, companyId));
 
-                    // ── Container Tracking GI Definitions ─────────────────────
-                    EnsureContainerTrackingGIs(conn);
-
-                    // ── Container Tracking SiteMap Entries ─────────────────────
-                    EnsureContainerTrackingSiteMap(conn);
+                        CleanupIGCMArtifacts(conn, companyId);
+                        EnsureContainerTrackingGIs(conn, companyId);
+                        EnsureContainerTrackingSiteMap(conn, companyId);
+                    }
                 }
 
                 WriteLog("[AesthetikContainers] All tables, columns, indexes, and migration verified/created.");
@@ -1147,6 +1148,49 @@ namespace StudioB.Containers
                 if (ex.InnerException != null)
                     WriteLog("[AesthetikContainers] Inner: " + ex.InnerException.Message);
             }
+        }
+
+        private System.Collections.Generic.Dictionary<string, int> DiscoverCompanies(SqlConnection conn)
+        {
+            var companies = new System.Collections.Generic.Dictionary<string, int>();
+            using (var cmd = conn.CreateCommand())
+            {
+                cmd.CommandText = "SELECT CompanyID, LoginName FROM Company WHERE CompanyID > 0";
+                cmd.CommandTimeout = 30;
+                try
+                {
+                    using (var rdr = cmd.ExecuteReader())
+                    {
+                        while (rdr.Read())
+                        {
+                            int id = rdr.GetInt32(0);
+                            string name = rdr.IsDBNull(1) ? "(null)" : rdr.GetString(1);
+                            companies[name] = id;
+                            WriteLog(string.Format("[AesthetikContainers] Found company: '{0}' -> CompanyID={1}", name, id));
+                        }
+                    }
+                }
+                catch (Exception)
+                {
+                    // Fallback: try CompanyCD if LoginName column doesn't exist
+                    cmd.CommandText = "SELECT CompanyID, CompanyCD FROM Company WHERE CompanyID > 0";
+                    using (var rdr = cmd.ExecuteReader())
+                    {
+                        while (rdr.Read())
+                        {
+                            int id = rdr.GetInt32(0);
+                            string name = rdr.IsDBNull(1) ? "(null)" : rdr.GetString(1);
+                            companies[name] = id;
+                            WriteLog(string.Format("[AesthetikContainers] Found company (CD): '{0}' -> CompanyID={1}", name, id));
+                        }
+                    }
+                }
+            }
+
+            if (companies.Count == 0)
+                WriteLog("[AesthetikContainers] WARNING: No companies found — GIs/SiteMap will not be created");
+
+            return companies;
         }
 
         // NOTE: SetSiteMapGraphType, GrantScreenAccess, DiagnoseAccessRights are dead code.
@@ -1385,7 +1429,7 @@ namespace StudioB.Containers
             // Historical POs can be backfilled via SM302050 if needed.
         }
 
-        private void CleanupIGCMArtifacts(SqlConnection conn)
+        private void CleanupIGCMArtifacts(SqlConnection conn, int companyId)
         {
             // IIG Container Management ISV has been unpublished but left behind
             // GI definitions, SiteMap entries, and user preferences referencing
@@ -1402,230 +1446,266 @@ namespace StudioB.Containers
             // (FK constraints block GI/SiteMap deletion if these exist)
             string deletePivotPrefs = @"
                 DELETE FROM PivotFieldPreferences
-                WHERE ScreenID LIKE 'IGCM%' OR ScreenID LIKE 'IG.CM%'";
+                WHERE CompanyID = @cid AND (ScreenID LIKE 'IGCM%' OR ScreenID LIKE 'IG.CM%')";
             using (var cmd = new SqlCommand(deletePivotPrefs, conn))
             {
+                cmd.Parameters.AddWithValue("@cid", companyId);
                 int rows = cmd.ExecuteNonQuery();
-                if (rows > 0) WriteLog(string.Format("  IGCM cleanup: {0} PivotFieldPreferences deleted", rows));
+                if (rows > 0) WriteLog(string.Format("  IGCM cleanup (CID={0}): {1} PivotFieldPreferences deleted", companyId, rows));
                 totalRows += rows;
             }
 
             string deleteFilterPresets = @"
                 DELETE FROM FilterPresets
-                WHERE ScreenID LIKE 'IGCM%' OR ScreenID LIKE 'IG.CM%'";
+                WHERE CompanyID = @cid AND (ScreenID LIKE 'IGCM%' OR ScreenID LIKE 'IG.CM%')";
             using (var cmd = new SqlCommand(deleteFilterPresets, conn))
             {
+                cmd.Parameters.AddWithValue("@cid", companyId);
                 int rows = cmd.ExecuteNonQuery();
-                if (rows > 0) WriteLog(string.Format("  IGCM cleanup: {0} FilterPresets deleted", rows));
+                if (rows > 0) WriteLog(string.Format("  IGCM cleanup (CID={0}): {1} FilterPresets deleted", companyId, rows));
                 totalRows += rows;
             }
 
             // Step 2: Delete ALL GI child rows for GIs that reference IGCM DACs
-            // Find ALL GIs related to IGCM by any identifier:
-            // - GI name starts with IGCM (e.g. IGCM_ContainerLines)
-            // - GI ScreenID starts with IGCM (e.g. IGCM0009)
-            // - GI data source references IGCM DACs (e.g. IGCM.DAC.IGCMPOLandedCost)
-            // - Orphaned GI headers (GITable rows already deleted by prior cleanup)
             string igcmDesignSubquery = @"
                 SELECT DISTINCT d.DesignID FROM GIDesign d
-                LEFT JOIN GITable t ON d.DesignID = t.DesignID
-                WHERE t.Name LIKE 'IGCM.%'
-                   OR d.Name LIKE 'IGCM%'
-                   OR d.ScreenID LIKE 'IGCM%'
-                   OR d.ScreenID LIKE 'IG.CM%'";
+                LEFT JOIN GITable t ON d.DesignID = t.DesignID AND t.CompanyID = @cid
+                WHERE d.CompanyID = @cid
+                  AND (t.Name LIKE 'IGCM.%'
+                    OR d.Name LIKE 'IGCM%'
+                    OR d.ScreenID LIKE 'IGCM%'
+                    OR d.ScreenID LIKE 'IG.CM%')";
 
             // Log which GIs will be removed
             using (var cmd = new SqlCommand(igcmDesignSubquery, conn))
             {
+                cmd.Parameters.AddWithValue("@cid", companyId);
                 using (var rdr = cmd.ExecuteReader())
                 {
                     while (rdr.Read())
-                        WriteLog(string.Format("  IGCM cleanup: will remove GI DesignID={0}", rdr.GetInt32(0)));
+                        WriteLog(string.Format("  IGCM cleanup (CID={0}): will remove GI DesignID={1}", companyId, rdr[0]));
                 }
             }
 
-            // Delete GI child tables using subquery (no string.Format for table names)
-            string deleteGIChildren = @"
-                DELETE FROM GIResult WHERE DesignID IN (" + igcmDesignSubquery + @");
-                DELETE FROM GISort WHERE DesignID IN (" + igcmDesignSubquery + @");
-                DELETE FROM GIGroupBy WHERE DesignID IN (" + igcmDesignSubquery + @");
-                DELETE FROM GIFilter WHERE DesignID IN (" + igcmDesignSubquery + @");
-                DELETE FROM GIOn WHERE DesignID IN (" + igcmDesignSubquery + @");
-                DELETE FROM GIRelation WHERE DesignID IN (" + igcmDesignSubquery + @");
-                DELETE FROM GITable WHERE DesignID IN (" + igcmDesignSubquery + @");
-                DELETE FROM GIDesign WHERE DesignID IN (" + igcmDesignSubquery + ")";
+            // Delete GI child tables — must use literal subquery (can't reuse @cid across batch)
+            string deleteGIChildren = string.Format(@"
+                DECLARE @cid int = {0};
+                DECLARE @ids TABLE (DesignID uniqueidentifier);
+                INSERT INTO @ids
+                    SELECT DISTINCT d.DesignID FROM GIDesign d
+                    LEFT JOIN GITable t ON d.DesignID = t.DesignID AND t.CompanyID = @cid
+                    WHERE d.CompanyID = @cid
+                      AND (t.Name LIKE 'IGCM.%' OR d.Name LIKE 'IGCM%'
+                        OR d.ScreenID LIKE 'IGCM%' OR d.ScreenID LIKE 'IG.CM%');
+
+                DELETE FROM GIResult WHERE CompanyID = @cid AND DesignID IN (SELECT DesignID FROM @ids);
+                DELETE FROM GISort WHERE CompanyID = @cid AND DesignID IN (SELECT DesignID FROM @ids);
+                DELETE FROM GIGroupBy WHERE CompanyID = @cid AND DesignID IN (SELECT DesignID FROM @ids);
+                DELETE FROM GIFilter WHERE CompanyID = @cid AND DesignID IN (SELECT DesignID FROM @ids);
+                DELETE FROM GIOn WHERE CompanyID = @cid AND DesignID IN (SELECT DesignID FROM @ids);
+                DELETE FROM GIRelation WHERE CompanyID = @cid AND DesignID IN (SELECT DesignID FROM @ids);
+                DELETE FROM GITable WHERE CompanyID = @cid AND DesignID IN (SELECT DesignID FROM @ids);
+                DELETE FROM GIDesign WHERE CompanyID = @cid AND DesignID IN (SELECT DesignID FROM @ids);",
+                companyId);
             using (var cmd = new SqlCommand(deleteGIChildren, conn))
             {
                 cmd.CommandTimeout = 60;
                 int rows = cmd.ExecuteNonQuery();
-                if (rows > 0) WriteLog(string.Format("  IGCM cleanup: {0} GI rows deleted", rows));
+                if (rows > 0) WriteLog(string.Format("  IGCM cleanup (CID={0}): {1} GI rows deleted", companyId, rows));
                 totalRows += rows;
             }
 
-            // Step 3: Remove ALL IGCM SiteMap entries (both screen ID formats)
+            // Step 3: Remove orphaned IGCM/IG SiteMap entries
+            // Preserve our AesthetikContainers screens (Phase 1 + Phase 2-3)
             string deleteSiteMap = @"
                 DELETE FROM SiteMap
-                WHERE ScreenID LIKE 'IGCM%' OR ScreenID LIKE 'IG.CM%'";
+                WHERE CompanyID = @cid
+                  AND (ScreenID LIKE 'IGCM%' OR ScreenID LIKE 'IG.CM%' OR ScreenID LIKE 'IG%')
+                  AND ScreenID NOT IN ('SB501000','SB401000','SB401010','SB401020','SB302000','SB401030',
+                                       'SB401040','SB302010','SB302020','SB302030')";
             using (var cmd = new SqlCommand(deleteSiteMap, conn))
             {
+                cmd.Parameters.AddWithValue("@cid", companyId);
                 int rows = cmd.ExecuteNonQuery();
-                if (rows > 0) WriteLog(string.Format("  IGCM cleanup: {0} SiteMap entries deleted", rows));
+                if (rows > 0) WriteLog(string.Format("  IGCM cleanup (CID={0}): {1} orphaned SiteMap entries deleted", companyId, rows));
                 totalRows += rows;
             }
 
-            WriteLog(string.Format("  IGCM cleanup: complete ({0} total rows removed)", totalRows));
+            WriteLog(string.Format("  IGCM cleanup (CID={0}): complete ({1} total rows removed)", companyId, totalRows));
         }
 
-        private void EnsureContainerTrackingGIs(SqlConnection conn)
+        private void EnsureContainerTrackingGIs(SqlConnection conn, int companyId)
         {
             // -- REVIEWED: gi-sql-safe
-            // 4 GIs created by gi_builder.py — idempotent (IF EXISTS check per GI)
+            // 4 GIs created by gi_builder.py — idempotent (Name + CompanyID check per GI)
+            // Uses NEWID() for DesignID/NoteID/RowID so each company gets unique GUIDs.
+            // CreatedByID = B5344897-... is the system admin GUID.
+            string cid = companyId.ToString();
+
             string[] giSqls = new[]
             {
                 // ── PO Containers (SB401000) ──────────────────────────────
-                @"IF NOT EXISTS (SELECT 1 FROM GIDesign WHERE Name = N'POContainers' AND CompanyID = 2)
+                @"DECLARE @cid int = " + cid + @";
+                IF NOT EXISTS (SELECT 1 FROM GIDesign WHERE Name = N'POContainers' AND CompanyID = @cid)
                 BEGIN
                     BEGIN TRANSACTION;
                     BEGIN TRY
-                        INSERT INTO GIDesign (DesignID, Name, ScreenID, CompanyID, CreatedByID, CreatedByScreenID, NoteID) VALUES (N'0a2b8dab-1987-46c5-bde1-44f4c6730897', N'POContainers', N'SB401000', 2, N'B5344897-037E-4D58-B5C3-1BDFD0F47BF4', N'SM208000', N'4b5862fb-bb1b-47bd-9f52-60d5822e7fb7');
-                        INSERT INTO GITable (DesignID, Alias, Name, CompanyID) VALUES (N'0a2b8dab-1987-46c5-bde1-44f4c6730897', N'Container', N'StudioB.Containers.UsrContainer', 2);
-                        INSERT INTO GIResult (DesignID, LineNbr, Field, CompanyID, RowID) VALUES (N'0a2b8dab-1987-46c5-bde1-44f4c6730897', 1, N'ContainerCD', 2, N'60e47900-9f24-4f83-baac-65fa346f9735');
-                        INSERT INTO GIResult (DesignID, LineNbr, Field, CompanyID, RowID) VALUES (N'0a2b8dab-1987-46c5-bde1-44f4c6730897', 2, N'Status', 2, N'4c13fa66-4b87-42c7-8e3b-f7b1f2d51974');
-                        INSERT INTO GIResult (DesignID, LineNbr, Field, CompanyID, RowID) VALUES (N'0a2b8dab-1987-46c5-bde1-44f4c6730897', 3, N'CarrierCode', 2, N'949c5714-f220-42df-9964-016565399810');
-                        INSERT INTO GIResult (DesignID, LineNbr, Field, CompanyID, RowID) VALUES (N'0a2b8dab-1987-46c5-bde1-44f4c6730897', 4, N'VesselName', 2, N'4162fe30-afa4-471e-95c8-af50e47775a9');
-                        INSERT INTO GIResult (DesignID, LineNbr, Field, CompanyID, RowID) VALUES (N'0a2b8dab-1987-46c5-bde1-44f4c6730897', 5, N'PortOfLoading', 2, N'ef306f39-ae6e-4df7-b39b-ad2ee82db31f');
-                        INSERT INTO GIResult (DesignID, LineNbr, Field, CompanyID, RowID) VALUES (N'0a2b8dab-1987-46c5-bde1-44f4c6730897', 6, N'PortOfDischarge', 2, N'16ee8909-e9b0-4096-8b90-1b3af4fce6b1');
-                        INSERT INTO GIResult (DesignID, LineNbr, Field, CompanyID, RowID) VALUES (N'0a2b8dab-1987-46c5-bde1-44f4c6730897', 7, N'ETD', 2, N'9d56892b-5010-49a2-b090-44eacb1b1c4e');
-                        INSERT INTO GIResult (DesignID, LineNbr, Field, CompanyID, RowID) VALUES (N'0a2b8dab-1987-46c5-bde1-44f4c6730897', 8, N'ETA', 2, N'bb431ee3-7be2-4f87-bf6e-665ad469472a');
-                        INSERT INTO GIResult (DesignID, LineNbr, Field, CompanyID, RowID) VALUES (N'0a2b8dab-1987-46c5-bde1-44f4c6730897', 9, N'ATA', 2, N'4b642ed3-3171-4b46-bf95-1cc0849db496');
-                        INSERT INTO GIResult (DesignID, LineNbr, Field, CompanyID, RowID) VALUES (N'0a2b8dab-1987-46c5-bde1-44f4c6730897', 10, N'ContainerType', 2, N'03e993f9-34e5-4734-bff1-a42c2a12bacf');
-                        INSERT INTO GIResult (DesignID, LineNbr, Field, CompanyID, RowID) VALUES (N'0a2b8dab-1987-46c5-bde1-44f4c6730897', 11, N'BookingRef', 2, N'2fcee3af-b8c5-4fe8-8259-f240cbaab9b9');
-                        INSERT INTO GIFilter (DesignID, LineNbr, Name, CompanyID) VALUES (N'0a2b8dab-1987-46c5-bde1-44f4c6730897', 1, N'StatusFilter', 2);
-                        INSERT INTO GIFilter (DesignID, LineNbr, Name, CompanyID) VALUES (N'0a2b8dab-1987-46c5-bde1-44f4c6730897', 2, N'CarrierFilter', 2);
-                        INSERT INTO GIWhere (DesignID, LineNbr, DataFieldName, CompanyID) VALUES (N'0a2b8dab-1987-46c5-bde1-44f4c6730897', 1, N'Container.Status', 2);
-                        INSERT INTO GIWhere (DesignID, LineNbr, DataFieldName, CompanyID) VALUES (N'0a2b8dab-1987-46c5-bde1-44f4c6730897', 2, N'Container.CarrierCode', 2);
-                        INSERT INTO GISort (DesignID, LineNbr, DataFieldName, CompanyID) VALUES (N'0a2b8dab-1987-46c5-bde1-44f4c6730897', 1, N'Container.ETA', 2);
+                        DECLARE @did1 uniqueidentifier = NEWID();
+                        INSERT INTO GIDesign (DesignID, Name, ScreenID, CompanyID, CreatedByID, CreatedByScreenID, NoteID) VALUES (@did1, N'POContainers', N'SB401000', @cid, N'B5344897-037E-4D58-B5C3-1BDFD0F47BF4', N'SM208000', NEWID());
+                        INSERT INTO GITable (DesignID, Alias, Name, CompanyID) VALUES (@did1, N'Container', N'StudioB.Containers.UsrContainer', @cid);
+                        INSERT INTO GIResult (DesignID, LineNbr, Field, CompanyID, RowID) VALUES (@did1, 1, N'ContainerCD', @cid, NEWID());
+                        INSERT INTO GIResult (DesignID, LineNbr, Field, CompanyID, RowID) VALUES (@did1, 2, N'Status', @cid, NEWID());
+                        INSERT INTO GIResult (DesignID, LineNbr, Field, CompanyID, RowID) VALUES (@did1, 3, N'CarrierCode', @cid, NEWID());
+                        INSERT INTO GIResult (DesignID, LineNbr, Field, CompanyID, RowID) VALUES (@did1, 4, N'VesselName', @cid, NEWID());
+                        INSERT INTO GIResult (DesignID, LineNbr, Field, CompanyID, RowID) VALUES (@did1, 5, N'PortOfLoading', @cid, NEWID());
+                        INSERT INTO GIResult (DesignID, LineNbr, Field, CompanyID, RowID) VALUES (@did1, 6, N'PortOfDischarge', @cid, NEWID());
+                        INSERT INTO GIResult (DesignID, LineNbr, Field, CompanyID, RowID) VALUES (@did1, 7, N'ETD', @cid, NEWID());
+                        INSERT INTO GIResult (DesignID, LineNbr, Field, CompanyID, RowID) VALUES (@did1, 8, N'ETA', @cid, NEWID());
+                        INSERT INTO GIResult (DesignID, LineNbr, Field, CompanyID, RowID) VALUES (@did1, 9, N'ATA', @cid, NEWID());
+                        INSERT INTO GIResult (DesignID, LineNbr, Field, CompanyID, RowID) VALUES (@did1, 10, N'ContainerType', @cid, NEWID());
+                        INSERT INTO GIResult (DesignID, LineNbr, Field, CompanyID, RowID) VALUES (@did1, 11, N'BookingRef', @cid, NEWID());
+                        INSERT INTO GIFilter (DesignID, LineNbr, Name, CompanyID) VALUES (@did1, 1, N'StatusFilter', @cid);
+                        INSERT INTO GIFilter (DesignID, LineNbr, Name, CompanyID) VALUES (@did1, 2, N'CarrierFilter', @cid);
+                        INSERT INTO GIWhere (DesignID, LineNbr, DataFieldName, CompanyID) VALUES (@did1, 1, N'Container.Status', @cid);
+                        INSERT INTO GIWhere (DesignID, LineNbr, DataFieldName, CompanyID) VALUES (@did1, 2, N'Container.CarrierCode', @cid);
+                        INSERT INTO GISort (DesignID, LineNbr, DataFieldName, CompanyID) VALUES (@did1, 1, N'Container.ETA', @cid);
                         COMMIT TRANSACTION;
-                        PRINT 'GI [POContainers] created.';
                     END TRY
                     BEGIN CATCH
                         IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION;
-                        PRINT 'GI [POContainers] FAILED: ' + ERROR_MESSAGE();
+                        THROW;
                     END CATCH
                 END",
 
                 // ── SO Containers (SB401010) ──────────────────────────────
-                @"IF NOT EXISTS (SELECT 1 FROM GIDesign WHERE Name = N'SOContainers' AND CompanyID = 2)
+                @"DECLARE @cid int = " + cid + @";
+                IF NOT EXISTS (SELECT 1 FROM GIDesign WHERE Name = N'SOContainers' AND CompanyID = @cid)
                 BEGIN
                     BEGIN TRANSACTION;
                     BEGIN TRY
-                        INSERT INTO GIDesign (DesignID, Name, ScreenID, CompanyID, CreatedByID, CreatedByScreenID, NoteID) VALUES (N'bb6ccce3-12ba-4f8d-8b6b-714305d579ef', N'SOContainers', N'SB401010', 2, N'B5344897-037E-4D58-B5C3-1BDFD0F47BF4', N'SM208000', N'e4bfce1a-9d92-423d-bd9d-c6bc1059c182');
-                        INSERT INTO GITable (DesignID, Alias, Name, CompanyID) VALUES (N'bb6ccce3-12ba-4f8d-8b6b-714305d579ef', N'Shipment', N'PX.Objects.SO.SOShipment', 2);
-                        INSERT INTO GIResult (DesignID, LineNbr, Field, CompanyID, RowID) VALUES (N'bb6ccce3-12ba-4f8d-8b6b-714305d579ef', 1, N'ShipmentNbr', 2, N'2729b009-cfca-472e-8400-0ef5cfd3992d');
-                        INSERT INTO GIResult (DesignID, LineNbr, Field, CompanyID, RowID) VALUES (N'bb6ccce3-12ba-4f8d-8b6b-714305d579ef', 2, N'Status', 2, N'6204fa19-6814-411a-9b3a-9b9128a1434a');
-                        INSERT INTO GIResult (DesignID, LineNbr, Field, CompanyID, RowID) VALUES (N'bb6ccce3-12ba-4f8d-8b6b-714305d579ef', 3, N'CustomerID', 2, N'ae0b25d7-ab2a-4999-8579-7d19701f8f04');
-                        INSERT INTO GIResult (DesignID, LineNbr, Field, CompanyID, RowID) VALUES (N'bb6ccce3-12ba-4f8d-8b6b-714305d579ef', 4, N'ShipDate', 2, N'82d32081-98aa-49bb-bfc2-b6329dc5ae7b');
-                        INSERT INTO GIResult (DesignID, LineNbr, Field, CompanyID, RowID) VALUES (N'bb6ccce3-12ba-4f8d-8b6b-714305d579ef', 5, N'UsrContainerID', 2, N'36b548f1-e768-4a1a-8efd-15ebba36df22');
-                        INSERT INTO GIResult (DesignID, LineNbr, Field, CompanyID, RowID) VALUES (N'bb6ccce3-12ba-4f8d-8b6b-714305d579ef', 6, N'UsrIncludeInContainer', 2, N'714189fb-24e7-46c7-97cb-a69ff730b624');
-                        INSERT INTO GIFilter (DesignID, LineNbr, Name, CompanyID) VALUES (N'bb6ccce3-12ba-4f8d-8b6b-714305d579ef', 1, N'StatusFilter', 2);
-                        INSERT INTO GIWhere (DesignID, LineNbr, DataFieldName, CompanyID) VALUES (N'bb6ccce3-12ba-4f8d-8b6b-714305d579ef', 1, N'Shipment.Status', 2);
-                        INSERT INTO GISort (DesignID, LineNbr, DataFieldName, CompanyID) VALUES (N'bb6ccce3-12ba-4f8d-8b6b-714305d579ef', 1, N'Shipment.ShipDate', 2);
+                        DECLARE @did2 uniqueidentifier = NEWID();
+                        INSERT INTO GIDesign (DesignID, Name, ScreenID, CompanyID, CreatedByID, CreatedByScreenID, NoteID) VALUES (@did2, N'SOContainers', N'SB401010', @cid, N'B5344897-037E-4D58-B5C3-1BDFD0F47BF4', N'SM208000', NEWID());
+                        INSERT INTO GITable (DesignID, Alias, Name, CompanyID) VALUES (@did2, N'Shipment', N'PX.Objects.SO.SOShipment', @cid);
+                        INSERT INTO GIResult (DesignID, LineNbr, Field, CompanyID, RowID) VALUES (@did2, 1, N'ShipmentNbr', @cid, NEWID());
+                        INSERT INTO GIResult (DesignID, LineNbr, Field, CompanyID, RowID) VALUES (@did2, 2, N'Status', @cid, NEWID());
+                        INSERT INTO GIResult (DesignID, LineNbr, Field, CompanyID, RowID) VALUES (@did2, 3, N'CustomerID', @cid, NEWID());
+                        INSERT INTO GIResult (DesignID, LineNbr, Field, CompanyID, RowID) VALUES (@did2, 4, N'ShipDate', @cid, NEWID());
+                        INSERT INTO GIResult (DesignID, LineNbr, Field, CompanyID, RowID) VALUES (@did2, 5, N'UsrContainerID', @cid, NEWID());
+                        INSERT INTO GIResult (DesignID, LineNbr, Field, CompanyID, RowID) VALUES (@did2, 6, N'UsrIncludeInContainer', @cid, NEWID());
+                        INSERT INTO GIFilter (DesignID, LineNbr, Name, CompanyID) VALUES (@did2, 1, N'StatusFilter', @cid);
+                        INSERT INTO GIWhere (DesignID, LineNbr, DataFieldName, CompanyID) VALUES (@did2, 1, N'Shipment.Status', @cid);
+                        INSERT INTO GISort (DesignID, LineNbr, DataFieldName, CompanyID) VALUES (@did2, 1, N'Shipment.ShipDate', @cid);
                         COMMIT TRANSACTION;
-                        PRINT 'GI [SOContainers] created.';
                     END TRY
                     BEGIN CATCH
                         IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION;
-                        PRINT 'GI [SOContainers] FAILED: ' + ERROR_MESSAGE();
+                        THROW;
                     END CATCH
                 END",
 
                 // ── Container Events (SB401020) ───────────────────────────
-                @"IF NOT EXISTS (SELECT 1 FROM GIDesign WHERE Name = N'ContainerEvents' AND CompanyID = 2)
+                @"DECLARE @cid int = " + cid + @";
+                IF NOT EXISTS (SELECT 1 FROM GIDesign WHERE Name = N'ContainerEvents' AND CompanyID = @cid)
                 BEGIN
                     BEGIN TRANSACTION;
                     BEGIN TRY
-                        INSERT INTO GIDesign (DesignID, Name, ScreenID, CompanyID, CreatedByID, CreatedByScreenID, NoteID) VALUES (N'84272c7f-4e52-484b-b4bf-0cdb40e38257', N'ContainerEvents', N'SB401020', 2, N'B5344897-037E-4D58-B5C3-1BDFD0F47BF4', N'SM208000', N'2e35e69c-9a9c-40f8-8974-30edfd5f81f2');
-                        INSERT INTO GITable (DesignID, Alias, Name, CompanyID) VALUES (N'84272c7f-4e52-484b-b4bf-0cdb40e38257', N'Event', N'StudioB.Containers.UsrContainerEvent', 2);
-                        INSERT INTO GITable (DesignID, Alias, Name, CompanyID) VALUES (N'84272c7f-4e52-484b-b4bf-0cdb40e38257', N'Container', N'StudioB.Containers.UsrContainer', 2);
-                        INSERT INTO GIResult (DesignID, LineNbr, Field, CompanyID, RowID) VALUES (N'84272c7f-4e52-484b-b4bf-0cdb40e38257', 1, N'ContainerCD', 2, N'00124187-88b5-4f14-b248-06673e459a98');
-                        INSERT INTO GIResult (DesignID, LineNbr, Field, CompanyID, RowID) VALUES (N'84272c7f-4e52-484b-b4bf-0cdb40e38257', 2, N'EventDateTime', 2, N'4fb223f9-71b9-43e5-a2ba-1b45bd4d616c');
-                        INSERT INTO GIResult (DesignID, LineNbr, Field, CompanyID, RowID) VALUES (N'84272c7f-4e52-484b-b4bf-0cdb40e38257', 3, N'NormalizedEventCode', 2, N'97497633-27fe-49cd-8142-2bd5965c399f');
-                        INSERT INTO GIResult (DesignID, LineNbr, Field, CompanyID, RowID) VALUES (N'84272c7f-4e52-484b-b4bf-0cdb40e38257', 4, N'EventClassifier', 2, N'6dbcbcb6-d298-46fc-bbf4-4313f743e5f3');
-                        INSERT INTO GIResult (DesignID, LineNbr, Field, CompanyID, RowID) VALUES (N'84272c7f-4e52-484b-b4bf-0cdb40e38257', 5, N'LocationName', 2, N'0ea28e22-67ba-4d46-bc7d-bae111e14c63');
-                        INSERT INTO GIResult (DesignID, LineNbr, Field, CompanyID, RowID) VALUES (N'84272c7f-4e52-484b-b4bf-0cdb40e38257', 6, N'VesselName', 2, N'4d1ae20b-6d95-4dc9-90d8-4c33e32e126c');
-                        INSERT INTO GIResult (DesignID, LineNbr, Field, CompanyID, RowID) VALUES (N'84272c7f-4e52-484b-b4bf-0cdb40e38257', 7, N'Description', 2, N'62ed1858-64a8-42a3-9198-7150f869715f');
-                        INSERT INTO GIFilter (DesignID, LineNbr, Name, CompanyID) VALUES (N'84272c7f-4e52-484b-b4bf-0cdb40e38257', 1, N'ContainerFilter', 2);
-                        INSERT INTO GIFilter (DesignID, LineNbr, Name, CompanyID) VALUES (N'84272c7f-4e52-484b-b4bf-0cdb40e38257', 2, N'EventCodeFilter', 2);
-                        INSERT INTO GIWhere (DesignID, LineNbr, DataFieldName, CompanyID) VALUES (N'84272c7f-4e52-484b-b4bf-0cdb40e38257', 1, N'Container.ContainerCD', 2);
-                        INSERT INTO GIWhere (DesignID, LineNbr, DataFieldName, CompanyID) VALUES (N'84272c7f-4e52-484b-b4bf-0cdb40e38257', 2, N'Event.NormalizedEventCode', 2);
-                        INSERT INTO GISort (DesignID, LineNbr, DataFieldName, CompanyID) VALUES (N'84272c7f-4e52-484b-b4bf-0cdb40e38257', 1, N'Event.EventDateTime', 2);
+                        DECLARE @did3 uniqueidentifier = NEWID();
+                        INSERT INTO GIDesign (DesignID, Name, ScreenID, CompanyID, CreatedByID, CreatedByScreenID, NoteID) VALUES (@did3, N'ContainerEvents', N'SB401020', @cid, N'B5344897-037E-4D58-B5C3-1BDFD0F47BF4', N'SM208000', NEWID());
+                        INSERT INTO GITable (DesignID, Alias, Name, CompanyID) VALUES (@did3, N'Event', N'StudioB.Containers.UsrContainerEvent', @cid);
+                        INSERT INTO GITable (DesignID, Alias, Name, CompanyID) VALUES (@did3, N'Container', N'StudioB.Containers.UsrContainer', @cid);
+                        INSERT INTO GIResult (DesignID, LineNbr, Field, CompanyID, RowID) VALUES (@did3, 1, N'ContainerCD', @cid, NEWID());
+                        INSERT INTO GIResult (DesignID, LineNbr, Field, CompanyID, RowID) VALUES (@did3, 2, N'EventDateTime', @cid, NEWID());
+                        INSERT INTO GIResult (DesignID, LineNbr, Field, CompanyID, RowID) VALUES (@did3, 3, N'NormalizedEventCode', @cid, NEWID());
+                        INSERT INTO GIResult (DesignID, LineNbr, Field, CompanyID, RowID) VALUES (@did3, 4, N'EventClassifier', @cid, NEWID());
+                        INSERT INTO GIResult (DesignID, LineNbr, Field, CompanyID, RowID) VALUES (@did3, 5, N'LocationName', @cid, NEWID());
+                        INSERT INTO GIResult (DesignID, LineNbr, Field, CompanyID, RowID) VALUES (@did3, 6, N'VesselName', @cid, NEWID());
+                        INSERT INTO GIResult (DesignID, LineNbr, Field, CompanyID, RowID) VALUES (@did3, 7, N'Description', @cid, NEWID());
+                        INSERT INTO GIFilter (DesignID, LineNbr, Name, CompanyID) VALUES (@did3, 1, N'ContainerFilter', @cid);
+                        INSERT INTO GIFilter (DesignID, LineNbr, Name, CompanyID) VALUES (@did3, 2, N'EventCodeFilter', @cid);
+                        INSERT INTO GIWhere (DesignID, LineNbr, DataFieldName, CompanyID) VALUES (@did3, 1, N'Container.ContainerCD', @cid);
+                        INSERT INTO GIWhere (DesignID, LineNbr, DataFieldName, CompanyID) VALUES (@did3, 2, N'Event.NormalizedEventCode', @cid);
+                        INSERT INTO GISort (DesignID, LineNbr, DataFieldName, CompanyID) VALUES (@did3, 1, N'Event.EventDateTime', @cid);
                         COMMIT TRANSACTION;
-                        PRINT 'GI [ContainerEvents] created.';
                     END TRY
                     BEGIN CATCH
                         IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION;
-                        PRINT 'GI [ContainerEvents] FAILED: ' + ERROR_MESSAGE();
+                        THROW;
                     END CATCH
                 END",
 
                 // ── Custom Classification (SB401030) ──────────────────────
-                @"IF NOT EXISTS (SELECT 1 FROM GIDesign WHERE Name = N'CustomClassification' AND CompanyID = 2)
+                @"DECLARE @cid int = " + cid + @";
+                IF NOT EXISTS (SELECT 1 FROM GIDesign WHERE Name = N'CustomClassification' AND CompanyID = @cid)
                 BEGIN
                     BEGIN TRANSACTION;
                     BEGIN TRY
-                        INSERT INTO GIDesign (DesignID, Name, ScreenID, CompanyID, CreatedByID, CreatedByScreenID, NoteID) VALUES (N'79538136-ed3f-47f8-9ab1-7efdb53fc1aa', N'CustomClassification', N'SB401030', 2, N'B5344897-037E-4D58-B5C3-1BDFD0F47BF4', N'SM208000', N'fa0fcf3d-880c-4210-a455-75318e547863');
-                        INSERT INTO GITable (DesignID, Alias, Name, CompanyID) VALUES (N'79538136-ed3f-47f8-9ab1-7efdb53fc1aa', N'Item', N'PX.Objects.IN.InventoryItem', 2);
-                        INSERT INTO GIResult (DesignID, LineNbr, Field, CompanyID, RowID) VALUES (N'79538136-ed3f-47f8-9ab1-7efdb53fc1aa', 1, N'InventoryCD', 2, N'4ae7f836-7648-4f1a-bf16-b9d1db852817');
-                        INSERT INTO GIResult (DesignID, LineNbr, Field, CompanyID, RowID) VALUES (N'79538136-ed3f-47f8-9ab1-7efdb53fc1aa', 2, N'Descr', 2, N'b44a65ae-d870-4706-b69a-5c8d96ca40b7');
-                        INSERT INTO GIResult (DesignID, LineNbr, Field, CompanyID, RowID) VALUES (N'79538136-ed3f-47f8-9ab1-7efdb53fc1aa', 3, N'ItemClassID', 2, N'bcf2c4b7-b19c-45bb-82d3-7db0ac761844');
-                        INSERT INTO GIResult (DesignID, LineNbr, Field, CompanyID, RowID) VALUES (N'79538136-ed3f-47f8-9ab1-7efdb53fc1aa', 4, N'UsrFiberContent', 2, N'a5e693c1-55ff-4424-a821-c54850e588cd');
-                        INSERT INTO GIResult (DesignID, LineNbr, Field, CompanyID, RowID) VALUES (N'79538136-ed3f-47f8-9ab1-7efdb53fc1aa', 5, N'UsrDutyRate', 2, N'32b92b71-0d3b-41d9-a6f1-a2e2be1ff8f6');
-                        INSERT INTO GIResult (DesignID, LineNbr, Field, CompanyID, RowID) VALUES (N'79538136-ed3f-47f8-9ab1-7efdb53fc1aa', 6, N'UsrPreferentialTariff', 2, N'bc0d7ab3-2e7d-44be-a6c6-0114a6db4fea');
-                        INSERT INTO GIResult (DesignID, LineNbr, Field, CompanyID, RowID) VALUES (N'79538136-ed3f-47f8-9ab1-7efdb53fc1aa', 7, N'UsrFreightClass', 2, N'e15b7a90-3ab0-4667-b6a6-09b4f8d0d12b');
-                        INSERT INTO GIFilter (DesignID, LineNbr, Name, CompanyID) VALUES (N'79538136-ed3f-47f8-9ab1-7efdb53fc1aa', 1, N'ItemClassFilter', 2);
-                        INSERT INTO GIWhere (DesignID, LineNbr, DataFieldName, CompanyID) VALUES (N'79538136-ed3f-47f8-9ab1-7efdb53fc1aa', 1, N'Item.ItemClassID', 2);
-                        INSERT INTO GISort (DesignID, LineNbr, DataFieldName, CompanyID) VALUES (N'79538136-ed3f-47f8-9ab1-7efdb53fc1aa', 1, N'Item.InventoryCD', 2);
+                        DECLARE @did4 uniqueidentifier = NEWID();
+                        INSERT INTO GIDesign (DesignID, Name, ScreenID, CompanyID, CreatedByID, CreatedByScreenID, NoteID) VALUES (@did4, N'CustomClassification', N'SB401030', @cid, N'B5344897-037E-4D58-B5C3-1BDFD0F47BF4', N'SM208000', NEWID());
+                        INSERT INTO GITable (DesignID, Alias, Name, CompanyID) VALUES (@did4, N'Item', N'PX.Objects.IN.InventoryItem', @cid);
+                        INSERT INTO GIResult (DesignID, LineNbr, Field, CompanyID, RowID) VALUES (@did4, 1, N'InventoryCD', @cid, NEWID());
+                        INSERT INTO GIResult (DesignID, LineNbr, Field, CompanyID, RowID) VALUES (@did4, 2, N'Descr', @cid, NEWID());
+                        INSERT INTO GIResult (DesignID, LineNbr, Field, CompanyID, RowID) VALUES (@did4, 3, N'ItemClassID', @cid, NEWID());
+                        INSERT INTO GIResult (DesignID, LineNbr, Field, CompanyID, RowID) VALUES (@did4, 4, N'UsrFiberContent', @cid, NEWID());
+                        INSERT INTO GIResult (DesignID, LineNbr, Field, CompanyID, RowID) VALUES (@did4, 5, N'UsrDutyRate', @cid, NEWID());
+                        INSERT INTO GIResult (DesignID, LineNbr, Field, CompanyID, RowID) VALUES (@did4, 6, N'UsrPreferentialTariff', @cid, NEWID());
+                        INSERT INTO GIResult (DesignID, LineNbr, Field, CompanyID, RowID) VALUES (@did4, 7, N'UsrFreightClass', @cid, NEWID());
+                        INSERT INTO GIFilter (DesignID, LineNbr, Name, CompanyID) VALUES (@did4, 1, N'ItemClassFilter', @cid);
+                        INSERT INTO GIWhere (DesignID, LineNbr, DataFieldName, CompanyID) VALUES (@did4, 1, N'Item.ItemClassID', @cid);
+                        INSERT INTO GISort (DesignID, LineNbr, DataFieldName, CompanyID) VALUES (@did4, 1, N'Item.InventoryCD', @cid);
                         COMMIT TRANSACTION;
-                        PRINT 'GI [CustomClassification] created.';
                     END TRY
                     BEGIN CATCH
                         IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION;
-                        PRINT 'GI [CustomClassification] FAILED: ' + ERROR_MESSAGE();
+                        THROW;
                     END CATCH
                 END",
             };
 
+            int created = 0;
             foreach (var sql in giSqls)
             {
-                using (var cmd = new SqlCommand(sql, conn)) { cmd.CommandTimeout = 60; cmd.ExecuteNonQuery(); }
+                using (var cmd = new SqlCommand(sql, conn))
+                {
+                    cmd.CommandTimeout = 60;
+                    cmd.ExecuteNonQuery();
+                    created++;
+                }
             }
-            WriteLog("[AesthetikContainers] Container Tracking GIs (4) — OK");
+            WriteLog(string.Format("[AesthetikContainers] Container Tracking GIs (4) for CompanyID={0} — OK", companyId));
         }
 
-        private void EnsureContainerTrackingSiteMap(SqlConnection conn)
+        private void EnsureContainerTrackingSiteMap(SqlConnection conn, int companyId)
         {
             // SiteMap entries for 5 new Container Tracking screens.
             // ParentID = 9c89e3db-7c47-43c0-8554-5d2c9f2c0e87 (Container Tracking workspace)
-            // Idempotent: IF NOT EXISTS check per ScreenID.
-            var entries = new[]
+            // Idempotent: IF NOT EXISTS check per ScreenID + CompanyID.
+            // NodeID uses NEWID() so each company gets unique nodes.
+            string[][] entries = new[]
             {
-                new { NodeID = "a1b2c3d4-0001-4000-8000-000000000001", ScreenID = "SB401000", Title = "PO Containers", Url = "~/GenericInquiry/GenericInquiry.aspx?id=SB401000", Position = "7.6" },
-                new { NodeID = "a1b2c3d4-0002-4000-8000-000000000002", ScreenID = "SB401010", Title = "SO Containers", Url = "~/GenericInquiry/GenericInquiry.aspx?id=SB401010", Position = "7.7" },
-                new { NodeID = "a1b2c3d4-0003-4000-8000-000000000003", ScreenID = "SB401020", Title = "Container Events", Url = "~/GenericInquiry/GenericInquiry.aspx?id=SB401020", Position = "7.8" },
-                new { NodeID = "a1b2c3d4-0004-4000-8000-000000000004", ScreenID = "SB302000", Title = "Freight Forwarders", Url = "~/Pages/SB/SB302000.aspx", Position = "7.9" },
-                new { NodeID = "a1b2c3d4-0005-4000-8000-000000000005", ScreenID = "SB401030", Title = "Custom Classification", Url = "~/GenericInquiry/GenericInquiry.aspx?id=SB401030", Position = "8.0" },
+                new[] { "SB401000", "PO Containers", "~/GenericInquiry/GenericInquiry.aspx?id=SB401000", "7.6" },
+                new[] { "SB401010", "SO Containers", "~/GenericInquiry/GenericInquiry.aspx?id=SB401010", "7.7" },
+                new[] { "SB401020", "Container Events", "~/GenericInquiry/GenericInquiry.aspx?id=SB401020", "7.8" },
+                new[] { "SB302000", "Freight Forwarders", "~/Pages/SB/SB302000.aspx", "7.9" },
+                new[] { "SB401030", "Custom Classification", "~/GenericInquiry/GenericInquiry.aspx?id=SB401030", "8.0" },
             };
 
             foreach (var e in entries)
             {
-                string sql = string.Format(
-                    @"IF NOT EXISTS (SELECT 1 FROM SiteMap WHERE ScreenID = '{0}' AND CompanyID = 2)
+                string sql = @"
+                    IF NOT EXISTS (SELECT 1 FROM SiteMap WHERE ScreenID = @sid AND CompanyID = @cid)
                     INSERT INTO SiteMap (CompanyID, NodeID, ScreenID, Title, Url, Position, ParentID, Expanded, SelectedUI)
-                    VALUES (2, '{1}', '{0}', N'{2}', N'{3}', N'{4}', '9c89e3db-7c47-43c0-8554-5d2c9f2c0e87', 0, N'E');",
-                    e.ScreenID, e.NodeID, e.Title, e.Url, e.Position);
-                using (var cmd = new SqlCommand(sql, conn)) { cmd.ExecuteNonQuery(); }
+                    VALUES (@cid, NEWID(), @sid, @title, @url, @pos, '9c89e3db-7c47-43c0-8554-5d2c9f2c0e87', 0, N'E');";
+                using (var cmd = new SqlCommand(sql, conn))
+                {
+                    cmd.Parameters.AddWithValue("@cid", companyId);
+                    cmd.Parameters.AddWithValue("@sid", e[0]);
+                    cmd.Parameters.AddWithValue("@title", e[1]);
+                    cmd.Parameters.AddWithValue("@url", e[2]);
+                    cmd.Parameters.AddWithValue("@pos", e[3]);
+                    cmd.ExecuteNonQuery();
+                }
             }
-            WriteLog("[AesthetikContainers] Container Tracking SiteMap (5 screens) — OK");
+            WriteLog(string.Format("[AesthetikContainers] Container Tracking SiteMap (5 screens) for CompanyID={0} — OK", companyId));
         }
     }
 }
