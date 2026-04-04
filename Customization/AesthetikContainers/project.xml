@@ -1224,6 +1224,131 @@ namespace StudioB.Containers
                     // Migrates IIG container data to AesthetikContainers tables.
                     MigrateIGCMContainers(conn);
 
+                    // ── GI system table investigation ─────────────────────────
+                    // Query: primary keys, unique constraints, foreign keys,
+                    // indexes, and row counts for all GI tables + SiteMap.
+                    string[] investigateTables = new[] { "GIDesign", "GIResult", "GIFilter", "GIWhere", "GISort", "GITable", "GIRelation", "GIOn", "SiteMap" };
+                    foreach (string table in investigateTables)
+                    {
+                        try
+                        {
+                            // Primary keys
+                            using (var cmd = new SqlCommand(@"
+                                SELECT kcu.COLUMN_NAME
+                                FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS tc
+                                JOIN INFORMATION_SCHEMA.KEY_COLUMN_USAGE kcu
+                                  ON tc.CONSTRAINT_NAME = kcu.CONSTRAINT_NAME
+                                WHERE tc.TABLE_NAME = @t AND tc.CONSTRAINT_TYPE = 'PRIMARY KEY'
+                                ORDER BY kcu.ORDINAL_POSITION", conn))
+                            {
+                                cmd.Parameters.AddWithValue("@t", table);
+                                cmd.CommandTimeout = 15;
+                                var cols = new System.Collections.Generic.List<string>();
+                                using (var rdr = cmd.ExecuteReader())
+                                    while (rdr.Read()) cols.Add(rdr.GetString(0));
+                                WriteLog(string.Format("[INVEST-PK] {0}: {1}", table, cols.Count > 0 ? string.Join(", ", cols) : "(no PK)"));
+                            }
+
+                            // Unique constraints
+                            using (var cmd = new SqlCommand(@"
+                                SELECT tc.CONSTRAINT_NAME, kcu.COLUMN_NAME
+                                FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS tc
+                                JOIN INFORMATION_SCHEMA.KEY_COLUMN_USAGE kcu
+                                  ON tc.CONSTRAINT_NAME = kcu.CONSTRAINT_NAME
+                                WHERE tc.TABLE_NAME = @t AND tc.CONSTRAINT_TYPE = 'UNIQUE'
+                                ORDER BY tc.CONSTRAINT_NAME, kcu.ORDINAL_POSITION", conn))
+                            {
+                                cmd.Parameters.AddWithValue("@t", table);
+                                cmd.CommandTimeout = 15;
+                                var constraints = new System.Collections.Generic.Dictionary<string, System.Collections.Generic.List<string>>();
+                                using (var rdr = cmd.ExecuteReader())
+                                    while (rdr.Read())
+                                    {
+                                        string name = rdr.GetString(0);
+                                        if (!constraints.ContainsKey(name)) constraints[name] = new System.Collections.Generic.List<string>();
+                                        constraints[name].Add(rdr.GetString(1));
+                                    }
+                                foreach (var kvp in constraints)
+                                    WriteLog(string.Format("[INVEST-UQ] {0}.{1}: {2}", table, kvp.Key, string.Join(", ", kvp.Value)));
+                                if (constraints.Count == 0)
+                                    WriteLog(string.Format("[INVEST-UQ] {0}: (no unique constraints)", table));
+                            }
+
+                            // Foreign keys
+                            using (var cmd = new SqlCommand(@"
+                                SELECT fk.name, COL_NAME(fkc.parent_object_id, fkc.parent_column_id) AS parent_col,
+                                       OBJECT_NAME(fkc.referenced_object_id) AS ref_table,
+                                       COL_NAME(fkc.referenced_object_id, fkc.referenced_column_id) AS ref_col
+                                FROM sys.foreign_keys fk
+                                JOIN sys.foreign_key_columns fkc ON fk.object_id = fkc.constraint_object_id
+                                WHERE OBJECT_NAME(fk.parent_object_id) = @t", conn))
+                            {
+                                cmd.Parameters.AddWithValue("@t", table);
+                                cmd.CommandTimeout = 15;
+                                var fks = new System.Collections.Generic.List<string>();
+                                using (var rdr = cmd.ExecuteReader())
+                                    while (rdr.Read())
+                                        fks.Add(string.Format("{0}.{1} -> {2}.{3}", rdr.GetString(0), rdr.GetString(1), rdr.GetString(2), rdr.GetString(3)));
+                                if (fks.Count > 0)
+                                    foreach (var fk in fks)
+                                        WriteLog(string.Format("[INVEST-FK] {0}: {1}", table, fk));
+                                else
+                                    WriteLog(string.Format("[INVEST-FK] {0}: (no foreign keys)", table));
+                            }
+
+                            // Indexes
+                            using (var cmd = new SqlCommand(@"
+                                SELECT i.name, i.is_unique, i.type_desc,
+                                       STRING_AGG(COL_NAME(ic.object_id, ic.column_id), ', ') WITHIN GROUP (ORDER BY ic.key_ordinal) AS columns
+                                FROM sys.indexes i
+                                JOIN sys.index_columns ic ON i.object_id = ic.object_id AND i.index_id = ic.index_id
+                                WHERE OBJECT_NAME(i.object_id) = @t AND i.type > 0
+                                GROUP BY i.name, i.is_unique, i.type_desc", conn))
+                            {
+                                cmd.Parameters.AddWithValue("@t", table);
+                                cmd.CommandTimeout = 15;
+                                using (var rdr = cmd.ExecuteReader())
+                                    while (rdr.Read())
+                                        WriteLog(string.Format("[INVEST-IX] {0}.{1}: unique={2} type={3} cols=({4})",
+                                            table, rdr.GetString(0), rdr.GetBoolean(1), rdr.GetString(2), rdr.GetString(3)));
+                            }
+
+                            // Row count per CompanyID
+                            using (var cmd = new SqlCommand(
+                                "SELECT CompanyID, COUNT(*) FROM " + table + " GROUP BY CompanyID ORDER BY CompanyID", conn))
+                            {
+                                cmd.CommandTimeout = 15;
+                                var counts = new System.Collections.Generic.List<string>();
+                                using (var rdr = cmd.ExecuteReader())
+                                    while (rdr.Read())
+                                        counts.Add(string.Format("CID{0}={1}", rdr.GetInt32(0), rdr.GetInt32(1)));
+                                WriteLog(string.Format("[INVEST-CT] {0}: {1}", table, string.Join(", ", counts)));
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            WriteLog(string.Format("[INVEST] {0}: FAILED — {1}", table, ex.Message));
+                        }
+                    }
+
+                    // Also check: how does the existing working GI (InventoryQuantityDetail) store its data?
+                    try
+                    {
+                        using (var cmd = new SqlCommand(
+                            "SELECT CompanyID, DesignID, Name FROM GIDesign WHERE Name IN ('InventoryQuantityDetail', 'UserAuditTrail', 'POContainers') ORDER BY Name, CompanyID", conn))
+                        {
+                            cmd.CommandTimeout = 15;
+                            using (var rdr = cmd.ExecuteReader())
+                                while (rdr.Read())
+                                    WriteLog(string.Format("[INVEST-GI] {0} CID={1} DesignID={2}",
+                                        rdr.GetString(2), rdr.GetInt32(0), rdr.GetGuid(1)));
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        WriteLog(string.Format("[INVEST-GI] FAILED: {0}", ex.Message));
+                    }
+
                     // ── Per-company DML (GIs, SiteMap, cleanup) ───────────────
                     // These tables are CompanyID-scoped. Discover all companies
                     // dynamically so the plugin works on any tenant (test or prod).
