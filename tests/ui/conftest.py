@@ -56,7 +56,10 @@ def acumatica_page(browser_context) -> Page:
     page.click("#btnLogin")
 
     page.wait_for_url("**/Main*", timeout=30_000)
-    page.wait_for_load_state("networkidle")
+    # Acumatica dashboard makes continuous background requests —
+    # networkidle never resolves. Use domcontentloaded instead.
+    page.wait_for_load_state("domcontentloaded")
+    page.wait_for_timeout(3000)
 
     yield page
     page.close()
