@@ -30,10 +30,10 @@ Use this table to find where your old IIG screens moved.
 | Freight Forwarders | IG.CM.30.91 | Freight Forwarders | SB302000 | Live |
 | Custom Classification | IG.CM.30.93 | Custom Classification | SB401030 | Live |
 | Container Maintenance | (none) | Container Maintenance | SB501000 | Live (unchanged) |
-| Container Types | IG.CM.20.92 | -- | -- | Coming in Phase 3 |
-| Container Destinations | IG.CM.20.94 | -- | -- | Coming in Phase 3 |
-| Container Preferences | IG.CM.10.10 | -- | -- | Coming in Phase 3 |
-| PO Container Lines | IG.CM.00.09 | -- | -- | Coming in Phase 3 |
+| Container Types | IG.CM.20.92 | Container Types | SB302010 | Live |
+| Container Destinations | IG.CM.20.94 | Destinations/Ports | SB302020 | Live |
+| Container Preferences | IG.CM.10.10 | Container Preferences | SB302030 | Live |
+| PO Container Lines | IG.CM.00.09 | PO Container Lines | SB401040 | Live |
 | Container Distributions | IG.CM.01.03 | -- | -- | Deferred |
 | Duty/Tariff Adjustments | IG.CM.05.91 | -- | -- | Deferred |
 
@@ -41,7 +41,7 @@ Use this table to find where your old IIG screens moved.
 
 ## How to Find the New Screens
 
-1. **Sidebar workspace:** Click **Container Tracking** in the left sidebar navigation. All six active screens are listed there.
+1. **Sidebar workspace:** Click **Container Tracking** in the left sidebar navigation. All ten active screens are listed there.
 2. **Search bar:** Click the magnifying glass icon (or press Ctrl+Space) and type the screen ID -- for example, `SB401000` -- to jump directly to a screen.
 3. **Favorites:** Right-click any screen in the workspace list and select **Add to Favorites** for quick access.
 
@@ -75,12 +75,27 @@ This screen has not changed. It remains the detailed view for creating and editi
 
 ---
 
+### PO Container Lines (SB401040)
+
+This inquiry shows the line-level detail for purchase orders linked to containers. Use it to see exactly which PO lines are in each container, including item descriptions, quantities, and line amounts. Filter by container to see the full contents of a single shipment.
+
+### Container Types (SB302010)
+
+A master data screen for managing ISO container type codes (20GP, 40GP, 40HC, etc.) with dimensions and maximum weight. Six standard container types are pre-loaded. Use the toolbar buttons to add custom types if needed. Every container record can reference a type from this list.
+
+### Destinations/Ports (SB302020)
+
+A master data screen for port codes used in the Port of Loading and Port of Discharge fields on containers. Twenty major ports are pre-loaded (Shanghai, Yantian, Ningbo, Los Angeles, Long Beach, Savannah, and more). Add new ports as your shipping routes expand.
+
+### Container Preferences (SB302030)
+
+System-wide settings for container tracking. Set the default carrier code, default container type, default in-transit warehouse, whether to auto-link POs by reference number, and the tracking poll interval. One record per company -- it is created automatically on first publish.
+
+---
+
 ## What Is Coming Next
 
-The following features are planned for upcoming phases:
-
-- **Phase 2:** Automated tracking updates via carrier API webhooks (no more manual status entry)
-- **Phase 3:** Container Types and Container Destinations master screens, Container Management Preferences, and the PO Container Lines detail view
+- **Phase 2 (in progress):** Automated tracking updates via carrier API webhooks (no more manual status entry)
 - **Future:** Container Distributions and Duty/Tariff Adjustment screens
 
 We will send an update when each phase goes live.
