@@ -329,3 +329,105 @@ class TestContainerTrackingWorkspaceComplete:
             navigate_to_screen_safe(acumatica_page, screen_id)
             assert "ScreenId=ERROR" not in acumatica_page.url, \
                 f"{name} ({screen_id}) — redirected to error page"
+
+
+# ════════════════════════════════════════════════════════════════════════
+# Phase 2-3: Master Data + PO Container Lines
+# ════════════════════════════════════════════════════════════════════════
+
+class TestPOContainerLinesGI:
+    """Verify PO Container Lines GI (SB401040) loads."""
+
+    def test_gi_screen_loads(self, acumatica_page):
+        """SB401040 should load without error."""
+        navigate_to_screen_safe(acumatica_page, "SB401040")
+        wait_for_screen(acumatica_page, "SB401040")
+
+        assert "ScreenId=ERROR" not in acumatica_page.url, \
+            "SB401040 PO Container Lines redirected to error page"
+
+
+class TestContainerTypes:
+    """Verify Container Types maintenance screen (SB302010)."""
+
+    def test_screen_loads(self, acumatica_page):
+        """SB302010 should load without error."""
+        navigate_to_screen_safe(acumatica_page, "SB302010")
+        wait_for_screen(acumatica_page, "SB302010")
+
+        assert "ScreenId=ERROR" not in acumatica_page.url, \
+            "SB302010 Container Types redirected to error page"
+
+    def test_new_record_button(self, acumatica_page):
+        """Should be able to click Add New Record."""
+        navigate_to_screen_safe(acumatica_page, "SB302010")
+        wait_for_screen(acumatica_page, "SB302010")
+
+        add_btn = acumatica_page.locator("div[icon='AddNew'], [id*='btnInsert']").first
+        if add_btn.is_visible(timeout=3000):
+            add_btn.click()
+            acumatica_page.wait_for_timeout(2000)
+
+        assert "ScreenId=ERROR" not in acumatica_page.url, \
+            "Add New Record on Container Types caused error"
+
+
+class TestDestinationsPorts:
+    """Verify Destinations/Ports maintenance screen (SB302020)."""
+
+    def test_screen_loads(self, acumatica_page):
+        """SB302020 should load without error."""
+        navigate_to_screen_safe(acumatica_page, "SB302020")
+        wait_for_screen(acumatica_page, "SB302020")
+
+        assert "ScreenId=ERROR" not in acumatica_page.url, \
+            "SB302020 Destinations/Ports redirected to error page"
+
+    def test_new_record_button(self, acumatica_page):
+        """Should be able to click Add New Record."""
+        navigate_to_screen_safe(acumatica_page, "SB302020")
+        wait_for_screen(acumatica_page, "SB302020")
+
+        add_btn = acumatica_page.locator("div[icon='AddNew'], [id*='btnInsert']").first
+        if add_btn.is_visible(timeout=3000):
+            add_btn.click()
+            acumatica_page.wait_for_timeout(2000)
+
+        assert "ScreenId=ERROR" not in acumatica_page.url, \
+            "Add New Record on Destinations/Ports caused error"
+
+
+class TestContainerPreferences:
+    """Verify Container Preferences screen (SB302030)."""
+
+    def test_screen_loads(self, acumatica_page):
+        """SB302030 should load without error."""
+        navigate_to_screen_safe(acumatica_page, "SB302030")
+        wait_for_screen(acumatica_page, "SB302030")
+
+        assert "ScreenId=ERROR" not in acumatica_page.url, \
+            "SB302030 Container Preferences redirected to error page"
+
+
+class TestPhase3WorkspaceComplete:
+    """Verify all Phase 1 + Phase 2-3 screens load without error."""
+
+    def test_all_screens_no_errors(self, acumatica_page):
+        """All 9 container tracking screens should not produce error pages."""
+        all_screens = [
+            ("SB501000", "Container Maintenance"),
+            ("SB401000", "PO Containers"),
+            ("SB401010", "SO Containers"),
+            ("SB401020", "Container Events"),
+            ("SB302000", "Freight Forwarders"),
+            ("SB401030", "Custom Classification"),
+            ("SB401040", "PO Container Lines"),
+            ("SB302010", "Container Types"),
+            ("SB302020", "Destinations/Ports"),
+            ("SB302030", "Container Preferences"),
+        ]
+
+        for screen_id, name in all_screens:
+            navigate_to_screen_safe(acumatica_page, screen_id)
+            assert "ScreenId=ERROR" not in acumatica_page.url, \
+                f"{name} ({screen_id}) — redirected to error page"

@@ -626,6 +626,11 @@ namespace StudioB.Containers
         public abstract class portOfLoading : BqlString.Field<portOfLoading> { }
         [PXDBString(10, IsUnicode = true)]
         [PXUIField(DisplayName = "Port of Loading")]
+        [PXSelector(typeof(Search<UsrPort.portCode,
+            Where<UsrPort.active, Equal<True>>>),
+            typeof(UsrPort.portCode),
+            typeof(UsrPort.portName),
+            typeof(UsrPort.country))]
         public string PortOfLoading { get; set; }
         #endregion
 
@@ -633,6 +638,11 @@ namespace StudioB.Containers
         public abstract class portOfDischarge : BqlString.Field<portOfDischarge> { }
         [PXDBString(10, IsUnicode = true)]
         [PXUIField(DisplayName = "Port of Discharge")]
+        [PXSelector(typeof(Search<UsrPort.portCode,
+            Where<UsrPort.active, Equal<True>>>),
+            typeof(UsrPort.portCode),
+            typeof(UsrPort.portName),
+            typeof(UsrPort.country))]
         public string PortOfDischarge { get; set; }
         #endregion
 
@@ -678,8 +688,10 @@ namespace StudioB.Containers
         public abstract class containerType : BqlString.Field<containerType> { }
         [PXDBString(10, IsUnicode = true)]
         [PXUIField(DisplayName = "Type")]
-        [PXStringList(new string[] { "20GP", "40GP", "40HC", "45HC", "20RF", "40RF" },
-                       new string[] { "20' Standard", "40' Standard", "40' High Cube", "45' High Cube", "20' Reefer", "40' Reefer" })]
+        [PXSelector(typeof(Search<UsrContainerType.typeCD,
+            Where<UsrContainerType.active, Equal<True>>>),
+            typeof(UsrContainerType.typeCD),
+            typeof(UsrContainerType.description))]
         public string ContainerType { get; set; }
         #endregion
 
@@ -984,6 +996,33 @@ namespace StudioB.Containers
                     ContainerDatePropagation.PropagateArrivalDate(container.ETA, poRefs);
                 }
             }
+
+            // Push container update to webhook-router for carrier event refresh
+            if (container != null)
+            {
+                try
+                {
+                    var webhookUrl = System.Configuration.ConfigurationManager.AppSettings["ContainerWebhookUrl"];
+                    if (!string.IsNullOrEmpty(webhookUrl))
+                    {
+                        using (var client = new System.Net.Http.HttpClient())
+                        {
+                            client.Timeout = System.TimeSpan.FromSeconds(5);
+                            var json = Newtonsoft.Json.JsonConvert.SerializeObject(new
+                            {
+                                ContainerCD = container.ContainerCD,
+                                CarrierCode = container.CarrierCode,
+                                ContainerID = container.ContainerID,
+                                Status = container.Status,
+                            });
+                            var content = new System.Net.Http.StringContent(
+                                json, System.Text.Encoding.UTF8, "application/json");
+                            client.PostAsync(webhookUrl, content).ConfigureAwait(false);
+                        }
+                    }
+                }
+                catch { /* Fire-and-forget — don't block save */ }
+            }
         }
         #endregion
     }
@@ -1193,15 +1232,25 @@ namespace StudioB.Containers
                     var companies = DiscoverCompanies(conn);
                     foreach (var kvp in companies)
                     {
-                        int companyId = kvp.Value;
-                        WriteLog(string.Format("[AesthetikContainers] Processing company '{0}' (CompanyID={1})", kvp.Key, companyId));
+                        int companyId = kvp.Key;
+                        string companyName = kvp.Value;
+                        WriteLog(string.Format("[AesthetikContainers] Processing company '{0}' (CompanyID={1})", companyName, companyId));
 
-                        CleanupIGCMArtifacts(conn, companyId);
-                        EnsureContainerTrackingGIs(conn, companyId);
-                        EnsureContainerTrackingSiteMap(conn, companyId);
-                        SeedContainerTypes(conn, companyId);
-                        SeedPorts(conn, companyId);
-                        SeedContainerPreferences(conn, companyId);
+                        try
+                        {
+                            CleanupIGCMArtifacts(conn, companyId);
+                            EnsureContainerTrackingGIs(conn, companyId);
+                            EnsureContainerTrackingSiteMap(conn, companyId);
+                            SeedContainerTypes(conn, companyId);
+                            SeedPorts(conn, companyId);
+                            SeedContainerPreferences(conn, companyId);
+                        }
+                        catch (Exception compEx)
+                        {
+                            WriteLog(string.Format("[AesthetikContainers] ERROR processing CompanyID={0}: {1}: {2}",
+                                companyId, compEx.GetType().FullName, compEx.Message));
+                            // Continue with next company — don't fail the entire publish
+                        }
                     }
                 }
 
@@ -1215,12 +1264,13 @@ namespace StudioB.Containers
             }
         }
 
-        private System.Collections.Generic.Dictionary<string, int> DiscoverCompanies(SqlConnection conn)
+        private System.Collections.Generic.Dictionary<int, string> DiscoverCompanies(SqlConnection conn)
         {
-            var companies = new System.Collections.Generic.Dictionary<string, int>();
+            // Key by CompanyID (guaranteed unique) → company name for logging
+            var companies = new System.Collections.Generic.Dictionary<int, string>();
             using (var cmd = conn.CreateCommand())
             {
-                cmd.CommandText = "SELECT CompanyID, LoginName FROM Company WHERE CompanyID > 0";
+                cmd.CommandText = "SELECT CompanyID, COALESCE(LoginName, CompanyCD, CAST(CompanyID AS nvarchar)) FROM Company WHERE CompanyID > 0";
                 cmd.CommandTimeout = 30;
                 try
                 {
@@ -1229,26 +1279,15 @@ namespace StudioB.Containers
                         while (rdr.Read())
                         {
                             int id = rdr.GetInt32(0);
-                            string name = rdr.IsDBNull(1) ? "(null)" : rdr.GetString(1);
-                            companies[name] = id;
+                            string name = rdr.IsDBNull(1) ? ("Company_" + id) : rdr.GetString(1);
+                            companies[id] = name;
                             WriteLog(string.Format("[AesthetikContainers] Found company: '{0}' -> CompanyID={1}", name, id));
                         }
                     }
                 }
-                catch (Exception)
+                catch (Exception ex)
                 {
-                    // Fallback: try CompanyCD if LoginName column doesn't exist
-                    cmd.CommandText = "SELECT CompanyID, CompanyCD FROM Company WHERE CompanyID > 0";
-                    using (var rdr = cmd.ExecuteReader())
-                    {
-                        while (rdr.Read())
-                        {
-                            int id = rdr.GetInt32(0);
-                            string name = rdr.IsDBNull(1) ? "(null)" : rdr.GetString(1);
-                            companies[name] = id;
-                            WriteLog(string.Format("[AesthetikContainers] Found company (CD): '{0}' -> CompanyID={1}", name, id));
-                        }
-                    }
+                    WriteLog(string.Format("[AesthetikContainers] Company discovery failed: {0}", ex.Message));
                 }
             }
 
