@@ -1005,19 +1005,17 @@ namespace StudioB.Containers
                     var webhookUrl = System.Configuration.ConfigurationManager.AppSettings["ContainerWebhookUrl"];
                     if (!string.IsNullOrEmpty(webhookUrl))
                     {
-                        using (var client = new System.Net.Http.HttpClient())
+                        var json = Newtonsoft.Json.JsonConvert.SerializeObject(new
                         {
-                            client.Timeout = System.TimeSpan.FromSeconds(5);
-                            var json = Newtonsoft.Json.JsonConvert.SerializeObject(new
-                            {
-                                ContainerCD = container.ContainerCD,
-                                CarrierCode = container.CarrierCode,
-                                ContainerID = container.ContainerID,
-                                Status = container.Status,
-                            });
-                            var content = new System.Net.Http.StringContent(
-                                json, System.Text.Encoding.UTF8, "application/json");
-                            client.PostAsync(webhookUrl, content).ConfigureAwait(false);
+                            ContainerCD = container.ContainerCD,
+                            CarrierCode = container.CarrierCode,
+                            ContainerID = container.ContainerID,
+                            Status = container.Status,
+                        });
+                        using (var wc = new System.Net.WebClient())
+                        {
+                            wc.Headers[System.Net.HttpRequestHeader.ContentType] = "application/json";
+                            wc.UploadStringAsync(new System.Uri(webhookUrl), "POST", json);
                         }
                     }
                 }
