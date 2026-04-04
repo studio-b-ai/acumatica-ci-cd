@@ -1547,8 +1547,9 @@ namespace StudioB.Containers
             // Step 1: Delete user preferences referencing IGCM screens (both ID formats)
             // (FK constraints block GI/SiteMap deletion if these exist)
             string deletePivotPrefs = @"
-                DELETE FROM PivotFieldPreferences
-                WHERE CompanyID = @cid AND (ScreenID LIKE 'IGCM%' OR ScreenID LIKE 'IG.CM%')";
+                IF OBJECT_ID('PivotFieldPreferences', 'U') IS NOT NULL
+                    DELETE FROM PivotFieldPreferences
+                    WHERE CompanyID = @cid AND (ScreenID LIKE 'IGCM%' OR ScreenID LIKE 'IG.CM%')";
             using (var cmd = new SqlCommand(deletePivotPrefs, conn))
             {
                 cmd.Parameters.AddWithValue("@cid", companyId);
@@ -1558,8 +1559,9 @@ namespace StudioB.Containers
             }
 
             string deleteFilterPresets = @"
-                DELETE FROM FilterPresets
-                WHERE CompanyID = @cid AND (ScreenID LIKE 'IGCM%' OR ScreenID LIKE 'IG.CM%')";
+                IF OBJECT_ID('FilterPresets', 'U') IS NOT NULL
+                    DELETE FROM FilterPresets
+                    WHERE CompanyID = @cid AND (ScreenID LIKE 'IGCM%' OR ScreenID LIKE 'IG.CM%')";
             using (var cmd = new SqlCommand(deleteFilterPresets, conn))
             {
                 cmd.Parameters.AddWithValue("@cid", companyId);
