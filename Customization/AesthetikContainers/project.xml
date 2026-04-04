@@ -1568,15 +1568,25 @@ namespace StudioB.Containers
                 totalRows += rows;
             }
 
-            // Step 2: Delete ALL GI child rows for GIs that reference IGCM DACs
+            // Step 2: Delete ALL GI definitions that reference IGCM DACs.
+            // Match by: GITable data source name, GI name, OR screen ID pattern.
+            // Use UNION to also catch orphaned GIDesign rows where GITable was
+            // already deleted by a prior partial cleanup (LEFT JOIN would miss these).
             string igcmDesignSubquery = @"
                 SELECT DISTINCT d.DesignID FROM GIDesign d
-                LEFT JOIN GITable t ON d.DesignID = t.DesignID AND t.CompanyID = @cid
+                INNER JOIN GITable t ON d.DesignID = t.DesignID AND t.CompanyID = @cid
+                WHERE d.CompanyID = @cid AND t.Name LIKE 'IGCM%'
+                UNION
+                SELECT DISTINCT d.DesignID FROM GIDesign d
                 WHERE d.CompanyID = @cid
-                  AND (t.Name LIKE 'IGCM.%'
-                    OR d.Name LIKE 'IGCM%'
+                  AND (d.Name LIKE 'IGCM%'
                     OR d.ScreenID LIKE 'IGCM%'
-                    OR d.ScreenID LIKE 'IG.CM%')";
+                    OR d.ScreenID LIKE 'IG.CM%')
+                UNION
+                SELECT DISTINCT d.DesignID FROM GIDesign d
+                WHERE d.CompanyID = @cid
+                  AND NOT EXISTS (SELECT 1 FROM GITable t WHERE t.DesignID = d.DesignID AND t.CompanyID = @cid)
+                  AND d.Name NOT IN ('POContainers','SOContainers','ContainerEvents','CustomClassification','POContainerLines')";
 
             // Log which GIs will be removed
             using (var cmd = new SqlCommand(igcmDesignSubquery, conn))
@@ -1589,16 +1599,23 @@ namespace StudioB.Containers
                 }
             }
 
-            // Delete GI child tables — must use literal subquery (can't reuse @cid across batch)
+            // Delete GI child tables
             string deleteGIChildren = string.Format(@"
                 DECLARE @cid int = {0};
                 DECLARE @ids TABLE (DesignID uniqueidentifier);
                 INSERT INTO @ids
                     SELECT DISTINCT d.DesignID FROM GIDesign d
-                    LEFT JOIN GITable t ON d.DesignID = t.DesignID AND t.CompanyID = @cid
+                    INNER JOIN GITable t ON d.DesignID = t.DesignID AND t.CompanyID = @cid
+                    WHERE d.CompanyID = @cid AND t.Name LIKE 'IGCM%'
+                    UNION
+                    SELECT DISTINCT d.DesignID FROM GIDesign d
                     WHERE d.CompanyID = @cid
-                      AND (t.Name LIKE 'IGCM.%' OR d.Name LIKE 'IGCM%'
-                        OR d.ScreenID LIKE 'IGCM%' OR d.ScreenID LIKE 'IG.CM%');
+                      AND (d.Name LIKE 'IGCM%' OR d.ScreenID LIKE 'IGCM%' OR d.ScreenID LIKE 'IG.CM%')
+                    UNION
+                    SELECT DISTINCT d.DesignID FROM GIDesign d
+                    WHERE d.CompanyID = @cid
+                      AND NOT EXISTS (SELECT 1 FROM GITable t WHERE t.DesignID = d.DesignID AND t.CompanyID = @cid)
+                      AND d.Name NOT IN ('POContainers','SOContainers','ContainerEvents','CustomClassification','POContainerLines');
 
                 DELETE FROM GIResult WHERE CompanyID = @cid AND DesignID IN (SELECT DesignID FROM @ids);
                 DELETE FROM GISort WHERE CompanyID = @cid AND DesignID IN (SELECT DesignID FROM @ids);
@@ -1617,19 +1634,37 @@ namespace StudioB.Containers
                 totalRows += rows;
             }
 
-            // Step 3: Remove orphaned IGCM/IG SiteMap entries
-            // Preserve our AesthetikContainers screens (Phase 1 + Phase 2-3)
+            // Step 3: Remove ALL non-AesthetikContainers entries from the
+            // Container Tracking workspace. The old IIG ISV registered entries
+            // under various screen IDs (IGCM*, EP4040PL, report IDs, etc.)
+            // that don't follow a single prefix pattern. Whitelist approach:
+            // delete everything under the workspace ParentID except our screens.
             string deleteSiteMap = @"
                 DELETE FROM SiteMap
                 WHERE CompanyID = @cid
-                  AND (ScreenID LIKE 'IGCM%' OR ScreenID LIKE 'IG.CM%' OR ScreenID LIKE 'IG%')
+                  AND ParentID = '9c89e3db-7c47-43c0-8554-5d2c9f2c0e87'
                   AND ScreenID NOT IN ('SB501000','SB401000','SB401010','SB401020','SB302000','SB401030',
                                        'SB401040','SB302010','SB302020','SB302030')";
             using (var cmd = new SqlCommand(deleteSiteMap, conn))
             {
                 cmd.Parameters.AddWithValue("@cid", companyId);
                 int rows = cmd.ExecuteNonQuery();
-                if (rows > 0) WriteLog(string.Format("  IGCM cleanup (CID={0}): {1} orphaned SiteMap entries deleted", companyId, rows));
+                if (rows > 0) WriteLog(string.Format("  IGCM cleanup (CID={0}): {1} orphaned workspace entries deleted", companyId, rows));
+                totalRows += rows;
+            }
+
+            // Step 3b: Also clean IGCM-pattern SiteMap entries outside the workspace
+            string deleteIgcmSiteMap = @"
+                DELETE FROM SiteMap
+                WHERE CompanyID = @cid
+                  AND (ScreenID LIKE 'IGCM%' OR ScreenID LIKE 'IG.CM%')
+                  AND ScreenID NOT IN ('SB501000','SB401000','SB401010','SB401020','SB302000','SB401030',
+                                       'SB401040','SB302010','SB302020','SB302030')";
+            using (var cmd2 = new SqlCommand(deleteIgcmSiteMap, conn))
+            {
+                cmd2.Parameters.AddWithValue("@cid", companyId);
+                int rows = cmd2.ExecuteNonQuery();
+                if (rows > 0) WriteLog(string.Format("  IGCM cleanup (CID={0}): {1} IGCM entries deleted outside workspace", companyId, rows));
                 totalRows += rows;
             }
 
