@@ -1268,7 +1268,7 @@ namespace StudioB.Containers
             var companies = new System.Collections.Generic.Dictionary<int, string>();
             using (var cmd = conn.CreateCommand())
             {
-                cmd.CommandText = "SELECT CompanyID, COALESCE(LoginName, CompanyCD, CAST(CompanyID AS nvarchar)) FROM Company WHERE CompanyID > 0";
+                cmd.CommandText = "SELECT CompanyID, COALESCE(CompanyCD, CAST(CompanyID AS nvarchar)) FROM Company WHERE CompanyID > 0";
                 cmd.CommandTimeout = 30;
                 try
                 {
