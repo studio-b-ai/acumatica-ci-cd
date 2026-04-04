@@ -248,6 +248,24 @@ def navigate_to_screen_safe(page: Page, screen_id: str, timeout: int = 60_000):
     page.wait_for_timeout(3000)
 
 
+# ── GI Screen IDs that need direct URL navigation ────────────────────────
+# Main?ScreenId=X doesn't trigger GI content loading in the iframe.
+# These must be navigated via /GenericInquiry/GenericInquiry.aspx?id=X
+GI_SCREEN_IDS = {"SB401000", "SB401010", "SB401020", "SB401030", "SB401040"}
+
+
+def navigate_to_gi_screen(page: Page, screen_id: str, timeout: int = 60_000):
+    """Navigate to a Generic Inquiry screen via direct GI URL.
+
+    Acumatica's Main?ScreenId=X doesn't load GI content into the iframe.
+    Instead, navigate to /GenericInquiry/GenericInquiry.aspx?id=<ScreenId>
+    which triggers the frameset to load the GI in the main frame.
+    """
+    url = f"{ACUMATICA_URL}/GenericInquiry/GenericInquiry.aspx?id={screen_id}"
+    page.goto(url, wait_until="domcontentloaded", timeout=timeout)
+    page.wait_for_timeout(5000)
+
+
 def wait_for_screen(page: Page, screen_id: str, timeout: int = 30_000):
     """Wait for an Acumatica screen to load and check for errors."""
     page.wait_for_load_state("domcontentloaded")

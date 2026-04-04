@@ -55,6 +55,8 @@ MOCK_SCHEMA = {
         "Width": {"data_type": "int", "nullable": "YES", "max_length": None, "default": None},
         "IsVisible": {"data_type": "bit", "nullable": "YES", "max_length": None, "default": None},
         "DefaultNav": {"data_type": "bit", "nullable": "YES", "max_length": None, "default": None},
+        "QuickFilter": {"data_type": "bit", "nullable": "YES", "max_length": None, "default": None},
+        "FastFilter": {"data_type": "bit", "nullable": "YES", "max_length": None, "default": None},
         "Caption": {"data_type": "nvarchar", "nullable": "YES", "max_length": 256, "default": None},
         "RowID": {"data_type": "uniqueidentifier", "nullable": "NO", "max_length": None, "default": None},
         "CompanyID": {"data_type": "int", "nullable": "NO", "max_length": None, "default": None},
@@ -71,6 +73,7 @@ MOCK_SCHEMA = {
     "GIWhere": {
         "DesignID": {"data_type": "uniqueidentifier", "nullable": "NO", "max_length": None, "default": None},
         "LineNbr": {"data_type": "int", "nullable": "NO", "max_length": None, "default": None},
+        "IsActive": {"data_type": "bit", "nullable": "YES", "max_length": None, "default": None},
         "DataFieldName": {"data_type": "nvarchar", "nullable": "NO", "max_length": 256, "default": None},
         "Condition": {"data_type": "nvarchar", "nullable": "YES", "max_length": 2, "default": None},
         "Value1": {"data_type": "nvarchar", "nullable": "YES", "max_length": 256, "default": None},
@@ -81,9 +84,9 @@ MOCK_SCHEMA = {
     "GISort": {
         "DesignID": {"data_type": "uniqueidentifier", "nullable": "NO", "max_length": None, "default": None},
         "LineNbr": {"data_type": "int", "nullable": "NO", "max_length": None, "default": None},
+        "IsActive": {"data_type": "bit", "nullable": "YES", "max_length": None, "default": None},
         "DataFieldName": {"data_type": "nvarchar", "nullable": "NO", "max_length": 256, "default": None},
         "SortOrder": {"data_type": "nvarchar", "nullable": "YES", "max_length": 1, "default": None},
-        "IsActive": {"data_type": "bit", "nullable": "YES", "max_length": None, "default": None},
         "CompanyID": {"data_type": "int", "nullable": "NO", "max_length": None, "default": None},
     },
 }
