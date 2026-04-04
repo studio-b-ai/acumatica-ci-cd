@@ -1099,6 +1099,13 @@ namespace StudioB.Containers
                     // Idempotent (NOT EXISTS guards). Safe to run on every publish.
                     // Migrates IIG container data to AesthetikContainers tables.
                     MigrateIGCMContainers(conn);
+
+                    // ── Clean up stale IIG/IGCM artifacts ─────────────────────
+                    // IIG Container Management ISV has been unpublished. Its GI
+                    // definitions and user preferences remain in the database and
+                    // cause "type not found: IGCM.DAC.IGCMPOLandedCost" errors
+                    // when SB501000 PO Links tab loads. Delete them.
+                    CleanupIGCMArtifacts(conn);
                 }
 
                 WriteLog("[AesthetikContainers] All tables, columns, indexes, and migration verified/created.");
@@ -1345,6 +1352,139 @@ namespace StudioB.Containers
             // UPDATE on POOrder is blocked by validate-project.py guard.
             // ContainerMaint graph sets UsrContainerRef on save.
             // Historical POs can be backfilled via SM302050 if needed.
+        }
+
+        private void CleanupIGCMArtifacts(SqlConnection conn)
+        {
+            // IIG Container Management ISV has been unpublished but left behind
+            // GI definitions and user preferences that reference IGCM.DAC types.
+            // These cause "type not found: IGCM.DAC.IGCMPOLandedCost" errors
+            // on SB501000 PO Links tab. Clean them up idempotently.
+
+            // Step 1: Delete pivot field preferences referencing IGCM screens
+            // (FK constraint blocks GI deletion if these exist)
+            string deletePivotPrefs = @"
+                DELETE FROM PivotFieldPreferences
+                WHERE ScreenID LIKE 'IG.CM%'";
+            using (var cmd = new SqlCommand(deletePivotPrefs, conn))
+            {
+                int rows = cmd.ExecuteNonQuery();
+                if (rows > 0)
+                    WriteLog(string.Format("  IGCM cleanup: {0} pivot field preferences deleted", rows));
+            }
+
+            // Step 2: Delete filter presets referencing IGCM screens
+            string deleteFilterPresets = @"
+                DELETE FROM FilterPresets
+                WHERE ScreenID LIKE 'IGCM%' OR ScreenID LIKE 'IG.CM%'";
+            using (var cmd = new SqlCommand(deleteFilterPresets, conn))
+            {
+                int rows = cmd.ExecuteNonQuery();
+                if (rows > 0)
+                    WriteLog(string.Format("  IGCM cleanup: {0} filter presets deleted", rows));
+            }
+
+            // Step 3: Delete IGCM Generic Inquiry definitions
+            // GIDesign stores the GI header; related tables cascade or are
+            // keyed by DesignID. Delete from leaf tables first.
+            string deleteGIResults = @"
+                DELETE r FROM GIResult r
+                INNER JOIN GIDesign d ON r.DesignID = d.DesignID
+                WHERE d.Name LIKE 'IGCM%'";
+            using (var cmd = new SqlCommand(deleteGIResults, conn))
+            {
+                int rows = cmd.ExecuteNonQuery();
+                if (rows > 0)
+                    WriteLog(string.Format("  IGCM cleanup: {0} GI result columns deleted", rows));
+            }
+
+            string deleteGISorts = @"
+                DELETE s FROM GISort s
+                INNER JOIN GIDesign d ON s.DesignID = d.DesignID
+                WHERE d.Name LIKE 'IGCM%'";
+            using (var cmd = new SqlCommand(deleteGISorts, conn))
+            {
+                int rows = cmd.ExecuteNonQuery();
+                if (rows > 0)
+                    WriteLog(string.Format("  IGCM cleanup: {0} GI sort columns deleted", rows));
+            }
+
+            string deleteGIGroupBy = @"
+                DELETE g FROM GIGroupBy g
+                INNER JOIN GIDesign d ON g.DesignID = d.DesignID
+                WHERE d.Name LIKE 'IGCM%'";
+            using (var cmd = new SqlCommand(deleteGIGroupBy, conn))
+            {
+                int rows = cmd.ExecuteNonQuery();
+                if (rows > 0)
+                    WriteLog(string.Format("  IGCM cleanup: {0} GI group-by columns deleted", rows));
+            }
+
+            string deleteGIFilter = @"
+                DELETE f FROM GIFilter f
+                INNER JOIN GIDesign d ON f.DesignID = d.DesignID
+                WHERE d.Name LIKE 'IGCM%'";
+            using (var cmd = new SqlCommand(deleteGIFilter, conn))
+            {
+                int rows = cmd.ExecuteNonQuery();
+                if (rows > 0)
+                    WriteLog(string.Format("  IGCM cleanup: {0} GI filters deleted", rows));
+            }
+
+            string deleteGIOn = @"
+                DELETE o FROM GIOn o
+                INNER JOIN GIDesign d ON o.DesignID = d.DesignID
+                WHERE d.Name LIKE 'IGCM%'";
+            using (var cmd = new SqlCommand(deleteGIOn, conn))
+            {
+                int rows = cmd.ExecuteNonQuery();
+                if (rows > 0)
+                    WriteLog(string.Format("  IGCM cleanup: {0} GI join conditions deleted", rows));
+            }
+
+            string deleteGIRelation = @"
+                DELETE r FROM GIRelation r
+                INNER JOIN GIDesign d ON r.DesignID = d.DesignID
+                WHERE d.Name LIKE 'IGCM%'";
+            using (var cmd = new SqlCommand(deleteGIRelation, conn))
+            {
+                int rows = cmd.ExecuteNonQuery();
+                if (rows > 0)
+                    WriteLog(string.Format("  IGCM cleanup: {0} GI relations deleted", rows));
+            }
+
+            string deleteGITable = @"
+                DELETE t FROM GITable t
+                INNER JOIN GIDesign d ON t.DesignID = d.DesignID
+                WHERE d.Name LIKE 'IGCM%'";
+            using (var cmd = new SqlCommand(deleteGITable, conn))
+            {
+                int rows = cmd.ExecuteNonQuery();
+                if (rows > 0)
+                    WriteLog(string.Format("  IGCM cleanup: {0} GI data sources deleted", rows));
+            }
+
+            // Step 4: Delete the GI header itself
+            string deleteGIDesign = @"
+                DELETE FROM GIDesign WHERE Name LIKE 'IGCM%'";
+            using (var cmd = new SqlCommand(deleteGIDesign, conn))
+            {
+                int rows = cmd.ExecuteNonQuery();
+                if (rows > 0)
+                    WriteLog(string.Format("  IGCM cleanup: {0} Generic Inquiry definitions deleted", rows));
+            }
+
+            // Step 5: Remove orphaned SiteMap entries for IGCM screens
+            string deleteSiteMap = @"
+                DELETE FROM SiteMap WHERE ScreenID LIKE 'IGCM%'";
+            using (var cmd = new SqlCommand(deleteSiteMap, conn))
+            {
+                int rows = cmd.ExecuteNonQuery();
+                if (rows > 0)
+                    WriteLog(string.Format("  IGCM cleanup: {0} SiteMap entries deleted", rows));
+            }
+
+            WriteLog("  IGCM cleanup: complete");
         }
     }
 }
