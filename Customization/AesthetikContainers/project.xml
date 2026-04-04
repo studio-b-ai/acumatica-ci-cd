@@ -1234,9 +1234,18 @@ namespace StudioB.Containers
                         string companyName = kvp.Value;
                         WriteLog(string.Format("[AesthetikContainers] Processing company '{0}' (CompanyID={1})", companyName, companyId));
 
+                        // IGCM cleanup is best-effort — schema differences between
+                        // Acumatica versions can cause column/table errors. Isolate
+                        // it so GI creation and seed data still run.
+                        try { CleanupIGCMArtifacts(conn, companyId); }
+                        catch (Exception cleanEx)
+                        {
+                            WriteLog(string.Format("[AesthetikContainers] IGCM cleanup skipped for CompanyID={0}: {1}",
+                                companyId, cleanEx.Message));
+                        }
+
                         try
                         {
-                            CleanupIGCMArtifacts(conn, companyId);
                             EnsureContainerTrackingGIs(conn, companyId);
                             EnsureContainerTrackingSiteMap(conn, companyId);
                             SeedContainerTypes(conn, companyId);
