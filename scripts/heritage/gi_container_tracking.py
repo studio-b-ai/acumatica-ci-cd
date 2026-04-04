@@ -240,6 +240,44 @@ def build_custom_classification() -> GIDefinition:
     )
 
 
+@_register("SB401040")
+def build_po_container_lines() -> GIDefinition:
+    """PO Container Lines — detail view of PO lines on containers."""
+    return GIDefinition(
+        name="POContainerLines",
+        screen_id="SB401040",
+        tables=[
+            {"dac": "StudioB.Containers.UsrContainerPOLink", "alias": "Link"},
+            {"dac": "StudioB.Containers.UsrContainer", "alias": "Container"},
+            {"dac": "PX.Objects.PO.POOrder", "alias": "PO"},
+            {"dac": "PX.Objects.PO.POLine", "alias": "Line"},
+        ],
+        results=[
+            {"field": "ContainerCD", "caption": "Container", "width": 120},
+            {"field": "Status", "caption": "Status", "width": 100},
+            {"field": "ETA", "caption": "ETA", "width": 100},
+            {"field": "OrderType", "caption": "Type", "width": 60},
+            {"field": "OrderNbr", "caption": "PO Nbr", "width": 120},
+            {"field": "LineNbr", "caption": "Line", "width": 60},
+            {"field": "InventoryID", "caption": "Item", "width": 120},
+            {"field": "OrderQty", "caption": "Qty", "width": 80},
+            {"field": "CuryUnitCost", "caption": "Price", "width": 80},
+        ],
+        filters=[
+            {"name": "ContainerFilter", "display_name": "Container", "data_type": 6},
+            {"name": "POFilter", "display_name": "PO Nbr", "data_type": 6},
+        ],
+        where=[
+            {"field": "Container.ContainerCD", "condition": "E ", "value": "@ContainerFilter", "operation": "A"},
+            {"field": "Link.OrderNbr", "condition": "E ", "value": "@POFilter", "operation": "A"},
+        ],
+        sort=[
+            {"field": "Container.ContainerCD", "order": "A"},
+            {"field": "Link.OrderNbr", "order": "A"},
+        ],
+    )
+
+
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
