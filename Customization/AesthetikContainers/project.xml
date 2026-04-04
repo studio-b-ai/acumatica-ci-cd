@@ -1317,13 +1317,8 @@ namespace StudioB.Containers
             string sql = @"
                 IF NOT EXISTS (SELECT 1 FROM SiteMap WHERE ScreenID = @ScreenID AND CompanyID = 0)
                 BEGIN
-                    INSERT INTO SiteMap (CompanyID, NodeID, ScreenID, Title, Url)
-                    VALUES (0, NEWID(), @ScreenID, @Title, @Url)
-                END
-                ELSE
-                BEGIN
-                    UPDATE SiteMap SET Graphtype = @GraphType
-                    WHERE ScreenID = @ScreenID AND CompanyID = 0 AND (Graphtype IS NULL OR Graphtype = '')
+                    INSERT INTO SiteMap (CompanyID, NodeID, ScreenID, Title, Url, CreatedByID, CreatedByScreenID, CreatedDateTime, LastModifiedByID, LastModifiedByScreenID, LastModifiedDateTime)
+                    VALUES (0, NEWID(), @ScreenID, @Title, @Url, N'B5344897-037E-4D58-B5C3-1BDFD0F47BF4', N'SM208000', GETUTCDATE(), N'B5344897-037E-4D58-B5C3-1BDFD0F47BF4', N'SM208000', GETUTCDATE())
                 END";
             using (var cmd = new SqlCommand(sql, conn))
             {
@@ -1745,7 +1740,7 @@ namespace StudioB.Containers
                 BEGIN TRANSACTION;
                 BEGIN TRY
                     DECLARE @did1 uniqueidentifier = '" + did1 + @"';
-                    INSERT INTO GIDesign (DesignID, Name, PrimaryScreenIDNew, CompanyID, CreatedByID, CreatedByScreenID, NoteID) VALUES (@did1, N'POContainers', N'SB401000', @cid, N'B5344897-037E-4D58-B5C3-1BDFD0F47BF4', N'SM208000', NEWID());
+                    INSERT INTO GIDesign (DesignID, Name, PrimaryScreenIDNew, CompanyID, CreatedByID, CreatedByScreenID, CreatedDateTime, LastModifiedByID, LastModifiedByScreenID, LastModifiedDateTime, NoteID) VALUES (@did1, N'POContainers', N'SB401000', @cid, N'B5344897-037E-4D58-B5C3-1BDFD0F47BF4', N'SM208000', GETUTCDATE(), N'B5344897-037E-4D58-B5C3-1BDFD0F47BF4', N'SM208000', GETUTCDATE(), NEWID());
                     INSERT INTO GITable (DesignID, Alias, Name, CompanyID) VALUES (@did1, N'Container', N'StudioB.Containers.UsrContainer', @cid);
                     INSERT INTO GIResult (DesignID, LineNbr, SortOrder, IsActive, Field, Width, IsVisible, DefaultNav, QuickFilter, FastFilter, Caption, CompanyID, RowID) VALUES (@did1, 1, 1, 1, N'ContainerCD', 120, 1, 1, 0, 1, N'Container ID', @cid, NEWID());
                     INSERT INTO GIResult (DesignID, LineNbr, SortOrder, IsActive, Field, Width, IsVisible, DefaultNav, QuickFilter, FastFilter, Caption, CompanyID, RowID) VALUES (@did1, 2, 2, 1, N'Status', 100, 1, 0, 0, 1, N'Status', @cid, NEWID());
@@ -1775,7 +1770,7 @@ namespace StudioB.Containers
                 BEGIN TRANSACTION;
                 BEGIN TRY
                     DECLARE @did2 uniqueidentifier = '" + did2 + @"';
-                    INSERT INTO GIDesign (DesignID, Name, PrimaryScreenIDNew, CompanyID, CreatedByID, CreatedByScreenID, NoteID) VALUES (@did2, N'SOContainers', N'SB401010', @cid, N'B5344897-037E-4D58-B5C3-1BDFD0F47BF4', N'SM208000', NEWID());
+                    INSERT INTO GIDesign (DesignID, Name, PrimaryScreenIDNew, CompanyID, CreatedByID, CreatedByScreenID, CreatedDateTime, LastModifiedByID, LastModifiedByScreenID, LastModifiedDateTime, NoteID) VALUES (@did2, N'SOContainers', N'SB401010', @cid, N'B5344897-037E-4D58-B5C3-1BDFD0F47BF4', N'SM208000', GETUTCDATE(), N'B5344897-037E-4D58-B5C3-1BDFD0F47BF4', N'SM208000', GETUTCDATE(), NEWID());
                     INSERT INTO GITable (DesignID, Alias, Name, CompanyID) VALUES (@did2, N'Shipment', N'PX.Objects.SO.SOShipment', @cid);
                     INSERT INTO GIResult (DesignID, LineNbr, SortOrder, IsActive, Field, Width, IsVisible, DefaultNav, QuickFilter, FastFilter, Caption, CompanyID, RowID) VALUES (@did2, 1, 1, 1, N'ShipmentNbr', 120, 1, 1, 0, 1, N'Shipment Nbr', @cid, NEWID());
                     INSERT INTO GIResult (DesignID, LineNbr, SortOrder, IsActive, Field, Width, IsVisible, DefaultNav, QuickFilter, FastFilter, Caption, CompanyID, RowID) VALUES (@did2, 2, 2, 1, N'Status', 100, 1, 0, 0, 1, N'Status', @cid, NEWID());
@@ -1798,7 +1793,7 @@ namespace StudioB.Containers
                 BEGIN TRANSACTION;
                 BEGIN TRY
                     DECLARE @did3 uniqueidentifier = '" + did3 + @"';
-                    INSERT INTO GIDesign (DesignID, Name, PrimaryScreenIDNew, CompanyID, CreatedByID, CreatedByScreenID, NoteID) VALUES (@did3, N'ContainerEvents', N'SB401020', @cid, N'B5344897-037E-4D58-B5C3-1BDFD0F47BF4', N'SM208000', NEWID());
+                    INSERT INTO GIDesign (DesignID, Name, PrimaryScreenIDNew, CompanyID, CreatedByID, CreatedByScreenID, CreatedDateTime, LastModifiedByID, LastModifiedByScreenID, LastModifiedDateTime, NoteID) VALUES (@did3, N'ContainerEvents', N'SB401020', @cid, N'B5344897-037E-4D58-B5C3-1BDFD0F47BF4', N'SM208000', GETUTCDATE(), N'B5344897-037E-4D58-B5C3-1BDFD0F47BF4', N'SM208000', GETUTCDATE(), NEWID());
                     INSERT INTO GITable (DesignID, Alias, Name, CompanyID) VALUES (@did3, N'Event', N'StudioB.Containers.UsrContainerEvent', @cid);
                     INSERT INTO GITable (DesignID, Alias, Name, CompanyID) VALUES (@did3, N'Container', N'StudioB.Containers.UsrContainer', @cid);
                     INSERT INTO GIResult (DesignID, LineNbr, SortOrder, IsActive, Field, Width, IsVisible, DefaultNav, QuickFilter, FastFilter, Caption, CompanyID, RowID) VALUES (@did3, 1, 1, 1, N'ContainerCD', 120, 1, 1, 0, 1, N'Container ID', @cid, NEWID());
@@ -1825,7 +1820,7 @@ namespace StudioB.Containers
                 BEGIN TRANSACTION;
                 BEGIN TRY
                     DECLARE @did4 uniqueidentifier = '" + did4 + @"';
-                    INSERT INTO GIDesign (DesignID, Name, PrimaryScreenIDNew, CompanyID, CreatedByID, CreatedByScreenID, NoteID) VALUES (@did4, N'CustomClassification', N'SB401030', @cid, N'B5344897-037E-4D58-B5C3-1BDFD0F47BF4', N'SM208000', NEWID());
+                    INSERT INTO GIDesign (DesignID, Name, PrimaryScreenIDNew, CompanyID, CreatedByID, CreatedByScreenID, CreatedDateTime, LastModifiedByID, LastModifiedByScreenID, LastModifiedDateTime, NoteID) VALUES (@did4, N'CustomClassification', N'SB401030', @cid, N'B5344897-037E-4D58-B5C3-1BDFD0F47BF4', N'SM208000', GETUTCDATE(), N'B5344897-037E-4D58-B5C3-1BDFD0F47BF4', N'SM208000', GETUTCDATE(), NEWID());
                     INSERT INTO GITable (DesignID, Alias, Name, CompanyID) VALUES (@did4, N'Item', N'PX.Objects.IN.InventoryItem', @cid);
                     INSERT INTO GIResult (DesignID, LineNbr, SortOrder, IsActive, Field, Width, IsVisible, DefaultNav, QuickFilter, FastFilter, Caption, CompanyID, RowID) VALUES (@did4, 1, 1, 1, N'InventoryCD', 120, 1, 1, 0, 1, N'Inventory ID', @cid, NEWID());
                     INSERT INTO GIResult (DesignID, LineNbr, SortOrder, IsActive, Field, Width, IsVisible, DefaultNav, QuickFilter, FastFilter, Caption, CompanyID, RowID) VALUES (@did4, 2, 2, 1, N'Descr', 200, 1, 0, 0, 1, N'Description', @cid, NEWID());
@@ -1849,7 +1844,7 @@ namespace StudioB.Containers
                 BEGIN TRANSACTION;
                 BEGIN TRY
                     DECLARE @did5 uniqueidentifier = '" + did5 + @"';
-                    INSERT INTO GIDesign (DesignID, Name, PrimaryScreenIDNew, CompanyID, CreatedByID, CreatedByScreenID, NoteID) VALUES (@did5, N'POContainerLines', N'SB401040', @cid, N'B5344897-037E-4D58-B5C3-1BDFD0F47BF4', N'SM208000', NEWID());
+                    INSERT INTO GIDesign (DesignID, Name, PrimaryScreenIDNew, CompanyID, CreatedByID, CreatedByScreenID, CreatedDateTime, LastModifiedByID, LastModifiedByScreenID, LastModifiedDateTime, NoteID) VALUES (@did5, N'POContainerLines', N'SB401040', @cid, N'B5344897-037E-4D58-B5C3-1BDFD0F47BF4', N'SM208000', GETUTCDATE(), N'B5344897-037E-4D58-B5C3-1BDFD0F47BF4', N'SM208000', GETUTCDATE(), NEWID());
                     INSERT INTO GITable (DesignID, Alias, Name, CompanyID) VALUES (@did5, N'Link', N'StudioB.Containers.UsrContainerPOLink', @cid);
                     INSERT INTO GITable (DesignID, Alias, Name, CompanyID) VALUES (@did5, N'Container', N'StudioB.Containers.UsrContainer', @cid);
                     INSERT INTO GITable (DesignID, Alias, Name, CompanyID) VALUES (@did5, N'PO', N'PX.Objects.PO.POOrder', @cid);
@@ -1921,8 +1916,8 @@ namespace StudioB.Containers
                         UPDATE SiteMap SET Url = @url, Title = @title, Position = @pos
                         WHERE ScreenID = @sid AND CompanyID = @cid;
                     ELSE
-                        INSERT INTO SiteMap (CompanyID, NodeID, ScreenID, Title, Url, Position, ParentID, SelectedUI)
-                        VALUES (@cid, NEWID(), @sid, @title, @url, @pos, '9c89e3db-7c47-43c0-8554-5d2c9f2c0e87', N'E');";
+                        INSERT INTO SiteMap (CompanyID, NodeID, ScreenID, Title, Url, Position, ParentID, SelectedUI, CreatedByID, CreatedByScreenID, CreatedDateTime, LastModifiedByID, LastModifiedByScreenID, LastModifiedDateTime)
+                        VALUES (@cid, NEWID(), @sid, @title, @url, @pos, '9c89e3db-7c47-43c0-8554-5d2c9f2c0e87', N'E', N'B5344897-037E-4D58-B5C3-1BDFD0F47BF4', N'SM208000', GETUTCDATE(), N'B5344897-037E-4D58-B5C3-1BDFD0F47BF4', N'SM208000', GETUTCDATE());";
                 using (var cmd = new SqlCommand(sql, conn))
                 {
                     cmd.Parameters.AddWithValue("@cid", companyId);
