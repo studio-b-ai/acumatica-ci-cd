@@ -45,7 +45,7 @@ class TestBaseUom:
         page = acumatica_page
         page.goto(
             f"{ACUMATICA_URL}/Main?ScreenId=IN202500&InventoryCD={ITEM_CD}",
-            wait_until="networkidle",
+            wait_until="domcontentloaded",
         )
         assert_screen_loaded(page, "IN202500")
 
@@ -91,7 +91,7 @@ class TestInUnitConversions:
         page = acumatica_page
         page.goto(
             f"{ACUMATICA_URL}/Main?ScreenId=IN202500&InventoryCD={ITEM_CD}",
-            wait_until="networkidle",
+            wait_until="domcontentloaded",
         )
         assert_screen_loaded(page, "IN202500")
 
@@ -140,7 +140,7 @@ class TestInUnitConversions:
         # Navigate to Unit Conversions screen with item context
         page.goto(
             f"{ACUMATICA_URL}/Main?ScreenId=IN209000",
-            wait_until="networkidle",
+            wait_until="domcontentloaded",
         )
 
         # Wait for screen — IN209000 may use a different layout
@@ -209,7 +209,7 @@ class TestUnallocatedPieceGoodsGI:
         # Generic Inquiries are accessed via their design name
         page.goto(
             f"{ACUMATICA_URL}/Main?ScreenId=GI000000&Name=UnallocatedPieceGoods",
-            wait_until="networkidle",
+            wait_until="domcontentloaded",
         )
 
         # Wait for GI screen to load — GIs use grid layout

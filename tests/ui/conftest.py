@@ -44,7 +44,7 @@ def acumatica_page(browser_context) -> Page:
     """
     page = browser_context.new_page()
 
-    page.goto(f"{ACUMATICA_URL}/Frames/Login.aspx", wait_until="networkidle")
+    page.goto(f"{ACUMATICA_URL}/Frames/Login.aspx", wait_until="domcontentloaded")
 
     page.fill("#txtUser", ACUMATICA_USERNAME)
     page.fill("#txtPass", ACUMATICA_PASSWORD)
@@ -69,7 +69,7 @@ def acumatica_page(browser_context) -> Page:
 def so301000(acumatica_page) -> Page:
     """Navigate to Sales Orders screen and return the page."""
     page = acumatica_page
-    page.goto(f"{ACUMATICA_URL}/Main?ScreenId=SO301000", wait_until="networkidle")
+    page.goto(f"{ACUMATICA_URL}/Main?ScreenId=SO301000", wait_until="domcontentloaded")
     wait_for_screen_ready(page)
     return page
 
