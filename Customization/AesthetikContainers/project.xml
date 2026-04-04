@@ -1334,6 +1334,21 @@ namespace StudioB.Containers
                     // Also check: how does the existing working GI (InventoryQuantityDetail) store its data?
                     try
                     {
+                        // Check ObjectName values from working GI vs our GI
+                        using (var cmd = new SqlCommand(@"
+                            SELECT TOP 10 d.Name AS GIName, r.ObjectName, r.Field, r.LineNbr
+                            FROM GIResult r
+                            JOIN GIDesign d ON r.DesignID = d.DesignID AND r.CompanyID = d.CompanyID
+                            WHERE d.CompanyID = 2 AND d.Name IN ('InventoryQuantityDetail', 'POContainers')
+                            ORDER BY d.Name, r.LineNbr", conn))
+                        {
+                            cmd.CommandTimeout = 15;
+                            using (var rdr = cmd.ExecuteReader())
+                                while (rdr.Read())
+                                    WriteLog(string.Format("[INVEST-ON] {0} Line{1}: ObjectName={2} Field={3}",
+                                        rdr.GetString(0), rdr.GetInt32(3), rdr.GetString(1), rdr.GetString(2)));
+                        }
+
                         using (var cmd = new SqlCommand(
                             "SELECT CompanyID, DesignID, Name FROM GIDesign WHERE Name IN ('InventoryQuantityDetail', 'UserAuditTrail', 'POContainers') ORDER BY Name, CompanyID", conn))
                         {
