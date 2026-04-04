@@ -18,7 +18,7 @@ SLOW_MO = int(os.environ.get("SLOW_MO", "0"))
 
 def wait_for_screen_ready(page: Page, timeout: int = 15_000):
     """Wait for Acumatica screen to finish loading."""
-    page.wait_for_load_state("networkidle")
+    page.wait_for_load_state("domcontentloaded")
     page.locator("#ctl00_phF_form").wait_for(state="visible", timeout=timeout)
     page.wait_for_timeout(500)
 
@@ -44,7 +44,7 @@ def get_field_value(page: Page, field_id: str) -> str:
 def save_order(page: Page):
     """Save the current order via Ctrl+S and wait for completion."""
     page.keyboard.press("Control+s")
-    page.wait_for_load_state("networkidle")
+    page.wait_for_load_state("domcontentloaded")
     wait_for_screen_ready(page)
 
 
@@ -101,7 +101,7 @@ def delete_order(page: Page, order_type: str, order_nbr: str):
     """Navigate to an order and delete it."""
     page.goto(
         f"{ACUMATICA_URL}/Main?ScreenId=SO301000&OrderType={order_type}&OrderNbr={order_nbr}",
-        wait_until="networkidle",
+        wait_until="domcontentloaded",
     )
     wait_for_screen_ready(page)
 
@@ -154,7 +154,7 @@ def close_popup(page: Page):
 def navigate_to_screen(page: Page, screen_id: str, timeout: int = 30_000):
     """Navigate to an Acumatica screen by screen ID."""
     url = f"{ACUMATICA_URL}/Main?ScreenId={screen_id}"
-    page.goto(url, wait_until="networkidle", timeout=timeout)
+    page.goto(url, wait_until="domcontentloaded", timeout=timeout)
 
 
 def assert_screen_loaded(page: Page, screen_id: str, timeout: int = 15_000):

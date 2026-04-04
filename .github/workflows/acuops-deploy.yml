@@ -927,6 +927,7 @@ jobs:
           fi
 
           echo "Rolling back to snapshot: ${SNAPSHOT}"
+          python3 pipeline/scripts/deploy.py \
             --project "${PROJECT}" \
             --package "${SNAPSHOT}" \
             --also-publish "${ALSO}"
@@ -1218,6 +1219,7 @@ jobs:
             fi
           done
 
+          python3 pipeline/scripts/deploy.py \
             --project "${PROJECT}" \
             --package "${PACKAGE_FILE}" \
             --also-publish "${STG_COPUBLISH}" \
@@ -1232,8 +1234,9 @@ jobs:
           ACUMATICA_PASSWORD: ${{ secrets.ACUMATICA_STG_PASSWORD || secrets.ACUMATICA_PROD_PASSWORD }}
           ACUMATICA_TENANT: ${{ secrets.ACUMATICA_STG_TENANT || secrets.ACUMATICA_PROD_TENANT }}
         run: |
-            --manifest publish-manifest.json \
-            2>&1 | tee validation-output.txt
+          cd pipeline/scripts && python validate-publish.py \
+            --manifest ../../publish-manifest.json \
+            2>&1 | tee ../../validation-output.txt
 
       - name: E2E view-level smoke test
         id: e2e
