@@ -1244,20 +1244,21 @@ namespace StudioB.Containers
                                 companyId, cleanEx.Message));
                         }
 
-                        try
-                        {
-                            EnsureContainerTrackingGIs(conn, companyId);
-                            EnsureContainerTrackingSiteMap(conn, companyId);
-                            SeedContainerTypes(conn, companyId);
-                            SeedPorts(conn, companyId);
-                            SeedContainerPreferences(conn, companyId);
-                        }
-                        catch (Exception compEx)
-                        {
-                            WriteLog(string.Format("[AesthetikContainers] ERROR processing CompanyID={0}: {1}: {2}",
-                                companyId, compEx.GetType().FullName, compEx.Message));
-                            // Continue with next company — don't fail the entire publish
-                        }
+                        // Each step isolated so schema mismatches don't block other steps.
+                        try { EnsureContainerTrackingGIs(conn, companyId); }
+                        catch (Exception ex) { WriteLog(string.Format("[AesthetikContainers] GI creation failed CID={0}: {1}", companyId, ex.Message)); }
+
+                        try { EnsureContainerTrackingSiteMap(conn, companyId); }
+                        catch (Exception ex) { WriteLog(string.Format("[AesthetikContainers] SiteMap update failed CID={0}: {1}", companyId, ex.Message)); }
+
+                        try { SeedContainerTypes(conn, companyId); }
+                        catch (Exception ex) { WriteLog(string.Format("[AesthetikContainers] Seed types failed CID={0}: {1}", companyId, ex.Message)); }
+
+                        try { SeedPorts(conn, companyId); }
+                        catch (Exception ex) { WriteLog(string.Format("[AesthetikContainers] Seed ports failed CID={0}: {1}", companyId, ex.Message)); }
+
+                        try { SeedContainerPreferences(conn, companyId); }
+                        catch (Exception ex) { WriteLog(string.Format("[AesthetikContainers] Seed prefs failed CID={0}: {1}", companyId, ex.Message)); }
                     }
                 }
 
