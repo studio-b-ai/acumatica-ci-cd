@@ -1678,7 +1678,20 @@ namespace StudioB.Containers
             // then recreates with all required GIResult fields (IsActive, IsVisible,
             // Width, Caption, SortOrder, DefaultNav, FastFilter).
             // Previous version omitted these fields, causing GIs to not render.
+            //
+            // CRITICAL: DesignIDs are FIXED GUIDs (not NEWID()) so that SiteMap URLs
+            // can reference them via ~/GenericInquiry/GenericInquiry.aspx?id=<GUID>.
+            // Acumatica resolves GIs by DesignID GUID, not by ScreenID or Name.
+            // Using NEWID() would generate different GUIDs per company/publish,
+            // making SiteMap links unresolvable.
             string cid = companyId.ToString();
+
+            // Fixed DesignID GUIDs — must match SiteMap URLs in EnsureContainerTrackingSiteMap()
+            string did1 = "a1b2c3d4-1000-4000-8000-000000401000"; // SB401000 PO Containers
+            string did2 = "a1b2c3d4-1010-4000-8000-000000401010"; // SB401010 SO Containers
+            string did3 = "a1b2c3d4-1020-4000-8000-000000401020"; // SB401020 Container Events
+            string did4 = "a1b2c3d4-1030-4000-8000-000000401030"; // SB401030 Custom Classification
+            string did5 = "a1b2c3d4-1040-4000-8000-000000401040"; // SB401040 PO Container Lines
 
             // Step 1: Delete any existing GI definitions for our 5 GIs (self-healing).
             // This ensures broken rows from prior publishes get replaced.
@@ -1719,7 +1732,7 @@ namespace StudioB.Containers
                 @"DECLARE @cid int = " + cid + @";
                 BEGIN TRANSACTION;
                 BEGIN TRY
-                    DECLARE @did1 uniqueidentifier = NEWID();
+                    DECLARE @did1 uniqueidentifier = '" + did1 + @"';
                     INSERT INTO GIDesign (DesignID, Name, ScreenID, CompanyID, CreatedByID, CreatedByScreenID, NoteID) VALUES (@did1, N'POContainers', N'SB401000', @cid, N'B5344897-037E-4D58-B5C3-1BDFD0F47BF4', N'SM208000', NEWID());
                     INSERT INTO GITable (DesignID, Alias, Name, CompanyID) VALUES (@did1, N'Container', N'StudioB.Containers.UsrContainer', @cid);
                     INSERT INTO GIResult (DesignID, LineNbr, SortOrder, IsActive, Field, Width, IsVisible, DefaultNav, QuickFilter, FastFilter, Caption, CompanyID, RowID) VALUES (@did1, 1, 1, 1, N'ContainerCD', 120, 1, 1, 0, 1, N'Container ID', @cid, NEWID());
@@ -1749,7 +1762,7 @@ namespace StudioB.Containers
                 @"DECLARE @cid int = " + cid + @";
                 BEGIN TRANSACTION;
                 BEGIN TRY
-                    DECLARE @did2 uniqueidentifier = NEWID();
+                    DECLARE @did2 uniqueidentifier = '" + did2 + @"';
                     INSERT INTO GIDesign (DesignID, Name, ScreenID, CompanyID, CreatedByID, CreatedByScreenID, NoteID) VALUES (@did2, N'SOContainers', N'SB401010', @cid, N'B5344897-037E-4D58-B5C3-1BDFD0F47BF4', N'SM208000', NEWID());
                     INSERT INTO GITable (DesignID, Alias, Name, CompanyID) VALUES (@did2, N'Shipment', N'PX.Objects.SO.SOShipment', @cid);
                     INSERT INTO GIResult (DesignID, LineNbr, SortOrder, IsActive, Field, Width, IsVisible, DefaultNav, QuickFilter, FastFilter, Caption, CompanyID, RowID) VALUES (@did2, 1, 1, 1, N'ShipmentNbr', 120, 1, 1, 0, 1, N'Shipment Nbr', @cid, NEWID());
@@ -1772,7 +1785,7 @@ namespace StudioB.Containers
                 @"DECLARE @cid int = " + cid + @";
                 BEGIN TRANSACTION;
                 BEGIN TRY
-                    DECLARE @did3 uniqueidentifier = NEWID();
+                    DECLARE @did3 uniqueidentifier = '" + did3 + @"';
                     INSERT INTO GIDesign (DesignID, Name, ScreenID, CompanyID, CreatedByID, CreatedByScreenID, NoteID) VALUES (@did3, N'ContainerEvents', N'SB401020', @cid, N'B5344897-037E-4D58-B5C3-1BDFD0F47BF4', N'SM208000', NEWID());
                     INSERT INTO GITable (DesignID, Alias, Name, CompanyID) VALUES (@did3, N'Event', N'StudioB.Containers.UsrContainerEvent', @cid);
                     INSERT INTO GITable (DesignID, Alias, Name, CompanyID) VALUES (@did3, N'Container', N'StudioB.Containers.UsrContainer', @cid);
@@ -1799,7 +1812,7 @@ namespace StudioB.Containers
                 @"DECLARE @cid int = " + cid + @";
                 BEGIN TRANSACTION;
                 BEGIN TRY
-                    DECLARE @did4 uniqueidentifier = NEWID();
+                    DECLARE @did4 uniqueidentifier = '" + did4 + @"';
                     INSERT INTO GIDesign (DesignID, Name, ScreenID, CompanyID, CreatedByID, CreatedByScreenID, NoteID) VALUES (@did4, N'CustomClassification', N'SB401030', @cid, N'B5344897-037E-4D58-B5C3-1BDFD0F47BF4', N'SM208000', NEWID());
                     INSERT INTO GITable (DesignID, Alias, Name, CompanyID) VALUES (@did4, N'Item', N'PX.Objects.IN.InventoryItem', @cid);
                     INSERT INTO GIResult (DesignID, LineNbr, SortOrder, IsActive, Field, Width, IsVisible, DefaultNav, QuickFilter, FastFilter, Caption, CompanyID, RowID) VALUES (@did4, 1, 1, 1, N'InventoryCD', 120, 1, 1, 0, 1, N'Inventory ID', @cid, NEWID());
@@ -1823,7 +1836,7 @@ namespace StudioB.Containers
                 @"DECLARE @cid int = " + cid + @";
                 BEGIN TRANSACTION;
                 BEGIN TRY
-                    DECLARE @did5 uniqueidentifier = NEWID();
+                    DECLARE @did5 uniqueidentifier = '" + did5 + @"';
                     INSERT INTO GIDesign (DesignID, Name, ScreenID, CompanyID, CreatedByID, CreatedByScreenID, NoteID) VALUES (@did5, N'POContainerLines', N'SB401040', @cid, N'B5344897-037E-4D58-B5C3-1BDFD0F47BF4', N'SM208000', NEWID());
                     INSERT INTO GITable (DesignID, Alias, Name, CompanyID) VALUES (@did5, N'Link', N'StudioB.Containers.UsrContainerPOLink', @cid);
                     INSERT INTO GITable (DesignID, Alias, Name, CompanyID) VALUES (@did5, N'Container', N'StudioB.Containers.UsrContainer', @cid);
@@ -1871,14 +1884,17 @@ namespace StudioB.Containers
             // ParentID = 9c89e3db-7c47-43c0-8554-5d2c9f2c0e87 (Container Tracking workspace)
             // Idempotent: IF NOT EXISTS check per ScreenID + CompanyID.
             // NodeID uses NEWID() so each company gets unique nodes.
+            // GI SiteMap URLs must use the DesignID GUID, not the ScreenID.
+            // Acumatica resolves GenericInquiry.aspx?id= by DesignID only.
+            // These GUIDs must match the fixed DesignIDs in EnsureContainerTrackingGIs().
             string[][] entries = new[]
             {
-                new[] { "SB401000", "PO Containers", "~/GenericInquiry/GenericInquiry.aspx?id=SB401000", "7.6" },
-                new[] { "SB401010", "SO Containers", "~/GenericInquiry/GenericInquiry.aspx?id=SB401010", "7.7" },
-                new[] { "SB401020", "Container Events", "~/GenericInquiry/GenericInquiry.aspx?id=SB401020", "7.8" },
+                new[] { "SB401000", "PO Containers", "~/GenericInquiry/GenericInquiry.aspx?id=a1b2c3d4-1000-4000-8000-000000401000", "7.6" },
+                new[] { "SB401010", "SO Containers", "~/GenericInquiry/GenericInquiry.aspx?id=a1b2c3d4-1010-4000-8000-000000401010", "7.7" },
+                new[] { "SB401020", "Container Events", "~/GenericInquiry/GenericInquiry.aspx?id=a1b2c3d4-1020-4000-8000-000000401020", "7.8" },
                 new[] { "SB302000", "Freight Forwarders", "~/Pages/SB/SB302000.aspx", "7.9" },
-                new[] { "SB401030", "Custom Classification", "~/GenericInquiry/GenericInquiry.aspx?id=SB401030", "8.0" },
-                new[] { "SB401040", "PO Container Lines", "~/GenericInquiry/GenericInquiry.aspx?id=SB401040", "8.1" },
+                new[] { "SB401030", "Custom Classification", "~/GenericInquiry/GenericInquiry.aspx?id=a1b2c3d4-1030-4000-8000-000000401030", "8.0" },
+                new[] { "SB401040", "PO Container Lines", "~/GenericInquiry/GenericInquiry.aspx?id=a1b2c3d4-1040-4000-8000-000000401040", "8.1" },
                 new[] { "SB302010", "Container Types", "~/Pages/SB/SB302010.aspx", "8.2" },
                 new[] { "SB302020", "Destinations/Ports", "~/Pages/SB/SB302020.aspx", "8.3" },
                 new[] { "SB302030", "Container Preferences", "~/Pages/SB/SB302030.aspx", "8.4" },
@@ -1886,10 +1902,15 @@ namespace StudioB.Containers
 
             foreach (var e in entries)
             {
+                // Upsert: update URL if entry exists (fixes old id=ScreenID URLs),
+                // otherwise insert new entry.
                 string sql = @"
-                    IF NOT EXISTS (SELECT 1 FROM SiteMap WHERE ScreenID = @sid AND CompanyID = @cid)
-                    INSERT INTO SiteMap (CompanyID, NodeID, ScreenID, Title, Url, Position, ParentID, Expanded, SelectedUI)
-                    VALUES (@cid, NEWID(), @sid, @title, @url, @pos, '9c89e3db-7c47-43c0-8554-5d2c9f2c0e87', 0, N'E');";
+                    IF EXISTS (SELECT 1 FROM SiteMap WHERE ScreenID = @sid AND CompanyID = @cid)
+                        UPDATE SiteMap SET Url = @url, Title = @title, Position = @pos
+                        WHERE ScreenID = @sid AND CompanyID = @cid;
+                    ELSE
+                        INSERT INTO SiteMap (CompanyID, NodeID, ScreenID, Title, Url, Position, ParentID, Expanded, SelectedUI)
+                        VALUES (@cid, NEWID(), @sid, @title, @url, @pos, '9c89e3db-7c47-43c0-8554-5d2c9f2c0e87', 0, N'E');";
                 using (var cmd = new SqlCommand(sql, conn))
                 {
                     cmd.Parameters.AddWithValue("@cid", companyId);
