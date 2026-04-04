@@ -1,0 +1,51 @@
+{
+  "schema_version": 1,
+  "instance_id": "",
+  "records": [
+    {
+      "deploy_id": "dd16f9d1",
+      "timestamp": "2026-04-04T15:03:27.351834+00:00",
+      "commit_sha": "51af09b73dadc28eb420a8c21038a665d2cf662a",
+      "actor": "kbibelhausen",
+      "environment": "production",
+      "project": {
+        "error": "File not found: Customization/_project/project.xml"
+      },
+      "validation": {},
+      "deploy": {
+        "outcome": "success",
+        "login_attempts": 1,
+        "publish_duration_ms": 230000,
+        "total_duration_ms": 230000
+      },
+      "error": null,
+      "day_of_week": 5,
+      "hour_of_day": 15
+    }
+  ],
+  "patterns": {
+    "known_error_signatures": [],
+    "validator_adjustments": {
+      "false_positive_rules": [],
+      "learned_severity_overrides": {}
+    }
+  },
+  "risk_weights": {
+    "table_elements_present": -0.3,
+    "sqlscript_elements_present": -0.2,
+    "non_public_type_refs": -0.25,
+    "missing_isactive": -0.2,
+    "new_graph_element": -0.1,
+    "high_copublish_count": -0.05,
+    "contention_hours": -0.05,
+    "previous_failure": -0.1,
+    "large_package": -0.05,
+    "destructive_sql": -0.15
+  },
+  "statistics": {
+    "total_deploys": 1,
+    "success_rate": 1.0,
+    "avg_publish_duration_ms": 230000,
+    "last_updated": "2026-04-04T15:03:27.351860+00:00"
+  }
+}
