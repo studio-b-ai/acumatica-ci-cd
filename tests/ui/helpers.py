@@ -1,6 +1,9 @@
 """Acumatica UI test helpers — shared between conftest.py and test files."""
+from __future__ import annotations
+
 import os
-from playwright.sync_api import Page
+
+from playwright.sync_api import Page, Frame
 
 
 # ── Configuration ──────────────────────────────────────────────────────────
@@ -14,43 +17,76 @@ HEADED = os.environ.get("HEADED", "").lower() in ("1", "true", "yes")
 SLOW_MO = int(os.environ.get("SLOW_MO", "0"))
 
 
+# ── Iframe Handling ───────────────────────────────────────────────────────
+
+def _get_frame(page: Page, frame: Frame | None = None) -> Page | Frame:
+    """Return the frame to use for DOM interactions.
+
+    If frame is explicitly provided, use it. Otherwise, try to find the
+    Acumatica 'main' iframe. Falls back to page if no iframe found.
+    """
+    if frame is not None:
+        return frame
+    main_frame = page.frame("main")
+    return main_frame if main_frame is not None else page
+
+
+def navigate_and_wait(page: Page, screen_id: str, params: str = "", timeout: int = 60_000) -> Frame | Page:
+    """Navigate to an Acumatica screen and wait for the iframe to load.
+
+    Returns the main frame for DOM interactions.
+    """
+    url = f"{ACUMATICA_URL}/Main?ScreenId={screen_id}"
+    if params:
+        url += f"&{params}"
+    page.goto(url, wait_until="domcontentloaded", timeout=timeout)
+    # Acumatica needs time for iframe render + app pool warmup after publish
+    page.wait_for_timeout(8000)
+    ctx = _get_frame(page)
+    assert isinstance(ctx, Frame), (
+        f"Expected main iframe after navigating to {screen_id} but none found"
+    )
+    return ctx
+
+
 # ── Screen Helpers ─────────────────────────────────────────────────────────
 
-def wait_for_screen_ready(page: Page, timeout: int = 15_000):
+def wait_for_screen_ready(page: Page, timeout: int = 15_000, frame: Frame | None = None):
     """Wait for Acumatica screen to finish loading."""
+    ctx = _get_frame(page, frame)
     page.wait_for_load_state("domcontentloaded")
-    page.locator("#ctl00_phF_form").wait_for(state="visible", timeout=timeout)
+    ctx.locator("#ctl00_phF_form").wait_for(state="visible", timeout=timeout)
     page.wait_for_timeout(500)
 
 
-def set_field_value(page: Page, field_id: str, value: str):
-    """Set a value in an Acumatica form field and tab out to trigger events."""
-    frame = get_main_frame(page)
+def set_field_value(page: Page, field_id: str, value: str, frame: Frame | None = None):
+    """Set a value in an Acumatica form field and blur to trigger events."""
+    ctx = _get_frame(page, frame)
     selector = f"#{field_id}"
-    frame.click(selector)
-    frame.fill(selector, "")
-    frame.fill(selector, value)
-    frame.evaluate("document.activeElement.blur()")
-    frame.wait_for_timeout(500)
+    ctx.click(selector)
+    ctx.fill(selector, "")
+    ctx.fill(selector, value)
+    ctx.evaluate("document.activeElement.blur()")
+    page.wait_for_timeout(500)
 
 
-def get_field_value(page: Page, field_id: str) -> str:
+def get_field_value(page: Page, field_id: str, frame: Frame | None = None) -> str:
     """Read the current value of an Acumatica form field."""
-    frame = get_main_frame(page)
+    ctx = _get_frame(page, frame)
     selector = f"#{field_id}"
-    el = frame.locator(selector)
+    el = ctx.locator(selector)
     val = el.input_value() if el.evaluate("el => el.tagName") == "INPUT" else el.text_content()
     return (val or "").strip()
 
 
-def save_order(page: Page):
+def save_order(page: Page, frame: Frame | None = None):
     """Save the current order via Ctrl+S and wait for completion."""
     page.keyboard.press("Control+s")
     page.wait_for_load_state("domcontentloaded")
-    wait_for_screen_ready(page)
+    wait_for_screen_ready(page, frame=frame)
 
 
-def create_pc_order(page: Page, customer_id: str, items: list[dict]) -> str:
+def create_pc_order(page: Page, customer_id: str, items: list[dict], frame: Frame | None = None) -> str:
     """Create a new PC sales order and return the order number.
 
     Args:
@@ -61,18 +97,19 @@ def create_pc_order(page: Page, customer_id: str, items: list[dict]) -> str:
     Returns:
         The generated order number string.
     """
-    page.locator("div[icon='AddNew']").first.click()
-    wait_for_screen_ready(page)
+    ctx = _get_frame(page, frame)
+    ctx.locator("div[icon='AddNew']").first.click()
+    wait_for_screen_ready(page, frame=frame)
 
-    set_field_value(page, "ctl00_phF_form_edOrderType", "PC")
-    set_field_value(page, "ctl00_phF_form_edCustomerID", customer_id)
+    set_field_value(page, "ctl00_phF_form_edOrderType", "PC", frame=frame)
+    set_field_value(page, "ctl00_phF_form_edCustomerID", customer_id, frame=frame)
     page.wait_for_timeout(1000)
 
     for item in items:
-        page.locator("#ctl00_phG_grid_lv0_iACB").click()
+        ctx.locator("#ctl00_phG_grid_lv0_iACB").click()
         page.wait_for_timeout(500)
 
-        active_row = page.locator("tr.GridRowActive, tr[class*='Active']").last
+        active_row = ctx.locator("tr.GridRowActive, tr[class*='Active']").last
         inv_cell = active_row.locator("td").nth(2)
         inv_cell.dblclick()
         page.keyboard.type(item["inventory_cd"])
@@ -93,39 +130,42 @@ def create_pc_order(page: Page, customer_id: str, items: list[dict]) -> str:
         page.keyboard.press("Tab")
         page.wait_for_timeout(500)
 
-    save_order(page)
+    save_order(page, frame=frame)
 
-    order_nbr = get_field_value(page, "ctl00_phF_form_edOrderNbr")
+    order_nbr = get_field_value(page, "ctl00_phF_form_edOrderNbr", frame=frame)
     return order_nbr
 
 
-def delete_order(page: Page, order_type: str, order_nbr: str):
+def delete_order(page: Page, order_type: str, order_nbr: str, frame: Frame | None = None):
     """Navigate to an order and delete it."""
+    ctx = _get_frame(page, frame)
     page.goto(
         f"{ACUMATICA_URL}/Main?ScreenId=SO301000&OrderType={order_type}&OrderNbr={order_nbr}",
         wait_until="domcontentloaded",
     )
-    wait_for_screen_ready(page)
+    wait_for_screen_ready(page, frame=frame)
 
-    page.locator("button:has-text('Actions')").click()
+    ctx.locator("button:has-text('Actions')").click()
     page.wait_for_timeout(300)
-    page.locator("span:has-text('Delete')").click()
+    ctx.locator("span:has-text('Delete')").click()
     page.wait_for_timeout(1000)
 
 
-def open_line_details(page: Page):
+def open_line_details(page: Page, frame: Frame | None = None):
     """Open the Line Details popup for the selected line."""
-    page.locator("div:has-text('LINE DETAILS')").first.click()
+    ctx = _get_frame(page, frame)
+    ctx.locator("div:has-text('LINE DETAILS')").first.click()
     page.wait_for_timeout(1000)
 
 
-def get_line_details_splits(page: Page) -> list[dict]:
+def get_line_details_splits(page: Page, frame: Frame | None = None) -> list[dict]:
     """Read split rows from the Line Details popup.
 
     Returns list of dicts with keys: allocated, warehouse, lot_serial, qty, uom.
     """
+    ctx = _get_frame(page, frame)
     splits = []
-    popup = page.locator("div[id*='DlgSplits'], div[id*='LineSplits']").first
+    popup = ctx.locator("div[id*='DlgSplits'], div[id*='LineSplits']").first
     rows = popup.locator("tr.GridRow, tr[class*='Row']")
 
     for i in range(rows.count()):
@@ -145,9 +185,10 @@ def get_line_details_splits(page: Page) -> list[dict]:
     return splits
 
 
-def close_popup(page: Page):
+def close_popup(page: Page, frame: Frame | None = None):
     """Close the current popup dialog."""
-    page.locator("button:has-text('OK'), button:has-text('Close')").first.click()
+    ctx = _get_frame(page, frame)
+    ctx.locator("button:has-text('OK'), button:has-text('Close')").first.click()
     page.wait_for_timeout(500)
 
 
@@ -159,13 +200,14 @@ def navigate_to_screen(page: Page, screen_id: str, timeout: int = 30_000):
     page.goto(url, wait_until="domcontentloaded", timeout=timeout)
 
 
-def assert_screen_loaded(page: Page, screen_id: str, timeout: int = 15_000):
+def assert_screen_loaded(page: Page, screen_id: str, timeout: int = 15_000, frame: Frame | None = None):
     """Assert that an Acumatica screen loaded successfully.
 
     Checks for either a form container or a grid — different screens use different layouts.
     """
+    ctx = _get_frame(page, frame)
     try:
-        page.wait_for_function(
+        ctx.wait_for_function(
             """() => {
                 return document.querySelector('#ctl00_phF_form') !== null
                     || document.querySelector('#ctl00_phG_grid') !== null
@@ -179,8 +221,8 @@ def assert_screen_loaded(page: Page, screen_id: str, timeout: int = 15_000):
         )
 
 
-def find_custom_fields(page: Page, field_names: list[str]) -> dict[str, bool]:
-    """Check which custom fields are present in the DOM (searches main frame).
+def find_custom_fields(page: Page, field_names: list[str], frame: Frame | None = None) -> dict[str, bool]:
+    """Check which custom fields are present in the DOM.
 
     Args:
         page: Authenticated Acumatica page.
@@ -189,10 +231,10 @@ def find_custom_fields(page: Page, field_names: list[str]) -> dict[str, bool]:
     Returns:
         Dict mapping field_name -> True if found in DOM, False if not.
     """
-    frame = get_main_frame(page)
+    ctx = _get_frame(page, frame)
     results = {}
     for field_name in field_names:
-        locator = frame.locator(f"[id*='{field_name}']")
+        locator = ctx.locator(f"[id*='{field_name}']")
         results[field_name] = locator.count() > 0
     return results
 
