@@ -1390,13 +1390,18 @@ namespace StudioB.Containers
             }
 
             // Step 2: Delete ALL GI child rows for GIs that reference IGCM DACs
-            // Uses subquery to find DesignIDs by data source (GITable.Name LIKE 'IGCM.%')
-            // OR by GI name (GIDesign.Name LIKE 'IGCM%'). This catches GIs regardless
-            // of naming convention.
+            // Find ALL GIs related to IGCM by any identifier:
+            // - GI name starts with IGCM (e.g. IGCM_ContainerLines)
+            // - GI ScreenID starts with IGCM (e.g. IGCM0009)
+            // - GI data source references IGCM DACs (e.g. IGCM.DAC.IGCMPOLandedCost)
+            // - Orphaned GI headers (GITable rows already deleted by prior cleanup)
             string igcmDesignSubquery = @"
                 SELECT DISTINCT d.DesignID FROM GIDesign d
                 LEFT JOIN GITable t ON d.DesignID = t.DesignID
-                WHERE t.Name LIKE 'IGCM.%' OR d.Name LIKE 'IGCM%'";
+                WHERE t.Name LIKE 'IGCM.%'
+                   OR d.Name LIKE 'IGCM%'
+                   OR d.ScreenID LIKE 'IGCM%'
+                   OR d.ScreenID LIKE 'IG.CM%'";
 
             // Log which GIs will be removed
             using (var cmd = new SqlCommand(igcmDesignSubquery, conn))
