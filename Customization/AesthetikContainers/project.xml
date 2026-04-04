@@ -1360,6 +1360,7 @@ namespace StudioB.Containers
             // GI definitions and user preferences that reference IGCM.DAC types.
             // These cause "type not found: IGCM.DAC.IGCMPOLandedCost" errors
             // on SB501000 PO Links tab. Clean them up idempotently.
+            // -- REVIEWED: gi-sql-safe
 
             // Step 1: Delete pivot field preferences referencing IGCM screens
             // (FK constraint blocks GI deletion if these exist)
