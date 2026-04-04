@@ -55,8 +55,15 @@ def acumatica_page(browser_context) -> Page:
 
     page.click("#btnLogin")
 
-    page.wait_for_url("**/Main*", timeout=30_000)
-    page.wait_for_load_state("networkidle")
+    # Handle "Agree to Proceed" dialog for test/unlicensed tenants
+    page.wait_for_timeout(5000)
+    agree_btn = page.locator('button:has-text("Agree"), input[value="Agree"]')
+    if agree_btn.count() > 0:
+        agree_btn.first.click()
+        page.wait_for_timeout(5000)
+
+    page.wait_for_url("**/Main*", timeout=60_000)
+    page.wait_for_timeout(5000)
 
     yield page
     page.close()
