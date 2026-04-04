@@ -1,0 +1,40 @@
+{
+  "documents": [
+    {
+      "title": "INUnit Table Schema — UnitType Values, Unique Keys, Self-Conversion Requirements",
+      "content": "The INUnit table in Acumatica stores unit-of-measure conversion records. It has three UnitType values:\n\n- UnitType 1 (INUnitType.InventoryItem): Per-item conversion. ItemClassID=0, InventoryID=item's ID. Unique key: (unitType, inventoryID, fromUnit) — note: NO toUnit in key. One item can only have ONE conversion FROM any given unit.\n- UnitType 2 (INUnitType.ItemClass): Per-class conversion. ItemClassID=class ID, InventoryID=0. Unique key: (unitType, itemClassID, fromUnit).\n- UnitType 3 (INUnitType.Global): System-wide conversion. ItemClassID=0, InventoryID=0. Unique key: (unitType, fromUnit, toUnit).\n\nDatabase index INUnit_UK: (CompanyID, UnitType, ItemClassID, InventoryID, FromUnit, ToUnit).\n\nFor Type=1 (item-level), the unique key is (unitType, inventoryID, fromUnit) — meaning one item can only have ONE conversion FROM any given unit. ToUnit is always the BaseUnit.\n\nA single item CAN have both PIECE→PIECE and YDS→YDS self-conversion records simultaneously. Different FromUnit values = different unique key entries. Both can coexist. Acumatica uses the one matching BaseUnit for validation. The other is unused but harmless.\n\nBaseUnit is LOCKED in the UI when: qty on hand > 0, open/pending SO or PO lines exist, physical inventory counts are open. It sometimes silently reverts without error. Direct SQL bypasses these locks.\n\nCSUnit is the global UOM registry (CS203100 screen). UOM codes must exist in CSUnit before they can be used in INUnit conversions.",
+      "metadata": {
+        "source": "migration-research",
+        "topic": "inunit-schema",
+        "version": "24.200"
+      }
+    },
+    {
+      "title": "INUnit Self-Conversion Records — Why They Are Mandatory",
+      "content": "Self-conversion records (BaseUnit→BaseUnit, rate 1.0) are MANDATORY at the item level (UnitType=1) in the INUnit table. Without them, INUnitAttribute.UnitVerifying(unit=null) fires on SO/PO lines, blocking all order entry for that item.\n\nThis was proven by the 2026-03-28 production outage when a v1 migration deleted PIECE→PIECE self-conversion records. All sales order entry broke immediately. The instance had to be restored from a snapshot.\n\nWhen inserting self-conversion records via SQL, you MUST copy CompanyMask from existing visible records. Raw SQL INSERT with a manually constructed CompanyMask (e.g., all zeros) creates records that exist in the database but are invisible to the Acumatica ORM. The ORM uses CompanyMask for multi-tenant row visibility. Copying CompanyMask from an existing visible record for the same item ensures the new record is also visible.\n\nExample: To insert a YDS→YDS self-conversion for an item that currently has PIECE→PIECE, copy the CompanyMask from the existing PIECE→PIECE record:\n\nINSERT INTO INUnit (CompanyID, UnitType, InventoryID, FromUnit, ToUnit, UnitRate, CompanyMask, ...)\nSELECT CompanyID, UnitType, InventoryID, 'YDS', 'YDS', 1.0, CompanyMask, ...\nFROM INUnit\nWHERE UnitType=1 AND InventoryID=<id> AND FromUnit='PIECE' AND ToUnit='PIECE'",
+      "metadata": {
+        "source": "migration-research",
+        "topic": "inunit-self-conversions",
+        "version": "24.200"
+      }
+    },
+    {
+      "title": "Changing Base UOM on Inventory Items — INSERT-Then-Flip Migration Pattern",
+      "content": "When changing the base UOM on Acumatica inventory items (e.g., PIECE→YDS), NEVER rename INUnit records. Always INSERT new ones.\n\nWhy: INUnit has existing cross-conversion records (e.g., YDS→PIECE) that collide when you try to rename. The unique key (CompanyID, UnitType, ItemClassID, InventoryID, FromUnit, ToUnit) prevents duplicates. Three migration attempts failed on this:\n- v2 attempt 1: FromUnit rename collided with existing YDS→PIECE records\n- v2 attempt 2: ToUnit rename collided with existing YDS→YDS records\n- v3 DELETE-before-rename: also collided because the data is more complex than assumed\n\nThe correct pattern (INSERT-then-flip):\n1. INSERT missing self-conversion records for the NEW base UOM (e.g., YDS→YDS) by copying CompanyMask from existing records\n2. UPDATE InventoryItem SET BaseUnit='YDS', SalesUnit='YDS' WHERE BaseUnit='PIECE'\n3. UPDATE all transaction tables (SOLine, POLine, INTran, ARTran, APTran) to use the new UOM\n4. Leave old INUnit records in place — they become harmless orphans\n\nThis pattern avoids all unique key collisions and preserves existing cross-conversion records that other items may reference.\n\nNo documented case of bulk base UOM rename via SQL exists in the Acumatica community. This migration pattern is novel and was developed through trial and error across multiple failed attempts.",
+      "metadata": {
+        "source": "migration-research",
+        "topic": "base-uom-migration",
+        "version": "24.200"
+      }
+    },
+    {
+      "title": "Acumatica Customization API — Import, Publish, and Log Reading Patterns",
+      "content": "Verified patterns for deploying customization packages via the Acumatica REST API:\n\nImport: POST /CustomizationApi/Import\n- Field is projectContentBase64 (NOT projectContent)\n- isReplaceIfExists: true works for re-importing existing projects\n\nPublish: POST /CustomizationApi/publishBegin\n- MUST include tenantMode: 'Current' — without it, publish fails with 'TenantMode is required'\n- isMergeWithExistingPackages: true\n- projectNames: [...] — list ALL projects that should be published\n- CRITICAL: publishBegin is instance-wide. If you list only your project, it UNPUBLISHES everything else. Always include ALL published projects in the projectNames array, including ISV packages.\n\nPoll: POST /CustomizationApi/publishEnd\n- MUST send json={} (empty JSON body) — without it, returns HTTP 415 Unsupported Media Type\n- Response: {isCompleted: true/false, isFailed: true/false, log: [...]}\n- WriteLog() output from CustomizationPlugin.UpdateDatabase() appears in the log array\n\nNon-working patterns:\n- OData requires Basic Auth, not session cookies. api-bot gets 404 for Heritage Test tenant path with cookies.\n- projectContent field does not work — must use projectContentBase64\n- publishEnd without JSON body returns 415",
+      "metadata": {
+        "source": "migration-research",
+        "topic": "customization-api",
+        "version": "24.200"
+      }
+    }
+  ]
+}

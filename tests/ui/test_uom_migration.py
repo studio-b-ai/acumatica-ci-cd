@@ -7,7 +7,7 @@ NOTE: Acumatica renders all screen content inside a 'main' iframe.
 All DOM interactions must use page.frame("main"), not page directly.
 """
 import pytest
-from helpers import ACUMATICA_URL
+from helpers import ACUMATICA_URL, navigate_and_wait
 
 
 # ── Test Data ──────────────────────────────────────────────────────────────
@@ -16,25 +16,6 @@ ITEM_CD = "00004"
 EXPECTED_UOM = "YDS"
 EXPECTED_LOT_CLASS = "BOLTID"
 CUSTOMER_ID = "C000002"
-
-
-def get_main_frame(page):
-    """Get the main iframe where Acumatica renders screen content."""
-    frame = page.frame("main")
-    assert frame is not None, "Could not find Acumatica main iframe"
-    return frame
-
-
-def navigate_and_wait(page, screen_id, params="", timeout=60_000):
-    """Navigate to an Acumatica screen and wait for the iframe to load."""
-    url = f"{ACUMATICA_URL}/Main?ScreenId={screen_id}"
-    if params:
-        url += f"&{params}"
-    # Use domcontentloaded — networkidle never fires on Acumatica screens
-    # that maintain persistent connections (SO301000, etc.)
-    page.goto(url, wait_until="domcontentloaded", timeout=timeout)
-    page.wait_for_timeout(8000)
-    return get_main_frame(page)
 
 
 # ── Check 1: Base UOM ─────────────────────────────────────────────────────
