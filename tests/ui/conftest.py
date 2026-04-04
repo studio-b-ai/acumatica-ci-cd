@@ -44,7 +44,7 @@ def acumatica_page(browser_context) -> Page:
     """
     page = browser_context.new_page()
 
-    page.goto(f"{ACUMATICA_URL}/Frames/Login.aspx", wait_until="domcontentloaded")
+    page.goto(f"{ACUMATICA_URL}/Frames/Login.aspx", wait_until="networkidle")
 
     page.fill("#txtUser", ACUMATICA_USERNAME)
     page.fill("#txtPass", ACUMATICA_PASSWORD)
@@ -55,11 +55,15 @@ def acumatica_page(browser_context) -> Page:
 
     page.click("#btnLogin")
 
-    page.wait_for_url("**/Main*", timeout=30_000)
-    # Acumatica dashboard makes continuous background requests —
-    # networkidle never resolves. Use domcontentloaded instead.
-    page.wait_for_load_state("domcontentloaded")
-    page.wait_for_timeout(3000)
+    # Handle "Agree to Proceed" dialog for test/unlicensed tenants
+    page.wait_for_timeout(5000)
+    agree_btn = page.locator('button:has-text("Agree"), input[value="Agree"]')
+    if agree_btn.count() > 0:
+        agree_btn.first.click()
+        page.wait_for_timeout(5000)
+
+    page.wait_for_url("**/Main*", timeout=60_000)
+    page.wait_for_timeout(5000)
 
     yield page
     page.close()
@@ -69,7 +73,7 @@ def acumatica_page(browser_context) -> Page:
 def so301000(acumatica_page) -> Page:
     """Navigate to Sales Orders screen and return the page."""
     page = acumatica_page
-    page.goto(f"{ACUMATICA_URL}/Main?ScreenId=SO301000", wait_until="domcontentloaded")
+    page.goto(f"{ACUMATICA_URL}/Main?ScreenId=SO301000", wait_until="networkidle")
     wait_for_screen_ready(page)
     return page
 

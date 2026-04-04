@@ -16,7 +16,7 @@ namespace Aesthetik.WMS
     /// are inserted. Works in both UI and REST API contexts.
     ///
     /// Behavior:
-    ///   1. New SOLine inserted with a PIECENBR/PIECEGOODS lot class item
+    ///   1. New SOLine inserted with a BOLTID/PIECEGOODS lot class item
     ///   2. Queries available lots in the specified warehouse (FIFO)
     ///   3. Assigns the best lot's serial number to the line
     ///   4. Adjusts OrderQty to the lot's available quantity (full bolt)
@@ -140,7 +140,7 @@ namespace Aesthetik.WMS
 
         /// <summary>
         /// Checks if an inventory item uses a piece goods lot serial class.
-        /// Supports both PIECENBR (production) and PIECEGOODS (constants) class IDs.
+        /// Supports both BOLTID (production) and PIECEGOODS (constants) class IDs.
         /// </summary>
         private bool IsPieceGoodsItem(int inventoryID)
         {
@@ -154,7 +154,7 @@ namespace Aesthetik.WMS
 
             if (string.IsNullOrEmpty(lotClass)) return false;
 
-            return string.Equals(lotClass, "PIECENBR", StringComparison.OrdinalIgnoreCase)
+            return string.Equals(lotClass, "BOLTID", StringComparison.OrdinalIgnoreCase)
                 || string.Equals(lotClass, PieceGoodsConstants.LotSerialClassID, StringComparison.OrdinalIgnoreCase);
         }
 
