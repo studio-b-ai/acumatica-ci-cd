@@ -1367,88 +1367,73 @@ namespace StudioB.Containers
 
             int totalRows = 0;
 
-            // Step 1: Delete user preferences referencing IGCM screens
+            // Step 1: Delete user preferences referencing IGCM screens (both ID formats)
             // (FK constraints block GI/SiteMap deletion if these exist)
-            string[] prefTables = new string[] {
-                "PivotFieldPreferences",
-                "FilterPresets"
-            };
-            foreach (string table in prefTables)
+            string deletePivotPrefs = @"
+                DELETE FROM PivotFieldPreferences
+                WHERE ScreenID LIKE 'IGCM%' OR ScreenID LIKE 'IG.CM%'";
+            using (var cmd = new SqlCommand(deletePivotPrefs, conn))
             {
-                string sql = string.Format(
-                    "DELETE FROM {0} WHERE ScreenID LIKE 'IGCM%' OR ScreenID LIKE 'IG.CM%'",
-                    table);
-                using (var cmd = new SqlCommand(sql, conn))
-                {
-                    int rows = cmd.ExecuteNonQuery();
-                    if (rows > 0)
-                    {
-                        totalRows += rows;
-                        WriteLog(string.Format("  IGCM cleanup: {0} {1} rows deleted", rows, table));
-                    }
-                }
+                int rows = cmd.ExecuteNonQuery();
+                if (rows > 0) WriteLog(string.Format("  IGCM cleanup: {0} PivotFieldPreferences deleted", rows));
+                totalRows += rows;
             }
 
-            // Step 2: Find ALL GIs that reference IGCM DACs (by data source, not just name)
-            // This catches GIs with any name that use IGCM.DAC.* tables.
-            string findIGCMGIs = @"
-                SELECT DISTINCT d.DesignID, d.Name
-                FROM GIDesign d
-                INNER JOIN GITable t ON d.DesignID = t.DesignID
-                WHERE t.Name LIKE 'IGCM.%'
-                   OR d.Name LIKE 'IGCM%'";
+            string deleteFilterPresets = @"
+                DELETE FROM FilterPresets
+                WHERE ScreenID LIKE 'IGCM%' OR ScreenID LIKE 'IG.CM%'";
+            using (var cmd = new SqlCommand(deleteFilterPresets, conn))
+            {
+                int rows = cmd.ExecuteNonQuery();
+                if (rows > 0) WriteLog(string.Format("  IGCM cleanup: {0} FilterPresets deleted", rows));
+                totalRows += rows;
+            }
 
-            var designIDs = new System.Collections.Generic.List<int>();
-            using (var cmd = new SqlCommand(findIGCMGIs, conn))
+            // Step 2: Delete ALL GI child rows for GIs that reference IGCM DACs
+            // Uses subquery to find DesignIDs by data source (GITable.Name LIKE 'IGCM.%')
+            // OR by GI name (GIDesign.Name LIKE 'IGCM%'). This catches GIs regardless
+            // of naming convention.
+            string igcmDesignSubquery = @"
+                SELECT DISTINCT d.DesignID FROM GIDesign d
+                LEFT JOIN GITable t ON d.DesignID = t.DesignID
+                WHERE t.Name LIKE 'IGCM.%' OR d.Name LIKE 'IGCM%'";
+
+            // Log which GIs will be removed
+            using (var cmd = new SqlCommand(igcmDesignSubquery, conn))
             {
                 using (var rdr = cmd.ExecuteReader())
                 {
                     while (rdr.Read())
-                    {
-                        designIDs.Add(rdr.GetInt32(0));
-                        WriteLog(string.Format("  IGCM cleanup: found GI '{0}' (DesignID={1})", rdr.GetString(1), rdr.GetInt32(0)));
-                    }
+                        WriteLog(string.Format("  IGCM cleanup: will remove GI DesignID={0}", rdr.GetInt32(0)));
                 }
             }
 
-            if (designIDs.Count > 0)
+            // Delete GI child tables using subquery (no string.Format for table names)
+            string deleteGIChildren = @"
+                DELETE FROM GIResult WHERE DesignID IN (" + igcmDesignSubquery + @");
+                DELETE FROM GISort WHERE DesignID IN (" + igcmDesignSubquery + @");
+                DELETE FROM GIGroupBy WHERE DesignID IN (" + igcmDesignSubquery + @");
+                DELETE FROM GIFilter WHERE DesignID IN (" + igcmDesignSubquery + @");
+                DELETE FROM GIOn WHERE DesignID IN (" + igcmDesignSubquery + @");
+                DELETE FROM GIRelation WHERE DesignID IN (" + igcmDesignSubquery + @");
+                DELETE FROM GITable WHERE DesignID IN (" + igcmDesignSubquery + @");
+                DELETE FROM GIDesign WHERE DesignID IN (" + igcmDesignSubquery + ")";
+            using (var cmd = new SqlCommand(deleteGIChildren, conn))
             {
-                string idList = string.Join(",", designIDs);
-
-                // Delete all GI child tables for matched DesignIDs
-                string[] giChildTables = new string[] {
-                    "GIResult", "GISort", "GIGroupBy", "GIFilter",
-                    "GIOn", "GIRelation", "GITable", "GIWhere"
-                };
-                foreach (string table in giChildTables)
-                {
-                    string sql = string.Format("DELETE FROM {0} WHERE DesignID IN ({1})", table, idList);
-                    using (var cmd = new SqlCommand(sql, conn))
-                    {
-                        int rows = cmd.ExecuteNonQuery();
-                        totalRows += rows;
-                    }
-                }
-
-                // Delete the GI headers
-                string deleteHeaders = string.Format("DELETE FROM GIDesign WHERE DesignID IN ({0})", idList);
-                using (var cmd = new SqlCommand(deleteHeaders, conn))
-                {
-                    int rows = cmd.ExecuteNonQuery();
-                    totalRows += rows;
-                    WriteLog(string.Format("  IGCM cleanup: {0} Generic Inquiries deleted ({1} total rows)", rows, totalRows));
-                }
+                cmd.CommandTimeout = 60;
+                int rows = cmd.ExecuteNonQuery();
+                if (rows > 0) WriteLog(string.Format("  IGCM cleanup: {0} GI rows deleted", rows));
+                totalRows += rows;
             }
 
-            // Step 3: Remove ALL IGCM SiteMap entries (both formats)
+            // Step 3: Remove ALL IGCM SiteMap entries (both screen ID formats)
             string deleteSiteMap = @"
                 DELETE FROM SiteMap
                 WHERE ScreenID LIKE 'IGCM%' OR ScreenID LIKE 'IG.CM%'";
             using (var cmd = new SqlCommand(deleteSiteMap, conn))
             {
                 int rows = cmd.ExecuteNonQuery();
-                if (rows > 0)
-                    WriteLog(string.Format("  IGCM cleanup: {0} SiteMap entries deleted", rows));
+                if (rows > 0) WriteLog(string.Format("  IGCM cleanup: {0} SiteMap entries deleted", rows));
                 totalRows += rows;
             }
 
