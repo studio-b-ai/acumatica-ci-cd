@@ -927,6 +927,7 @@ jobs:
           fi
 
           echo "Rolling back to snapshot: ${SNAPSHOT}"
+          python3 pipeline/scripts/deploy.py \
             --project "${PROJECT}" \
             --package "${SNAPSHOT}" \
             --also-publish "${ALSO}"

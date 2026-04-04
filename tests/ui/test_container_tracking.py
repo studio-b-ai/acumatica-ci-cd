@@ -98,7 +98,7 @@ class TestSB501000:
         last_btn = acumatica_page.locator("div[icon='Last'], [id*='btnLast']").first
         if last_btn.is_visible(timeout=3000):
             last_btn.click()
-            acumatica_page.wait_for_load_state("networkidle")
+            acumatica_page.wait_for_load_state("domcontentloaded")
             acumatica_page.wait_for_timeout(2000)
 
         # Should still be on SB501000, not error page
@@ -114,7 +114,7 @@ class TestSB501000:
         last_btn = acumatica_page.locator("div[icon='Last'], [id*='btnLast']").first
         if last_btn.is_visible(timeout=3000):
             last_btn.click()
-            acumatica_page.wait_for_load_state("networkidle")
+            acumatica_page.wait_for_load_state("domcontentloaded")
             acumatica_page.wait_for_timeout(2000)
 
         # Click Events tab
@@ -135,7 +135,7 @@ class TestSB501000:
         last_btn = acumatica_page.locator("div[icon='Last'], [id*='btnLast']").first
         if last_btn.is_visible(timeout=3000):
             last_btn.click()
-            acumatica_page.wait_for_load_state("networkidle")
+            acumatica_page.wait_for_load_state("domcontentloaded")
             acumatica_page.wait_for_timeout(2000)
 
         # Click PO Links tab — this was the original crash point
@@ -177,7 +177,7 @@ class TestPO301000ContainerFields:
         btn = acumatica_page.locator("text=CONTAINER TRACKING").first
         if btn.is_visible(timeout=3000):
             btn.click()
-            acumatica_page.wait_for_load_state("networkidle")
+            acumatica_page.wait_for_load_state("domcontentloaded")
             acumatica_page.wait_for_timeout(3000)
 
         # Should land on SB501000 or stay on PO301000, NOT error page
