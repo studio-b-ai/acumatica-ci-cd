@@ -25,18 +25,20 @@ def wait_for_screen_ready(page: Page, timeout: int = 15_000):
 
 def set_field_value(page: Page, field_id: str, value: str):
     """Set a value in an Acumatica form field and tab out to trigger events."""
+    frame = get_main_frame(page)
     selector = f"#{field_id}"
-    page.click(selector)
-    page.fill(selector, "")
-    page.fill(selector, value)
-    page.keyboard.press("Tab")
-    page.wait_for_timeout(500)
+    frame.click(selector)
+    frame.fill(selector, "")
+    frame.fill(selector, value)
+    frame.evaluate("document.activeElement.blur()")
+    frame.wait_for_timeout(500)
 
 
 def get_field_value(page: Page, field_id: str) -> str:
     """Read the current value of an Acumatica form field."""
+    frame = get_main_frame(page)
     selector = f"#{field_id}"
-    el = page.locator(selector)
+    el = frame.locator(selector)
     val = el.input_value() if el.evaluate("el => el.tagName") == "INPUT" else el.text_content()
     return (val or "").strip()
 
@@ -178,7 +180,7 @@ def assert_screen_loaded(page: Page, screen_id: str, timeout: int = 15_000):
 
 
 def find_custom_fields(page: Page, field_names: list[str]) -> dict[str, bool]:
-    """Check which custom fields are present in the DOM.
+    """Check which custom fields are present in the DOM (searches main frame).
 
     Args:
         page: Authenticated Acumatica page.
@@ -187,8 +189,153 @@ def find_custom_fields(page: Page, field_names: list[str]) -> dict[str, bool]:
     Returns:
         Dict mapping field_name -> True if found in DOM, False if not.
     """
+    frame = get_main_frame(page)
     results = {}
     for field_name in field_names:
-        locator = page.locator(f"[id*='{field_name}']")
+        locator = frame.locator(f"[id*='{field_name}']")
         results[field_name] = locator.count() > 0
     return results
+
+
+# ── Screen Error Detection ────────────────────────────────────────────────
+
+def navigate_to_screen_safe(page: Page, screen_id: str, timeout: int = 60_000):
+    """Navigate to screen without networkidle (Acumatica keeps polling)."""
+    url = f"{ACUMATICA_URL}/Main?ScreenId={screen_id}"
+    page.goto(url, wait_until="domcontentloaded", timeout=timeout)
+    page.wait_for_timeout(3000)
+
+
+def wait_for_screen(page: Page, screen_id: str, timeout: int = 30_000):
+    """Wait for an Acumatica screen to load and check for errors."""
+    page.wait_for_load_state("domcontentloaded")
+    page.wait_for_timeout(5000)
+    current_url = page.url
+    assert "ScreenId=ERROR" not in current_url, \
+        f"Screen {screen_id} redirected to error page"
+
+
+def assert_no_screen_errors(page: Page, screen_id: str = ""):
+    """Comprehensive error check on current page.
+
+    Checks: ERROR redirect, type-not-found, IGCM references, exceptions.
+    """
+    url = page.url
+    assert "ScreenId=ERROR" not in url, \
+        f"{screen_id} redirected to error page"
+
+    body = (page.locator("body").text_content() or "").lower()
+    assert "type is not found" not in body, \
+        f"{screen_id} has 'type is not found' error"
+    assert "type not found" not in body, \
+        f"{screen_id} has 'type not found' error"
+    assert "igcm.dac" not in body, \
+        f"{screen_id} references IGCM.DAC types"
+
+
+def get_main_frame(page: Page):
+    """Get the 'main' iframe where Acumatica renders screen content.
+
+    Acumatica wraps all screen content in an iframe named 'main'.
+    Top-level page only has the sidebar and frameset shell.
+    """
+    frame = page.frame("main")
+    if frame is None:
+        return page  # Fallback to page if no iframe (e.g., direct URL)
+    return frame
+
+
+def assert_grid_visible(page: Page, screen_id: str = "", timeout: int = 10_000):
+    """Assert that a GI grid rendered in the main frame."""
+    frame = get_main_frame(page)
+    try:
+        frame.wait_for_function(
+            """() => {
+                return document.querySelector('[id*=grid]') !== null
+                    || document.querySelector('.GridRow') !== null
+                    || document.querySelector('[class*=Grid]') !== null
+                    || document.querySelector('table[id*=grid]') !== null;
+            }""",
+            timeout=timeout,
+        )
+    except Exception:
+        raise AssertionError(f"{screen_id} — no grid found within {timeout}ms")
+
+
+def assert_grid_has_columns(page: Page, expected_columns: list[str], screen_id: str = ""):
+    """Verify GI grid rendered with expected column headers in the main frame."""
+    frame = get_main_frame(page)
+    header_text = ""
+    for selector in ["[class*='GridHeader']", "th", "[class*='Header'] [class*='Cell']",
+                     "[id*='grid_header']", "[id*='grid'] th"]:
+        headers = frame.locator(selector)
+        if headers.count() > 0:
+            header_text = " ".join(
+                (headers.nth(i).text_content() or "") for i in range(headers.count())
+            ).lower()
+            break
+
+    if not header_text:
+        header_text = (frame.locator("[id*='grid']").first.text_content() or "").lower()
+
+    missing = [col for col in expected_columns if col.lower() not in header_text]
+    assert not missing, \
+        f"{screen_id} missing columns: {missing}. Found headers: {header_text[:300]}"
+
+
+def assert_field_has_selector_data(page: Page, field_id: str):
+    """Click a PXSelector field and verify dropdown populates with rows."""
+    frame = get_main_frame(page)
+    selector = f"[id*='{field_id}']"
+    field = frame.locator(selector).first
+
+    field.click()
+    frame.wait_for_timeout(300)
+
+    # Click the dropdown button
+    dropdown_btn = frame.locator(f"[id*='{field_id}_ddBtn']").first
+    if dropdown_btn.is_visible(timeout=1000):
+        dropdown_btn.click()
+        frame.wait_for_timeout(1000)
+
+    # Check if dropdown rows appeared
+    dropdown_rows = frame.locator("[class*='SelectorRow'], [class*='GridRow']")
+    row_count = dropdown_rows.count()
+    assert row_count > 0, \
+        f"PXSelector {field_id} dropdown has no rows — master table may be empty"
+
+    frame.evaluate("document.activeElement.blur()")
+    frame.wait_for_timeout(300)
+
+
+def save_record(page: Page):
+    """Save the current record via toolbar Save button or Ctrl+S."""
+    frame = get_main_frame(page)
+    save_btn = frame.locator("[id*='ToolBar_Save']").first
+    if save_btn.is_visible(timeout=2000):
+        save_btn.click()
+    else:
+        page.keyboard.press("Control+s")
+    page.wait_for_load_state("domcontentloaded")
+    page.wait_for_timeout(2000)
+
+
+def click_add_new(page: Page):
+    """Click Add New Record (Insert) button in the main frame toolbar."""
+    frame = get_main_frame(page)
+    add_btn = frame.locator("[id*='ToolBar_Insert'], [id*='btnInsert']").first
+    add_btn.click()
+    frame.wait_for_timeout(2000)
+
+
+def click_delete(page: Page):
+    """Click Delete button on current record in the main frame toolbar."""
+    frame = get_main_frame(page)
+    del_btn = frame.locator("[id*='ToolBar_Delete'], [id*='btnDelete']").first
+    del_btn.click()
+    frame.wait_for_timeout(500)
+    # Confirm deletion dialog if present
+    confirm = frame.locator("button:has-text('Yes'), button:has-text('OK')")
+    if confirm.count() > 0 and confirm.first.is_visible(timeout=2000):
+        confirm.first.click()
+    frame.wait_for_timeout(1000)
