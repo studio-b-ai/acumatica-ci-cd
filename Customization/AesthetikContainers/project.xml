@@ -1414,7 +1414,7 @@ namespace StudioB.Containers
             // NodeID uses NEWID() so each company gets unique nodes.
             // GI SiteMap URLs must use the DesignID GUID, not the ScreenID.
             // Acumatica resolves GenericInquiry.aspx?id= by DesignID only.
-            // These GUIDs must match the DesignIDs in the GI XML files.
+            // GI SiteMap entries removed — only form screens remain.
             string[][] entries = new[]
             {
                 new[] { "SB401000", "PO Containers", "~/GenericInquiry/GenericInquiry.aspx?id=a1b2c3d4-1000-4000-8000-000000401000", "7.6" },
