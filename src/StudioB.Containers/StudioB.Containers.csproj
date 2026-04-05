@@ -10,6 +10,7 @@
   <!-- Required for net48 targeting on non-Windows -->
   <ItemGroup>
     <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" PrivateAssets="all" />
   </ItemGroup>
 
   <ItemGroup>
@@ -31,6 +32,10 @@
     </Reference>
     <Reference Include="PX.Common.Std">
       <HintPath>..\..\lib\PX.Common.Std.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="PX.DbServices">
+      <HintPath>..\..\lib\PX.DbServices.dll</HintPath>
       <Private>false</Private>
     </Reference>
     <Reference Include="PX.Web.Customization">
