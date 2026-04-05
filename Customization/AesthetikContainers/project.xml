@@ -2477,65 +2477,41 @@ public partial class Page_SB_SB302030 : PXPage
                 <link from="Roles (Rolename, ApplicationName)" to="RolesInCache (Rolename, ApplicationName)" type="FromMaster" updateable="False" />
                 <link from="Roles (Rolename, ApplicationName)" to="RolesInGraph (Rolename, ApplicationName)" type="FromMaster" updateable="False" />
                 <link from="Roles (Rolename, ApplicationName)" to="RolesInMember (Rolename, ApplicationName)" type="FromMaster" updateable="False" />
-                <link from="MUIScreen (NodeID)" to="SiteMap (NodeID)" />
-                <link from="MUIWorkspace (WorkspaceID)" to="MUIScreen (WorkspaceID)" type="FromMaster" linkname="workspaceToScreen" split-location="yes" updateable="True" />
-                <link from="MUIArea (AreaID)" to="MUIWorkspace (AreaID)" type="FromMaster" updateable="True" />
-                <link from="MUISubcategory (SubcategoryID)" to="MUIScreen (SubcategoryID)" type="FromMaster" updateable="True" />
             </relations>
             <layout>
                 <table name="SiteMap">
                     <table name="RolesInCache" uplink="(ScreenID) = (ScreenID)" />
                     <table name="RolesInGraph" uplink="(ScreenID) = (ScreenID)" />
                     <table name="RolesInMember" uplink="(ScreenID) = (ScreenID)" />
-                    <table name="MUIScreen" uplink="(NodeID) = (NodeID)" />
                 </table>
                 <table name="Roles" />
-                <table name="MUIWorkspace" />
-                <table name="MUISubcategory" />
-                <table name="MUIArea" />
             </layout>
             <data>
                 <SiteMap>
                     <row Position="7.5" Title="Container Maintenance" Url="~/Pages/SB/SB501000.aspx" ScreenID="SB501000" NodeID="b88b362d-cad6-44c3-8656-a418f2f08923" ParentID="9c89e3db-7c47-43c0-8554-5d2c9f2c0e87" SelectedUI="E">
                         <RolesInGraph Rolename="Administrator" ApplicationName="/" Accessrights="4" />
                         <RolesInGraph Rolename="*" ApplicationName="/" Accessrights="0" />
-                        <MUIScreen IsPortal="0" WorkspaceID="95191203-a0b8-4fc0-8b20-4efe831708e9" Order="10" SubcategoryID="38d13a6e-3076-42fb-9fce-62fa33897da6" />
                     </row>
                     <row Position="7.9" Title="Freight Forwarders" Url="~/Pages/SB/SB302000.aspx" ScreenID="SB302000" NodeID="a1b2c3d4-0004-4000-8000-000000000004" ParentID="9c89e3db-7c47-43c0-8554-5d2c9f2c0e87" SelectedUI="E">
                         <RolesInGraph Rolename="Administrator" ApplicationName="/" Accessrights="4" />
                         <RolesInGraph Rolename="*" ApplicationName="/" Accessrights="0" />
-                        <MUIScreen IsPortal="0" WorkspaceID="95191203-a0b8-4fc0-8b20-4efe831708e9" Order="10" SubcategoryID="0b491e12-c58d-4e47-8a0d-96dd3a8ab395" />
                     </row>
                     <row Position="8.2" Title="Container Types" Url="~/Pages/SB/SB302010.aspx" ScreenID="SB302010" NodeID="a1b2c3d4-0006-4000-8000-000000000006" ParentID="9c89e3db-7c47-43c0-8554-5d2c9f2c0e87" SelectedUI="E">
                         <RolesInGraph Rolename="Administrator" ApplicationName="/" Accessrights="4" />
                         <RolesInGraph Rolename="*" ApplicationName="/" Accessrights="0" />
-                        <MUIScreen IsPortal="0" WorkspaceID="95191203-a0b8-4fc0-8b20-4efe831708e9" Order="20" SubcategoryID="0b491e12-c58d-4e47-8a0d-96dd3a8ab395" />
                     </row>
                     <row Position="8.3" Title="Destinations/Ports" Url="~/Pages/SB/SB302020.aspx" ScreenID="SB302020" NodeID="a1b2c3d4-0007-4000-8000-000000000007" ParentID="9c89e3db-7c47-43c0-8554-5d2c9f2c0e87" SelectedUI="E">
                         <RolesInGraph Rolename="Administrator" ApplicationName="/" Accessrights="4" />
                         <RolesInGraph Rolename="*" ApplicationName="/" Accessrights="0" />
-                        <MUIScreen IsPortal="0" WorkspaceID="95191203-a0b8-4fc0-8b20-4efe831708e9" Order="30" SubcategoryID="0b491e12-c58d-4e47-8a0d-96dd3a8ab395" />
                     </row>
                     <row Position="8.4" Title="Container Preferences" Url="~/Pages/SB/SB302030.aspx" ScreenID="SB302030" NodeID="a1b2c3d4-0008-4000-8000-000000000008" ParentID="9c89e3db-7c47-43c0-8554-5d2c9f2c0e87" SelectedUI="E">
                         <RolesInGraph Rolename="Administrator" ApplicationName="/" Accessrights="4" />
                         <RolesInGraph Rolename="*" ApplicationName="/" Accessrights="0" />
-                        <MUIScreen IsPortal="0" WorkspaceID="95191203-a0b8-4fc0-8b20-4efe831708e9" Order="40" SubcategoryID="0b491e12-c58d-4e47-8a0d-96dd3a8ab395" />
                     </row>
                 </SiteMap>
                 <Roles>
                     <row Rolename="Administrator" ApplicationName="/" Descr="System Administrator" Guest="0" />
                 </Roles>
-                <MUIWorkspace>
-                    <row IsPortal="0" WorkspaceID="95191203-a0b8-4fc0-8b20-4efe831708e9" Order="230" Title="Container Tracking" Icon="directions_car" AreaID="62cfd5dc-8eb9-4e92-bbcd-e0a99eb5e5df" IsSystem="0" />
-                </MUIWorkspace>
-                <MUISubcategory>
-                    <row IsPortal="0" SubcategoryID="38d13a6e-3076-42fb-9fce-62fa33897da6" Order="64" Name="Transactions" Icon="" IsSystem="0" />
-                    <row IsPortal="0" SubcategoryID="0b491e12-c58d-4e47-8a0d-96dd3a8ab395" Order="128" Name="Configuration" Icon="" IsSystem="0" />
-                    <row IsPortal="0" SubcategoryID="acf1bb34-2055-411e-88be-d840efcc7424" Order="192" Name="Inquiries" Icon="" IsSystem="0" />
-                </MUISubcategory>
-                <MUIArea>
-                    <row IsPortal="0" AreaID="62cfd5dc-8eb9-4e92-bbcd-e0a99eb5e5df" Order="20" Name="Operations" />
-                </MUIArea>
             </data>
         </data-set>
     </ScreenWithRights>
