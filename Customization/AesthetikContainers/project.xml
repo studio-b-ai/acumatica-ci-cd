@@ -1408,10 +1408,35 @@ namespace StudioB.Containers
         // IGCM cleanup is no longer needed; the ISV artifacts are gone.
         private void EnsureContainerTrackingSiteMap(SqlConnection conn, int companyId)
         {
-            // SiteMap entries for 4 Container Tracking form screens.
-            // ParentID = 9c89e3db-7c47-43c0-8554-5d2c9f2c0e87 (Container Tracking workspace)
-            // Idempotent: IF NOT EXISTS check per ScreenID + CompanyID.
-            // NodeID uses NEWID() so each company gets unique nodes.
+            // Step 1: Delete ALL non-whitelisted entries from the Container Tracking
+            // workspace. IIG left behind SiteMap entries for IGCM screens that no longer
+            // exist. Whitelist only our working form screens + Container Maintenance.
+            string deleteOldEntries = @"
+                DELETE FROM SiteMap
+                WHERE CompanyID = @cid
+                  AND ParentID = '9c89e3db-7c47-43c0-8554-5d2c9f2c0e87'
+                  AND ScreenID NOT IN ('SB501000','SB302000','SB302010','SB302020','SB302030')";
+            using (var cmd = new SqlCommand(deleteOldEntries, conn))
+            {
+                cmd.Parameters.AddWithValue("@cid", companyId);
+                int rows = cmd.ExecuteNonQuery();
+                if (rows > 0) WriteLog(string.Format("[AesthetikContainers] Cleaned {0} old IIG entries from Container Tracking workspace (CID={1})", rows, companyId));
+            }
+
+            // Step 2: Also clean IGCM-pattern SiteMap entries outside the workspace
+            string deleteIgcmEntries = @"
+                DELETE FROM SiteMap
+                WHERE CompanyID = @cid
+                  AND (ScreenID LIKE 'IGCM%' OR ScreenID LIKE 'IG.CM%')
+                  AND ScreenID NOT IN ('SB501000','SB302000','SB302010','SB302020','SB302030')";
+            using (var cmd = new SqlCommand(deleteIgcmEntries, conn))
+            {
+                cmd.Parameters.AddWithValue("@cid", companyId);
+                int rows = cmd.ExecuteNonQuery();
+                if (rows > 0) WriteLog(string.Format("[AesthetikContainers] Cleaned {0} IGCM SiteMap entries outside workspace (CID={1})", rows, companyId));
+            }
+
+            // Step 3: Upsert our 4 form screen entries
             string[][] entries = new[]
             {
                 new[] { "SB302000", "Freight Forwarders", "~/Pages/SB/SB302000.aspx", "7.9" },
@@ -1422,8 +1447,6 @@ namespace StudioB.Containers
 
             foreach (var e in entries)
             {
-                // Upsert: update URL if entry exists (fixes old id=ScreenID URLs),
-                // otherwise insert new entry.
                 string sql = @"
                     IF EXISTS (SELECT 1 FROM SiteMap WHERE ScreenID = @sid AND CompanyID = @cid)
                         UPDATE SiteMap SET Url = @url, Title = @title, Position = @pos
