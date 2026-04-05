@@ -1,0 +1,64 @@
+<GenericInquiryScreen>
+  <data-set>
+    <relations format-version="3" relations-version="20190410" main-table="GIDesign" stable-sharing="True" file-name="ContainerEvents">
+      <link from="GIFilter (DesignID)" to="GIDesign (DesignID)" />
+      <link from="GIGroupBy (DesignID)" to="GIDesign (DesignID)" />
+      <link from="GINavigationCondition (DesignID)" to="GIDesign (DesignID)" />
+      <link from="GINavigationParameter (DesignID)" to="GIDesign (DesignID)" />
+      <link from="GINavigationScreen (DesignID)" to="GIDesign (DesignID)" />
+      <link from="GIOn (DesignID)" to="GIDesign (DesignID)" />
+      <link from="GIRelation (DesignID)" to="GIDesign (DesignID)" />
+      <link from="GIResult (DesignID)" to="GIDesign (DesignID)" />
+      <link from="GISort (DesignID)" to="GIDesign (DesignID)" />
+      <link from="GITable (DesignID)" to="GIDesign (DesignID)" />
+      <link from="GIWhere (DesignID)" to="GIDesign (DesignID)" />
+      <link from="GIOn (DesignID,LineNbr)" to="GIRelation (DesignID,LineNbr)" />
+      <link from="GIRelation (DesignID)" to="GITable (DesignID,Alias)" />
+      <link from="GIResult (DesignID)" to="GITable (DesignID,Alias)" />
+      <link from="SiteMap (linkname)" to="GIDesign (DesignID)" />
+      <link from="MUIScreen (linkname)" to="SiteMap (NodeID)" />
+    </relations>
+    <layout>
+      <group id="1" sorting="Natural" filtering="Natural" />
+    </layout>
+    <data>
+      <GIDesign>
+        <row DesignID="f1a00001-sb40-1020-gi03-000000000003" Name="ContainerEvents" ScreenID="SB401020" FilterColCount="3" PageSize="0" ExportTop="0" NewRecordCreationEnabled="0" MassDeleteEnabled="0" AutoConfirmDelete="0" MassRecordsUpdateEnabled="0" MassActionsOnRecordsEnabled="0" ExposeViaOData="1" ExposeViaMobile="0">
+
+          <!-- Table 1: UsrContainerEvent (main/driving table) -->
+          <GITable Alias="Event" Name="StudioB.Containers.UsrContainerEvent">
+            <!-- JOIN 1: Event LEFT JOIN Container ON ContainerID -->
+            <GIRelation LineNbr="1" ChildTable="Container" IsActive="1" JoinType="L">
+              <GIOn LineNbr="1" ParentField="ContainerID" Condition="E " ChildField="ContainerID" Operation="A" />
+            </GIRelation>
+            <!-- Result columns from Event -->
+            <GIResult LineNbr="2" SortOrder="2" IsActive="1" Field="NormalizedEventCode" Width="120" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Event" RowID="f1a00003-0000-0000-0000-000000000002" />
+            <GIResult LineNbr="3" SortOrder="3" IsActive="1" Field="EventDateTime" Width="140" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Event Date/Time" RowID="f1a00003-0000-0000-0000-000000000003" />
+            <GIResult LineNbr="4" SortOrder="4" IsActive="1" Field="EventClassifier" Width="60" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Type" RowID="f1a00003-0000-0000-0000-000000000004" />
+            <GIResult LineNbr="5" SortOrder="5" IsActive="1" Field="LocationName" Width="120" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Location" RowID="f1a00003-0000-0000-0000-000000000005" />
+            <GIResult LineNbr="6" SortOrder="6" IsActive="1" Field="VesselName" Width="120" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Vessel" RowID="f1a00003-0000-0000-0000-000000000006" />
+            <GIResult LineNbr="7" SortOrder="7" IsActive="1" Field="Description" Width="200" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Description" RowID="f1a00003-0000-0000-0000-000000000007" />
+          </GITable>
+
+          <!-- Table 2: UsrContainer (container header) -->
+          <GITable Alias="Container" Name="StudioB.Containers.UsrContainer">
+            <!-- Result columns from Container -->
+            <GIResult LineNbr="1" SortOrder="1" IsActive="1" Field="ContainerCD" Width="120" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Container" RowID="f1a00003-0000-0000-0000-000000000001" />
+            <GIResult LineNbr="8" SortOrder="8" IsActive="1" Field="Status" Width="100" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Container Status" RowID="f1a00003-0000-0000-0000-000000000008" />
+          </GITable>
+
+          <!-- SORT by EventDateTime descending -->
+          <GISort LineNbr="1" IsActive="1" DataFieldName="Event.EventDateTime" SortOrder="D" />
+
+          <!-- SiteMap entry -->
+          <SiteMap linkname="toDesignById">
+            <row Position="780" Title="Container Events" Url="~/GenericInquiry/GenericInquiry.aspx?id=f1a00001-sb40-1020-gi03-000000000003" Expanded="0" IsFolder="0" ScreenID="SB401020" NodeID="f1a00003-node-0000-0000-000000000001" ParentID="9c89e3db-7c47-43c0-8554-5d2c9f2c0e87">
+              <MUIScreen IsPortal="0" WorkspaceID="f1a00003-wksp-0000-0000-000000000001" Order="780" SubcategoryID="f1a00003-sub0-0000-0000-000000000001" />
+            </row>
+          </SiteMap>
+
+        </row>
+      </GIDesign>
+    </data>
+  </data-set>
+</GenericInquiryScreen>
