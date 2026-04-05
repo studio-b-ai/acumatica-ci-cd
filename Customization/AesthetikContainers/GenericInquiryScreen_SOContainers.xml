@@ -23,7 +23,7 @@
     </layout>
     <data>
       <GIDesign>
-        <row DesignID="f1a00001-sb40-1010-gi02-000000000002" Name="SOContainers" ScreenID="SB401010" FilterColCount="3" PageSize="0" ExportTop="0" NewRecordCreationEnabled="0" MassDeleteEnabled="0" AutoConfirmDelete="0" MassRecordsUpdateEnabled="0" MassActionsOnRecordsEnabled="0" ExposeViaOData="1" ExposeViaMobile="0">
+        <row DesignID="aee5359e-efd3-4681-a725-7d5e271ae361" Name="SOContainers" ScreenID="SB401010" FilterColCount="3" PageSize="0" ExportTop="0" NewRecordCreationEnabled="0" MassDeleteEnabled="0" AutoConfirmDelete="0" MassRecordsUpdateEnabled="0" MassActionsOnRecordsEnabled="0" ExposeViaOData="1" ExposeViaMobile="0">
 
           <!-- Table 1: SOShipment (main/driving table) -->
           <GITable Alias="Shipment" Name="PX.Objects.SO.SOShipment">
@@ -32,20 +32,20 @@
               <GIOn LineNbr="1" ParentField="UsrContainerID" Condition="E " ChildField="ContainerID" Operation="A" />
             </GIRelation>
             <!-- Result columns from Shipment -->
-            <GIResult LineNbr="1" SortOrder="1" IsActive="1" Field="ShipmentNbr" Width="120" IsVisible="1" DefaultNav="1" QuickFilter="0" FastFilter="1" Caption="Shipment" RowID="f1a00002-sb40-1010-gi02-000000000001" />
-            <GIResult LineNbr="2" SortOrder="2" IsActive="1" Field="Status" Width="100" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Status" RowID="f1a00002-sb40-1010-gi02-000000000002" />
-            <GIResult LineNbr="3" SortOrder="3" IsActive="1" Field="ShipDate" Width="90" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Ship Date" RowID="f1a00002-sb40-1010-gi02-000000000003" />
-            <GIResult LineNbr="4" SortOrder="4" IsActive="1" Field="CustomerID" Width="100" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Customer" RowID="f1a00002-sb40-1010-gi02-000000000004" />
-            <GIResult LineNbr="7" SortOrder="7" IsActive="1" Field="ShipmentWeight" Width="80" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Weight" RowID="f1a00002-sb40-1010-gi02-000000000007" />
-            <GIResult LineNbr="8" SortOrder="8" IsActive="1" Field="ShipmentVolume" Width="80" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Volume" RowID="f1a00002-sb40-1010-gi02-000000000008" />
+            <GIResult LineNbr="1" SortOrder="1" IsActive="1" Field="ShipmentNbr" Width="120" IsVisible="1" DefaultNav="1" QuickFilter="0" FastFilter="1" Caption="Shipment" RowID="ec926601-d5ae-450e-9e72-7ac15d2e3296" />
+            <GIResult LineNbr="2" SortOrder="2" IsActive="1" Field="Status" Width="100" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Status" RowID="c4c35637-ab63-48bc-843a-d2769f6586fd" />
+            <GIResult LineNbr="3" SortOrder="3" IsActive="1" Field="ShipDate" Width="90" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Ship Date" RowID="bad4743a-b47d-4e30-a864-2ff570a4f305" />
+            <GIResult LineNbr="4" SortOrder="4" IsActive="1" Field="CustomerID" Width="100" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Customer" RowID="1089ed06-5437-41bf-ac20-43683cfa2f9d" />
+            <GIResult LineNbr="7" SortOrder="7" IsActive="1" Field="ShipmentWeight" Width="80" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Weight" RowID="da385764-f455-4b02-8050-466e5cefc360" />
+            <GIResult LineNbr="8" SortOrder="8" IsActive="1" Field="ShipmentVolume" Width="80" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Volume" RowID="bc83b1a3-fc82-46a0-8efa-80bc463b20d7" />
           </GITable>
 
           <!-- Table 2: UsrContainer (container details) -->
           <GITable Alias="Container" Name="StudioB.Containers.UsrContainer">
-            <GIResult LineNbr="5" SortOrder="5" IsActive="1" Field="ContainerCD" Width="120" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Container" RowID="f1a00002-sb40-1010-gi02-000000000005" />
-            <GIResult LineNbr="6" SortOrder="6" IsActive="1" Field="Status" Width="100" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Container Status" RowID="f1a00002-sb40-1010-gi02-000000000006" />
-            <GIResult LineNbr="9" SortOrder="9" IsActive="1" Field="ETA" Width="90" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Container ETA" RowID="f1a00002-sb40-1010-gi02-000000000009" />
-            <GIResult LineNbr="10" SortOrder="10" IsActive="1" Field="ATA" Width="90" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Container ATA" RowID="f1a00002-sb40-1010-gi02-000000000010" />
+            <GIResult LineNbr="5" SortOrder="5" IsActive="1" Field="ContainerCD" Width="120" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Container" RowID="5b1a1741-5114-4c2b-9e44-26edc867b9ce" />
+            <GIResult LineNbr="6" SortOrder="6" IsActive="1" Field="Status" Width="100" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Container Status" RowID="32fe45d1-9ffa-4075-bb1a-264eea6c7bfd" />
+            <GIResult LineNbr="9" SortOrder="9" IsActive="1" Field="ETA" Width="90" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Container ETA" RowID="c9eca9d4-63e1-438e-bf2d-e84dbb476ed7" />
+            <GIResult LineNbr="10" SortOrder="10" IsActive="1" Field="ATA" Width="90" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Container ATA" RowID="c0728fe6-e9aa-4119-8469-10bf4806e06a" />
           </GITable>
 
           <!-- WHERE: Only shipments linked to a container -->
@@ -56,7 +56,7 @@
 
           <!-- SiteMap entry -->
           <SiteMap linkname="toDesignById">
-            <row Position="770" Title="SO Containers" Url="~/GenericInquiry/GenericInquiry.aspx?id=f1a00001-sb40-1010-gi02-000000000002" Expanded="0" IsFolder="0" ScreenID="SB401010" NodeID="f1a00003-sb40-1010-gi02-000000000002" ParentID="9c89e3db-7c47-43c0-8554-5d2c9f2c0e87">
+            <row Position="770" Title="SO Containers" Url="~/GenericInquiry/GenericInquiry.aspx?id=aee5359e-efd3-4681-a725-7d5e271ae361" Expanded="0" IsFolder="0" ScreenID="SB401010" NodeID="2e66ae06-7314-4512-8776-93b1742750ac" ParentID="9c89e3db-7c47-43c0-8554-5d2c9f2c0e87">
               <MUIScreen IsPortal="0" WorkspaceID="e0f4a5b6-c3d4-4789-abcd-ef0123456789" Order="770" SubcategoryID="f1a5b6c7-d4e5-489a-bcde-f01234567890" />
             </row>
           </SiteMap>

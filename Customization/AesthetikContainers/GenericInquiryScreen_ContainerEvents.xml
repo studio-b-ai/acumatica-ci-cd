@@ -23,7 +23,7 @@
     </layout>
     <data>
       <GIDesign>
-        <row DesignID="f1a00001-sb40-1020-gi03-000000000003" Name="ContainerEvents" ScreenID="SB401020" FilterColCount="3" PageSize="0" ExportTop="0" NewRecordCreationEnabled="0" MassDeleteEnabled="0" AutoConfirmDelete="0" MassRecordsUpdateEnabled="0" MassActionsOnRecordsEnabled="0" ExposeViaOData="1" ExposeViaMobile="0">
+        <row DesignID="c1d99e0d-eaae-497d-af70-9f0486a4f3be" Name="ContainerEvents" ScreenID="SB401020" FilterColCount="3" PageSize="0" ExportTop="0" NewRecordCreationEnabled="0" MassDeleteEnabled="0" AutoConfirmDelete="0" MassRecordsUpdateEnabled="0" MassActionsOnRecordsEnabled="0" ExposeViaOData="1" ExposeViaMobile="0">
 
           <!-- Table 1: UsrContainerEvent (main/driving table) -->
           <GITable Alias="Event" Name="StudioB.Containers.UsrContainerEvent">
@@ -52,8 +52,8 @@
 
           <!-- SiteMap entry -->
           <SiteMap linkname="toDesignById">
-            <row Position="780" Title="Container Events" Url="~/GenericInquiry/GenericInquiry.aspx?id=f1a00001-sb40-1020-gi03-000000000003" Expanded="0" IsFolder="0" ScreenID="SB401020" NodeID="f1a00003-node-0000-0000-000000000001" ParentID="9c89e3db-7c47-43c0-8554-5d2c9f2c0e87">
-              <MUIScreen IsPortal="0" WorkspaceID="f1a00003-wksp-0000-0000-000000000001" Order="780" SubcategoryID="f1a00003-sub0-0000-0000-000000000001" />
+            <row Position="780" Title="Container Events" Url="~/GenericInquiry/GenericInquiry.aspx?id=c1d99e0d-eaae-497d-af70-9f0486a4f3be" Expanded="0" IsFolder="0" ScreenID="SB401020" NodeID="ec8cc6d3-8170-48ef-be9e-e1762f4df789" ParentID="9c89e3db-7c47-43c0-8554-5d2c9f2c0e87">
+              <MUIScreen IsPortal="0" WorkspaceID="79bce91d-568e-4269-ba20-a21c128dafdd" Order="780" SubcategoryID="a4d3fb1c-457d-45bd-adfa-10c4a816119c" />
             </row>
           </SiteMap>
 
