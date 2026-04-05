@@ -1237,6 +1237,27 @@ namespace StudioB.Containers
 
 
 
+                        // ── Diagnostic: log existing GI definitions for Phase 2 target names
+                        try {
+                            string[] phase2Names = new[] { "POContainers", "ContainerEvents", "POContainerLines", "ArrivingThisWeek", "ContainersNeedingAttention", "LandedCostSummary" };
+                            foreach (string giName in phase2Names)
+                            {
+                                using (var cmd = new SqlCommand("SELECT DesignID, Name FROM GIDesign WHERE Name = @name AND CompanyID = @cid", conn))
+                                {
+                                    cmd.Parameters.AddWithValue("@name", giName);
+                                    cmd.Parameters.AddWithValue("@cid", companyId);
+                                    using (var rdr = cmd.ExecuteReader())
+                                    {
+                                        if (rdr.Read())
+                                            WriteLog(string.Format("[DIAG] GIDesign FOUND: Name={0}, DesignID={1}, CID={2}", rdr["Name"], rdr["DesignID"], companyId));
+                                        else
+                                            WriteLog(string.Format("[DIAG] GIDesign CLEAN: Name={0}, CID={1}", giName, companyId));
+                                    }
+                                }
+                            }
+                        }
+                        catch (Exception ex) { WriteLog(string.Format("[DIAG] GIDesign query failed: {0}", ex.Message)); }
+
                         try { EnsureContainerTrackingSiteMap(conn, companyId); }
                         catch (Exception ex) { WriteLog(string.Format("[AesthetikContainers] SiteMap update failed CID={0}: {1}", companyId, ex.Message)); }
 
