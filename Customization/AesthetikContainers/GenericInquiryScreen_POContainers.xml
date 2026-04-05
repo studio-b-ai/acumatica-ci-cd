@@ -1,0 +1,58 @@
+<GenericInquiryScreen>
+  <data-set>
+    <relations format-version="3" relations-version="20190410" main-table="GIDesign" stable-sharing="True" file-name="POContainers">
+      <link from="GIFilter (DesignID)" to="GIDesign (DesignID)" />
+      <link from="GIGroupBy (DesignID)" to="GIDesign (DesignID)" />
+      <link from="GINavigationCondition (DesignID)" to="GIDesign (DesignID)" />
+      <link from="GINavigationParameter (DesignID)" to="GIDesign (DesignID)" />
+      <link from="GINavigationScreen (DesignID)" to="GIDesign (DesignID)" />
+      <link from="GIOn (DesignID)" to="GIDesign (DesignID)" />
+      <link from="GIRelation (DesignID)" to="GIDesign (DesignID)" />
+      <link from="GIResult (DesignID)" to="GIDesign (DesignID)" />
+      <link from="GISort (DesignID)" to="GIDesign (DesignID)" />
+      <link from="GITable (DesignID)" to="GIDesign (DesignID)" />
+      <link from="GIWhere (DesignID)" to="GIDesign (DesignID)" />
+      <link from="GIOn (DesignID,LineNbr)" to="GIRelation (DesignID,LineNbr)" />
+      <link from="GIRelation (DesignID)" to="GITable (DesignID,Alias)" />
+      <link from="GIResult (DesignID)" to="GITable (DesignID,Alias)" />
+      <link from="SiteMap (linkname)" to="GIDesign (DesignID)" />
+      <link from="MUIScreen (linkname)" to="SiteMap (NodeID)" />
+    </relations>
+    <layout>
+      <group id="1" sorting="Natural" filtering="Natural" />
+    </layout>
+    <data>
+      <GIDesign>
+        <row DesignID="f1a00001-sb40-1000-gi01-000000000001" Name="POContainers" ScreenID="SB401000" FilterColCount="3" PageSize="0" ExportTop="0" NewRecordCreationEnabled="0" MassDeleteEnabled="0" AutoConfirmDelete="0" MassRecordsUpdateEnabled="0" MassActionsOnRecordsEnabled="0" ExposeViaOData="1" ExposeViaMobile="0">
+
+          <!-- Single table: UsrContainer -->
+          <GITable Alias="Container" Name="StudioB.Containers.UsrContainer">
+            <GIResult LineNbr="1" SortOrder="1" IsActive="1" Field="ContainerCD" Width="120" IsVisible="1" DefaultNav="1" QuickFilter="0" FastFilter="1" Caption="Container" RowID="f1a00001-sb40-1000-gi01-000000000101" />
+            <GIResult LineNbr="2" SortOrder="2" IsActive="1" Field="Status" Width="100" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Status" RowID="f1a00001-sb40-1000-gi01-000000000102" />
+            <GIResult LineNbr="3" SortOrder="3" IsActive="1" Field="CarrierCode" Width="100" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Carrier" RowID="f1a00001-sb40-1000-gi01-000000000103" />
+            <GIResult LineNbr="4" SortOrder="4" IsActive="1" Field="VesselName" Width="120" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Vessel" RowID="f1a00001-sb40-1000-gi01-000000000104" />
+            <GIResult LineNbr="5" SortOrder="5" IsActive="1" Field="BillOfLading" Width="120" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Bill of Lading" RowID="f1a00001-sb40-1000-gi01-000000000105" />
+            <GIResult LineNbr="6" SortOrder="6" IsActive="1" Field="PortOfLoading" Width="100" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Port of Loading" RowID="f1a00001-sb40-1000-gi01-000000000106" />
+            <GIResult LineNbr="7" SortOrder="7" IsActive="1" Field="PortOfDischarge" Width="100" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Port of Discharge" RowID="f1a00001-sb40-1000-gi01-000000000107" />
+            <GIResult LineNbr="8" SortOrder="8" IsActive="1" Field="ETD" Width="90" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="ETD" RowID="f1a00001-sb40-1000-gi01-000000000108" />
+            <GIResult LineNbr="9" SortOrder="9" IsActive="1" Field="ETA" Width="90" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="ETA" RowID="f1a00001-sb40-1000-gi01-000000000109" />
+            <GIResult LineNbr="10" SortOrder="10" IsActive="1" Field="ATA" Width="90" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="ATA" RowID="f1a00001-sb40-1000-gi01-000000000110" />
+            <GIResult LineNbr="11" SortOrder="11" IsActive="1" Field="ContainerType" Width="80" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Type" RowID="f1a00001-sb40-1000-gi01-000000000111" />
+            <GIResult LineNbr="12" SortOrder="12" IsActive="1" Field="LastEventDate" Width="100" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Last Event" RowID="f1a00001-sb40-1000-gi01-000000000112" />
+          </GITable>
+
+          <!-- SORT by ETA descending -->
+          <GISort LineNbr="1" IsActive="1" DataFieldName="Container.ETA" SortOrder="D" />
+
+          <!-- SiteMap entry -->
+          <SiteMap linkname="toDesignById">
+            <row Position="760" Title="PO Containers" Url="~/GenericInquiry/GenericInquiry.aspx?id=f1a00001-sb40-1000-gi01-000000000001" Expanded="0" IsFolder="0" ScreenID="SB401000" NodeID="f1a00001-sb40-1000-gi01-a00000000001" ParentID="9c89e3db-7c47-43c0-8554-5d2c9f2c0e87">
+              <MUIScreen IsPortal="0" WorkspaceID="e0f4a5b6-c3d4-4789-abcd-ef0123456789" Order="760" SubcategoryID="f1a5b6c7-d4e5-489a-bcde-f01234567890" />
+            </row>
+          </SiteMap>
+
+        </row>
+      </GIDesign>
+    </data>
+  </data-set>
+</GenericInquiryScreen>
