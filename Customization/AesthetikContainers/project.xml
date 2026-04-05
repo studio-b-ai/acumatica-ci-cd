@@ -1256,7 +1256,7 @@ namespace StudioB.Containers
                         }
                         catch (Exception ex)
                         {
-                            WriteLog(string.Format("[AesthetikContainers] Failed to delete GI '{0}': {1}", giName, ex.Message));
+                            WriteLog(string.Format("[AesthetikContainers] Failed to clean up inquiry '{0}': {1}", giName, ex.Message));
                         }
                     }
 
@@ -1786,7 +1786,7 @@ namespace StudioB.Containers
                 }
             }
 
-            // Delete GI child tables
+            // Remove inquiry child table rows
             string deleteGIChildren = string.Format(@"
                 DECLARE @cid int = {0};
                 DECLARE @ids TABLE (DesignID uniqueidentifier);
