@@ -23,7 +23,7 @@
     </layout>
     <data>
       <GIDesign>
-        <row DesignID="f1a00001-sb40-1040-gi05-000000000005" Name="POContainerLines" ScreenID="SB401040" FilterColCount="3" PageSize="0" ExportTop="0" NewRecordCreationEnabled="0" MassDeleteEnabled="0" AutoConfirmDelete="0" MassRecordsUpdateEnabled="0" MassActionsOnRecordsEnabled="0" ExposeViaOData="1" ExposeViaMobile="0">
+        <row DesignID="87e6d8a8-9116-45a5-8427-504d328dc8ce" Name="POContainerLines" ScreenID="SB401040" FilterColCount="3" PageSize="0" ExportTop="0" NewRecordCreationEnabled="0" MassDeleteEnabled="0" AutoConfirmDelete="0" MassRecordsUpdateEnabled="0" MassActionsOnRecordsEnabled="0" ExposeViaOData="1" ExposeViaMobile="0">
 
           <!-- Table 1: UsrContainerPOLink (main/driving table) -->
           <GITable Alias="Link" Name="StudioB.Containers.UsrContainerPOLink">
@@ -75,7 +75,7 @@
 
           <!-- SiteMap entry -->
           <SiteMap linkname="toDesignById">
-            <row Position="810" Title="PO Container Lines" Url="~/GenericInquiry/GenericInquiry.aspx?id=f1a00001-sb40-1040-gi05-000000000005" Expanded="0" IsFolder="0" ScreenID="SB401040" NodeID="f1a00005-node-0000-0000-000000000001" ParentID="9c89e3db-7c47-43c0-8554-5d2c9f2c0e87">
+            <row Position="810" Title="PO Container Lines" Url="~/GenericInquiry/GenericInquiry.aspx?id=87e6d8a8-9116-45a5-8427-504d328dc8ce" Expanded="0" IsFolder="0" ScreenID="SB401040" NodeID="f61a7e63-833e-4b4c-b9be-fc1bfd9bc708" ParentID="9c89e3db-7c47-43c0-8554-5d2c9f2c0e87">
               <MUIScreen IsPortal="0" WorkspaceID="e0f4a5b6-c3d4-4789-abcd-ef0123456789" Order="810" SubcategoryID="f1a5b6c7-d4e5-489a-bcde-f01234567890" />
             </row>
           </SiteMap>

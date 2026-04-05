@@ -23,18 +23,18 @@
     </layout>
     <data>
       <GIDesign>
-        <row DesignID="f1a00001-sb40-1030-gi04-000000000004" Name="CustomClassification" ScreenID="SB401030" FilterColCount="3" PageSize="0" ExportTop="0" NewRecordCreationEnabled="0" MassDeleteEnabled="0" AutoConfirmDelete="0" MassRecordsUpdateEnabled="0" MassActionsOnRecordsEnabled="0" ExposeViaOData="1" ExposeViaMobile="0">
+        <row DesignID="28f55660-043e-4bb2-9381-466f959faf78" Name="CustomClassification" ScreenID="SB401030" FilterColCount="3" PageSize="0" ExportTop="0" NewRecordCreationEnabled="0" MassDeleteEnabled="0" AutoConfirmDelete="0" MassRecordsUpdateEnabled="0" MassActionsOnRecordsEnabled="0" ExposeViaOData="1" ExposeViaMobile="0">
 
           <!-- Table 1: InventoryItem (single table) -->
           <GITable Alias="Item" Name="PX.Objects.IN.InventoryItem">
-            <GIResult LineNbr="1" SortOrder="1" IsActive="1" Field="InventoryCD" Width="120" IsVisible="1" DefaultNav="1" QuickFilter="0" FastFilter="1" Caption="Inventory" RowID="f1a00004-sb40-1030-res1-000000000001" />
-            <GIResult LineNbr="2" SortOrder="2" IsActive="1" Field="Descr" Width="200" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Description" RowID="f1a00004-sb40-1030-res1-000000000002" />
-            <GIResult LineNbr="3" SortOrder="3" IsActive="1" Field="ItemStatus" Width="80" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Status" RowID="f1a00004-sb40-1030-res1-000000000003" />
-            <GIResult LineNbr="4" SortOrder="4" IsActive="1" Field="UsrDutyRate" Width="80" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Duty Rate" RowID="f1a00004-sb40-1030-res1-000000000004" />
-            <GIResult LineNbr="5" SortOrder="5" IsActive="1" Field="UsrPreferentialTariff" Width="80" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Preferential Tariff" RowID="f1a00004-sb40-1030-res1-000000000005" />
-            <GIResult LineNbr="6" SortOrder="6" IsActive="1" Field="UsrFiberContent" Width="120" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Fiber Content" RowID="f1a00004-sb40-1030-res1-000000000006" />
-            <GIResult LineNbr="7" SortOrder="7" IsActive="1" Field="UsrFreightClass" Width="80" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Freight Class" RowID="f1a00004-sb40-1030-res1-000000000007" />
-            <GIResult LineNbr="8" SortOrder="8" IsActive="1" Field="CountryOfOrigin" Width="100" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Country of Origin" RowID="f1a00004-sb40-1030-res1-000000000008" />
+            <GIResult LineNbr="1" SortOrder="1" IsActive="1" Field="InventoryCD" Width="120" IsVisible="1" DefaultNav="1" QuickFilter="0" FastFilter="1" Caption="Inventory" RowID="e4b55703-a11d-4fb7-a578-8396e616db1f" />
+            <GIResult LineNbr="2" SortOrder="2" IsActive="1" Field="Descr" Width="200" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Description" RowID="06101d14-a17f-4060-b6b8-add2d3a45acc" />
+            <GIResult LineNbr="3" SortOrder="3" IsActive="1" Field="ItemStatus" Width="80" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Status" RowID="826cf89f-d358-418e-bf74-b866c4dbfd9b" />
+            <GIResult LineNbr="4" SortOrder="4" IsActive="1" Field="UsrDutyRate" Width="80" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Duty Rate" RowID="636172cc-1460-4105-baf0-8800bad2881f" />
+            <GIResult LineNbr="5" SortOrder="5" IsActive="1" Field="UsrPreferentialTariff" Width="80" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Preferential Tariff" RowID="ba7c0446-b397-48c4-8272-8133aeed33b9" />
+            <GIResult LineNbr="6" SortOrder="6" IsActive="1" Field="UsrFiberContent" Width="120" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Fiber Content" RowID="e3540e22-2a94-4bf2-b2c4-e6c1a130b9e3" />
+            <GIResult LineNbr="7" SortOrder="7" IsActive="1" Field="UsrFreightClass" Width="80" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Freight Class" RowID="40878929-6ee9-49fe-9c90-79fd64e934df" />
+            <GIResult LineNbr="8" SortOrder="8" IsActive="1" Field="CountryOfOrigin" Width="100" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Country of Origin" RowID="38eb8980-0bc6-4339-97a2-84279c1cc144" />
           </GITable>
 
           <!-- WHERE: Stock items only -->
@@ -45,7 +45,7 @@
 
           <!-- SiteMap entry -->
           <SiteMap linkname="toDesignById">
-            <row Position="800" Title="Custom Classification" Url="~/GenericInquiry/GenericInquiry.aspx?id=f1a00001-sb40-1030-gi04-000000000004" Expanded="0" IsFolder="0" ScreenID="SB401030" NodeID="f1a00004-sb40-1030-node-000000000001" ParentID="9c89e3db-7c47-43c0-8554-5d2c9f2c0e87">
+            <row Position="800" Title="Custom Classification" Url="~/GenericInquiry/GenericInquiry.aspx?id=28f55660-043e-4bb2-9381-466f959faf78" Expanded="0" IsFolder="0" ScreenID="SB401030" NodeID="85f84223-b8f4-4726-a4a1-0c0a1b4f4f3b" ParentID="9c89e3db-7c47-43c0-8554-5d2c9f2c0e87">
               <MUIScreen IsPortal="0" WorkspaceID="e0f4a5b6-c3d4-4789-abcd-ef0123456789" Order="2040" SubcategoryID="f1a5b6c7-d4e5-489a-bcde-f01234567890" />
             </row>
           </SiteMap>
