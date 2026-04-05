@@ -25,6 +25,7 @@ environments:
 publish:
   co_publish:
     - "AesthetikContainers"
+    - "AesthetikContainerGIs"
     - "AsthetikTheme"
     - "StudioBAcuOps"
     - "PXLotSertialNbrAttributeExtPkg"
@@ -56,12 +57,14 @@ pipeline:
   known_projects:
     - "AesthetikWMS"
     - "AesthetikContainers"
+    - "AesthetikContainerGIs"
     - "AsthetikTheme"
     - "StudioBAcuOps"
     - "PXLotSertialNbrAttributeExtPkg"
   isv_packages: []
   also_publish_test:
     - "AesthetikContainers"
+    - "AesthetikContainerGIs"
     - "StudioBAcuOps"
   test_tenant_enabled: true
 
