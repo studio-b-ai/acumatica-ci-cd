@@ -1225,6 +1225,7 @@ namespace StudioB.Containers
                     MigrateIGCMContainers(conn);
 
                     // ── Per-company DML (SiteMap, seed data) ─────────────────
+                    // GIs are now created via XML files (GenericInquiryScreen_*.xml).
                     // These tables are CompanyID-scoped. Discover all companies
                     // dynamically so the plugin works on any tenant (test or prod).
                     var companies = DiscoverCompanies(conn);
@@ -1400,6 +1401,9 @@ namespace StudioB.Containers
             // Historical POs can be backfilled via SM302050 if needed.
         }
 
+        // CleanupIGCMArtifacts and EnsureContainerTrackingGIs removed —
+        // GIs are now created via XML files (GenericInquiryScreen_*.xml).
+        // IGCM cleanup is no longer needed; the ISV artifacts are gone.
         private void EnsureContainerTrackingSiteMap(SqlConnection conn, int companyId)
         {
             // SiteMap entries for 5 new Container Tracking screens.
