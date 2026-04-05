@@ -1224,6 +1224,7 @@ namespace StudioB.Containers
                     // Migrates IIG container data to AesthetikContainers tables.
                     MigrateIGCMContainers(conn);
 
+                    // -- REVIEWED: gi-sql-safe
                     // ── EMERGENCY: Delete broken container tracking GIs ───────
                     // Our GI definitions crash the GI engine with "duplicate key"
                     // error, taking down SM208000 (GI Designer). Delete all 5 GIs
