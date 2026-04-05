@@ -2479,6 +2479,7 @@ public partial class Page_SB_SB302030 : PXPage
                 <link from="Roles (Rolename, ApplicationName)" to="RolesInCache (Rolename, ApplicationName)" type="FromMaster" updateable="False" />
                 <link from="Roles (Rolename, ApplicationName)" to="RolesInGraph (Rolename, ApplicationName)" type="FromMaster" updateable="False" />
                 <link from="Roles (Rolename, ApplicationName)" to="RolesInMember (Rolename, ApplicationName)" type="FromMaster" updateable="False" />
+                <link from="MUIScreen (NodeID)" to="SiteMap (NodeID)" />
                 <link from="MUIWorkspace (WorkspaceID)" to="MUIScreen (WorkspaceID)" type="FromMaster" linkname="workspaceToScreen" split-location="yes" updateable="True" />
                 <link from="MUIArea (AreaID)" to="MUIWorkspace (AreaID)" type="FromMaster" updateable="True" />
                 <link from="MUISubcategory (SubcategoryID)" to="MUIScreen (SubcategoryID)" type="FromMaster" updateable="True" />
@@ -2488,10 +2489,10 @@ public partial class Page_SB_SB302030 : PXPage
                     <table name="RolesInCache" uplink="(ScreenID) = (ScreenID)" />
                     <table name="RolesInGraph" uplink="(ScreenID) = (ScreenID)" />
                     <table name="RolesInMember" uplink="(ScreenID) = (ScreenID)" />
+                    <table name="MUIScreen" uplink="(NodeID) = (NodeID)" />
                 </table>
                 <table name="Roles" />
-                <table name="MUIWorkspace">
-                </table>
+                <table name="MUIWorkspace" />
                 <table name="MUISubcategory" />
                 <table name="MUIArea" />
             </layout>
