@@ -2,6 +2,7 @@ using System;
 using PX.Data;
 using PX.Data.BQL;
 using PX.Data.BQL.Fluent;
+using PX.Objects.CS;
 using PX.Objects.IN;
 using PX.Objects.PO;
 
@@ -353,15 +354,10 @@ namespace Aesthetik.WMS
             return location != null ? ((INLocation)location).LocationID : null;
         }
 
-        /// <summary>Gets default width from the PIECEGOODS class.</summary>
+        /// <summary>Gets default fabric width in inches.</summary>
         private decimal GetDefaultWidth()
         {
-            var lotClass = SelectFrom<INLotSerialClass>
-                .Where<INLotSerialClass.lotSerClassID.IsEqual<@P.AsString>>
-                .View.ReadOnly.Select(Base, PieceGoodsConstants.LotSerialClassID);
-
-            var ext = lotClass?.GetItem<INLotSerialClass>()?.GetExtension<INLotSerialClassExt>();
-            return ext?.UsrPGDefaultWidth ?? 54.0m;
+            return 54.0m;
         }
 
         /// <summary>Gets next sequence number for ad-hoc serial generation.</summary>
@@ -396,7 +392,7 @@ namespace Aesthetik.WMS
         private ReceivingConfig GetReceivingConfig()
         {
             var setup = SelectFrom<INSetup>.View.ReadOnly.SelectSingleBound(Base, null);
-            var ext = setup?.GetItem<INSetup>()?.GetExtension<INSetupExt>();
+            var ext = ((INSetup)setup)?.GetExtension<INSetupExt>();
 
             return new ReceivingConfig
             {

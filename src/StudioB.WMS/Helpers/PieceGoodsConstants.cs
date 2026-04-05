@@ -120,12 +120,6 @@ namespace Aesthetik.WMS
 
         #region Custom Field Names (DAC extensions)
 
-        // INLotSerialClass extension fields (PG prefix for Piece Goods convention)
-        public const string Fld_MinRemnantYardage    = "UsrPGMinRemnant";
-        public const string Fld_AutoPrintLabel       = "UsrPGAutoPrint";
-        public const string Fld_DefaultWidth         = "UsrPGDefaultWidth";
-        public const string Fld_PreReceivingEnabled  = "UsrPGPreRecvEnabled";
-
         // INLotSerialStatus extension fields
         public const string Fld_ActualYardage        = "UsrActualYardage";
         public const string Fld_DyeLot               = "UsrDyeLot";

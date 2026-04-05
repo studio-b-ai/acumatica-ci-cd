@@ -1,6 +1,7 @@
 using System;
 using PX.Data;
 using PX.Data.BQL;
+using PX.Objects.CS;
 using PX.Objects.IN;
 
 namespace Aesthetik.WMS

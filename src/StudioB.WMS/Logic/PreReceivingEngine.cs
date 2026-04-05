@@ -6,6 +6,7 @@ using System.Linq;
 using PX.Data;
 using PX.Data.BQL;
 using PX.Data.BQL.Fluent;
+using PX.Objects.CS;
 using PX.Objects.IN;
 using PX.Objects.PO;
 
@@ -414,7 +415,7 @@ namespace Aesthetik.WMS
 
             // Load INSetup for defaults
             var setup = SelectFrom<INSetup>.View.ReadOnly.SelectSingleBound(_graph, null);
-            var setupExt = setup?.GetItem<INSetup>()?.GetExtension<INSetupExt>();
+            var setupExt = ((INSetup)setup)?.GetExtension<INSetupExt>();
 
             // Group by SKU for sequential serial numbering per SKU per day
             var grouped = lines.GroupBy(l => l.SKU, StringComparer.OrdinalIgnoreCase);
@@ -433,14 +434,7 @@ namespace Aesthetik.WMS
                 // Determine next sequence number for this SKU today
                 int seq = GetNextSerialSequence(sku, today);
 
-                // Load lot/serial class extension for default width
-                var lotClass = SelectFrom<INLotSerialClass>
-                    .Where<INLotSerialClass.lotSerClassID
-                        .IsEqual<@P.AsString>>
-                    .View.ReadOnly.Select(_graph, PieceGoodsConstants.LotSerialClassID);
-                var classExt = lotClass?.GetItem<INLotSerialClass>()
-                    ?.GetExtension<INLotSerialClassExt>();
-                decimal defaultWidth = classExt?.UsrPGDefaultWidth ?? 54.0m;
+                decimal defaultWidth = 54.0m;
 
                 foreach (var line in skuGroup)
                 {
@@ -548,7 +542,7 @@ namespace Aesthetik.WMS
             // Load all available bin locations for the warehouse
             var locations = SelectFrom<INLocation>
                 .Where<INLocation.siteID.IsEqual<@P.AsInt>
-                    .And<INLocation.isActive.IsEqual<True>>>
+                    .And<INLocation.active.IsEqual<True>>>
                 .View.ReadOnly.Select(_graph, warehouseID)
                 .Select(r => (INLocation)r)
                 .ToList();

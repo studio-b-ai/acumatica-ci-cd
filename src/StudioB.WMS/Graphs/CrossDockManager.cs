@@ -4,6 +4,7 @@ using System.Linq;
 using PX.Data;
 using PX.Data.BQL;
 using PX.Data.BQL.Fluent;
+using PX.Objects.CS;
 using PX.Objects.IN;
 using PX.Objects.SO;
 
@@ -36,7 +37,7 @@ namespace Aesthetik.WMS
         private CrossDockConfig GetConfig()
         {
             var setup = SelectFrom<INSetup>.View.ReadOnly.SelectSingleBound(Base, null);
-            var ext = setup?.GetItem<INSetup>()?.GetExtension<INSetupExt>();
+            var ext = ((INSetup)setup)?.GetExtension<INSetupExt>();
 
             return new CrossDockConfig
             {

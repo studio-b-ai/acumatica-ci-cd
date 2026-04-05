@@ -43,7 +43,7 @@ namespace Aesthetik.WMS
                 // Human-readable format: (01)FAB-1024(21)260301-001(10)DL-2026-0412
                 ais = ParseHumanReadable(barcodeData);
             }
-            else if (barcodeData.Contains(PieceGoodsConstants.GS1_FNC1))
+            else if (barcodeData.Contains(PieceGoodsConstants.GS1_FNC1.ToString()))
             {
                 // FNC1-delimited format from scanner
                 ais = ParseFNC1Delimited(barcodeData);

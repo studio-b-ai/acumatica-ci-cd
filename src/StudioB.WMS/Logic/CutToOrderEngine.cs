@@ -1,8 +1,10 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using PX.Data;
 using PX.Data.BQL;
 using PX.Data.BQL.Fluent;
+using PX.Objects.CS;
 using PX.Objects.IN;
 
 namespace Aesthetik.WMS
@@ -35,20 +37,11 @@ namespace Aesthetik.WMS
         private CutConfig GetConfig()
         {
             var setup = SelectFrom<INSetup>.View.ReadOnly.SelectSingleBound(_graph, null);
-            var setupExt = setup?.GetItem<INSetup>()?.GetExtension<INSetupExt>();
-
-            // Check for class-level override
-            var lotClass = SelectFrom<INLotSerialClass>
-                .Where<INLotSerialClass.lotSerClassID
-                    .IsEqual<@P.AsString>>
-                .View.ReadOnly.Select(_graph, PieceGoodsConstants.LotSerialClassID);
-            var classExt = lotClass?.GetItem<INLotSerialClass>()
-                ?.GetExtension<INLotSerialClassExt>();
+            var setupExt = ((INSetup)setup)?.GetExtension<INSetupExt>();
 
             return new CutConfig
             {
-                MinRemnant = classExt?.UsrPGMinRemnant
-                    ?? setupExt?.UsrPGMinRemnant
+                MinRemnant = setupExt?.UsrPGMinRemnant
                     ?? PieceGoodsConstants.DefaultMinRemnantYardage,
                 CutSerialSuffix = setupExt?.UsrPGCutSuffix
                     ?? PieceGoodsConstants.DefaultCutSerialSuffix,
@@ -171,7 +164,7 @@ namespace Aesthetik.WMS
                 adjustmentRef = header.RefNbr;
 
                 // Release the adjustment document
-                INDocumentRelease.ReleaseDoc(new[] { header }, false);
+                INDocumentRelease.ReleaseDoc(new List<INRegister> { header }, false);
 
                 scope.Complete();
             }

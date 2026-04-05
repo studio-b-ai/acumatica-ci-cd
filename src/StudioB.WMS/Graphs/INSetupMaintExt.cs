@@ -1,4 +1,5 @@
 using PX.Data;
+using PX.Objects.CS;
 using PX.Objects.IN;
 
 namespace Aesthetik.WMS
@@ -24,20 +25,20 @@ namespace Aesthetik.WMS
             var ext = e.Row.GetExtension<INSetupExt>();
             if (ext == null) return;
 
-            ext.UsrPGMinRemnant    ??= PieceGoodsConstants.DefaultMinRemnantYardage;
-            ext.UsrPGAutoQtyMode   ??= PieceGoodsConstants.DefaultAutoQuantityMode;
-            ext.UsrPGAutoPrint     ??= PieceGoodsConstants.DefaultAutoPrintLabel;
-            ext.UsrPGCutSuffix     ??= PieceGoodsConstants.DefaultCutSerialSuffix;
-            ext.UsrPGPreRecv       ??= PieceGoodsConstants.DefaultPreReceivingEnabled;
-            ext.UsrPGCrossDock     ??= PieceGoodsConstants.DefaultCrossDockEnabled;
-            ext.UsrPGXDockAge      ??= PieceGoodsConstants.DefaultCrossDockAgeDays;
-            ext.UsrPGInTransitWt   ??= PieceGoodsConstants.DefaultInTransitAllocWeight;
-            ext.UsrPGYardageVar    ??= PieceGoodsConstants.DefaultYardageVarianceThreshold;
-            ext.UsrPGWtExact       ??= PieceGoodsConstants.DefaultWeight_ExactMatch;
-            ext.UsrPGWtRemnant     ??= PieceGoodsConstants.DefaultWeight_MinimizeRemnant;
-            ext.UsrPGWtDyeLot      ??= PieceGoodsConstants.DefaultWeight_DyeLotMatch;
-            ext.UsrPGWtLocation    ??= PieceGoodsConstants.DefaultWeight_LocationPref;
-            ext.UsrPGWtFIFO        ??= PieceGoodsConstants.DefaultWeight_FIFOAge;
+            if (ext.UsrPGMinRemnant == null)  ext.UsrPGMinRemnant  = PieceGoodsConstants.DefaultMinRemnantYardage;
+            if (ext.UsrPGAutoQtyMode == null) ext.UsrPGAutoQtyMode = PieceGoodsConstants.DefaultAutoQuantityMode;
+            if (ext.UsrPGAutoPrint == null)   ext.UsrPGAutoPrint   = PieceGoodsConstants.DefaultAutoPrintLabel;
+            if (ext.UsrPGCutSuffix == null)   ext.UsrPGCutSuffix   = PieceGoodsConstants.DefaultCutSerialSuffix;
+            if (ext.UsrPGPreRecv == null)     ext.UsrPGPreRecv     = PieceGoodsConstants.DefaultPreReceivingEnabled;
+            if (ext.UsrPGCrossDock == null)    ext.UsrPGCrossDock   = PieceGoodsConstants.DefaultCrossDockEnabled;
+            if (ext.UsrPGXDockAge == null)     ext.UsrPGXDockAge    = PieceGoodsConstants.DefaultCrossDockAgeDays;
+            if (ext.UsrPGInTransitWt == null)  ext.UsrPGInTransitWt = PieceGoodsConstants.DefaultInTransitAllocWeight;
+            if (ext.UsrPGYardageVar == null)   ext.UsrPGYardageVar  = PieceGoodsConstants.DefaultYardageVarianceThreshold;
+            if (ext.UsrPGWtExact == null)      ext.UsrPGWtExact     = PieceGoodsConstants.DefaultWeight_ExactMatch;
+            if (ext.UsrPGWtRemnant == null)    ext.UsrPGWtRemnant   = PieceGoodsConstants.DefaultWeight_MinimizeRemnant;
+            if (ext.UsrPGWtDyeLot == null)     ext.UsrPGWtDyeLot    = PieceGoodsConstants.DefaultWeight_DyeLotMatch;
+            if (ext.UsrPGWtLocation == null)   ext.UsrPGWtLocation  = PieceGoodsConstants.DefaultWeight_LocationPref;
+            if (ext.UsrPGWtFIFO == null)       ext.UsrPGWtFIFO      = PieceGoodsConstants.DefaultWeight_FIFOAge;
         }
 
         /// <summary>
