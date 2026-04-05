@@ -2468,6 +2468,438 @@ public partial class Page_SB_SB302030 : PXPage
 }
 ]]></CDATA>
     </File>
+
+    <GenericInquiryScreen>
+      <data-set>
+        <relations format-version="3" relations-version="20190410" main-table="GIDesign" stable-sharing="True" file-name="POContainers">
+          <link from="GIFilter (DesignID)" to="GIDesign (DesignID)" />
+          <link from="GIGroupBy (DesignID)" to="GIDesign (DesignID)" />
+          <link from="GINavigationCondition (DesignID)" to="GIDesign (DesignID)" />
+          <link from="GINavigationParameter (DesignID)" to="GIDesign (DesignID)" />
+          <link from="GINavigationScreen (DesignID)" to="GIDesign (DesignID)" />
+          <link from="GIOn (DesignID)" to="GIDesign (DesignID)" />
+          <link from="GIRelation (DesignID)" to="GIDesign (DesignID)" />
+          <link from="GIResult (DesignID)" to="GIDesign (DesignID)" />
+          <link from="GISort (DesignID)" to="GIDesign (DesignID)" />
+          <link from="GITable (DesignID)" to="GIDesign (DesignID)" />
+          <link from="GIWhere (DesignID)" to="GIDesign (DesignID)" />
+          <link from="GIOn (DesignID,LineNbr)" to="GIRelation (DesignID,LineNbr)" />
+          <link from="GIRelation (DesignID)" to="GITable (DesignID,Alias)" />
+          <link from="GIResult (DesignID)" to="GITable (DesignID,Alias)" />
+          <link from="SiteMap (linkname)" to="GIDesign (DesignID)" />
+          <link from="MUIScreen (linkname)" to="SiteMap (NodeID)" />
+        </relations>
+        <layout>
+          <group id="1" sorting="Natural" filtering="Natural" />
+        </layout>
+        <data>
+          <GIDesign>
+            <row DesignID="c51f9373-0b67-4955-9fce-ea35570bb2d0" Name="POContainers" ScreenID="SB401000" FilterColCount="3" PageSize="0" ExportTop="0" NewRecordCreationEnabled="0" MassDeleteEnabled="0" AutoConfirmDelete="0" MassRecordsUpdateEnabled="0" MassActionsOnRecordsEnabled="0" ExposeViaOData="1" ExposeViaMobile="0">
+
+              <!-- Table 1: UsrContainer (main/driving table) -->
+              <GITable Alias="Container" Name="StudioB.Containers.UsrContainer">
+                <!-- JOIN 1: Container LEFT JOIN UsrContainerPOLink ON ContainerID -->
+                <GIRelation LineNbr="1" ChildTable="ContainerPOLink" IsActive="1" JoinType="L">
+                  <GIOn LineNbr="1" ParentField="ContainerID" Condition="E " ChildField="ContainerID" Operation="A" />
+                </GIRelation>
+                <!-- Result columns from Container -->
+                <GIResult LineNbr="1" SortOrder="1" IsActive="1" Field="ContainerCD" Width="120" IsVisible="1" DefaultNav="1" QuickFilter="0" FastFilter="1" Caption="Container ID" RowID="f1e9bb98-3378-45f5-89e5-6c69c48bcee1" />
+                <GIResult LineNbr="2" SortOrder="2" IsActive="1" Field="Status" Width="100" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Status" RowID="aafdcf58-7a3c-4533-a5ba-09a44856a23b" />
+                <GIResult LineNbr="3" SortOrder="3" IsActive="1" Field="CarrierCode" Width="100" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Carrier" RowID="ce695297-a923-4301-bd03-593cc8e9e836" />
+                <GIResult LineNbr="4" SortOrder="4" IsActive="1" Field="VesselName" Width="140" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Vessel" RowID="f6cd0615-e5b2-4e63-94ce-c141e3b730a0" />
+                <GIResult LineNbr="5" SortOrder="5" IsActive="1" Field="BookingRef" Width="120" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Booking Ref" RowID="8791c85b-5a46-4000-985e-81f671ed0e4c" />
+                <GIResult LineNbr="6" SortOrder="6" IsActive="1" Field="BillOfLading" Width="120" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Bill of Lading" RowID="bbd7cd82-598f-4d07-8fc7-60ae3f4f5aa6" />
+                <GIResult LineNbr="7" SortOrder="7" IsActive="1" Field="PortOfLoading" Width="120" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Port of Loading" RowID="da917edc-2bef-4a1c-a27f-f0b86747c92f" />
+                <GIResult LineNbr="8" SortOrder="8" IsActive="1" Field="PortOfDischarge" Width="120" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Port of Discharge" RowID="a5309545-3e9f-465b-8b91-f54b30707318" />
+                <GIResult LineNbr="9" SortOrder="9" IsActive="1" Field="ETD" Width="100" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="ETD" RowID="c2caab2d-5e31-4f60-aeb0-d4b005200e68" />
+                <GIResult LineNbr="10" SortOrder="10" IsActive="1" Field="ETA" Width="100" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="ETA" RowID="30573f0e-1fdc-4bb6-8510-ed85fa51c960" />
+                <GIResult LineNbr="11" SortOrder="11" IsActive="1" Field="ATA" Width="100" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="ATA" RowID="ff74dfb8-aa9a-4de9-931c-7ed1744acc67" />
+                <GIResult LineNbr="12" SortOrder="12" IsActive="1" Field="ContainerType" Width="100" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Container Type" RowID="12882732-320c-4d30-b107-91b4cdfe6d06" />
+              </GITable>
+
+              <!-- Table 2: UsrContainerPOLink -->
+              <GITable Alias="ContainerPOLink" Name="StudioB.Containers.UsrContainerPOLink">
+                <!-- JOIN 2: ContainerPOLink LEFT JOIN POOrder ON OrderType+OrderNbr -->
+                <GIRelation LineNbr="2" ChildTable="PO" IsActive="1" JoinType="L">
+                  <GIOn LineNbr="1" ParentField="OrderType" Condition="E " ChildField="OrderType" Operation="A" />
+                  <GIOn LineNbr="2" ParentField="OrderNbr" Condition="E " ChildField="OrderNbr" Operation="A" />
+                </GIRelation>
+              </GITable>
+
+              <!-- Table 3: POOrder -->
+              <GITable Alias="PO" Name="PX.Objects.PO.POOrder">
+              </GITable>
+
+              <!-- Filters -->
+              <GIFilter LineNbr="1" Name="StatusFilter" DataFieldName="Container.Status" IsActive="1" />
+              <GIFilter LineNbr="2" Name="CarrierFilter" DataFieldName="Container.CarrierCode" IsActive="1" />
+
+              <!-- WHERE: bind filters -->
+              <GIWhere LineNbr="1" IsActive="1" DataFieldName="Container.Status" Condition="E " IsExpression="0" Value1="=[StatusFilter]" Operation="A" />
+              <GIWhere LineNbr="2" IsActive="1" DataFieldName="Container.CarrierCode" Condition="E " IsExpression="0" Value1="=[CarrierFilter]" Operation="A" />
+
+              <!-- SORT by ETA descending -->
+              <GISort LineNbr="1" IsActive="1" DataFieldName="Container.ETA" SortOrder="D" />
+
+              <!-- SiteMap entry -->
+              <SiteMap linkname="toDesignById">
+                <row Position="1100" Title="PO Containers" Url="~/GenericInquiry/GenericInquiry.aspx?id=c51f9373-0b67-4955-9fce-ea35570bb2d0" Expanded="0" IsFolder="0" ScreenID="SB401000" NodeID="52efd460-af44-4e6e-b860-68086c95297e" ParentID="9c89e3db-7c47-43c0-8554-5d2c9f2c0e87">
+                  <MUIScreen IsPortal="0" WorkspaceID="95191203-a0b8-4fc0-8b20-4efe831708e9" Order="2030" SubcategoryID="acf1bb34-2055-411e-88be-d840efcc7424" />
+                </row>
+              </SiteMap>
+
+            </row>
+          </GIDesign>
+        </data>
+      </data-set>
+    </GenericInquiryScreen>
+    <GenericInquiryScreen>
+      <data-set>
+        <relations format-version="3" relations-version="20190410" main-table="GIDesign" stable-sharing="True" file-name="ContainerEvents">
+          <link from="GIFilter (DesignID)" to="GIDesign (DesignID)" />
+          <link from="GIGroupBy (DesignID)" to="GIDesign (DesignID)" />
+          <link from="GINavigationCondition (DesignID)" to="GIDesign (DesignID)" />
+          <link from="GINavigationParameter (DesignID)" to="GIDesign (DesignID)" />
+          <link from="GINavigationScreen (DesignID)" to="GIDesign (DesignID)" />
+          <link from="GIOn (DesignID)" to="GIDesign (DesignID)" />
+          <link from="GIRelation (DesignID)" to="GIDesign (DesignID)" />
+          <link from="GIResult (DesignID)" to="GIDesign (DesignID)" />
+          <link from="GISort (DesignID)" to="GIDesign (DesignID)" />
+          <link from="GITable (DesignID)" to="GIDesign (DesignID)" />
+          <link from="GIWhere (DesignID)" to="GIDesign (DesignID)" />
+          <link from="GIOn (DesignID,LineNbr)" to="GIRelation (DesignID,LineNbr)" />
+          <link from="GIRelation (DesignID)" to="GITable (DesignID,Alias)" />
+          <link from="GIResult (DesignID)" to="GITable (DesignID,Alias)" />
+          <link from="SiteMap (linkname)" to="GIDesign (DesignID)" />
+          <link from="MUIScreen (linkname)" to="SiteMap (NodeID)" />
+        </relations>
+        <layout>
+          <group id="1" sorting="Natural" filtering="Natural" />
+        </layout>
+        <data>
+          <GIDesign>
+            <row DesignID="9b530442-4f3e-42d4-b23c-15ec0af087ab" Name="ContainerEvents" ScreenID="SB401020" FilterColCount="3" PageSize="0" ExportTop="0" NewRecordCreationEnabled="0" MassDeleteEnabled="0" AutoConfirmDelete="0" MassRecordsUpdateEnabled="0" MassActionsOnRecordsEnabled="0" ExposeViaOData="1" ExposeViaMobile="0">
+
+              <!-- Table 1: UsrContainerEvent (main/driving table) -->
+              <GITable Alias="Event" Name="StudioB.Containers.UsrContainerEvent">
+                <!-- JOIN 1: Event LEFT JOIN Container ON ContainerID -->
+                <GIRelation LineNbr="1" ChildTable="Container" IsActive="1" JoinType="L">
+                  <GIOn LineNbr="1" ParentField="ContainerID" Condition="E " ChildField="ContainerID" Operation="A" />
+                </GIRelation>
+                <!-- Result columns from Event -->
+                <GIResult LineNbr="1" SortOrder="1" IsActive="1" Field="EventDateTime" Width="140" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Event Date/Time" RowID="4227fe87-3a3d-4fd3-91fe-8b2e32dbe1fe" />
+                <GIResult LineNbr="2" SortOrder="2" IsActive="1" Field="NormalizedEventCode" Width="120" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Event Code" RowID="6f23aa9c-4726-46d8-bfd2-00d2532b1c50" />
+                <GIResult LineNbr="3" SortOrder="3" IsActive="1" Field="EventClassifier" Width="120" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Classifier" RowID="1f51de27-8226-4d2c-9c5d-94fbba520cbe" />
+                <GIResult LineNbr="4" SortOrder="4" IsActive="1" Field="LocationName" Width="140" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Location" RowID="5e0412f0-6bb3-420f-a0b8-efc52c41b78a" />
+                <GIResult LineNbr="5" SortOrder="5" IsActive="1" Field="VesselName" Width="140" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Vessel" RowID="aeb136c0-7248-45c6-a451-b50a3c70767e" />
+                <GIResult LineNbr="6" SortOrder="6" IsActive="1" Field="Description" Width="220" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Description" RowID="47dca628-367d-4f0f-952b-aeedd6401425" />
+              </GITable>
+
+              <!-- Table 2: UsrContainer -->
+              <GITable Alias="Container" Name="StudioB.Containers.UsrContainer">
+                <GIResult LineNbr="7" SortOrder="7" IsActive="1" Field="ContainerCD" Width="120" IsVisible="1" DefaultNav="1" QuickFilter="0" FastFilter="1" Caption="Container ID" RowID="9896fa4d-1d9c-40dc-9b8f-495dc0e7cf99" />
+              </GITable>
+
+              <!-- Filters -->
+              <GIFilter LineNbr="1" Name="ContainerFilter" DataFieldName="Container.ContainerCD" IsActive="1" />
+              <GIFilter LineNbr="2" Name="EventCodeFilter" DataFieldName="Event.NormalizedEventCode" IsActive="1" />
+
+              <!-- WHERE: bind filters -->
+              <GIWhere LineNbr="1" IsActive="1" DataFieldName="Container.ContainerCD" Condition="E " IsExpression="0" Value1="=[ContainerFilter]" Operation="A" />
+              <GIWhere LineNbr="2" IsActive="1" DataFieldName="Event.NormalizedEventCode" Condition="E " IsExpression="0" Value1="=[EventCodeFilter]" Operation="A" />
+
+              <!-- SORT by EventDateTime descending -->
+              <GISort LineNbr="1" IsActive="1" DataFieldName="Event.EventDateTime" SortOrder="D" />
+
+              <!-- SiteMap entry -->
+              <SiteMap linkname="toDesignById">
+                <row Position="1110" Title="Container Events" Url="~/GenericInquiry/GenericInquiry.aspx?id=9b530442-4f3e-42d4-b23c-15ec0af087ab" Expanded="0" IsFolder="0" ScreenID="SB401020" NodeID="c6810a45-84db-4720-bec4-b0e4cd012a12" ParentID="9c89e3db-7c47-43c0-8554-5d2c9f2c0e87">
+                  <MUIScreen IsPortal="0" WorkspaceID="95191203-a0b8-4fc0-8b20-4efe831708e9" Order="2040" SubcategoryID="acf1bb34-2055-411e-88be-d840efcc7424" />
+                </row>
+              </SiteMap>
+
+            </row>
+          </GIDesign>
+        </data>
+      </data-set>
+    </GenericInquiryScreen>
+    <GenericInquiryScreen>
+      <data-set>
+        <relations format-version="3" relations-version="20190410" main-table="GIDesign" stable-sharing="True" file-name="POContainerLines">
+          <link from="GIFilter (DesignID)" to="GIDesign (DesignID)" />
+          <link from="GIGroupBy (DesignID)" to="GIDesign (DesignID)" />
+          <link from="GINavigationCondition (DesignID)" to="GIDesign (DesignID)" />
+          <link from="GINavigationParameter (DesignID)" to="GIDesign (DesignID)" />
+          <link from="GINavigationScreen (DesignID)" to="GIDesign (DesignID)" />
+          <link from="GIOn (DesignID)" to="GIDesign (DesignID)" />
+          <link from="GIRelation (DesignID)" to="GIDesign (DesignID)" />
+          <link from="GIResult (DesignID)" to="GIDesign (DesignID)" />
+          <link from="GISort (DesignID)" to="GIDesign (DesignID)" />
+          <link from="GITable (DesignID)" to="GIDesign (DesignID)" />
+          <link from="GIWhere (DesignID)" to="GIDesign (DesignID)" />
+          <link from="GIOn (DesignID,LineNbr)" to="GIRelation (DesignID,LineNbr)" />
+          <link from="GIRelation (DesignID)" to="GITable (DesignID,Alias)" />
+          <link from="GIResult (DesignID)" to="GITable (DesignID,Alias)" />
+          <link from="SiteMap (linkname)" to="GIDesign (DesignID)" />
+          <link from="MUIScreen (linkname)" to="SiteMap (NodeID)" />
+        </relations>
+        <layout>
+          <group id="1" sorting="Natural" filtering="Natural" />
+        </layout>
+        <data>
+          <GIDesign>
+            <row DesignID="ca2a6f08-0ecd-499f-993f-b0dbafde5233" Name="POContainerLines" ScreenID="SB401040" FilterColCount="3" PageSize="0" ExportTop="0" NewRecordCreationEnabled="0" MassDeleteEnabled="0" AutoConfirmDelete="0" MassRecordsUpdateEnabled="0" MassActionsOnRecordsEnabled="0" ExposeViaOData="1" ExposeViaMobile="0">
+
+              <!-- Table 1: UsrContainerPOLink (main/driving table) -->
+              <GITable Alias="Link" Name="StudioB.Containers.UsrContainerPOLink">
+                <!-- JOIN 1: Link LEFT JOIN Container ON ContainerID -->
+                <GIRelation LineNbr="1" ChildTable="Container" IsActive="1" JoinType="L">
+                  <GIOn LineNbr="1" ParentField="ContainerID" Condition="E " ChildField="ContainerID" Operation="A" />
+                </GIRelation>
+                <!-- JOIN 2: Link LEFT JOIN PO ON OrderType+OrderNbr -->
+                <GIRelation LineNbr="2" ChildTable="PO" IsActive="1" JoinType="L">
+                  <GIOn LineNbr="1" ParentField="OrderType" Condition="E " ChildField="OrderType" Operation="A" />
+                  <GIOn LineNbr="2" ParentField="OrderNbr" Condition="E " ChildField="OrderNbr" Operation="A" />
+                </GIRelation>
+                <!-- JOIN 3: Link LEFT JOIN Line ON OrderType+OrderNbr+LineNbr -->
+                <GIRelation LineNbr="3" ChildTable="Line" IsActive="1" JoinType="L">
+                  <GIOn LineNbr="1" ParentField="OrderType" Condition="E " ChildField="OrderType" Operation="A" />
+                  <GIOn LineNbr="2" ParentField="OrderNbr" Condition="E " ChildField="OrderNbr" Operation="A" />
+                  <GIOn LineNbr="3" ParentField="LineNbr" Condition="E " ChildField="LineNbr" Operation="A" />
+                </GIRelation>
+                <!-- Result columns from Link -->
+                <GIResult LineNbr="3" SortOrder="3" IsActive="1" Field="OrderNbr" Width="100" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="PO Number" RowID="ae206494-e054-4df5-b5c2-b06e46de73f2" />
+                <GIResult LineNbr="4" SortOrder="4" IsActive="1" Field="LineNbr" Width="60" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Line Nbr" RowID="a50703a2-dbef-449a-861d-5661baef9f0c" />
+              </GITable>
+
+              <!-- Table 2: UsrContainer -->
+              <GITable Alias="Container" Name="StudioB.Containers.UsrContainer">
+                <GIResult LineNbr="1" SortOrder="1" IsActive="1" Field="ContainerCD" Width="120" IsVisible="1" DefaultNav="1" QuickFilter="0" FastFilter="1" Caption="Container ID" RowID="12f5907a-1330-4f0f-82b7-b3a07a06747e" />
+                <GIResult LineNbr="2" SortOrder="2" IsActive="1" Field="Status" Width="100" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Status" RowID="62580c08-e9e1-444e-933a-b30418b9a399" />
+                <GIResult LineNbr="8" SortOrder="8" IsActive="1" Field="ETA" Width="100" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="ETA" RowID="f9d03a3b-472e-46fc-bbac-2709e7742195" />
+              </GITable>
+
+              <!-- Table 3: POOrder -->
+              <GITable Alias="PO" Name="PX.Objects.PO.POOrder">
+              </GITable>
+
+              <!-- Table 4: POLine -->
+              <GITable Alias="Line" Name="PX.Objects.PO.POLine">
+                <GIResult LineNbr="5" SortOrder="5" IsActive="1" Field="InventoryID" Width="100" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Inventory ID" RowID="6665196b-7261-4f97-8c28-a697fb877448" />
+                <GIResult LineNbr="6" SortOrder="6" IsActive="1" Field="OrderQty" Width="80" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Order Qty" RowID="906e6e7b-0924-451b-a45d-37c6d97247b3" />
+                <GIResult LineNbr="7" SortOrder="7" IsActive="1" Field="UsrExpArrivalDate" Width="100" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Expected Arrival" RowID="d0940037-6efc-423b-8aa8-67b4afea9f98" />
+              </GITable>
+
+              <!-- SORT by ETA descending, then OrderNbr ascending -->
+              <GISort LineNbr="1" IsActive="1" DataFieldName="Container.ETA" SortOrder="D" />
+              <GISort LineNbr="2" IsActive="1" DataFieldName="Link.OrderNbr" SortOrder="A" />
+
+              <!-- SiteMap entry -->
+              <SiteMap linkname="toDesignById">
+                <row Position="1120" Title="PO Container Lines" Url="~/GenericInquiry/GenericInquiry.aspx?id=ca2a6f08-0ecd-499f-993f-b0dbafde5233" Expanded="0" IsFolder="0" ScreenID="SB401040" NodeID="099aa852-7bd9-4921-8f77-c63e5115da48" ParentID="9c89e3db-7c47-43c0-8554-5d2c9f2c0e87">
+                  <MUIScreen IsPortal="0" WorkspaceID="95191203-a0b8-4fc0-8b20-4efe831708e9" Order="2050" SubcategoryID="acf1bb34-2055-411e-88be-d840efcc7424" />
+                </row>
+              </SiteMap>
+
+            </row>
+          </GIDesign>
+        </data>
+      </data-set>
+    </GenericInquiryScreen>
+    <GenericInquiryScreen>
+      <data-set>
+        <relations format-version="3" relations-version="20190410" main-table="GIDesign" stable-sharing="True" file-name="ArrivingThisWeek">
+          <link from="GIFilter (DesignID)" to="GIDesign (DesignID)" />
+          <link from="GIGroupBy (DesignID)" to="GIDesign (DesignID)" />
+          <link from="GINavigationCondition (DesignID)" to="GIDesign (DesignID)" />
+          <link from="GINavigationParameter (DesignID)" to="GIDesign (DesignID)" />
+          <link from="GINavigationScreen (DesignID)" to="GIDesign (DesignID)" />
+          <link from="GIOn (DesignID)" to="GIDesign (DesignID)" />
+          <link from="GIRelation (DesignID)" to="GIDesign (DesignID)" />
+          <link from="GIResult (DesignID)" to="GIDesign (DesignID)" />
+          <link from="GISort (DesignID)" to="GIDesign (DesignID)" />
+          <link from="GITable (DesignID)" to="GIDesign (DesignID)" />
+          <link from="GIWhere (DesignID)" to="GIDesign (DesignID)" />
+          <link from="GIOn (DesignID,LineNbr)" to="GIRelation (DesignID,LineNbr)" />
+          <link from="GIRelation (DesignID)" to="GITable (DesignID,Alias)" />
+          <link from="GIResult (DesignID)" to="GITable (DesignID,Alias)" />
+          <link from="SiteMap (linkname)" to="GIDesign (DesignID)" />
+          <link from="MUIScreen (linkname)" to="SiteMap (NodeID)" />
+        </relations>
+        <layout>
+          <group id="1" sorting="Natural" filtering="Natural" />
+        </layout>
+        <data>
+          <GIDesign>
+            <row DesignID="bf82d1d5-a528-42c8-87a0-26f6f39fa1f1" Name="ArrivingThisWeek" ScreenID="SB401050" FilterColCount="3" PageSize="0" ExportTop="0" NewRecordCreationEnabled="0" MassDeleteEnabled="0" AutoConfirmDelete="0" MassRecordsUpdateEnabled="0" MassActionsOnRecordsEnabled="0" ExposeViaOData="1" ExposeViaMobile="0">
+
+              <!-- Table 1: UsrContainer (single table, no joins) -->
+              <GITable Alias="Container" Name="StudioB.Containers.UsrContainer">
+                <GIResult LineNbr="1" SortOrder="1" IsActive="1" Field="ContainerCD" Width="120" IsVisible="1" DefaultNav="1" QuickFilter="0" FastFilter="1" Caption="Container ID" RowID="dcb58a0e-6c55-4a2e-9dc4-709b5a65a34a" />
+                <GIResult LineNbr="2" SortOrder="2" IsActive="1" Field="CarrierCode" Width="100" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Carrier" RowID="ac634aa1-5103-41de-a9b2-244628c0ba2e" />
+                <GIResult LineNbr="3" SortOrder="3" IsActive="1" Field="VesselName" Width="140" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Vessel" RowID="836982fe-fd1b-4b37-9446-c8b51870b233" />
+                <GIResult LineNbr="4" SortOrder="4" IsActive="1" Field="ETA" Width="100" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="ETA" RowID="77349f90-5c24-4d75-a11b-1364aa31b600" />
+                <GIResult LineNbr="5" SortOrder="5" IsActive="1" Field="Status" Width="100" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Status" RowID="62d698ab-891e-4638-b61d-0fb1c79f2a15" />
+                <GIResult LineNbr="6" SortOrder="6" IsActive="1" Field="PortOfDischarge" Width="120" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Port of Discharge" RowID="cd2f56ca-7a19-4dc0-bd32-090ed4c74ca6" />
+              </GITable>
+
+              <!-- WHERE: exclude DELIVERED and CANCELLED -->
+              <GIWhere LineNbr="1" IsActive="1" DataFieldName="Container.Status" Condition="NE" IsExpression="0" Value1="DELIVERED" Operation="A" />
+              <GIWhere LineNbr="2" IsActive="1" DataFieldName="Container.Status" Condition="NE" IsExpression="0" Value1="CANCELLED" Operation="A" />
+
+              <!-- SORT by ETA ascending -->
+              <GISort LineNbr="1" IsActive="1" DataFieldName="Container.ETA" SortOrder="A" />
+
+              <!-- SiteMap entry -->
+              <SiteMap linkname="toDesignById">
+                <row Position="1130" Title="Arriving This Week" Url="~/GenericInquiry/GenericInquiry.aspx?id=bf82d1d5-a528-42c8-87a0-26f6f39fa1f1" Expanded="0" IsFolder="0" ScreenID="SB401050" NodeID="0219aa45-db89-4bcb-a8c2-717ab4b8f698" ParentID="9c89e3db-7c47-43c0-8554-5d2c9f2c0e87">
+                  <MUIScreen IsPortal="0" WorkspaceID="95191203-a0b8-4fc0-8b20-4efe831708e9" Order="2060" SubcategoryID="acf1bb34-2055-411e-88be-d840efcc7424" />
+                </row>
+              </SiteMap>
+
+            </row>
+          </GIDesign>
+        </data>
+      </data-set>
+    </GenericInquiryScreen>
+    <GenericInquiryScreen>
+      <data-set>
+        <relations format-version="3" relations-version="20190410" main-table="GIDesign" stable-sharing="True" file-name="ContainersNeedingAttention">
+          <link from="GIFilter (DesignID)" to="GIDesign (DesignID)" />
+          <link from="GIGroupBy (DesignID)" to="GIDesign (DesignID)" />
+          <link from="GINavigationCondition (DesignID)" to="GIDesign (DesignID)" />
+          <link from="GINavigationParameter (DesignID)" to="GIDesign (DesignID)" />
+          <link from="GINavigationScreen (DesignID)" to="GIDesign (DesignID)" />
+          <link from="GIOn (DesignID)" to="GIDesign (DesignID)" />
+          <link from="GIRelation (DesignID)" to="GIDesign (DesignID)" />
+          <link from="GIResult (DesignID)" to="GIDesign (DesignID)" />
+          <link from="GISort (DesignID)" to="GIDesign (DesignID)" />
+          <link from="GITable (DesignID)" to="GIDesign (DesignID)" />
+          <link from="GIWhere (DesignID)" to="GIDesign (DesignID)" />
+          <link from="GIOn (DesignID,LineNbr)" to="GIRelation (DesignID,LineNbr)" />
+          <link from="GIRelation (DesignID)" to="GITable (DesignID,Alias)" />
+          <link from="GIResult (DesignID)" to="GITable (DesignID,Alias)" />
+          <link from="SiteMap (linkname)" to="GIDesign (DesignID)" />
+          <link from="MUIScreen (linkname)" to="SiteMap (NodeID)" />
+        </relations>
+        <layout>
+          <group id="1" sorting="Natural" filtering="Natural" />
+        </layout>
+        <data>
+          <GIDesign>
+            <row DesignID="6365a9eb-cfa6-4c6a-92f9-65defed34c17" Name="ContainersNeedingAttention" ScreenID="SB401060" FilterColCount="3" PageSize="0" ExportTop="0" NewRecordCreationEnabled="0" MassDeleteEnabled="0" AutoConfirmDelete="0" MassRecordsUpdateEnabled="0" MassActionsOnRecordsEnabled="0" ExposeViaOData="1" ExposeViaMobile="0">
+
+              <!-- Table 1: UsrContainer (single table, no joins) -->
+              <GITable Alias="Container" Name="StudioB.Containers.UsrContainer">
+                <GIResult LineNbr="1" SortOrder="1" IsActive="1" Field="ContainerCD" Width="120" IsVisible="1" DefaultNav="1" QuickFilter="0" FastFilter="1" Caption="Container ID" RowID="9c2d8980-f518-4511-9e01-ceda25cce9d1" />
+                <GIResult LineNbr="2" SortOrder="2" IsActive="1" Field="Status" Width="100" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Status" RowID="b003082d-e8fa-4217-ac3a-3188cc5c66c6" />
+                <GIResult LineNbr="3" SortOrder="3" IsActive="1" Field="CarrierCode" Width="100" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Carrier" RowID="28ccb30c-5a5d-45c8-b41d-83b6d823d0c0" />
+                <GIResult LineNbr="4" SortOrder="4" IsActive="1" Field="ETA" Width="100" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="ETA" RowID="51bb8634-63e3-43c7-b1bb-153fe09b193a" />
+                <GIResult LineNbr="5" SortOrder="5" IsActive="1" Field="LastEventDate" Width="140" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Last Event Date" RowID="db62731e-c1bf-468c-a28a-d2f410aba85d" />
+                <GIResult LineNbr="6" SortOrder="6" IsActive="1" Field="LastSyncDate" Width="140" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Last Sync Date" RowID="24c4b8e9-f260-4f6f-8aac-691dafb0a8ce" />
+              </GITable>
+
+              <!-- WHERE: Status = CUSTOMS_HOLD -->
+              <GIWhere LineNbr="1" IsActive="1" DataFieldName="Container.Status" Condition="E " IsExpression="0" Value1="CUSTOMS_HOLD" Operation="A" />
+
+              <!-- SORT by ETA ascending -->
+              <GISort LineNbr="1" IsActive="1" DataFieldName="Container.ETA" SortOrder="A" />
+
+              <!-- SiteMap entry -->
+              <SiteMap linkname="toDesignById">
+                <row Position="1140" Title="Containers Needing Attention" Url="~/GenericInquiry/GenericInquiry.aspx?id=6365a9eb-cfa6-4c6a-92f9-65defed34c17" Expanded="0" IsFolder="0" ScreenID="SB401060" NodeID="e6b1a8e3-8af8-444f-9dd8-2779396b7902" ParentID="9c89e3db-7c47-43c0-8554-5d2c9f2c0e87">
+                  <MUIScreen IsPortal="0" WorkspaceID="95191203-a0b8-4fc0-8b20-4efe831708e9" Order="2070" SubcategoryID="acf1bb34-2055-411e-88be-d840efcc7424" />
+                </row>
+              </SiteMap>
+
+            </row>
+          </GIDesign>
+        </data>
+      </data-set>
+    </GenericInquiryScreen>
+    <GenericInquiryScreen>
+      <data-set>
+        <relations format-version="3" relations-version="20190410" main-table="GIDesign" stable-sharing="True" file-name="LandedCostSummary">
+          <link from="GIFilter (DesignID)" to="GIDesign (DesignID)" />
+          <link from="GIGroupBy (DesignID)" to="GIDesign (DesignID)" />
+          <link from="GINavigationCondition (DesignID)" to="GIDesign (DesignID)" />
+          <link from="GINavigationParameter (DesignID)" to="GIDesign (DesignID)" />
+          <link from="GINavigationScreen (DesignID)" to="GIDesign (DesignID)" />
+          <link from="GIOn (DesignID)" to="GIDesign (DesignID)" />
+          <link from="GIRelation (DesignID)" to="GIDesign (DesignID)" />
+          <link from="GIResult (DesignID)" to="GIDesign (DesignID)" />
+          <link from="GISort (DesignID)" to="GIDesign (DesignID)" />
+          <link from="GITable (DesignID)" to="GIDesign (DesignID)" />
+          <link from="GIWhere (DesignID)" to="GIDesign (DesignID)" />
+          <link from="GIOn (DesignID,LineNbr)" to="GIRelation (DesignID,LineNbr)" />
+          <link from="GIRelation (DesignID)" to="GITable (DesignID,Alias)" />
+          <link from="GIResult (DesignID)" to="GITable (DesignID,Alias)" />
+          <link from="SiteMap (linkname)" to="GIDesign (DesignID)" />
+          <link from="MUIScreen (linkname)" to="SiteMap (NodeID)" />
+        </relations>
+        <layout>
+          <group id="1" sorting="Natural" filtering="Natural" />
+        </layout>
+        <data>
+          <GIDesign>
+            <row DesignID="6a7d8fbb-a1ae-4559-adf8-e5e63cb4c05d" Name="LandedCostSummary" ScreenID="SB401070" FilterColCount="3" PageSize="0" ExportTop="0" NewRecordCreationEnabled="0" MassDeleteEnabled="0" AutoConfirmDelete="0" MassRecordsUpdateEnabled="0" MassActionsOnRecordsEnabled="0" ExposeViaOData="1" ExposeViaMobile="0">
+
+              <!-- Table 1: POReceiptLine (main/driving table) -->
+              <GITable Alias="Receipt" Name="PX.Objects.PO.POReceiptLine">
+                <!-- JOIN 1: Receipt LEFT JOIN Item ON InventoryID -->
+                <GIRelation LineNbr="1" ChildTable="Item" IsActive="1" JoinType="L">
+                  <GIOn LineNbr="1" ParentField="InventoryID" Condition="E " ChildField="InventoryID" Operation="A" />
+                </GIRelation>
+                <!-- JOIN 2: Receipt LEFT JOIN Link ON POType+PONbr+POLineNbr -->
+                <GIRelation LineNbr="2" ChildTable="Link" IsActive="1" JoinType="L">
+                  <GIOn LineNbr="1" ParentField="POType" Condition="E " ChildField="OrderType" Operation="A" />
+                  <GIOn LineNbr="2" ParentField="PONbr" Condition="E " ChildField="OrderNbr" Operation="A" />
+                  <GIOn LineNbr="3" ParentField="POLineNbr" Condition="E " ChildField="LineNbr" Operation="A" />
+                </GIRelation>
+                <!-- Result columns from Receipt -->
+                <GIResult LineNbr="2" SortOrder="2" IsActive="1" Field="ReceiptNbr" Width="100" IsVisible="1" DefaultNav="1" QuickFilter="0" FastFilter="1" Caption="Receipt Nbr" RowID="20fb5d15-0f39-4def-b7b3-02ea6d82f0b3" />
+                <GIResult LineNbr="4" SortOrder="4" IsActive="1" Field="Qty" Width="80" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Qty" RowID="a7ea124c-8008-421f-8beb-8e302e3d3482" />
+                <GIResult LineNbr="5" SortOrder="5" IsActive="1" Field="UnitCost" Width="80" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Unit Cost" RowID="e626f904-730f-4b5d-b573-cf692702040a" />
+                <GIResult LineNbr="6" SortOrder="6" IsActive="1" Field="UsrActualDutyAmt" Width="100" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Actual Duty" RowID="13347ac4-1ea3-4218-9f7a-5b11cb715dc1" />
+                <GIResult LineNbr="7" SortOrder="7" IsActive="1" Field="UsrActualFreightAmt" Width="100" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Actual Freight" RowID="e73f8a98-0a17-4c00-a053-e7efc2e5152b" />
+                <GIResult LineNbr="8" SortOrder="8" IsActive="1" Field="UsrBrokerageAmt" Width="100" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Brokerage" RowID="02461dec-4288-42c9-906a-f5cd9c3765f9" />
+                <GIResult LineNbr="9" SortOrder="9" IsActive="1" Field="UsrLandedCostPerUnit" Width="100" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Landed Cost/Unit" RowID="dbbd05dc-39e7-44e1-8397-041739dc6a0e" />
+              </GITable>
+
+              <!-- Table 2: UsrContainerPOLink -->
+              <GITable Alias="Link" Name="StudioB.Containers.UsrContainerPOLink">
+                <!-- JOIN 3: Link LEFT JOIN Container ON ContainerID -->
+                <GIRelation LineNbr="3" ChildTable="Container" IsActive="1" JoinType="L">
+                  <GIOn LineNbr="1" ParentField="ContainerID" Condition="E " ChildField="ContainerID" Operation="A" />
+                </GIRelation>
+              </GITable>
+
+              <!-- Table 3: UsrContainer -->
+              <GITable Alias="Container" Name="StudioB.Containers.UsrContainer">
+                <GIResult LineNbr="1" SortOrder="1" IsActive="1" Field="ContainerCD" Width="120" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Container ID" RowID="84fd5cf1-452f-4701-bdbe-1bf800720d56" />
+              </GITable>
+
+              <!-- Table 4: InventoryItem -->
+              <GITable Alias="Item" Name="PX.Objects.IN.InventoryItem">
+                <GIResult LineNbr="3" SortOrder="3" IsActive="1" Field="InventoryCD" Width="120" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Inventory ID" RowID="e56bf54a-ce29-4200-b2e7-ca47bbbecd53" />
+              </GITable>
+
+              <!-- SORT by ContainerCD ascending, ReceiptNbr ascending -->
+              <GISort LineNbr="1" IsActive="1" DataFieldName="Container.ContainerCD" SortOrder="A" />
+              <GISort LineNbr="2" IsActive="1" DataFieldName="Receipt.ReceiptNbr" SortOrder="A" />
+
+              <!-- SiteMap entry -->
+              <SiteMap linkname="toDesignById">
+                <row Position="1150" Title="Landed Cost Summary" Url="~/GenericInquiry/GenericInquiry.aspx?id=6a7d8fbb-a1ae-4559-adf8-e5e63cb4c05d" Expanded="0" IsFolder="0" ScreenID="SB401070" NodeID="643f1ff8-6141-4805-910e-a3930f5b2354" ParentID="9c89e3db-7c47-43c0-8554-5d2c9f2c0e87">
+                  <MUIScreen IsPortal="0" WorkspaceID="95191203-a0b8-4fc0-8b20-4efe831708e9" Order="2080" SubcategoryID="acf1bb34-2055-411e-88be-d840efcc7424" />
+                </row>
+              </SiteMap>
+
+            </row>
+          </GIDesign>
+        </data>
+      </data-set>
+    </GenericInquiryScreen>
     <ScreenWithRights AccessRightsMergeRule="ApplyAndKeep">
         <data-set>
             <relations format-version="3" relations-version="20240201" main-table="SiteMap">
