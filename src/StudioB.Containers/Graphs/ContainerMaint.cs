@@ -1,15 +1,24 @@
 using System;
+using System.Collections;
+using System.Collections.Generic;
 using PX.Data;
+using PX.Data.BQL;
 using PX.Data.BQL.Fluent;
 using PX.Objects.PO;
 
 namespace StudioB.Containers
 {
-    public class ContainerMaint : PXGraph<ContainerMaint, UsrContainer>
+    public class ContainerMaint : PXGraph<ContainerMaint>
     {
         public static bool IsActive() => true;
 
         #region Views
+        public PXFilter<ContainerFilter> Filter;
+
+        public SelectFrom<UsrContainer>
+            .OrderBy<UsrContainer.eta.Asc>
+            .View Containers;
+
         public SelectFrom<UsrContainer>.View Container;
 
         public SelectFrom<UsrContainerEvent>
@@ -20,20 +29,91 @@ namespace StudioB.Containers
         public SelectFrom<UsrContainerPOLink>
             .Where<UsrContainerPOLink.containerID.IsEqual<UsrContainer.containerID.FromCurrent>>
             .View POLinks;
+
+        protected virtual IEnumerable containers()
+        {
+            ContainerFilter filter = Filter.Current;
+
+            if (filter != null && !string.IsNullOrEmpty(filter.StatusFilter))
+            {
+                string sf = filter.StatusFilter;
+
+                if (sf == "OPEN")
+                {
+                    foreach (UsrContainer row in SelectFrom<UsrContainer>
+                        .Where<UsrContainer.status.IsEqual<ContainerStatus.booked>
+                            .Or<UsrContainer.status.IsEqual<ContainerStatus.departed>>>
+                        .OrderBy<UsrContainer.eta.Asc>
+                        .View.Select(this))
+                    {
+                        yield return row;
+                    }
+                    yield break;
+                }
+                else if (sf == "ARRIVING_THIS_WEEK")
+                {
+                    DateTime weekStart = DateTime.Today.AddDays(-(int)DateTime.Today.DayOfWeek + (int)DayOfWeek.Monday);
+                    if (weekStart > DateTime.Today) weekStart = weekStart.AddDays(-7);
+                    DateTime weekEnd = weekStart.AddDays(7);
+
+                    foreach (UsrContainer row in SelectFrom<UsrContainer>
+                        .OrderBy<UsrContainer.eta.Asc>
+                        .View.Select(this))
+                    {
+                        if (row.ETA != null && row.ETA >= weekStart && row.ETA < weekEnd)
+                            yield return row;
+                    }
+                    yield break;
+                }
+                else
+                {
+                    foreach (UsrContainer row in SelectFrom<UsrContainer>
+                        .OrderBy<UsrContainer.eta.Asc>
+                        .View.Select(this))
+                    {
+                        if (row.Status == sf)
+                            yield return row;
+                    }
+                    yield break;
+                }
+            }
+
+            foreach (UsrContainer row in SelectFrom<UsrContainer>
+                .OrderBy<UsrContainer.eta.Asc>
+                .View.Select(this))
+            {
+                yield return row;
+            }
+        }
+        #endregion
+
+        #region Status Constants
+        public static class ContainerStatus
+        {
+            public const string Booked = "BOOKED";
+            public const string Departed = "DEPARTED";
+            public const string InTransit = "IN_TRANSIT";
+            public const string CustomsHold = "CUSTOMS_HOLD";
+            public const string Delivered = "DELIVERED";
+            public const string Cancelled = "CANCELLED";
+
+            public class booked : BqlString.Constant<booked> { public booked() : base(Booked) { } }
+            public class departed : BqlString.Constant<departed> { public departed() : base(Departed) { } }
+            public class inTransit : BqlString.Constant<inTransit> { public inTransit() : base(InTransit) { } }
+            public class customsHold : BqlString.Constant<customsHold> { public customsHold() : base(CustomsHold) { } }
+            public class delivered : BqlString.Constant<delivered> { public delivered() : base(Delivered) { } }
+            public class cancelled : BqlString.Constant<cancelled> { public cancelled() : base(Cancelled) { } }
+        }
         #endregion
 
         #region Actions
-        public PXAction<UsrContainer> RefreshTracking;
+        public PXAction<ContainerFilter> RefreshTracking;
         [PXButton(CommitChanges = true)]
         [PXUIField(DisplayName = "Refresh Tracking", MapEnableRights = PXCacheRights.Update)]
         protected void refreshTracking()
         {
-            // Placeholder — tracking refresh triggered via API from webhook-router.
-            // This action can be wired to call the carrier API directly in a future phase,
-            // or to push a message to the webhook-router BullMQ queue.
             UsrContainer container = Container.Current;
             if (container == null) return;
-
             container.LastSyncDate = DateTime.UtcNow;
             Container.Update(container);
             Actions.PressSave();
@@ -41,10 +121,35 @@ namespace StudioB.Containers
         #endregion
 
         #region Event Handlers
+        protected void _(Events.RowSelected<ContainerFilter> e)
+        {
+            if (e.Row == null) return;
+
+            int open = 0, inTransit = 0, arrivingThisWeek = 0, customsHold = 0;
+
+            DateTime weekStart = DateTime.Today.AddDays(-(int)DateTime.Today.DayOfWeek + (int)DayOfWeek.Monday);
+            if (weekStart > DateTime.Today) weekStart = weekStart.AddDays(-7);
+            DateTime weekEnd = weekStart.AddDays(7);
+
+            foreach (UsrContainer c in SelectFrom<UsrContainer>.View.Select(this))
+            {
+                string status = c.Status ?? "";
+                if (status == ContainerStatus.Booked || status == ContainerStatus.Departed) open++;
+                if (status == ContainerStatus.InTransit) inTransit++;
+                if (status == ContainerStatus.CustomsHold) customsHold++;
+                if (c.ETA != null && c.ETA >= weekStart && c.ETA < weekEnd) arrivingThisWeek++;
+            }
+
+            e.Row.KPIOpen = open;
+            e.Row.KPIInTransit = inTransit;
+            e.Row.KPIArrivingThisWeek = arrivingThisWeek;
+            e.Row.KPICustomsHold = customsHold;
+        }
+
         protected void _(Events.RowSelected<UsrContainer> e)
         {
             if (e.Row == null) return;
-            bool isActive = e.Row.Status != "DELIVERED" && e.Row.Status != "CANCELLED";
+            bool isActive = e.Row.Status != ContainerStatus.Delivered && e.Row.Status != ContainerStatus.Cancelled;
             PXUIFieldAttribute.SetEnabled<UsrContainer.containerCD>(e.Cache, e.Row, string.IsNullOrEmpty(e.Row.ContainerCD));
             RefreshTracking.SetEnabled(isActive);
         }
@@ -56,10 +161,9 @@ namespace StudioB.Containers
             UsrContainer container = Container.Current;
             base.Persist();
 
-            // After save, propagate ETA to linked PO headers and lines
             if (container?.ETA != null)
             {
-                var poRefs = new System.Collections.Generic.List<Tuple<string, string, int?>>();
+                var poRefs = new List<Tuple<string, string, int?>>();
                 foreach (UsrContainerPOLink link in POLinks.Select())
                 {
                     poRefs.Add(Tuple.Create(link.OrderType, link.OrderNbr, link.LineNbr));
@@ -70,7 +174,6 @@ namespace StudioB.Containers
                 }
             }
 
-            // Push container update to webhook-router for carrier event refresh
             if (container != null)
             {
                 try
@@ -92,7 +195,7 @@ namespace StudioB.Containers
                         }
                     }
                 }
-                catch { /* Fire-and-forget — don't block save */ }
+                catch { /* Fire-and-forget */ }
             }
         }
         #endregion
