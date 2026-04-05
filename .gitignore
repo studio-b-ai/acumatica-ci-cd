@@ -17,6 +17,11 @@ Thumbs.db
 **/bin/
 **/obj/
 *.user
+# Allow compiled DLLs shipped inside customization packages
+!Customization/**/Bin/
+
+# Acumatica SDK reference assemblies (download via lib/README.md)
+lib/*.dll
 
 # Node.js (agents may install packages during enhancement work)
 node_modules/

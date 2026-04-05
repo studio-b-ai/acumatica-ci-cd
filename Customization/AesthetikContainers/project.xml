@@ -1,2042 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <Customization level="3" description="AesthetikContainers — PO arrival dates, container tracking, vessel tracking. Replaces IIGCONTAINERMGMT + IIGHFContainerMods." product-version="24.208">
-    <Graph ClassName="POOrderExt" Source="#CDATA" IsNew="True" FileType="NewFile">
-        <CDATA name="Source"><![CDATA[using System;
-using PX.Data;
-using PX.Data.BQL;
-using PX.Objects.PO;
-
-namespace StudioB.Containers
-{
-    public sealed class POOrderExt : PXCacheExtension<POOrder>
-    {
-        public static bool IsActive() => true;
-        #region UsrExpArrivalDate
-        public abstract class usrExpArrivalDate : BqlDateTime.Field<usrExpArrivalDate> { }
-        [PXDBDate]
-        [PXUIField(DisplayName = "Exp. Arrival Date", Visibility = PXUIVisibility.SelectorVisible)]
-        public DateTime? UsrExpArrivalDate { get; set; }
-        #endregion
-        #region UsrActArrivalDate
-        public abstract class usrActArrivalDate : BqlDateTime.Field<usrActArrivalDate> { }
-        [PXDBDate]
-        [PXUIField(DisplayName = "Act. Arrival Date", Visibility = PXUIVisibility.SelectorVisible)]
-        public DateTime? UsrActArrivalDate { get; set; }
-        #endregion
-        #region UsrContainerRef
-        public abstract class usrContainerRef : BqlString.Field<usrContainerRef> { }
-        [PXDBString(50, IsUnicode = true)]
-        [PXUIField(DisplayName = "Container / BOL Ref")]
-        public string UsrContainerRef { get; set; }
-        #endregion
-    }
-}
-]]></CDATA>
-    </Graph>
-    <Graph ClassName="POLineExt" Source="#CDATA" IsNew="True" FileType="NewFile">
-        <CDATA name="Source"><![CDATA[using System;
-using PX.Data;
-using PX.Data.BQL;
-using PX.Objects.PO;
-
-namespace StudioB.Containers
-{
-    public sealed class POLineExt : PXCacheExtension<POLine>
-    {
-        public static bool IsActive() => true;
-        #region UsrExpArrivalDate
-        public abstract class usrExpArrivalDate : BqlDateTime.Field<usrExpArrivalDate> { }
-        [PXDBDate]
-        [PXUIField(DisplayName = "Exp. Arrival Date")]
-        public DateTime? UsrExpArrivalDate { get; set; }
-        #endregion
-        #region UsrActArrivalDate
-        public abstract class usrActArrivalDate : BqlDateTime.Field<usrActArrivalDate> { }
-        [PXDBDate]
-        [PXUIField(DisplayName = "Act. Arrival Date")]
-        public DateTime? UsrActArrivalDate { get; set; }
-        #endregion
-        #region UsrQtyOnContainers
-        public abstract class usrQtyOnContainers : PX.Data.BQL.BqlDecimal.Field<usrQtyOnContainers> { }
-        /// <summary>
-        /// Virtual (non-persisted) field showing total quantity allocated to containers
-        /// for this PO line. Replaces IIG's IGCMQtyOnContainers.
-        /// Populated via RowSelected on POOrderEntry_Extension.
-        /// </summary>
-        [PXDecimal(4)]
-        [PXUIField(DisplayName = "Qty on Containers", Enabled = false)]
-        public decimal? UsrQtyOnContainers { get; set; }
-        #endregion
-    }
-}
-]]></CDATA>
-    </Graph>
-    <Graph ClassName="InventoryAllocDetEnqResultExt" Source="#CDATA" IsNew="True" FileType="NewFile">
-        <CDATA name="Source"><![CDATA[using System;
-using PX.Data;
-using PX.Data.BQL;
-using PX.Objects.IN;
-
-namespace StudioB.Containers
-{
-    public sealed class InventoryAllocDetEnqResultExt : PXCacheExtension<InventoryAllocDetEnqResult>
-    {
-        public static bool IsActive() => true;
-
-        #region UsrExpArrivalDate
-        public abstract class usrExpArrivalDate : BqlDateTime.Field<usrExpArrivalDate> { }
-        [PXDate]
-        [PXUIField(DisplayName = "Exp. Arrival Date")]
-        public DateTime? UsrExpArrivalDate { get; set; }
-        #endregion
-    }
-}
-]]></CDATA>
-    </Graph>
-    <Graph ClassName="POOrderEntry_Extension" Source="#CDATA" IsNew="True" FileType="NewFile">
-        <CDATA name="Source"><![CDATA[using System;
-using System.Collections.Generic;
-using PX.Data;
-using PX.Objects.PO;
-
-namespace StudioB.Containers
-{
-    public class POOrderEntry_Extension : PXGraphExtension<POOrderEntry>
-    {
-        public static bool IsActive() => true;
-
-        #region Container Navigation Action
-        public PXAction<POOrder> ViewContainer;
-        [PXButton(CommitChanges = true)]
-        [PXUIField(DisplayName = "Container Tracking", MapEnableRights = PXCacheRights.Select)]
-        protected void viewContainer()
-        {
-            POOrder order = Base.Document.Current;
-            if (order == null) return;
-            POOrderExt ext = order.GetExtension<POOrderExt>();
-            string containerRef = ext?.UsrContainerRef;
-
-            ContainerMaint graph = PXGraph.CreateInstance<ContainerMaint>();
-            if (!string.IsNullOrEmpty(containerRef))
-            {
-                UsrContainer container = PXSelect<UsrContainer,
-                    Where<UsrContainer.containerCD, Equal<Required<UsrContainer.containerCD>>>>
-                    .Select(graph, containerRef.Trim());
-                if (container != null)
-                {
-                    graph.Container.Current = container;
-                }
-            }
-            throw new PXRedirectRequiredException(graph, "Container Tracking");
-        }
-        #endregion
-
-        // Cache container qty lookups per PO to avoid repeated queries
-        private Dictionary<string, decimal> _containerQtyCache;
-
-        protected void _(Events.FieldDefaulting<POLine, POLineExt.usrExpArrivalDate> e)
-        {
-            if (e.Row == null) return;
-            POOrder header = Base.Document.Current;
-            if (header == null) return;
-            POOrderExt headerExt = header.GetExtension<POOrderExt>();
-            if (headerExt?.UsrExpArrivalDate != null)
-            {
-                e.NewValue = headerExt.UsrExpArrivalDate;
-                e.Cancel = true;
-            }
-        }
-
-        protected void _(Events.FieldUpdated<POOrder, POOrderExt.usrExpArrivalDate> e)
-        {
-            if (e.Row == null) return;
-            DateTime? oldValue = (DateTime?)e.OldValue;
-            DateTime? newValue = e.Row.GetExtension<POOrderExt>()?.UsrExpArrivalDate;
-            if (newValue == null) return;
-            if (oldValue == newValue) return;
-            foreach (POLine line in Base.Transactions.Select())
-            {
-                POLineExt lineExt = line.GetExtension<POLineExt>();
-                if (lineExt == null) continue;
-                bool isInherited = lineExt.UsrExpArrivalDate == null || lineExt.UsrExpArrivalDate == oldValue;
-                if (isInherited)
-                {
-                    lineExt.UsrExpArrivalDate = newValue;
-                    Base.Transactions.Update(line);
-                }
-            }
-        }
-
-        /// <summary>
-        /// Populates UsrQtyOnContainers (virtual) for each PO line.
-        /// Replaces IIG's IGCMQtyOnContainers field.
-        /// Queries UsrContainerPOLink to find matching container allocations.
-        /// </summary>
-        protected void _(Events.RowSelected<POLine> e)
-        {
-            if (e.Row == null) return;
-            POOrder header = Base.Document.Current;
-            if (header == null) return;
-
-            try
-            {
-                // Build cache on first line of each PO
-                string poKey = header.OrderType + ":" + header.OrderNbr;
-                if (_containerQtyCache == null || !_containerQtyCache.ContainsKey(poKey + ":loaded"))
-                {
-                    _containerQtyCache = new Dictionary<string, decimal>(StringComparer.OrdinalIgnoreCase);
-                    _containerQtyCache[poKey + ":loaded"] = 1;
-
-                    // Query all container links for this PO
-                    foreach (PXDataRecord rec in PXDatabase.SelectMulti<UsrContainerPOLink>(
-                        new PXDataField("LineNbr"),
-                        new PXDataField("OrderQty"),
-                        new PXDataFieldValue("OrderType", header.OrderType),
-                        new PXDataFieldValue("OrderNbr", header.OrderNbr)))
-                    {
-                        int? lineNbr = rec.GetInt32(0);
-                        if (lineNbr != null)
-                        {
-                            string lineKey = poKey + ":" + lineNbr;
-                            // Count container allocations per line
-                            if (_containerQtyCache.ContainsKey(lineKey))
-                                _containerQtyCache[lineKey] += 1;
-                            else
-                                _containerQtyCache[lineKey] = 1;
-                        }
-                    }
-                }
-
-                // Set virtual field
-                string key = poKey + ":" + e.Row.LineNbr;
-                decimal qty = 0;
-                _containerQtyCache.TryGetValue(key, out qty);
-                e.Cache.SetValue<POLineExt.usrQtyOnContainers>(e.Row, qty > 0 ? qty : (decimal?)null);
-            }
-            catch (Exception ex)
-            {
-                PXTrace.WriteError($"UsrQtyOnContainers error: {ex.Message}");
-            }
-        }
-    }
-}
-]]></CDATA>
-    </Graph>
-    <Graph ClassName="InventoryAllocDetEnq_Extension" Source="#CDATA" IsNew="True" FileType="NewFile">
-        <CDATA name="Source"><![CDATA[using System;
-using System.Collections.Generic;
-using PX.Data;
-using PX.Objects.IN;
-
-namespace StudioB.Containers
-{
-    public class InventoryAllocDetEnq_Extension : PXGraphExtension<InventoryAllocDetEnq>
-    {
-        public static bool IsActive() => true;
-
-        private readonly Dictionary<string, DateTime?> _dateCache
-            = new Dictionary<string, DateTime?>(StringComparer.OrdinalIgnoreCase);
-
-        /// <summary>
-        /// RowSelected fires for each visible row in the inquiry grid.
-        /// Populates the virtual UsrExpArrivalDate from the linked PO header.
-        /// Uses generic event syntax (guaranteed to wire up for extension fields).
-        /// </summary>
-        protected void _(Events.RowSelected<InventoryAllocDetEnqResult> e)
-        {
-            if (e.Row == null || string.IsNullOrEmpty(e.Row.RefNbr)) return;
-
-            string refNbr = e.Row.RefNbr.Trim();
-
-            // Skip if already populated
-            DateTime? current = (DateTime?)e.Cache.GetValue(e.Row, "UsrExpArrivalDate");
-            if (current != null) return;
-
-            DateTime? arrivalDate = LookupPOArrivalDate(refNbr);
-
-            if (arrivalDate != null)
-            {
-                e.Cache.SetValue(e.Row, "UsrExpArrivalDate", arrivalDate);
-            }
-        }
-
-        private DateTime? LookupPOArrivalDate(string refNbr)
-        {
-            if (_dateCache.TryGetValue(refNbr, out DateTime? cached))
-                return cached;
-
-            DateTime? arrivalDate = null;
-            try
-            {
-                // Explicit column names — avoids BQL extension field resolution
-                // issues that occur in foreign inquiry graphs
-                using (PXDataRecord rec = PXDatabase.SelectSingle<PX.Objects.PO.POOrder>(
-                    new PXDataField("UsrExpArrivalDate"),
-                    new PXDataFieldValue("OrderNbr", refNbr)))
-                {
-                    arrivalDate = rec?.GetDateTime(0);
-                }
-            }
-            catch (Exception ex)
-            {
-                PXTrace.WriteError(
-                    $"IN402000 UsrExpArrivalDate lookup error for RefNbr={refNbr}: {ex.Message}");
-            }
-
-            _dateCache[refNbr] = arrivalDate;
-            return arrivalDate;
-        }
-    }
-}
-]]></CDATA>
-    </Graph>
-    <Graph ClassName="ContainerDatePropagation" Source="#CDATA" IsNew="True" FileType="NewFile">
-        <CDATA name="Source"><![CDATA[using System;
-using System.Collections.Generic;
-using PX.Data;
-using PX.Objects.PO;
-
-namespace StudioB.Containers
-{
-    /// <summary>
-    /// Propagates container Expected Arrival Date to linked PO headers and lines.
-    /// Replaces IGCMPOLandedCostEntry_Extension (IIG dependency removed).
-    /// Wire to ContainerEntry.Persist override when container DACs are built.
-    /// </summary>
-    public static class ContainerDatePropagation
-    {
-        /// <summary>
-        /// Updates PO headers and lines with the container's expected arrival date.
-        /// </summary>
-        /// <param name="containerDate">The container's expected arrival date.</param>
-        /// <param name="poRefs">List of (OrderType, OrderNbr, LineNbr) tuples from container lines.</param>
-        public static void PropagateArrivalDate(
-            DateTime? containerDate,
-            List<Tuple<string, string, int?>> poRefs)
-        {
-            if (containerDate == null || poRefs == null || poRefs.Count == 0) return;
-
-            HashSet<string> updatedHeaders = new HashSet<string>();
-
-            foreach (var po in poRefs)
-            {
-                // Update PO Line
-                if (po.Item3 != null)
-                {
-                    PXDatabase.Update<POLine>(
-                        new PXDataFieldAssign<POLineExt.usrExpArrivalDate>(containerDate),
-                        new PXDataFieldRestrict<POLine.orderType>(po.Item1),
-                        new PXDataFieldRestrict<POLine.orderNbr>(po.Item2),
-                        new PXDataFieldRestrict<POLine.lineNbr>(po.Item3)
-                    );
-                }
-
-                // Update PO Header (once per unique PO)
-                string headerKey = po.Item1 + ":" + po.Item2;
-                if (!updatedHeaders.Contains(headerKey))
-                {
-                    PXDatabase.Update<POOrder>(
-                        new PXDataFieldAssign<POOrderExt.usrExpArrivalDate>(containerDate),
-                        new PXDataFieldRestrict<POOrder.orderType>(po.Item1),
-                        new PXDataFieldRestrict<POOrder.orderNbr>(po.Item2)
-                    );
-                    updatedHeaders.Add(headerKey);
-                }
-            }
-        }
-    }
-}
-]]></CDATA>
-    </Graph>
-    <Graph ClassName="StockItemExt" Source="#CDATA" IsNew="True" FileType="NewFile">
-        <CDATA name="Source"><![CDATA[using PX.Data;
-using PX.Objects.IN;
-
-namespace StudioB.Containers
-{
-    public sealed class StockItemExt : PXCacheExtension<InventoryItem>
-    {
-        public static bool IsActive() => true;
-        #region UsrFiberContent
-        public abstract class usrFiberContent : PX.Data.BQL.BqlString.Field<usrFiberContent> { }
-        [PXDBString(100, IsUnicode = true)]
-        [PXUIField(DisplayName = "Fiber Content", Visibility = PXUIVisibility.SelectorVisible)]
-        public string UsrFiberContent { get; set; }
-        #endregion
-        #region UsrDutyRate
-        public abstract class usrDutyRate : PX.Data.BQL.BqlDecimal.Field<usrDutyRate> { }
-        [PXDBDecimal(4)]
-        [PXUIField(DisplayName = "Duty Rate")]
-        public decimal? UsrDutyRate { get; set; }
-        #endregion
-        #region UsrPreferentialTariff
-        public abstract class usrPreferentialTariff : PX.Data.BQL.BqlBool.Field<usrPreferentialTariff> { }
-        [PXDBBool]
-        [PXUIField(DisplayName = "Preferential Tariff")]
-        public bool? UsrPreferentialTariff { get; set; }
-        #endregion
-        #region UsrFreightClass
-        public abstract class usrFreightClass : PX.Data.BQL.BqlString.Field<usrFreightClass> { }
-        [PXDBString(15, IsUnicode = true)]
-        [PXUIField(DisplayName = "Freight Class")]
-        public string UsrFreightClass { get; set; }
-        #endregion
-    }
-}
-]]></CDATA>
-    </Graph>
-    <Graph ClassName="POReceiptLineExt" Source="#CDATA" IsNew="True" FileType="NewFile">
-        <CDATA name="Source"><![CDATA[using PX.Data;
-using PX.Objects.PO;
-
-namespace StudioB.Containers
-{
-    public sealed class POReceiptLineExt : PXCacheExtension<POReceiptLine>
-    {
-        public static bool IsActive() => true;
-        #region UsrActualDutyAmt
-        public abstract class usrActualDutyAmt : PX.Data.BQL.BqlDecimal.Field<usrActualDutyAmt> { }
-        [PXDBDecimal(2)]
-        [PXDefault(System.TypeCode.Decimal, "0.00", PersistingCheck = PXPersistingCheck.Nothing)]
-        [PXUIField(DisplayName = "Actual Duty", Visibility = PXUIVisibility.SelectorVisible)]
-        public decimal? UsrActualDutyAmt { get; set; }
-        #endregion
-        #region UsrActualFreightAmt
-        public abstract class usrActualFreightAmt : PX.Data.BQL.BqlDecimal.Field<usrActualFreightAmt> { }
-        [PXDBDecimal(2)]
-        [PXDefault(System.TypeCode.Decimal, "0.00", PersistingCheck = PXPersistingCheck.Nothing)]
-        [PXUIField(DisplayName = "Freight Allocated", Visibility = PXUIVisibility.SelectorVisible)]
-        public decimal? UsrActualFreightAmt { get; set; }
-        #endregion
-        #region UsrBrokerageAmt
-        public abstract class usrBrokerageAmt : PX.Data.BQL.BqlDecimal.Field<usrBrokerageAmt> { }
-        [PXDBDecimal(2)]
-        [PXDefault(System.TypeCode.Decimal, "0.00", PersistingCheck = PXPersistingCheck.Nothing)]
-        [PXUIField(DisplayName = "Brokerage", Visibility = PXUIVisibility.SelectorVisible)]
-        public decimal? UsrBrokerageAmt { get; set; }
-        #endregion
-        #region UsrLandedCostPerUnit
-        public abstract class usrLandedCostPerUnit : PX.Data.BQL.BqlDecimal.Field<usrLandedCostPerUnit> { }
-        [PXDecimal(4)]
-        [PXUIField(DisplayName = "Landed Cost/Unit", Enabled = false)]
-        public decimal? UsrLandedCostPerUnit { get; set; }
-        #endregion
-    }
-}
-]]></CDATA>
-    </Graph>
-    <Graph ClassName="POReceiptEntry_LandedCostExt" Source="#CDATA" IsNew="True" FileType="NewFile">
-        <CDATA name="Source"><![CDATA[using PX.Data;
-using PX.Objects.IN;
-using PX.Objects.PO;
-
-namespace StudioB.Containers
-{
-    public class POReceiptEntry_LandedCostExt : PXGraphExtension<POReceiptEntry>
-    {
-        public static bool IsActive() => true;
-
-        protected virtual void _(Events.RowInserted<POReceiptLine> e)
-        {
-            if (e.Row == null) return;
-            var lineExt = PXCache<POReceiptLine>.GetExtension<POReceiptLineExt>(e.Row);
-            if (lineExt == null) return;
-            var item = PXSelect<InventoryItem,
-                Where<InventoryItem.inventoryID, Equal<Required<InventoryItem.inventoryID>>>>
-                .Select(Base, e.Row.InventoryID);
-            if (item == null) return;
-            var itemExt = PXCache<InventoryItem>.GetExtension<StockItemExt>((InventoryItem)item);
-            if (itemExt == null) return;
-            e.Cache.Update(e.Row);
-        }
-
-        protected virtual void _(Events.RowSelected<POReceiptLine> e)
-        {
-            if (e.Row == null) return;
-            var lineExt = PXCache<POReceiptLine>.GetExtension<POReceiptLineExt>(e.Row);
-            if (lineExt == null) return;
-            decimal qty = e.Row.ReceiptQty.GetValueOrDefault();
-            if (qty == 0) qty = 1;
-            decimal unitCost = e.Row.UnitCost.GetValueOrDefault();
-            decimal totalLandedCosts =
-                lineExt.UsrActualDutyAmt.GetValueOrDefault() +
-                lineExt.UsrActualFreightAmt.GetValueOrDefault() +
-                lineExt.UsrBrokerageAmt.GetValueOrDefault();
-            decimal landedPerUnit = unitCost + (totalLandedCosts / qty);
-            e.Cache.SetValue<POReceiptLineExt.usrLandedCostPerUnit>(e.Row,
-                System.Math.Round(landedPerUnit, 4));
-        }
-    }
-}
-]]></CDATA>
-    </Graph>
-    <Graph ClassName="ShipmentExt" Source="#CDATA" IsNew="True" FileType="NewFile">
-        <CDATA name="Source"><![CDATA[using PX.Data;
-using PX.Data.BQL;
-using PX.Objects.SO;
-
-namespace StudioB.Containers
-{
-    /// <summary>
-    /// Replaces IIG UsrIGCMIncludeInContainer on SOShipment.
-    /// Flags whether a shipment should be included in container consolidation.
-    /// </summary>
-    public sealed class ShipmentExt : PXCacheExtension<SOShipment>
-    {
-        public static bool IsActive() => true;
-
-        #region UsrIncludeInContainer
-        public abstract class usrIncludeInContainer : BqlBool.Field<usrIncludeInContainer> { }
-        [PXDBBool]
-        [PXDefault(false, PersistingCheck = PXPersistingCheck.Nothing)]
-        [PXUIField(DisplayName = "Include in Container")]
-        public bool? UsrIncludeInContainer { get; set; }
-        #endregion
-
-        #region UsrContainerID
-        public abstract class usrContainerID : BqlInt.Field<usrContainerID> { }
-        [PXDBInt]
-        [PXUIField(DisplayName = "Container")]
-        [PXSelector(typeof(Search<UsrContainer.containerID>),
-            SubstituteKey = typeof(UsrContainer.containerCD),
-            DescriptionField = typeof(UsrContainer.vesselName))]
-        public int? UsrContainerID { get; set; }
-        #endregion
-    }
-}
-]]></CDATA>
-    </Graph>
-    <Graph ClassName="VendorExt" Source="#CDATA" IsNew="True" FileType="NewFile">
-        <CDATA name="Source"><![CDATA[using PX.Data;
-using PX.Data.BQL;
-using PX.Objects.CR;
-using PX.Objects.IN;
-
-namespace StudioB.Containers
-{
-    /// <summary>
-    /// Replaces IIG UsrIGCMDefaultInTransitSiteID on Vendor.
-    /// Default in-transit warehouse for vendor ocean containers.
-    /// Targets BAccount (not Vendor) because columns live on BAccount table,
-    /// and Vendor maps to Vendor_Vendor view which does not expose Usr* columns.
-    /// </summary>
-    public sealed class BAccountContainerExt : PXCacheExtension<BAccount>
-    {
-        public static bool IsActive() => true;
-
-        #region UsrDefaultInTransitSiteID
-        public abstract class usrDefaultInTransitSiteID : BqlInt.Field<usrDefaultInTransitSiteID> { }
-        [PXDBInt]
-        [PXUIField(DisplayName = "Default In-Transit Warehouse")]
-        [PXSelector(typeof(Search<INSite.siteID, Where<INSite.active, Equal<True>>>),
-            SubstituteKey = typeof(INSite.siteCD),
-            DescriptionField = typeof(INSite.descr))]
-        public int? UsrDefaultInTransitSiteID { get; set; }
-        #endregion
-
-        #region UsrDefaultCarrierCode
-        public abstract class usrDefaultCarrierCode : BqlString.Field<usrDefaultCarrierCode> { }
-        [PXDBString(20, IsUnicode = true)]
-        [PXUIField(DisplayName = "Default Carrier")]
-        [PXStringList(new string[] { "MAERSK", "CHR", "OTS", "OTHER" },
-                       new string[] { "Maersk", "CH Robinson", "OTS", "Other" })]
-        public string UsrDefaultCarrierCode { get; set; }
-        #endregion
-    }
-}
-]]></CDATA>
-    </Graph>
-    <Graph ClassName="UsrContainer" Source="#CDATA" IsNew="True" FileType="NewFile">
-        <CDATA name="Source"><![CDATA[using System;
-using PX.Data;
-using PX.Data.BQL;
-
-namespace StudioB.Containers
-{
-    [Serializable]
-    [PXCacheName("Container")]
-    public class UsrContainer : IBqlTable
-    {
-        #region ContainerID
-        public abstract class containerID : BqlInt.Field<containerID> { }
-        [PXDBIdentity]
-        public int? ContainerID { get; set; }
-        #endregion
-
-        #region ContainerCD
-        public abstract class containerCD : BqlString.Field<containerCD> { }
-        [PXDBString(20, IsUnicode = true, IsKey = true, InputMask = "")]
-        [PXDefault]
-        [PXUIField(DisplayName = "Container Nbr", Visibility = PXUIVisibility.SelectorVisible)]
-        [PXSelector(typeof(Search<UsrContainer.containerCD>),
-            typeof(UsrContainer.containerCD),
-            typeof(UsrContainer.carrierCode),
-            typeof(UsrContainer.status),
-            typeof(UsrContainer.vesselName),
-            typeof(UsrContainer.eta))]
-        public string ContainerCD { get; set; }
-        #endregion
-
-        #region CarrierCode
-        public abstract class carrierCode : BqlString.Field<carrierCode> { }
-        [PXDBString(20, IsUnicode = true)]
-        [PXDefault]
-        [PXUIField(DisplayName = "Carrier")]
-        [PXStringList(new string[] { "MAERSK", "CHR", "OTS", "OTHER" },
-                       new string[] { "Maersk", "CH Robinson", "OTS", "Other" })]
-        public string CarrierCode { get; set; }
-        #endregion
-
-        #region BookingRef
-        public abstract class bookingRef : BqlString.Field<bookingRef> { }
-        [PXDBString(50, IsUnicode = true)]
-        [PXUIField(DisplayName = "Booking Ref")]
-        public string BookingRef { get; set; }
-        #endregion
-
-        #region BillOfLading
-        public abstract class billOfLading : BqlString.Field<billOfLading> { }
-        [PXDBString(50, IsUnicode = true)]
-        [PXUIField(DisplayName = "Bill of Lading")]
-        public string BillOfLading { get; set; }
-        #endregion
-
-        #region VesselName
-        public abstract class vesselName : BqlString.Field<vesselName> { }
-        [PXDBString(50, IsUnicode = true)]
-        [PXUIField(DisplayName = "Vessel")]
-        public string VesselName { get; set; }
-        #endregion
-
-        #region VesselIMO
-        public abstract class vesselIMO : BqlString.Field<vesselIMO> { }
-        [PXDBString(10, IsUnicode = true)]
-        [PXUIField(DisplayName = "IMO #")]
-        public string VesselIMO { get; set; }
-        #endregion
-
-        #region VoyageNbr
-        public abstract class voyageNbr : BqlString.Field<voyageNbr> { }
-        [PXDBString(30, IsUnicode = true)]
-        [PXUIField(DisplayName = "Voyage #")]
-        public string VoyageNbr { get; set; }
-        #endregion
-
-        #region PortOfLoading
-        public abstract class portOfLoading : BqlString.Field<portOfLoading> { }
-        [PXDBString(10, IsUnicode = true)]
-        [PXUIField(DisplayName = "Port of Loading")]
-        [PXSelector(typeof(Search<UsrPort.portCode,
-            Where<UsrPort.active, Equal<True>>>),
-            typeof(UsrPort.portCode),
-            typeof(UsrPort.portName),
-            typeof(UsrPort.country))]
-        public string PortOfLoading { get; set; }
-        #endregion
-
-        #region PortOfDischarge
-        public abstract class portOfDischarge : BqlString.Field<portOfDischarge> { }
-        [PXDBString(10, IsUnicode = true)]
-        [PXUIField(DisplayName = "Port of Discharge")]
-        [PXSelector(typeof(Search<UsrPort.portCode,
-            Where<UsrPort.active, Equal<True>>>),
-            typeof(UsrPort.portCode),
-            typeof(UsrPort.portName),
-            typeof(UsrPort.country))]
-        public string PortOfDischarge { get; set; }
-        #endregion
-
-        #region ETD
-        public abstract class etd : BqlDateTime.Field<etd> { }
-        [PXDBDate]
-        [PXUIField(DisplayName = "Est. Departure")]
-        public DateTime? ETD { get; set; }
-        #endregion
-
-        #region ATD
-        public abstract class atd : BqlDateTime.Field<atd> { }
-        [PXDBDate]
-        [PXUIField(DisplayName = "Act. Departure")]
-        public DateTime? ATD { get; set; }
-        #endregion
-
-        #region ETA
-        public abstract class eta : BqlDateTime.Field<eta> { }
-        [PXDBDate]
-        [PXUIField(DisplayName = "Est. Arrival")]
-        public DateTime? ETA { get; set; }
-        #endregion
-
-        #region ATA
-        public abstract class ata : BqlDateTime.Field<ata> { }
-        [PXDBDate]
-        [PXUIField(DisplayName = "Act. Arrival")]
-        public DateTime? ATA { get; set; }
-        #endregion
-
-        #region Status
-        public abstract class status : BqlString.Field<status> { }
-        [PXDBString(20, IsUnicode = true)]
-        [PXDefault("BOOKED")]
-        [PXUIField(DisplayName = "Status")]
-        [PXStringList(new string[] { "BOOKED", "DEPARTED", "IN_TRANSIT", "ARRIVED", "DISCHARGED", "CUSTOMS_HOLD", "GATED_OUT", "DELIVERED", "CANCELLED" },
-                       new string[] { "Booked", "Departed", "In Transit", "Arrived", "Discharged", "Customs Hold", "Gated Out", "Delivered", "Cancelled" })]
-        public string Status { get; set; }
-        #endregion
-
-        #region ContainerType
-        public abstract class containerType : BqlString.Field<containerType> { }
-        [PXDBString(10, IsUnicode = true)]
-        [PXUIField(DisplayName = "Type")]
-        [PXSelector(typeof(Search<UsrContainerType.typeCD,
-            Where<UsrContainerType.active, Equal<True>>>),
-            typeof(UsrContainerType.typeCD),
-            typeof(UsrContainerType.description))]
-        public string ContainerType { get; set; }
-        #endregion
-
-        #region SealNbr
-        public abstract class sealNbr : BqlString.Field<sealNbr> { }
-        [PXDBString(20, IsUnicode = true)]
-        [PXUIField(DisplayName = "Seal #")]
-        public string SealNbr { get; set; }
-        #endregion
-
-        #region LastEventCode
-        public abstract class lastEventCode : BqlString.Field<lastEventCode> { }
-        [PXDBString(20, IsUnicode = true)]
-        [PXUIField(DisplayName = "Last Event", Enabled = false)]
-        public string LastEventCode { get; set; }
-        #endregion
-
-        #region LastEventDate
-        public abstract class lastEventDate : BqlDateTime.Field<lastEventDate> { }
-        [PXDBDate(PreserveTime = true)]
-        [PXUIField(DisplayName = "Last Event Date", Enabled = false)]
-        public DateTime? LastEventDate { get; set; }
-        #endregion
-
-        #region LastSyncDate
-        public abstract class lastSyncDate : BqlDateTime.Field<lastSyncDate> { }
-        [PXDBDate(PreserveTime = true)]
-        [PXUIField(DisplayName = "Last Sync", Enabled = false)]
-        public DateTime? LastSyncDate { get; set; }
-        #endregion
-
-        #region NoteID
-        public abstract class noteID : BqlGuid.Field<noteID> { }
-        [PXNote]
-        public Guid? NoteID { get; set; }
-        #endregion
-
-        #region CreatedByID
-        public abstract class createdByID : BqlGuid.Field<createdByID> { }
-        [PXDBCreatedByID]
-        public Guid? CreatedByID { get; set; }
-        #endregion
-
-        #region CreatedDateTime
-        public abstract class createdDateTime : BqlDateTime.Field<createdDateTime> { }
-        [PXDBCreatedDateTime]
-        public DateTime? CreatedDateTime { get; set; }
-        #endregion
-
-        #region LastModifiedByID
-        public abstract class lastModifiedByID : BqlGuid.Field<lastModifiedByID> { }
-        [PXDBLastModifiedByID]
-        public Guid? LastModifiedByID { get; set; }
-        #endregion
-
-        #region LastModifiedDateTime
-        public abstract class lastModifiedDateTime : BqlDateTime.Field<lastModifiedDateTime> { }
-        [PXDBLastModifiedDateTime]
-        public DateTime? LastModifiedDateTime { get; set; }
-        #endregion
-
-        #region Tstamp
-        public abstract class tstamp : BqlByteArray.Field<tstamp> { }
-        [PXDBTimestamp]
-        public byte[] Tstamp { get; set; }
-        #endregion
-    }
-}
-]]></CDATA>
-    </Graph>
-    <Graph ClassName="UsrContainerEvent" Source="#CDATA" IsNew="True" FileType="NewFile">
-        <CDATA name="Source"><![CDATA[using System;
-using PX.Data;
-using PX.Data.BQL;
-
-namespace StudioB.Containers
-{
-    [Serializable]
-    [PXCacheName("Container Event")]
-    public class UsrContainerEvent : IBqlTable
-    {
-        #region EventID
-        public abstract class eventID : BqlInt.Field<eventID> { }
-        [PXDBIdentity(IsKey = true)]
-        public int? EventID { get; set; }
-        #endregion
-
-        #region ContainerID
-        public abstract class containerID : BqlInt.Field<containerID> { }
-        [PXDBInt]
-        [PXDBDefault(typeof(UsrContainer.containerID))]
-        [PXParent(typeof(Select<UsrContainer, Where<UsrContainer.containerID, Equal<Current<UsrContainerEvent.containerID>>>>))]
-        public int? ContainerID { get; set; }
-        #endregion
-
-        #region CarrierEventCode
-        public abstract class carrierEventCode : BqlString.Field<carrierEventCode> { }
-        [PXDBString(20, IsUnicode = true)]
-        [PXDefault]
-        [PXUIField(DisplayName = "Carrier Event Code")]
-        public string CarrierEventCode { get; set; }
-        #endregion
-
-        #region NormalizedEventCode
-        public abstract class normalizedEventCode : BqlString.Field<normalizedEventCode> { }
-        [PXDBString(20, IsUnicode = true)]
-        [PXDefault]
-        [PXUIField(DisplayName = "Event")]
-        [PXStringList(new string[] { "BOOKED", "LOADED", "DEPARTED", "IN_TRANSIT", "ARRIVED", "DISCHARGED", "CUSTOMS_HOLD", "CUSTOMS_CLEARED", "GATED_OUT", "DELIVERED" },
-                       new string[] { "Booked", "Loaded", "Departed", "In Transit", "Arrived", "Discharged", "Customs Hold", "Customs Cleared", "Gated Out", "Delivered" })]
-        public string NormalizedEventCode { get; set; }
-        #endregion
-
-        #region EventDateTime
-        public abstract class eventDateTime : BqlDateTime.Field<eventDateTime> { }
-        [PXDBDate(PreserveTime = true)]
-        [PXDefault]
-        [PXUIField(DisplayName = "Event Date/Time")]
-        public DateTime? EventDateTime { get; set; }
-        #endregion
-
-        #region EventClassifier
-        public abstract class eventClassifier : BqlString.Field<eventClassifier> { }
-        [PXDBString(10, IsUnicode = true)]
-        [PXUIField(DisplayName = "Type")]
-        [PXStringList(new string[] { "ACT", "EST", "PLN" },
-                       new string[] { "Actual", "Estimated", "Planned" })]
-        public string EventClassifier { get; set; }
-        #endregion
-
-        #region LocationName
-        public abstract class locationName : BqlString.Field<locationName> { }
-        [PXDBString(100, IsUnicode = true)]
-        [PXUIField(DisplayName = "Location")]
-        public string LocationName { get; set; }
-        #endregion
-
-        #region LocationCode
-        public abstract class locationCode : BqlString.Field<locationCode> { }
-        [PXDBString(10, IsUnicode = true)]
-        [PXUIField(DisplayName = "UN Loc Code")]
-        public string LocationCode { get; set; }
-        #endregion
-
-        #region VesselName
-        public abstract class vesselName : BqlString.Field<vesselName> { }
-        [PXDBString(50, IsUnicode = true)]
-        [PXUIField(DisplayName = "Vessel")]
-        public string VesselName { get; set; }
-        #endregion
-
-        #region Description
-        public abstract class description : BqlString.Field<description> { }
-        [PXDBString(255, IsUnicode = true)]
-        [PXUIField(DisplayName = "Description")]
-        public string Description { get; set; }
-        #endregion
-
-        #region RawPayload
-        public abstract class rawPayload : BqlString.Field<rawPayload> { }
-        [PXDBText(IsUnicode = true)]
-        [PXUIField(DisplayName = "Raw Payload", Visible = false)]
-        public string RawPayload { get; set; }
-        #endregion
-
-        #region CreatedDateTime
-        public abstract class createdDateTime : BqlDateTime.Field<createdDateTime> { }
-        [PXDBCreatedDateTime]
-        [PXUIField(DisplayName = "Recorded")]
-        public DateTime? CreatedDateTime { get; set; }
-        #endregion
-    }
-}
-]]></CDATA>
-    </Graph>
-    <Graph ClassName="UsrContainerPOLink" Source="#CDATA" IsNew="True" FileType="NewFile">
-        <CDATA name="Source"><![CDATA[using System;
-using PX.Data;
-using PX.Data.BQL;
-using PX.Objects.PO;
-
-namespace StudioB.Containers
-{
-    [Serializable]
-    [PXCacheName("Container PO Link")]
-    public class UsrContainerPOLink : IBqlTable
-    {
-        #region LinkID
-        public abstract class linkID : BqlInt.Field<linkID> { }
-        [PXDBIdentity(IsKey = true)]
-        public int? LinkID { get; set; }
-        #endregion
-
-        #region ContainerID
-        public abstract class containerID : BqlInt.Field<containerID> { }
-        [PXDBInt]
-        [PXDBDefault(typeof(UsrContainer.containerID))]
-        [PXParent(typeof(Select<UsrContainer, Where<UsrContainer.containerID, Equal<Current<UsrContainerPOLink.containerID>>>>))]
-        public int? ContainerID { get; set; }
-        #endregion
-
-        #region OrderType
-        public abstract class orderType : BqlString.Field<orderType> { }
-        [PXDBString(2, IsFixed = true, IsUnicode = true)]
-        [PXDefault(POOrderType.RegularOrder)]
-        [PXUIField(DisplayName = "PO Type")]
-        public string OrderType { get; set; }
-        #endregion
-
-        #region OrderNbr
-        public abstract class orderNbr : BqlString.Field<orderNbr> { }
-        [PXDBString(15, IsUnicode = true)]
-        [PXDefault]
-        [PXUIField(DisplayName = "PO Nbr")]
-        [PXSelector(typeof(Search<POOrder.orderNbr, Where<POOrder.orderType, Equal<Current<UsrContainerPOLink.orderType>>>>),
-            typeof(POOrder.orderNbr),
-            typeof(POOrder.vendorID),
-            typeof(POOrder.status),
-            typeof(POOrder.orderDate))]
-        public string OrderNbr { get; set; }
-        #endregion
-
-        #region LineNbr
-        public abstract class lineNbr : BqlInt.Field<lineNbr> { }
-        [PXDBInt]
-        [PXUIField(DisplayName = "Line Nbr")]
-        public int? LineNbr { get; set; }
-        #endregion
-    }
-}
-]]></CDATA>
-    </Graph>
-    <Graph ClassName="ContainerMaint" Source="#CDATA" IsNew="True" FileType="NewFile">
-        <CDATA name="Source"><![CDATA[using System;
-using PX.Data;
-using PX.Data.BQL.Fluent;
-using PX.Objects.PO;
-
-namespace StudioB.Containers
-{
-    public class ContainerMaint : PXGraph<ContainerMaint, UsrContainer>
-    {
-        public static bool IsActive() => true;
-
-        #region Views
-        public SelectFrom<UsrContainer>.View Container;
-
-        public SelectFrom<UsrContainerEvent>
-            .Where<UsrContainerEvent.containerID.IsEqual<UsrContainer.containerID.FromCurrent>>
-            .OrderBy<UsrContainerEvent.eventDateTime.Desc>
-            .View Events;
-
-        public SelectFrom<UsrContainerPOLink>
-            .Where<UsrContainerPOLink.containerID.IsEqual<UsrContainer.containerID.FromCurrent>>
-            .View POLinks;
-        #endregion
-
-        #region Actions
-        public PXAction<UsrContainer> RefreshTracking;
-        [PXButton(CommitChanges = true)]
-        [PXUIField(DisplayName = "Refresh Tracking", MapEnableRights = PXCacheRights.Update)]
-        protected void refreshTracking()
-        {
-            // Placeholder — tracking refresh triggered via API from webhook-router.
-            // This action can be wired to call the carrier API directly in a future phase,
-            // or to push a message to the webhook-router BullMQ queue.
-            UsrContainer container = Container.Current;
-            if (container == null) return;
-
-            container.LastSyncDate = DateTime.UtcNow;
-            Container.Update(container);
-            Actions.PressSave();
-        }
-        #endregion
-
-        #region Event Handlers
-        protected void _(Events.RowSelected<UsrContainer> e)
-        {
-            if (e.Row == null) return;
-            bool isActive = e.Row.Status != "DELIVERED" && e.Row.Status != "CANCELLED";
-            PXUIFieldAttribute.SetEnabled<UsrContainer.containerCD>(e.Cache, e.Row, string.IsNullOrEmpty(e.Row.ContainerCD));
-            RefreshTracking.SetEnabled(isActive);
-        }
-        #endregion
-
-        #region Persist Override
-        public override void Persist()
-        {
-            UsrContainer container = Container.Current;
-            base.Persist();
-
-            // After save, propagate ETA to linked PO headers and lines
-            if (container?.ETA != null)
-            {
-                var poRefs = new System.Collections.Generic.List<Tuple<string, string, int?>>();
-                foreach (UsrContainerPOLink link in POLinks.Select())
-                {
-                    poRefs.Add(Tuple.Create(link.OrderType, link.OrderNbr, link.LineNbr));
-                }
-                if (poRefs.Count > 0)
-                {
-                    ContainerDatePropagation.PropagateArrivalDate(container.ETA, poRefs);
-                }
-            }
-
-            // Push container update to webhook-router for carrier event refresh
-            if (container != null)
-            {
-                try
-                {
-                    var webhookUrl = System.Configuration.ConfigurationManager.AppSettings["ContainerWebhookUrl"];
-                    if (!string.IsNullOrEmpty(webhookUrl))
-                    {
-                        var json = Newtonsoft.Json.JsonConvert.SerializeObject(new
-                        {
-                            ContainerCD = container.ContainerCD,
-                            CarrierCode = container.CarrierCode,
-                            ContainerID = container.ContainerID,
-                            Status = container.Status,
-                        });
-                        using (var wc = new System.Net.WebClient())
-                        {
-                            wc.Headers[System.Net.HttpRequestHeader.ContentType] = "application/json";
-                            wc.UploadStringAsync(new System.Uri(webhookUrl), "POST", json);
-                        }
-                    }
-                }
-                catch { /* Fire-and-forget — don't block save */ }
-            }
-        }
-        #endregion
-    }
-}
-]]></CDATA>
-    </Graph>
-    <Graph ClassName="AesthetikContainersInstall" Source="#CDATA" IsNew="True" FileType="NewFile">
-        <CDATA name="Source"><![CDATA[using System;
-using System.Configuration;
-using System.Data.SqlClient;
-using Customization;
-
-namespace StudioB.Containers
-{
-    public class AesthetikContainersInstall : CustomizationPlugin
-    {
-        public override void UpdateDatabase()
-        {
-            try
-            {
-                var cs = ConfigurationManager.ConnectionStrings["ProjectX"];
-                if (cs == null) { WriteLog("[AesthetikContainers] No ProjectX connection string — skipping DDL"); return; }
-                string connStr = cs.ConnectionString + ";TrustServerCertificate=True";
-
-                using (var conn = new SqlConnection(connStr))
-                {
-                    conn.Open();
-
-                    // ── Container Tracking Tables ──────────────────────────────
-                    EnsureTable(conn, "UsrContainer", @"
-                        CompanyID int NOT NULL DEFAULT 0,
-                        ContainerID int IDENTITY(1,1) NOT NULL,
-                        ContainerCD nvarchar(20) NOT NULL,
-                        CarrierCode nvarchar(20) NOT NULL DEFAULT 'OTHER',
-                        BookingRef nvarchar(50) NULL,
-                        BillOfLading nvarchar(50) NULL,
-                        VesselName nvarchar(50) NULL,
-                        VesselIMO nvarchar(10) NULL,
-                        VoyageNbr nvarchar(30) NULL,
-                        PortOfLoading nvarchar(10) NULL,
-                        PortOfDischarge nvarchar(10) NULL,
-                        ETD datetime NULL,
-                        ATD datetime NULL,
-                        ETA datetime NULL,
-                        ATA datetime NULL,
-                        Status nvarchar(20) NOT NULL DEFAULT 'BOOKED',
-                        ContainerType nvarchar(10) NULL,
-                        SealNbr nvarchar(20) NULL,
-                        LastEventCode nvarchar(20) NULL,
-                        LastEventDate datetime NULL,
-                        LastSyncDate datetime NULL,
-                        NoteID uniqueidentifier NULL,
-                        CreatedByID uniqueidentifier NULL,
-                        CreatedByScreenID char(8) NULL,
-                        CreatedDateTime datetime NULL,
-                        LastModifiedByID uniqueidentifier NULL,
-                        LastModifiedByScreenID char(8) NULL,
-                        LastModifiedDateTime datetime NULL,
-                        tstamp timestamp NOT NULL,
-                        CONSTRAINT PK_UsrContainer PRIMARY KEY (CompanyID, ContainerID)
-                    ");
-
-                    EnsureTable(conn, "UsrContainerEvent", @"
-                        CompanyID int NOT NULL DEFAULT 0,
-                        EventID int IDENTITY(1,1) NOT NULL,
-                        ContainerID int NOT NULL,
-                        CarrierEventCode nvarchar(20) NOT NULL DEFAULT '',
-                        NormalizedEventCode nvarchar(20) NOT NULL DEFAULT '',
-                        EventDateTime datetime NOT NULL DEFAULT GETUTCDATE(),
-                        EventClassifier nvarchar(10) NULL,
-                        LocationName nvarchar(100) NULL,
-                        LocationCode nvarchar(10) NULL,
-                        VesselName nvarchar(50) NULL,
-                        Description nvarchar(255) NULL,
-                        RawPayload nvarchar(MAX) NULL,
-                        CreatedDateTime datetime NOT NULL DEFAULT GETUTCDATE(),
-                        CONSTRAINT PK_UsrContainerEvent PRIMARY KEY (CompanyID, EventID)
-                    ");
-
-                    EnsureTable(conn, "UsrContainerPOLink", @"
-                        CompanyID int NOT NULL DEFAULT 0,
-                        LinkID int IDENTITY(1,1) NOT NULL,
-                        ContainerID int NOT NULL,
-                        OrderType nvarchar(2) NOT NULL DEFAULT 'RO',
-                        OrderNbr nvarchar(15) NOT NULL DEFAULT '',
-                        LineNbr int NULL,
-                        CONSTRAINT PK_UsrContainerPOLink PRIMARY KEY (CompanyID, LinkID)
-                    ");
-
-                    // Indexes
-                    EnsureIndex(conn, "UsrContainer", "IX_UsrContainer_ContainerCD", "CompanyID, ContainerCD");
-                    EnsureIndex(conn, "UsrContainer", "IX_UsrContainer_Status", "CompanyID, Status");
-                    EnsureIndex(conn, "UsrContainerEvent", "IX_UsrContainerEvent_ContainerID", "CompanyID, ContainerID, EventDateTime DESC");
-                    EnsureIndex(conn, "UsrContainerPOLink", "IX_UsrContainerPOLink_ContainerID", "CompanyID, ContainerID");
-                    EnsureIndex(conn, "UsrContainerPOLink", "IX_UsrContainerPOLink_PO", "CompanyID, OrderType, OrderNbr");
-
-                    // SOShipment container fields
-                    EnsureColumn(conn, "SOShipment", "UsrIncludeInContainer", "bit NULL DEFAULT 0");
-                    EnsureColumn(conn, "SOShipment", "UsrContainerID", "int NULL");
-
-                    // ── InventoryItem tariff/customs fields ────────────────────
-                    EnsureColumn(conn, "InventoryItem", "UsrDutyRate", "decimal(25,4) NULL");
-                    EnsureColumn(conn, "InventoryItem", "UsrFiberContent", "nvarchar(100) NULL");
-                    EnsureColumn(conn, "InventoryItem", "UsrPreferentialTariff", "bit NULL");
-                    EnsureColumn(conn, "InventoryItem", "UsrFreightClass", "nvarchar(15) NULL");
-
-                    // ── POReceiptLine landed cost fields ───────────────────────
-                    EnsureColumn(conn, "POReceiptLine", "UsrActualDutyAmt", "decimal(25,4) NULL");
-                    EnsureColumn(conn, "POReceiptLine", "UsrActualFreightAmt", "decimal(25,4) NULL");
-                    EnsureColumn(conn, "POReceiptLine", "UsrBrokerageAmt", "decimal(25,4) NULL");
-
-                    // ── Freight Forwarders Table ──────────────────────────────
-                    EnsureTable(conn, "UsrFreightForwarder", @"
-                        CompanyID int NOT NULL DEFAULT 0,
-                        ForwarderID int IDENTITY(1,1) NOT NULL,
-                        ForwarderCD nvarchar(15) NOT NULL,
-                        Name nvarchar(100) NOT NULL,
-                        ContactName nvarchar(100) NULL,
-                        Phone nvarchar(30) NULL,
-                        Email nvarchar(100) NULL,
-                        Website nvarchar(200) NULL,
-                        CarrierAPIType nvarchar(20) NULL,
-                        CarrierAPIKey nvarchar(200) NULL,
-                        Active bit NOT NULL DEFAULT 1,
-                        NoteID uniqueidentifier NULL,
-                        CreatedByID uniqueidentifier NULL,
-                        CreatedByScreenID char(8) NULL,
-                        CreatedDateTime datetime NULL,
-                        LastModifiedByID uniqueidentifier NULL,
-                        LastModifiedByScreenID char(8) NULL,
-                        LastModifiedDateTime datetime NULL,
-                        tstamp timestamp NOT NULL,
-                        CONSTRAINT PK_UsrFreightForwarder PRIMARY KEY (CompanyID, ForwarderID)
-                    ");
-                    EnsureIndex(conn, "UsrFreightForwarder", "IX_UsrFreightForwarder_CD", "CompanyID, ForwarderCD");
-
-                    // ── Container Types Table ────────────────────────────────
-                    EnsureTable(conn, "UsrContainerType", @"
-                        CompanyID int NOT NULL DEFAULT 0,
-                        ContainerTypeID int IDENTITY(1,1) NOT NULL,
-                        TypeCD nvarchar(10) NOT NULL,
-                        Description nvarchar(60) NULL,
-                        LengthFt decimal(6,1) NULL,
-                        WidthFt decimal(6,1) NULL,
-                        HeightFt decimal(6,1) NULL,
-                        MaxWeightKg decimal(10,0) NULL,
-                        Active bit NOT NULL DEFAULT 1,
-                        NoteID uniqueidentifier NULL,
-                        CreatedByID uniqueidentifier NULL,
-                        CreatedByScreenID char(8) NULL,
-                        CreatedDateTime datetime NULL,
-                        LastModifiedByID uniqueidentifier NULL,
-                        LastModifiedByScreenID char(8) NULL,
-                        LastModifiedDateTime datetime NULL,
-                        tstamp timestamp NOT NULL,
-                        CONSTRAINT PK_UsrContainerType PRIMARY KEY (CompanyID, ContainerTypeID)
-                    ");
-                    EnsureIndex(conn, "UsrContainerType", "IX_UsrContainerType_CD", "CompanyID, TypeCD");
-
-                    // ── Ports Table ──────────────────────────────────────────
-                    EnsureTable(conn, "UsrPort", @"
-                        CompanyID int NOT NULL DEFAULT 0,
-                        PortID int IDENTITY(1,1) NOT NULL,
-                        PortCode nvarchar(10) NOT NULL,
-                        PortName nvarchar(100) NOT NULL,
-                        Country nvarchar(2) NULL,
-                        Active bit NOT NULL DEFAULT 1,
-                        NoteID uniqueidentifier NULL,
-                        CreatedByID uniqueidentifier NULL,
-                        CreatedByScreenID char(8) NULL,
-                        CreatedDateTime datetime NULL,
-                        LastModifiedByID uniqueidentifier NULL,
-                        LastModifiedByScreenID char(8) NULL,
-                        LastModifiedDateTime datetime NULL,
-                        tstamp timestamp NOT NULL,
-                        CONSTRAINT PK_UsrPort PRIMARY KEY (CompanyID, PortID)
-                    ");
-                    EnsureIndex(conn, "UsrPort", "IX_UsrPort_Code", "CompanyID, PortCode");
-
-                    // ── Container Preferences Table ──────────────────────────
-                    EnsureTable(conn, "UsrContainerPrefs", @"
-                        CompanyID int NOT NULL DEFAULT 0,
-                        PrefsID int NOT NULL DEFAULT 1,
-                        DefaultCarrierCode nvarchar(20) NULL,
-                        DefaultContainerType nvarchar(10) NULL,
-                        DefaultInTransitWarehouse nvarchar(30) NULL,
-                        AutoLinkPOsByRef bit NOT NULL DEFAULT 1,
-                        TrackingPollIntervalHours int NOT NULL DEFAULT 24,
-                        NoteID uniqueidentifier NULL,
-                        CreatedByID uniqueidentifier NULL,
-                        CreatedByScreenID char(8) NULL,
-                        CreatedDateTime datetime NULL,
-                        LastModifiedByID uniqueidentifier NULL,
-                        LastModifiedByScreenID char(8) NULL,
-                        LastModifiedDateTime datetime NULL,
-                        tstamp timestamp NOT NULL,
-                        CONSTRAINT PK_UsrContainerPrefs PRIMARY KEY (CompanyID, PrefsID)
-                    ");
-                    // ── IGCM → UsrContainer Data Migration ──────────────────
-                    // Idempotent (NOT EXISTS guards). Safe to run on every publish.
-                    // Migrates IIG container data to AesthetikContainers tables.
-                    MigrateIGCMContainers(conn);
-
-                    // ── Per-company DML (SiteMap, seed data) ─────────────────
-                    // GIs are now created via XML files (GenericInquiryScreen_*.xml).
-                    // These tables are CompanyID-scoped. Discover all companies
-                    // dynamically so the plugin works on any tenant (test or prod).
-                    var companies = DiscoverCompanies(conn);
-                    foreach (var kvp in companies)
-                    {
-                        int companyId = kvp.Key;
-                        string companyName = kvp.Value;
-                        WriteLog(string.Format("[AesthetikContainers] Processing company '{0}' (CompanyID={1})", companyName, companyId));
-
-                        try { EnsureContainerTrackingSiteMap(conn, companyId); }
-                        catch (Exception ex) { WriteLog(string.Format("[AesthetikContainers] SiteMap update failed CID={0}: {1}", companyId, ex.Message)); }
-
-                        try { SeedContainerTypes(conn, companyId); }
-                        catch (Exception ex) { WriteLog(string.Format("[AesthetikContainers] Seed types failed CID={0}: {1}", companyId, ex.Message)); }
-
-                        try { SeedPorts(conn, companyId); }
-                        catch (Exception ex) { WriteLog(string.Format("[AesthetikContainers] Seed ports failed CID={0}: {1}", companyId, ex.Message)); }
-
-                        try { SeedContainerPreferences(conn, companyId); }
-                        catch (Exception ex) { WriteLog(string.Format("[AesthetikContainers] Seed prefs failed CID={0}: {1}", companyId, ex.Message)); }
-                    }
-                }
-
-                WriteLog("[AesthetikContainers] All tables, columns, indexes, and migration verified/created.");
-            }
-            catch (Exception ex)
-            {
-                WriteLog("[AesthetikContainers] ERROR: " + ex.GetType().FullName + ": " + ex.Message);
-                if (ex.InnerException != null)
-                    WriteLog("[AesthetikContainers] Inner: " + ex.InnerException.Message);
-            }
-        }
-
-        private System.Collections.Generic.Dictionary<int, string> DiscoverCompanies(SqlConnection conn)
-        {
-            // Key by CompanyID (guaranteed unique) → company name for logging
-            var companies = new System.Collections.Generic.Dictionary<int, string>();
-            using (var cmd = conn.CreateCommand())
-            {
-                cmd.CommandText = "SELECT CompanyID, COALESCE(CompanyCD, CAST(CompanyID AS nvarchar)) FROM Company WHERE CompanyID > 0";
-                cmd.CommandTimeout = 30;
-                try
-                {
-                    using (var rdr = cmd.ExecuteReader())
-                    {
-                        while (rdr.Read())
-                        {
-                            int id = rdr.GetInt32(0);
-                            string name = rdr.IsDBNull(1) ? ("Company_" + id) : rdr.GetString(1);
-                            companies[id] = name;
-                            WriteLog(string.Format("[AesthetikContainers] Found company: '{0}' -> CompanyID={1}", name, id));
-                        }
-                    }
-                }
-                catch (Exception ex)
-                {
-                    WriteLog(string.Format("[AesthetikContainers] Company discovery failed: {0}", ex.Message));
-                }
-            }
-
-            if (companies.Count == 0)
-                WriteLog("[AesthetikContainers] WARNING: No companies found — SiteMap/seed data will not be created");
-
-            return companies;
-        }
-
-        private void EnsureColumn(SqlConnection conn, string table, string column, string definition)
-        {
-            string sql = string.Format(
-                "IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('{0}') AND name = '{1}') " +
-                "ALTER TABLE [{0}] ADD [{1}] {2};",
-                table, column, definition);
-            using (var cmd = new SqlCommand(sql, conn)) { cmd.ExecuteNonQuery(); }
-            WriteLog(string.Format("  Column {0}.{1} — OK", table, column));
-        }
-
-        private void EnsureTable(SqlConnection conn, string table, string columnDefs)
-        {
-            string sql = string.Format(
-                "IF OBJECT_ID('{0}', 'U') IS NULL CREATE TABLE [{0}] ({1});",
-                table, columnDefs);
-            using (var cmd = new SqlCommand(sql, conn)) { cmd.CommandTimeout = 60; cmd.ExecuteNonQuery(); }
-            WriteLog(string.Format("  Table {0} — OK", table));
-        }
-
-        private void EnsureIndex(SqlConnection conn, string table, string indexName, string columns)
-        {
-            string sql = string.Format(
-                "IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE object_id = OBJECT_ID('{0}') AND name = '{1}') " +
-                "CREATE NONCLUSTERED INDEX [{1}] ON [{0}] ({2});",
-                table, indexName, columns);
-            using (var cmd = new SqlCommand(sql, conn)) { cmd.ExecuteNonQuery(); }
-            WriteLog(string.Format("  Index {0}.{1} — OK", table, indexName));
-        }
-
-        private void MigrateIGCMContainers(SqlConnection conn)
-        {
-            // Skip if IIG source table doesn't exist (already fully removed)
-            string checkSql = "SELECT OBJECT_ID('IGCMPOLandedCost', 'U')";
-            using (var cmd = new SqlCommand(checkSql, conn))
-            {
-                var result = cmd.ExecuteScalar();
-                if (result == null || result == System.DBNull.Value)
-                {
-                    WriteLog("  IGCM migration: IGCMPOLandedCost table not found — skipping");
-                    return;
-                }
-            }
-
-            // Step 1: Migrate container headers
-            string migrateHeaders = @"
-                INSERT INTO UsrContainer (
-                    CompanyID, ContainerCD, CarrierCode, BookingRef, Status,
-                    CreatedByID, CreatedByScreenID, CreatedDateTime,
-                    LastModifiedByID, LastModifiedByScreenID, LastModifiedDateTime
-                )
-                SELECT
-                    c.CompanyID,
-                    ISNULL(c.ContainerNbr, c.LandedCostNbr),
-                    'OTHER',
-                    c.LandedCostNbr,
-                    CASE
-                        WHEN c.Released = 1 THEN 'DELIVERED'
-                        WHEN c.Hold = 1 THEN 'CUSTOMS_HOLD'
-                        ELSE 'IN_TRANSIT'
-                    END,
-                    c.CreatedByID, c.CreatedByScreenID, c.CreatedDateTime,
-                    c.LastModifiedByID, c.LastModifiedByScreenID, c.LastModifiedDateTime
-                FROM IGCMPOLandedCost c
-                WHERE NOT EXISTS (
-                    SELECT 1 FROM UsrContainer u
-                    WHERE u.CompanyID = c.CompanyID
-                    AND u.ContainerCD = ISNULL(c.ContainerNbr, c.LandedCostNbr)
-                )";
-            using (var cmd = new SqlCommand(migrateHeaders, conn))
-            {
-                cmd.CommandTimeout = 120;
-                int rows = cmd.ExecuteNonQuery();
-                WriteLog(string.Format("  IGCM migration: {0} container headers migrated", rows));
-            }
-
-            // Step 2: Migrate PO links
-            string migrateLinks = @"
-                INSERT INTO UsrContainerPOLink (
-                    CompanyID, ContainerID, OrderType, OrderNbr, LineNbr
-                )
-                SELECT DISTINCT
-                    cl.CompanyID, u.ContainerID, cl.POOrderType, cl.PONbr, cl.POLineNbr
-                FROM IGCMPOLandedCostLine cl
-                INNER JOIN IGCMPOLandedCost c
-                    ON cl.CompanyID = c.CompanyID AND cl.LandedCostNbr = c.LandedCostNbr
-                INNER JOIN UsrContainer u
-                    ON u.CompanyID = c.CompanyID AND u.ContainerCD = ISNULL(c.ContainerNbr, c.LandedCostNbr)
-                WHERE cl.PONbr IS NOT NULL
-                AND NOT EXISTS (
-                    SELECT 1 FROM UsrContainerPOLink lk
-                    WHERE lk.CompanyID = cl.CompanyID
-                    AND lk.ContainerID = u.ContainerID
-                    AND lk.OrderType = cl.POOrderType
-                    AND lk.OrderNbr = cl.PONbr
-                    AND ISNULL(lk.LineNbr, -1) = ISNULL(cl.POLineNbr, -1)
-                )";
-            using (var cmd = new SqlCommand(migrateLinks, conn))
-            {
-                cmd.CommandTimeout = 120;
-                int rows = cmd.ExecuteNonQuery();
-                WriteLog(string.Format("  IGCM migration: {0} PO links migrated", rows));
-            }
-
-            // Step 3: PO header UsrContainerRef backfill deferred —
-            // UPDATE on POOrder is blocked by validate-project.py guard.
-            // ContainerMaint graph sets UsrContainerRef on save.
-            // Historical POs can be backfilled via SM302050 if needed.
-        }
-
-        // CleanupIGCMArtifacts and EnsureContainerTrackingGIs removed —
-        // GIs are now created via XML files (GenericInquiryScreen_*.xml).
-        // IGCM cleanup is no longer needed; the ISV artifacts are gone.
-        private void EnsureContainerTrackingSiteMap(SqlConnection conn, int companyId)
-        {
-            // Step 1: Delete ALL non-whitelisted entries from the Container Tracking
-            // workspace. IIG left behind SiteMap entries for IGCM screens that no longer
-            // exist. Whitelist only our working form screens + Container Maintenance.
-            string deleteOldEntries = @"
-                DELETE FROM SiteMap
-                WHERE CompanyID = @cid
-                  AND ParentID = '9c89e3db-7c47-43c0-8554-5d2c9f2c0e87'
-                  AND ScreenID NOT IN ('SB501000','SB302000','SB302010','SB302020','SB302030')";
-            using (var cmd = new SqlCommand(deleteOldEntries, conn))
-            {
-                cmd.Parameters.AddWithValue("@cid", companyId);
-                int rows = cmd.ExecuteNonQuery();
-                if (rows > 0) WriteLog(string.Format("[AesthetikContainers] Cleaned {0} old IIG entries from Container Tracking workspace (CID={1})", rows, companyId));
-            }
-
-            // Step 2: Also clean IGCM-pattern SiteMap entries outside the workspace
-            string deleteIgcmEntries = @"
-                DELETE FROM SiteMap
-                WHERE CompanyID = @cid
-                  AND (ScreenID LIKE 'IGCM%' OR ScreenID LIKE 'IG.CM%')
-                  AND ScreenID NOT IN ('SB501000','SB302000','SB302010','SB302020','SB302030')";
-            using (var cmd = new SqlCommand(deleteIgcmEntries, conn))
-            {
-                cmd.Parameters.AddWithValue("@cid", companyId);
-                int rows = cmd.ExecuteNonQuery();
-                if (rows > 0) WriteLog(string.Format("[AesthetikContainers] Cleaned {0} IGCM SiteMap entries outside workspace (CID={1})", rows, companyId));
-            }
-
-            // Step 3: Upsert our 4 form screen entries
-            string[][] entries = new[]
-            {
-                new[] { "SB302000", "Freight Forwarders", "~/Pages/SB/SB302000.aspx", "7.9" },
-                new[] { "SB302010", "Container Types", "~/Pages/SB/SB302010.aspx", "8.2" },
-                new[] { "SB302020", "Destinations/Ports", "~/Pages/SB/SB302020.aspx", "8.3" },
-                new[] { "SB302030", "Container Preferences", "~/Pages/SB/SB302030.aspx", "8.4" },
-            };
-
-            foreach (var e in entries)
-            {
-                string sql = @"
-                    IF EXISTS (SELECT 1 FROM SiteMap WHERE ScreenID = @sid AND CompanyID = @cid)
-                        UPDATE SiteMap SET Url = @url, Title = @title, Position = @pos
-                        WHERE ScreenID = @sid AND CompanyID = @cid;
-                    ELSE
-                        INSERT INTO SiteMap (CompanyID, NodeID, ScreenID, Title, Url, Position, ParentID, SelectedUI, CreatedByID, CreatedByScreenID, CreatedDateTime, LastModifiedByID, LastModifiedByScreenID, LastModifiedDateTime)
-                        VALUES (@cid, NEWID(), @sid, @title, @url, @pos, '9c89e3db-7c47-43c0-8554-5d2c9f2c0e87', N'E', N'B5344897-037E-4D58-B5C3-1BDFD0F47BF4', N'SM208000', GETUTCDATE(), N'B5344897-037E-4D58-B5C3-1BDFD0F47BF4', N'SM208000', GETUTCDATE());";
-                using (var cmd = new SqlCommand(sql, conn))
-                {
-                    cmd.Parameters.AddWithValue("@cid", companyId);
-                    cmd.Parameters.AddWithValue("@sid", e[0]);
-                    cmd.Parameters.AddWithValue("@title", e[1]);
-                    cmd.Parameters.AddWithValue("@url", e[2]);
-                    cmd.Parameters.AddWithValue("@pos", e[3]);
-                    cmd.ExecuteNonQuery();
-                }
-            }
-            WriteLog(string.Format("[AesthetikContainers] Container Tracking SiteMap (4 form screens) for CompanyID={0} — OK", companyId));
-        }
-
-        private void SeedContainerTypes(SqlConnection conn, int companyId)
-        {
-            var types = new (string cd, string desc, string l, string w, string h, string wt)[] {
-                ("20GP", "20ft Standard", "20.0", "8.0", "8.5", "28200"),
-                ("40GP", "40ft Standard", "40.0", "8.0", "8.5", "28800"),
-                ("40HC", "40ft High Cube", "40.0", "8.0", "9.5", "28560"),
-                ("45HC", "45ft High Cube", "45.0", "8.0", "9.5", "27600"),
-                ("20RF", "20ft Reefer", "20.0", "8.0", "8.5", "27400"),
-                ("40RF", "40ft Reefer", "40.0", "8.0", "8.5", "27700"),
-            };
-            foreach (var t in types)
-            {
-                string sql = @"
-                    IF NOT EXISTS (SELECT 1 FROM UsrContainerType WHERE TypeCD = @cd AND CompanyID = @cid)
-                    INSERT INTO UsrContainerType (CompanyID, TypeCD, Description, LengthFt, WidthFt, HeightFt, MaxWeightKg, Active)
-                    VALUES (@cid, @cd, @desc, @l, @w, @h, @wt, 1);";
-                using (var cmd = new SqlCommand(sql, conn))
-                {
-                    cmd.Parameters.AddWithValue("@cid", companyId);
-                    cmd.Parameters.AddWithValue("@cd", t.cd);
-                    cmd.Parameters.AddWithValue("@desc", t.desc);
-                    cmd.Parameters.AddWithValue("@l", decimal.Parse(t.l));
-                    cmd.Parameters.AddWithValue("@w", decimal.Parse(t.w));
-                    cmd.Parameters.AddWithValue("@h", decimal.Parse(t.h));
-                    cmd.Parameters.AddWithValue("@wt", decimal.Parse(t.wt));
-                    cmd.ExecuteNonQuery();
-                }
-            }
-            WriteLog(string.Format("[AesthetikContainers] Container Types seed for CompanyID={0} — OK", companyId));
-        }
-
-        private void SeedPorts(SqlConnection conn, int companyId)
-        {
-            var ports = new (string code, string name, string country)[] {
-                ("CNSHA", "Shanghai", "CN"), ("CNYTN", "Yantian", "CN"), ("CNNGB", "Ningbo", "CN"),
-                ("CNQIN", "Qingdao", "CN"), ("CNXMN", "Xiamen", "CN"), ("CNSZX", "Shenzhen", "CN"),
-                ("HKHKG", "Hong Kong", "HK"), ("VNSGN", "Ho Chi Minh City", "VN"), ("VNHPH", "Haiphong", "VN"),
-                ("IDSUB", "Surabaya", "ID"), ("INMAA", "Chennai", "IN"), ("INBOM", "Mumbai", "IN"),
-                ("TWKHH", "Kaohsiung", "TW"), ("USLAX", "Los Angeles", "US"), ("USLGB", "Long Beach", "US"),
-                ("USSAV", "Savannah", "US"), ("USNYC", "New York", "US"), ("USNWK", "Newark", "US"),
-                ("USCHI", "Chicago", "US"), ("USHOU", "Houston", "US"),
-            };
-            foreach (var p in ports)
-            {
-                string sql = @"
-                    IF NOT EXISTS (SELECT 1 FROM UsrPort WHERE PortCode = @code AND CompanyID = @cid)
-                    INSERT INTO UsrPort (CompanyID, PortCode, PortName, Country, Active)
-                    VALUES (@cid, @code, @name, @country, 1);";
-                using (var cmd = new SqlCommand(sql, conn))
-                {
-                    cmd.Parameters.AddWithValue("@cid", companyId);
-                    cmd.Parameters.AddWithValue("@code", p.code);
-                    cmd.Parameters.AddWithValue("@name", p.name);
-                    cmd.Parameters.AddWithValue("@country", p.country);
-                    cmd.ExecuteNonQuery();
-                }
-            }
-            WriteLog(string.Format("[AesthetikContainers] Ports seed for CompanyID={0} — OK", companyId));
-        }
-
-        private void SeedContainerPreferences(SqlConnection conn, int companyId)
-        {
-            string sql = @"
-                IF NOT EXISTS (SELECT 1 FROM UsrContainerPrefs WHERE CompanyID = @cid)
-                INSERT INTO UsrContainerPrefs (CompanyID, PrefsID, AutoLinkPOsByRef, TrackingPollIntervalHours)
-                VALUES (@cid, 1, 1, 24);";
-            using (var cmd = new SqlCommand(sql, conn))
-            {
-                cmd.Parameters.AddWithValue("@cid", companyId);
-                cmd.ExecuteNonQuery();
-            }
-            WriteLog(string.Format("[AesthetikContainers] Container Preferences default for CompanyID={0} — OK", companyId));
-        }
-    }
-}
-]]></CDATA>
-    </Graph>
-    <Graph ClassName="UsrFreightForwarder" Source="#CDATA" IsNew="True" FileType="NewFile">
-        <CDATA name="Source"><![CDATA[using System;
-using PX.Data;
-using PX.Data.BQL;
-
-namespace StudioB.Containers
-{
-    [Serializable]
-    [PXCacheName("Freight Forwarder")]
-    public class UsrFreightForwarder : IBqlTable
-    {
-        #region ForwarderID
-        public abstract class forwarderID : BqlInt.Field<forwarderID> { }
-        [PXDBIdentity]
-        public int? ForwarderID { get; set; }
-        #endregion
-
-        #region ForwarderCD
-        public abstract class forwarderCD : BqlString.Field<forwarderCD> { }
-        [PXDBString(15, IsUnicode = true, IsKey = true, InputMask = ">CCCCCCCCCCCCCCC")]
-        [PXDefault]
-        [PXUIField(DisplayName = "Forwarder ID", Visibility = PXUIVisibility.SelectorVisible)]
-        [PXSelector(typeof(Search<UsrFreightForwarder.forwarderCD>),
-            typeof(UsrFreightForwarder.forwarderCD),
-            typeof(UsrFreightForwarder.name),
-            typeof(UsrFreightForwarder.carrierAPIType),
-            typeof(UsrFreightForwarder.active))]
-        public string ForwarderCD { get; set; }
-        #endregion
-
-        #region Name
-        public abstract class name : BqlString.Field<name> { }
-        [PXDBString(100, IsUnicode = true)]
-        [PXDefault]
-        [PXUIField(DisplayName = "Company Name")]
-        public string Name { get; set; }
-        #endregion
-
-        #region ContactName
-        public abstract class contactName : BqlString.Field<contactName> { }
-        [PXDBString(100, IsUnicode = true)]
-        [PXUIField(DisplayName = "Contact Name")]
-        public string ContactName { get; set; }
-        #endregion
-
-        #region Phone
-        public abstract class phone : BqlString.Field<phone> { }
-        [PXDBString(30, IsUnicode = true)]
-        [PXUIField(DisplayName = "Phone")]
-        public string Phone { get; set; }
-        #endregion
-
-        #region Email
-        public abstract class email : BqlString.Field<email> { }
-        [PXDBString(100, IsUnicode = true)]
-        [PXUIField(DisplayName = "Email")]
-        public string Email { get; set; }
-        #endregion
-
-        #region Website
-        public abstract class website : BqlString.Field<website> { }
-        [PXDBString(200, IsUnicode = true)]
-        [PXUIField(DisplayName = "Website")]
-        public string Website { get; set; }
-        #endregion
-
-        #region CarrierAPIType
-        public abstract class carrierAPIType : BqlString.Field<carrierAPIType> { }
-        [PXDBString(20, IsUnicode = true)]
-        [PXUIField(DisplayName = "API Type")]
-        [PXStringList(
-            new[] { "SEATRATES", "MAERSK", "FEDEX", "UPS", "OTHER" },
-            new[] { "Seatrates", "Maersk", "FedEx", "UPS", "Other" })]
-        public string CarrierAPIType { get; set; }
-        #endregion
-
-        #region CarrierAPIKey
-        public abstract class carrierAPIKey : BqlString.Field<carrierAPIKey> { }
-        [PXRSACryptString(200, IsUnicode = true)]
-        [PXUIField(DisplayName = "API Key")]
-        public string CarrierAPIKey { get; set; }
-        #endregion
-
-        #region Active
-        public abstract class active : BqlBool.Field<active> { }
-        [PXDBBool]
-        [PXDefault(true)]
-        [PXUIField(DisplayName = "Active")]
-        public bool? Active { get; set; }
-        #endregion
-
-        #region NoteID
-        public abstract class noteID : BqlGuid.Field<noteID> { }
-        [PXNote]
-        public Guid? NoteID { get; set; }
-        #endregion
-
-        #region CreatedByID
-        public abstract class createdByID : BqlGuid.Field<createdByID> { }
-        [PXDBCreatedByID]
-        public Guid? CreatedByID { get; set; }
-        #endregion
-
-        #region CreatedByScreenID
-        public abstract class createdByScreenID : BqlString.Field<createdByScreenID> { }
-        [PXDBCreatedByScreenID]
-        public string CreatedByScreenID { get; set; }
-        #endregion
-
-        #region CreatedDateTime
-        public abstract class createdDateTime : BqlDateTime.Field<createdDateTime> { }
-        [PXDBCreatedDateTime]
-        public DateTime? CreatedDateTime { get; set; }
-        #endregion
-
-        #region LastModifiedByID
-        public abstract class lastModifiedByID : BqlGuid.Field<lastModifiedByID> { }
-        [PXDBLastModifiedByID]
-        public Guid? LastModifiedByID { get; set; }
-        #endregion
-
-        #region LastModifiedByScreenID
-        public abstract class lastModifiedByScreenID : BqlString.Field<lastModifiedByScreenID> { }
-        [PXDBLastModifiedByScreenID]
-        public string LastModifiedByScreenID { get; set; }
-        #endregion
-
-        #region LastModifiedDateTime
-        public abstract class lastModifiedDateTime : BqlDateTime.Field<lastModifiedDateTime> { }
-        [PXDBLastModifiedDateTime]
-        public DateTime? LastModifiedDateTime { get; set; }
-        #endregion
-
-        #region Tstamp
-        public abstract class tstamp : BqlByteArray.Field<tstamp> { }
-        [PXDBTimestamp]
-        public byte[] Tstamp { get; set; }
-        #endregion
-    }
-}
-]]></CDATA>
-    </Graph>
-    <Graph ClassName="FreightForwarderMaint" Source="#CDATA" IsNew="True" FileType="NewFile">
-        <CDATA name="Source"><![CDATA[using PX.Data;
-using PX.Data.BQL.Fluent;
-
-namespace StudioB.Containers
-{
-    public class FreightForwarderMaint : PXGraph<FreightForwarderMaint, UsrFreightForwarder>
-    {
-        public SelectFrom<UsrFreightForwarder>.View Forwarder;
-    }
-}
-]]></CDATA>
-    </Graph>
-    <Graph ClassName="UsrContainerType" Source="#CDATA" IsNew="True" FileType="NewFile">
-        <CDATA name="Source"><![CDATA[using System;
-using PX.Data;
-using PX.Data.BQL;
-
-namespace StudioB.Containers
-{
-    [Serializable]
-    [PXCacheName("Container Type")]
-    public class UsrContainerType : IBqlTable
-    {
-        #region ContainerTypeID
-        public abstract class containerTypeID : BqlInt.Field<containerTypeID> { }
-        [PXDBIdentity]
-        public int? ContainerTypeID { get; set; }
-        #endregion
-        #region TypeCD
-        public abstract class typeCD : BqlString.Field<typeCD> { }
-        [PXDBString(10, IsUnicode = true, IsKey = true, InputMask = ">aaaaaaaaaa")]
-        [PXDefault]
-        [PXUIField(DisplayName = "Type ID", Visibility = PXUIVisibility.SelectorVisible)]
-        [PXSelector(typeof(Search<UsrContainerType.typeCD>),
-            typeof(UsrContainerType.typeCD),
-            typeof(UsrContainerType.description))]
-        public string TypeCD { get; set; }
-        #endregion
-        #region Description
-        public abstract class description : BqlString.Field<description> { }
-        [PXDBString(60, IsUnicode = true)]
-        [PXUIField(DisplayName = "Description", Visibility = PXUIVisibility.SelectorVisible)]
-        public string Description { get; set; }
-        #endregion
-        #region LengthFt
-        public abstract class lengthFt : BqlDecimal.Field<lengthFt> { }
-        [PXDBDecimal(1)]
-        [PXUIField(DisplayName = "Length (ft)")]
-        public decimal? LengthFt { get; set; }
-        #endregion
-        #region WidthFt
-        public abstract class widthFt : BqlDecimal.Field<widthFt> { }
-        [PXDBDecimal(1)]
-        [PXUIField(DisplayName = "Width (ft)")]
-        public decimal? WidthFt { get; set; }
-        #endregion
-        #region HeightFt
-        public abstract class heightFt : BqlDecimal.Field<heightFt> { }
-        [PXDBDecimal(1)]
-        [PXUIField(DisplayName = "Height (ft)")]
-        public decimal? HeightFt { get; set; }
-        #endregion
-        #region MaxWeightKg
-        public abstract class maxWeightKg : BqlDecimal.Field<maxWeightKg> { }
-        [PXDBDecimal(0)]
-        [PXUIField(DisplayName = "Max Weight (kg)")]
-        public decimal? MaxWeightKg { get; set; }
-        #endregion
-        #region Active
-        public abstract class active : BqlBool.Field<active> { }
-        [PXDBBool]
-        [PXDefault(true)]
-        [PXUIField(DisplayName = "Active")]
-        public bool? Active { get; set; }
-        #endregion
-        #region NoteID
-        public abstract class noteID : BqlGuid.Field<noteID> { }
-        [PXNote]
-        public Guid? NoteID { get; set; }
-        #endregion
-        #region CreatedByID
-        public abstract class createdByID : BqlGuid.Field<createdByID> { }
-        [PXDBCreatedByID]
-        public Guid? CreatedByID { get; set; }
-        #endregion
-        #region CreatedByScreenID
-        public abstract class createdByScreenID : BqlString.Field<createdByScreenID> { }
-        [PXDBCreatedByScreenID]
-        public string CreatedByScreenID { get; set; }
-        #endregion
-        #region CreatedDateTime
-        public abstract class createdDateTime : BqlDateTime.Field<createdDateTime> { }
-        [PXDBCreatedDateTime]
-        public DateTime? CreatedDateTime { get; set; }
-        #endregion
-        #region LastModifiedByID
-        public abstract class lastModifiedByID : BqlGuid.Field<lastModifiedByID> { }
-        [PXDBLastModifiedByID]
-        public Guid? LastModifiedByID { get; set; }
-        #endregion
-        #region LastModifiedByScreenID
-        public abstract class lastModifiedByScreenID : BqlString.Field<lastModifiedByScreenID> { }
-        [PXDBLastModifiedByScreenID]
-        public string LastModifiedByScreenID { get; set; }
-        #endregion
-        #region LastModifiedDateTime
-        public abstract class lastModifiedDateTime : BqlDateTime.Field<lastModifiedDateTime> { }
-        [PXDBLastModifiedDateTime]
-        public DateTime? LastModifiedDateTime { get; set; }
-        #endregion
-        #region Tstamp
-        public abstract class tstamp : BqlByteArray.Field<tstamp> { }
-        [PXDBTimestamp]
-        public byte[] Tstamp { get; set; }
-        #endregion
-    }
-}
-]]></CDATA>
-    </Graph>
-    <Graph ClassName="UsrPort" Source="#CDATA" IsNew="True" FileType="NewFile">
-        <CDATA name="Source"><![CDATA[using System;
-using PX.Data;
-using PX.Data.BQL;
-
-namespace StudioB.Containers
-{
-    [Serializable]
-    [PXCacheName("Port")]
-    public class UsrPort : IBqlTable
-    {
-        #region PortID
-        public abstract class portID : BqlInt.Field<portID> { }
-        [PXDBIdentity]
-        public int? PortID { get; set; }
-        #endregion
-        #region PortCode
-        public abstract class portCode : BqlString.Field<portCode> { }
-        [PXDBString(10, IsUnicode = true, IsKey = true, InputMask = ">aaaaaaaaaa")]
-        [PXDefault]
-        [PXUIField(DisplayName = "Port Code", Visibility = PXUIVisibility.SelectorVisible)]
-        [PXSelector(typeof(Search<UsrPort.portCode>),
-            typeof(UsrPort.portCode),
-            typeof(UsrPort.portName),
-            typeof(UsrPort.country))]
-        public string PortCode { get; set; }
-        #endregion
-        #region PortName
-        public abstract class portName : BqlString.Field<portName> { }
-        [PXDBString(100, IsUnicode = true)]
-        [PXDefault]
-        [PXUIField(DisplayName = "Port Name", Visibility = PXUIVisibility.SelectorVisible)]
-        public string PortName { get; set; }
-        #endregion
-        #region Country
-        public abstract class country : BqlString.Field<country> { }
-        [PXDBString(2, IsUnicode = true)]
-        [PXUIField(DisplayName = "Country")]
-        public string Country { get; set; }
-        #endregion
-        #region Active
-        public abstract class active : BqlBool.Field<active> { }
-        [PXDBBool]
-        [PXDefault(true)]
-        [PXUIField(DisplayName = "Active")]
-        public bool? Active { get; set; }
-        #endregion
-        #region NoteID
-        public abstract class noteID : BqlGuid.Field<noteID> { }
-        [PXNote]
-        public Guid? NoteID { get; set; }
-        #endregion
-        #region CreatedByID
-        public abstract class createdByID : BqlGuid.Field<createdByID> { }
-        [PXDBCreatedByID]
-        public Guid? CreatedByID { get; set; }
-        #endregion
-        #region CreatedByScreenID
-        public abstract class createdByScreenID : BqlString.Field<createdByScreenID> { }
-        [PXDBCreatedByScreenID]
-        public string CreatedByScreenID { get; set; }
-        #endregion
-        #region CreatedDateTime
-        public abstract class createdDateTime : BqlDateTime.Field<createdDateTime> { }
-        [PXDBCreatedDateTime]
-        public DateTime? CreatedDateTime { get; set; }
-        #endregion
-        #region LastModifiedByID
-        public abstract class lastModifiedByID : BqlGuid.Field<lastModifiedByID> { }
-        [PXDBLastModifiedByID]
-        public Guid? LastModifiedByID { get; set; }
-        #endregion
-        #region LastModifiedByScreenID
-        public abstract class lastModifiedByScreenID : BqlString.Field<lastModifiedByScreenID> { }
-        [PXDBLastModifiedByScreenID]
-        public string LastModifiedByScreenID { get; set; }
-        #endregion
-        #region LastModifiedDateTime
-        public abstract class lastModifiedDateTime : BqlDateTime.Field<lastModifiedDateTime> { }
-        [PXDBLastModifiedDateTime]
-        public DateTime? LastModifiedDateTime { get; set; }
-        #endregion
-        #region Tstamp
-        public abstract class tstamp : BqlByteArray.Field<tstamp> { }
-        [PXDBTimestamp]
-        public byte[] Tstamp { get; set; }
-        #endregion
-    }
-}
-]]></CDATA>
-    </Graph>
-    <Graph ClassName="UsrContainerPrefs" Source="#CDATA" IsNew="True" FileType="NewFile">
-        <CDATA name="Source"><![CDATA[using System;
-using PX.Data;
-using PX.Data.BQL;
-
-namespace StudioB.Containers
-{
-    [Serializable]
-    [PXCacheName("Container Preferences")]
-    public class UsrContainerPrefs : IBqlTable
-    {
-        #region PrefsID
-        public abstract class prefsID : BqlInt.Field<prefsID> { }
-        [PXDBInt(IsKey = true)]
-        [PXDefault(1)]
-        [PXUIField(Visible = false)]
-        public int? PrefsID { get; set; }
-        #endregion
-        #region DefaultCarrierCode
-        public abstract class defaultCarrierCode : BqlString.Field<defaultCarrierCode> { }
-        [PXDBString(20, IsUnicode = true)]
-        [PXUIField(DisplayName = "Default Carrier Code")]
-        public string DefaultCarrierCode { get; set; }
-        #endregion
-        #region DefaultContainerType
-        public abstract class defaultContainerType : BqlString.Field<defaultContainerType> { }
-        [PXDBString(10, IsUnicode = true)]
-        [PXUIField(DisplayName = "Default Container Type")]
-        [PXSelector(typeof(Search<UsrContainerType.typeCD,
-            Where<UsrContainerType.active, Equal<True>>>),
-            typeof(UsrContainerType.typeCD),
-            typeof(UsrContainerType.description))]
-        public string DefaultContainerType { get; set; }
-        #endregion
-        #region DefaultInTransitWarehouse
-        public abstract class defaultInTransitWarehouse : BqlString.Field<defaultInTransitWarehouse> { }
-        [PXDBString(30, IsUnicode = true)]
-        [PXUIField(DisplayName = "Default In-Transit Warehouse")]
-        public string DefaultInTransitWarehouse { get; set; }
-        #endregion
-        #region AutoLinkPOsByRef
-        public abstract class autoLinkPOsByRef : BqlBool.Field<autoLinkPOsByRef> { }
-        [PXDBBool]
-        [PXDefault(true)]
-        [PXUIField(DisplayName = "Auto-Link POs by Container Ref")]
-        public bool? AutoLinkPOsByRef { get; set; }
-        #endregion
-        #region TrackingPollIntervalHours
-        public abstract class trackingPollIntervalHours : BqlInt.Field<trackingPollIntervalHours> { }
-        [PXDBInt]
-        [PXDefault(24)]
-        [PXUIField(DisplayName = "Tracking Poll Interval (hours)")]
-        public int? TrackingPollIntervalHours { get; set; }
-        #endregion
-        #region NoteID
-        public abstract class noteID : BqlGuid.Field<noteID> { }
-        [PXNote]
-        public Guid? NoteID { get; set; }
-        #endregion
-        #region CreatedByID
-        public abstract class createdByID : BqlGuid.Field<createdByID> { }
-        [PXDBCreatedByID]
-        public Guid? CreatedByID { get; set; }
-        #endregion
-        #region CreatedByScreenID
-        public abstract class createdByScreenID : BqlString.Field<createdByScreenID> { }
-        [PXDBCreatedByScreenID]
-        public string CreatedByScreenID { get; set; }
-        #endregion
-        #region CreatedDateTime
-        public abstract class createdDateTime : BqlDateTime.Field<createdDateTime> { }
-        [PXDBCreatedDateTime]
-        public DateTime? CreatedDateTime { get; set; }
-        #endregion
-        #region LastModifiedByID
-        public abstract class lastModifiedByID : BqlGuid.Field<lastModifiedByID> { }
-        [PXDBLastModifiedByID]
-        public Guid? LastModifiedByID { get; set; }
-        #endregion
-        #region LastModifiedByScreenID
-        public abstract class lastModifiedByScreenID : BqlString.Field<lastModifiedByScreenID> { }
-        [PXDBLastModifiedByScreenID]
-        public string LastModifiedByScreenID { get; set; }
-        #endregion
-        #region LastModifiedDateTime
-        public abstract class lastModifiedDateTime : BqlDateTime.Field<lastModifiedDateTime> { }
-        [PXDBLastModifiedDateTime]
-        public DateTime? LastModifiedDateTime { get; set; }
-        #endregion
-        #region Tstamp
-        public abstract class tstamp : BqlByteArray.Field<tstamp> { }
-        [PXDBTimestamp]
-        public byte[] Tstamp { get; set; }
-        #endregion
-    }
-}
-]]></CDATA>
-    </Graph>
-    <Graph ClassName="ContainerTypeMaint" Source="#CDATA" IsNew="True" FileType="NewFile">
-        <CDATA name="Source"><![CDATA[using PX.Data;
-using PX.Data.BQL.Fluent;
-
-namespace StudioB.Containers
-{
-    public class ContainerTypeMaint : PXGraph<ContainerTypeMaint, UsrContainerType>
-    {
-        public SelectFrom<UsrContainerType>.View ContainerType;
-    }
-}
-]]></CDATA>
-    </Graph>
-    <Graph ClassName="PortMaint" Source="#CDATA" IsNew="True" FileType="NewFile">
-        <CDATA name="Source"><![CDATA[using PX.Data;
-using PX.Data.BQL.Fluent;
-
-namespace StudioB.Containers
-{
-    public class PortMaint : PXGraph<PortMaint, UsrPort>
-    {
-        public SelectFrom<UsrPort>.View Port;
-    }
-}
-]]></CDATA>
-    </Graph>
-    <Graph ClassName="ContainerPrefsMaint" Source="#CDATA" IsNew="True" FileType="NewFile">
-        <CDATA name="Source"><![CDATA[using PX.Data;
-
-namespace StudioB.Containers
-{
-    public class ContainerPrefsMaint : PXGraph<ContainerPrefsMaint>
-    {
-        public PXSelect<UsrContainerPrefs> Prefs;
-
-        protected virtual void _(Events.RowInserted<UsrContainerPrefs> e)
-        {
-            if (e.Row != null && e.Row.PrefsID == null)
-                e.Row.PrefsID = 1;
-        }
-    }
-}
-]]></CDATA>
-    </Graph>
     <Page path="~/pages/po/po301000.aspx">
         <PXFormView ID="form" ParentId="phF_form" TypeFullName="PX.Web.UI.PXFormView">
             <Children Key="Template">
@@ -2202,6 +165,7 @@ namespace StudioB.Containers
             </Children>
         </PXFormView>
     </Page>
+    <File AppRelativePath="Bin\StudioB.Containers.dll" />
     <File AppRelativePath="Pages\SB\SB501000.aspx" Source="#CDATA">
         <CDATA name="Source"><![CDATA[<%@ Page Language="C#" MasterPageFile="~/MasterPages/FormDetail.master" AutoEventWireup="true" ValidateRequest="false" CodeFile="SB501000.aspx.cs" Inherits="Page_SB_SB501000" Title="Container Maintenance" %>
 <%@ MasterType VirtualPath="~/MasterPages/FormDetail.master" %>
@@ -2468,6 +432,1227 @@ public partial class Page_SB_SB302030 : PXPage
 }
 ]]></CDATA>
     </File>
+    <GenericInquiryScreen>
+  <data-set>
+                <relations format-version="3" relations-version="20240201" main-table="GIDesign" stable-sharing="True" file-name="(Name)">
+    <link from="GIFilter (DesignID)" to="GIDesign (DesignID)" />
+    <link from="GIGroupBy (DesignID)" to="GIDesign (DesignID)" />
+    <link from="GIMassAction (DesignID)" to="GIDesign (DesignID)" />
+    <link from="GIMassUpdateField (DesignID)" to="GIDesign (DesignID)" />
+    <link from="GINavigationScreen (DesignID)" to="GIDesign (DesignID)" />
+    <link from="GINavigationParameter (DesignID, NavigationScreenLineNbr)" to="GINavigationScreen (DesignID, LineNbr)" />
+    <link from="GINavigationCondition (DesignID, NavigationScreenLineNbr)" to="GINavigationScreen (DesignID, LineNbr)" />
+    <link from="GIOn (DesignID, RelationNbr)" to="GIRelation (DesignID, LineNbr)" />
+    <link from="GIRecordDefault (DesignID)" to="GIDesign (DesignID)" />
+    <link from="GIRelation (DesignID, ParentTable)" to="GITable (DesignID, Alias)" />
+    <link from="GIRelation (DesignID, ChildTable)" to="GITable (DesignID, Alias)" />
+    <link from="GIResult (DesignID)" to="GIDesign (DesignID)" />
+    <link from="GIResult (ObjectName, DesignID)" to="GITable (Alias, DesignID)" />
+    <link from="GISort (DesignID)" to="GIDesign (DesignID)" />
+    <link from="GITable (DesignID)" to="GIDesign (DesignID)" />
+    <link from="GIWhere (DesignID)" to="GIDesign (DesignID)" />
+    <link from="SiteMap (Url)" to="GIDesign (DesignID)" type="WeakByUrl" linkname="toDesignById" baseurl="~/GenericInquiry/GenericInquiry.aspx" paramnames="id" />
+    <link from="SiteMap (Url)" to="GIDesign (Name)" type="WeakByUrl" linkname="toDesignByName" baseurl="~/GenericInquiry/GenericInquiry.aspx" />
+    <link from="ListEntryPoint (ListScreenID)" to="SiteMap (ScreenID)" />
+    <link from="SiteMap (ScreenID)" to="GIDesign (PrimaryScreenIDNew)" linkname="to1Screen" />
+    <link from="FilterHeader (ScreenID)" to="SiteMap (ScreenID)" />
+    <link from="FilterRow (FilterID)" to="FilterHeader (FilterID)" />
+    <link from="PivotTable (NoteID)" to="FilterHeader (RefNoteID)" />
+    <link from="PivotField (ScreenID, PivotTableID)" to="PivotTable (ScreenID, PivotTableID)" />
+    <link from="MUIScreen (NodeID)" to="SiteMap (NodeID)" />
+    <link from="MUIWorkspace (WorkspaceID)" to="MUIScreen (WorkspaceID)" type="FromMaster" linkname="workspaceToScreen" split-location="yes" updateable="True" />
+    <link from="MUISubcategory (SubcategoryID)" to="MUIScreen (SubcategoryID)" type="FromMaster" updateable="True" />
+    <link from="MUITile (ScreenID)" to="SiteMap (ScreenID)" />
+    <link from="MUIWorkspace (WorkspaceID)" to="MUITile (WorkspaceID)" type="FromMaster" linkname="workspaceToTile" split-location="yes" updateable="True" />
+    <link from="MUIArea (AreaID)" to="MUIWorkspace (AreaID)" type="FromMaster" updateable="True" />
+    <link from="MUIPinnedScreen (NodeID, WorkspaceID)" to="MUIScreen (NodeID, WorkspaceID)" type="WeakIfEmpty" isEmpty="Username" />
+    <link from="MUIFavoriteWorkspace (WorkspaceID)" to="MUIWorkspace (WorkspaceID)" type="WeakIfEmpty" isEmpty="Username" />
+    <link from="GIDesign (NoteID)" to="Note (NoteID)" type="Note" />
+    <link from="GIFilter (NoteID)" to="Note (NoteID)" type="Note" />
+    <link from="GIFilter (NoteID)" to="GIFilterKvExt (RecordID)" type="RowKvExt" />
+    <link from="GIGroupBy (NoteID)" to="Note (NoteID)" type="Note" />
+    <link from="GIOn (NoteID)" to="Note (NoteID)" type="Note" />
+    <link from="GIRelation (NoteID)" to="Note (NoteID)" type="Note" />
+    <link from="GIResult (NoteID)" to="Note (NoteID)" type="Note" />
+    <link from="GIResult (NoteID)" to="GIResultKvExt (RecordID)" type="RowKvExt" />
+    <link from="GISort (NoteID)" to="Note (NoteID)" type="Note" />
+    <link from="GITable (NoteID)" to="Note (NoteID)" type="Note" />
+    <link from="GIWhere (NoteID)" to="Note (NoteID)" type="Note" />
+    <link from="FilterHeader (NoteID)" to="Note (NoteID)" type="Note" />
+    <link from="FilterHeader (NoteID)" to="FilterHeaderKvExt (RecordID)" type="RowKvExt" />
+</relations>
+            <layout>
+    <table name="GIDesign">
+        <table name="GIFilter" uplink="(DesignID) = (DesignID)">
+            <table name="Note" uplink="(NoteID) = (NoteID)" />
+            <table name="GIFilterKvExt" uplink="(NoteID) = (RecordID)" />
+        </table>
+        <table name="GIGroupBy" uplink="(DesignID) = (DesignID)">
+            <table name="Note" uplink="(NoteID) = (NoteID)" />
+        </table>
+        <table name="GIMassAction" uplink="(DesignID) = (DesignID)" />
+        <table name="GIMassUpdateField" uplink="(DesignID) = (DesignID)" />
+        <table name="GINavigationScreen" uplink="(DesignID) = (DesignID)">
+            <table name="GINavigationParameter" uplink="(DesignID, LineNbr) = (DesignID, NavigationScreenLineNbr)" />
+            <table name="GINavigationCondition" uplink="(DesignID, LineNbr) = (DesignID, NavigationScreenLineNbr)" />
+        </table>
+        <table name="GIRecordDefault" uplink="(DesignID) = (DesignID)" />
+        <table name="GISort" uplink="(DesignID) = (DesignID)">
+            <table name="Note" uplink="(NoteID) = (NoteID)" />
+        </table>
+        <table name="GITable" uplink="(DesignID) = (DesignID)">
+            <table name="GIRelation" uplink="(DesignID, Alias) = (DesignID, ParentTable)">
+                <table name="GIOn" uplink="(DesignID, LineNbr) = (DesignID, RelationNbr)">
+                    <table name="Note" uplink="(NoteID) = (NoteID)" />
+                </table>
+                <table name="Note" uplink="(NoteID) = (NoteID)" />
+            </table>
+            <table name="GIResult" uplink="(Alias, DesignID) = (ObjectName, DesignID)">
+                <table name="Note" uplink="(NoteID) = (NoteID)" />
+                <table name="GIResultKvExt" uplink="(NoteID) = (RecordID)" />
+            </table>
+            <table name="Note" uplink="(NoteID) = (NoteID)" />
+        </table>
+        <table name="GIWhere" uplink="(DesignID) = (DesignID)">
+            <table name="Note" uplink="(NoteID) = (NoteID)" />
+        </table>
+        <table name="SiteMap" uplink="(DesignID) = (Url)" linkname="toDesignById">
+            <table name="ListEntryPoint" uplink="(ScreenID) = (ListScreenID)" />
+            <table name="FilterHeader" uplink="(ScreenID) = (ScreenID)">
+                <table name="FilterRow" uplink="(FilterID) = (FilterID)" />
+                <table name="PivotTable" uplink="(RefNoteID) = (NoteID)">
+                    <table name="PivotField" uplink="(ScreenID, PivotTableID) = (ScreenID, PivotTableID)" />
+                </table>
+                <table name="Note" uplink="(NoteID) = (NoteID)" />
+                <table name="FilterHeaderKvExt" uplink="(NoteID) = (RecordID)" />
+            </table>
+            <table name="MUIScreen" uplink="(NodeID) = (NodeID)">
+                <table name="MUIPinnedScreen" uplink="(NodeID, WorkspaceID) = (NodeID, WorkspaceID)" />
+            </table>
+            <table name="MUITile" uplink="(ScreenID) = (ScreenID)" />
+        </table>
+        <table name="SiteMap" uplink="(Name) = (Url)" linkname="toDesignByName">
+            <table name="ListEntryPoint" uplink="(ScreenID) = (ListScreenID)" />
+            <table name="FilterHeader" uplink="(ScreenID) = (ScreenID)">
+                <table name="FilterRow" uplink="(FilterID) = (FilterID)" />
+                <table name="PivotTable" uplink="(RefNoteID) = (NoteID)">
+                    <table name="PivotField" uplink="(ScreenID, PivotTableID) = (ScreenID, PivotTableID)" />
+                </table>
+                <table name="Note" uplink="(NoteID) = (NoteID)" />
+                <table name="FilterHeaderKvExt" uplink="(NoteID) = (RecordID)" />
+            </table>
+            <table name="MUIScreen" uplink="(NodeID) = (NodeID)">
+                <table name="MUIPinnedScreen" uplink="(NodeID, WorkspaceID) = (NodeID, WorkspaceID)" />
+            </table>
+            <table name="MUITile" uplink="(ScreenID) = (ScreenID)" />
+        </table>
+        <table name="SiteMap" uplink="(PrimaryScreenIDNew) = (ScreenID)" linkname="to1Screen">
+            <table name="ListEntryPoint" uplink="(ScreenID) = (ListScreenID)" />
+            <table name="FilterHeader" uplink="(ScreenID) = (ScreenID)">
+                <table name="FilterRow" uplink="(FilterID) = (FilterID)" />
+                <table name="PivotTable" uplink="(RefNoteID) = (NoteID)">
+                    <table name="PivotField" uplink="(ScreenID, PivotTableID) = (ScreenID, PivotTableID)" />
+                </table>
+                <table name="Note" uplink="(NoteID) = (NoteID)" />
+                <table name="FilterHeaderKvExt" uplink="(NoteID) = (RecordID)" />
+            </table>
+            <table name="MUIScreen" uplink="(NodeID) = (NodeID)">
+                <table name="MUIPinnedScreen" uplink="(NodeID, WorkspaceID) = (NodeID, WorkspaceID)" />
+            </table>
+            <table name="MUITile" uplink="(ScreenID) = (ScreenID)" />
+        </table>
+        <table name="Note" uplink="(NoteID) = (NoteID)" />
+    </table>
+</layout>
+    <data>
+      <GIDesign>
+        <row DesignID="bf82d1d5-a528-42c8-87a0-26f6f39fa1f1" Name="ArrivingThisWeek" ScreenID="SB401050" FilterColCount="3" PageSize="0" ExportTop="0" NewRecordCreationEnabled="0" MassDeleteEnabled="0" AutoConfirmDelete="0" MassRecordsUpdateEnabled="0" MassActionsOnRecordsEnabled="0" ExposeViaOData="1" ExposeViaMobile="0">
+          <GITable Alias="Container" Name="StudioB.Containers.UsrContainer">
+            <GIResult LineNbr="1" SortOrder="1" IsActive="1" Field="ContainerCD" Width="120" IsVisible="1" DefaultNav="1" QuickFilter="0" FastFilter="1" Caption="Container ID" RowID="dcb58a0e-6c55-4a2e-9dc4-709b5a65a34a" />
+            <GIResult LineNbr="2" SortOrder="2" IsActive="1" Field="CarrierCode" Width="100" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Carrier" RowID="ac634aa1-5103-41de-a9b2-244628c0ba2e" />
+            <GIResult LineNbr="3" SortOrder="3" IsActive="1" Field="VesselName" Width="140" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Vessel" RowID="836982fe-fd1b-4b37-9446-c8b51870b233" />
+            <GIResult LineNbr="4" SortOrder="4" IsActive="1" Field="ETA" Width="100" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="ETA" RowID="77349f90-5c24-4d75-a11b-1364aa31b600" />
+            <GIResult LineNbr="5" SortOrder="5" IsActive="1" Field="Status" Width="100" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Status" RowID="62d698ab-891e-4638-b61d-0fb1c79f2a15" />
+            <GIResult LineNbr="6" SortOrder="6" IsActive="1" Field="PortOfDischarge" Width="120" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Port of Discharge" RowID="cd2f56ca-7a19-4dc0-bd32-090ed4c74ca6" />
+          </GITable>
+          <GIWhere LineNbr="1" IsActive="1" DataFieldName="Container.Status" Condition="NE" IsExpression="0" Value1="DELIVERED" Operation="A" />
+          <GIWhere LineNbr="2" IsActive="1" DataFieldName="Container.Status" Condition="NE" IsExpression="0" Value1="CANCELLED" Operation="A" />
+          <GISort LineNbr="1" IsActive="1" DataFieldName="Container.ETA" SortOrder="A" />
+          <SiteMap linkname="toDesignById">
+            <row Position="1130" Title="Arriving This Week" Url="~/GenericInquiry/GenericInquiry.aspx?id=bf82d1d5-a528-42c8-87a0-26f6f39fa1f1" Expanded="0" IsFolder="0" ScreenID="SB401050" NodeID="0219aa45-db89-4bcb-a8c2-717ab4b8f698" ParentID="9c89e3db-7c47-43c0-8554-5d2c9f2c0e87">
+              <MUIScreen IsPortal="0" WorkspaceID="95191203-a0b8-4fc0-8b20-4efe831708e9" Order="2060" SubcategoryID="acf1bb34-2055-411e-88be-d840efcc7424" />
+            </row>
+          </SiteMap>
+
+        </row>
+      </GIDesign>
+    </data>
+  </data-set>
+</GenericInquiryScreen>
+    <GenericInquiryScreen>
+  <data-set>
+                <relations format-version="3" relations-version="20240201" main-table="GIDesign" stable-sharing="True" file-name="(Name)">
+    <link from="GIFilter (DesignID)" to="GIDesign (DesignID)" />
+    <link from="GIGroupBy (DesignID)" to="GIDesign (DesignID)" />
+    <link from="GIMassAction (DesignID)" to="GIDesign (DesignID)" />
+    <link from="GIMassUpdateField (DesignID)" to="GIDesign (DesignID)" />
+    <link from="GINavigationScreen (DesignID)" to="GIDesign (DesignID)" />
+    <link from="GINavigationParameter (DesignID, NavigationScreenLineNbr)" to="GINavigationScreen (DesignID, LineNbr)" />
+    <link from="GINavigationCondition (DesignID, NavigationScreenLineNbr)" to="GINavigationScreen (DesignID, LineNbr)" />
+    <link from="GIOn (DesignID, RelationNbr)" to="GIRelation (DesignID, LineNbr)" />
+    <link from="GIRecordDefault (DesignID)" to="GIDesign (DesignID)" />
+    <link from="GIRelation (DesignID, ParentTable)" to="GITable (DesignID, Alias)" />
+    <link from="GIRelation (DesignID, ChildTable)" to="GITable (DesignID, Alias)" />
+    <link from="GIResult (DesignID)" to="GIDesign (DesignID)" />
+    <link from="GIResult (ObjectName, DesignID)" to="GITable (Alias, DesignID)" />
+    <link from="GISort (DesignID)" to="GIDesign (DesignID)" />
+    <link from="GITable (DesignID)" to="GIDesign (DesignID)" />
+    <link from="GIWhere (DesignID)" to="GIDesign (DesignID)" />
+    <link from="SiteMap (Url)" to="GIDesign (DesignID)" type="WeakByUrl" linkname="toDesignById" baseurl="~/GenericInquiry/GenericInquiry.aspx" paramnames="id" />
+    <link from="SiteMap (Url)" to="GIDesign (Name)" type="WeakByUrl" linkname="toDesignByName" baseurl="~/GenericInquiry/GenericInquiry.aspx" />
+    <link from="ListEntryPoint (ListScreenID)" to="SiteMap (ScreenID)" />
+    <link from="SiteMap (ScreenID)" to="GIDesign (PrimaryScreenIDNew)" linkname="to1Screen" />
+    <link from="FilterHeader (ScreenID)" to="SiteMap (ScreenID)" />
+    <link from="FilterRow (FilterID)" to="FilterHeader (FilterID)" />
+    <link from="PivotTable (NoteID)" to="FilterHeader (RefNoteID)" />
+    <link from="PivotField (ScreenID, PivotTableID)" to="PivotTable (ScreenID, PivotTableID)" />
+    <link from="MUIScreen (NodeID)" to="SiteMap (NodeID)" />
+    <link from="MUIWorkspace (WorkspaceID)" to="MUIScreen (WorkspaceID)" type="FromMaster" linkname="workspaceToScreen" split-location="yes" updateable="True" />
+    <link from="MUISubcategory (SubcategoryID)" to="MUIScreen (SubcategoryID)" type="FromMaster" updateable="True" />
+    <link from="MUITile (ScreenID)" to="SiteMap (ScreenID)" />
+    <link from="MUIWorkspace (WorkspaceID)" to="MUITile (WorkspaceID)" type="FromMaster" linkname="workspaceToTile" split-location="yes" updateable="True" />
+    <link from="MUIArea (AreaID)" to="MUIWorkspace (AreaID)" type="FromMaster" updateable="True" />
+    <link from="MUIPinnedScreen (NodeID, WorkspaceID)" to="MUIScreen (NodeID, WorkspaceID)" type="WeakIfEmpty" isEmpty="Username" />
+    <link from="MUIFavoriteWorkspace (WorkspaceID)" to="MUIWorkspace (WorkspaceID)" type="WeakIfEmpty" isEmpty="Username" />
+    <link from="GIDesign (NoteID)" to="Note (NoteID)" type="Note" />
+    <link from="GIFilter (NoteID)" to="Note (NoteID)" type="Note" />
+    <link from="GIFilter (NoteID)" to="GIFilterKvExt (RecordID)" type="RowKvExt" />
+    <link from="GIGroupBy (NoteID)" to="Note (NoteID)" type="Note" />
+    <link from="GIOn (NoteID)" to="Note (NoteID)" type="Note" />
+    <link from="GIRelation (NoteID)" to="Note (NoteID)" type="Note" />
+    <link from="GIResult (NoteID)" to="Note (NoteID)" type="Note" />
+    <link from="GIResult (NoteID)" to="GIResultKvExt (RecordID)" type="RowKvExt" />
+    <link from="GISort (NoteID)" to="Note (NoteID)" type="Note" />
+    <link from="GITable (NoteID)" to="Note (NoteID)" type="Note" />
+    <link from="GIWhere (NoteID)" to="Note (NoteID)" type="Note" />
+    <link from="FilterHeader (NoteID)" to="Note (NoteID)" type="Note" />
+    <link from="FilterHeader (NoteID)" to="FilterHeaderKvExt (RecordID)" type="RowKvExt" />
+</relations>
+            <layout>
+    <table name="GIDesign">
+        <table name="GIFilter" uplink="(DesignID) = (DesignID)">
+            <table name="Note" uplink="(NoteID) = (NoteID)" />
+            <table name="GIFilterKvExt" uplink="(NoteID) = (RecordID)" />
+        </table>
+        <table name="GIGroupBy" uplink="(DesignID) = (DesignID)">
+            <table name="Note" uplink="(NoteID) = (NoteID)" />
+        </table>
+        <table name="GIMassAction" uplink="(DesignID) = (DesignID)" />
+        <table name="GIMassUpdateField" uplink="(DesignID) = (DesignID)" />
+        <table name="GINavigationScreen" uplink="(DesignID) = (DesignID)">
+            <table name="GINavigationParameter" uplink="(DesignID, LineNbr) = (DesignID, NavigationScreenLineNbr)" />
+            <table name="GINavigationCondition" uplink="(DesignID, LineNbr) = (DesignID, NavigationScreenLineNbr)" />
+        </table>
+        <table name="GIRecordDefault" uplink="(DesignID) = (DesignID)" />
+        <table name="GISort" uplink="(DesignID) = (DesignID)">
+            <table name="Note" uplink="(NoteID) = (NoteID)" />
+        </table>
+        <table name="GITable" uplink="(DesignID) = (DesignID)">
+            <table name="GIRelation" uplink="(DesignID, Alias) = (DesignID, ParentTable)">
+                <table name="GIOn" uplink="(DesignID, LineNbr) = (DesignID, RelationNbr)">
+                    <table name="Note" uplink="(NoteID) = (NoteID)" />
+                </table>
+                <table name="Note" uplink="(NoteID) = (NoteID)" />
+            </table>
+            <table name="GIResult" uplink="(Alias, DesignID) = (ObjectName, DesignID)">
+                <table name="Note" uplink="(NoteID) = (NoteID)" />
+                <table name="GIResultKvExt" uplink="(NoteID) = (RecordID)" />
+            </table>
+            <table name="Note" uplink="(NoteID) = (NoteID)" />
+        </table>
+        <table name="GIWhere" uplink="(DesignID) = (DesignID)">
+            <table name="Note" uplink="(NoteID) = (NoteID)" />
+        </table>
+        <table name="SiteMap" uplink="(DesignID) = (Url)" linkname="toDesignById">
+            <table name="ListEntryPoint" uplink="(ScreenID) = (ListScreenID)" />
+            <table name="FilterHeader" uplink="(ScreenID) = (ScreenID)">
+                <table name="FilterRow" uplink="(FilterID) = (FilterID)" />
+                <table name="PivotTable" uplink="(RefNoteID) = (NoteID)">
+                    <table name="PivotField" uplink="(ScreenID, PivotTableID) = (ScreenID, PivotTableID)" />
+                </table>
+                <table name="Note" uplink="(NoteID) = (NoteID)" />
+                <table name="FilterHeaderKvExt" uplink="(NoteID) = (RecordID)" />
+            </table>
+            <table name="MUIScreen" uplink="(NodeID) = (NodeID)">
+                <table name="MUIPinnedScreen" uplink="(NodeID, WorkspaceID) = (NodeID, WorkspaceID)" />
+            </table>
+            <table name="MUITile" uplink="(ScreenID) = (ScreenID)" />
+        </table>
+        <table name="SiteMap" uplink="(Name) = (Url)" linkname="toDesignByName">
+            <table name="ListEntryPoint" uplink="(ScreenID) = (ListScreenID)" />
+            <table name="FilterHeader" uplink="(ScreenID) = (ScreenID)">
+                <table name="FilterRow" uplink="(FilterID) = (FilterID)" />
+                <table name="PivotTable" uplink="(RefNoteID) = (NoteID)">
+                    <table name="PivotField" uplink="(ScreenID, PivotTableID) = (ScreenID, PivotTableID)" />
+                </table>
+                <table name="Note" uplink="(NoteID) = (NoteID)" />
+                <table name="FilterHeaderKvExt" uplink="(NoteID) = (RecordID)" />
+            </table>
+            <table name="MUIScreen" uplink="(NodeID) = (NodeID)">
+                <table name="MUIPinnedScreen" uplink="(NodeID, WorkspaceID) = (NodeID, WorkspaceID)" />
+            </table>
+            <table name="MUITile" uplink="(ScreenID) = (ScreenID)" />
+        </table>
+        <table name="SiteMap" uplink="(PrimaryScreenIDNew) = (ScreenID)" linkname="to1Screen">
+            <table name="ListEntryPoint" uplink="(ScreenID) = (ListScreenID)" />
+            <table name="FilterHeader" uplink="(ScreenID) = (ScreenID)">
+                <table name="FilterRow" uplink="(FilterID) = (FilterID)" />
+                <table name="PivotTable" uplink="(RefNoteID) = (NoteID)">
+                    <table name="PivotField" uplink="(ScreenID, PivotTableID) = (ScreenID, PivotTableID)" />
+                </table>
+                <table name="Note" uplink="(NoteID) = (NoteID)" />
+                <table name="FilterHeaderKvExt" uplink="(NoteID) = (RecordID)" />
+            </table>
+            <table name="MUIScreen" uplink="(NodeID) = (NodeID)">
+                <table name="MUIPinnedScreen" uplink="(NodeID, WorkspaceID) = (NodeID, WorkspaceID)" />
+            </table>
+            <table name="MUITile" uplink="(ScreenID) = (ScreenID)" />
+        </table>
+        <table name="Note" uplink="(NoteID) = (NoteID)" />
+    </table>
+</layout>
+    <data>
+      <GIDesign>
+        <row DesignID="9b530442-4f3e-42d4-b23c-15ec0af087ab" Name="ContainerEvents" ScreenID="SB401020" FilterColCount="3" PageSize="0" ExportTop="0" NewRecordCreationEnabled="0" MassDeleteEnabled="0" AutoConfirmDelete="0" MassRecordsUpdateEnabled="0" MassActionsOnRecordsEnabled="0" ExposeViaOData="1" ExposeViaMobile="0">
+          <GITable Alias="Event" Name="StudioB.Containers.UsrContainerEvent">
+            <GIRelation LineNbr="1" ChildTable="Container" IsActive="1" JoinType="L">
+              <GIOn LineNbr="1" ParentField="ContainerID" Condition="E " ChildField="ContainerID" Operation="A" />
+            </GIRelation>
+            <GIResult LineNbr="1" SortOrder="1" IsActive="1" Field="EventDateTime" Width="140" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Event Date/Time" RowID="4227fe87-3a3d-4fd3-91fe-8b2e32dbe1fe" />
+            <GIResult LineNbr="2" SortOrder="2" IsActive="1" Field="NormalizedEventCode" Width="120" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Event Code" RowID="6f23aa9c-4726-46d8-bfd2-00d2532b1c50" />
+            <GIResult LineNbr="3" SortOrder="3" IsActive="1" Field="EventClassifier" Width="120" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Classifier" RowID="1f51de27-8226-4d2c-9c5d-94fbba520cbe" />
+            <GIResult LineNbr="4" SortOrder="4" IsActive="1" Field="LocationName" Width="140" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Location" RowID="5e0412f0-6bb3-420f-a0b8-efc52c41b78a" />
+            <GIResult LineNbr="5" SortOrder="5" IsActive="1" Field="VesselName" Width="140" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Vessel" RowID="aeb136c0-7248-45c6-a451-b50a3c70767e" />
+            <GIResult LineNbr="6" SortOrder="6" IsActive="1" Field="Description" Width="220" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Description" RowID="47dca628-367d-4f0f-952b-aeedd6401425" />
+          </GITable>
+          <GITable Alias="Container" Name="StudioB.Containers.UsrContainer">
+            <GIResult LineNbr="7" SortOrder="7" IsActive="1" Field="ContainerCD" Width="120" IsVisible="1" DefaultNav="1" QuickFilter="0" FastFilter="1" Caption="Container ID" RowID="9896fa4d-1d9c-40dc-9b8f-495dc0e7cf99" />
+          </GITable>
+          <GIFilter LineNbr="1" Name="ContainerFilter" DataFieldName="Container.ContainerCD" IsActive="1" />
+          <GIFilter LineNbr="2" Name="EventCodeFilter" DataFieldName="Event.NormalizedEventCode" IsActive="1" />
+          <GIWhere LineNbr="1" IsActive="1" DataFieldName="Container.ContainerCD" Condition="E " IsExpression="0" Value1="=[ContainerFilter]" Operation="A" />
+          <GIWhere LineNbr="2" IsActive="1" DataFieldName="Event.NormalizedEventCode" Condition="E " IsExpression="0" Value1="=[EventCodeFilter]" Operation="A" />
+          <GISort LineNbr="1" IsActive="1" DataFieldName="Event.EventDateTime" SortOrder="D" />
+          <SiteMap linkname="toDesignById">
+            <row Position="1110" Title="Container Events" Url="~/GenericInquiry/GenericInquiry.aspx?id=9b530442-4f3e-42d4-b23c-15ec0af087ab" Expanded="0" IsFolder="0" ScreenID="SB401020" NodeID="c6810a45-84db-4720-bec4-b0e4cd012a12" ParentID="9c89e3db-7c47-43c0-8554-5d2c9f2c0e87">
+              <MUIScreen IsPortal="0" WorkspaceID="95191203-a0b8-4fc0-8b20-4efe831708e9" Order="2040" SubcategoryID="acf1bb34-2055-411e-88be-d840efcc7424" />
+            </row>
+          </SiteMap>
+
+        </row>
+      </GIDesign>
+    </data>
+  </data-set>
+</GenericInquiryScreen>
+    <GenericInquiryScreen>
+  <data-set>
+                <relations format-version="3" relations-version="20240201" main-table="GIDesign" stable-sharing="True" file-name="(Name)">
+    <link from="GIFilter (DesignID)" to="GIDesign (DesignID)" />
+    <link from="GIGroupBy (DesignID)" to="GIDesign (DesignID)" />
+    <link from="GIMassAction (DesignID)" to="GIDesign (DesignID)" />
+    <link from="GIMassUpdateField (DesignID)" to="GIDesign (DesignID)" />
+    <link from="GINavigationScreen (DesignID)" to="GIDesign (DesignID)" />
+    <link from="GINavigationParameter (DesignID, NavigationScreenLineNbr)" to="GINavigationScreen (DesignID, LineNbr)" />
+    <link from="GINavigationCondition (DesignID, NavigationScreenLineNbr)" to="GINavigationScreen (DesignID, LineNbr)" />
+    <link from="GIOn (DesignID, RelationNbr)" to="GIRelation (DesignID, LineNbr)" />
+    <link from="GIRecordDefault (DesignID)" to="GIDesign (DesignID)" />
+    <link from="GIRelation (DesignID, ParentTable)" to="GITable (DesignID, Alias)" />
+    <link from="GIRelation (DesignID, ChildTable)" to="GITable (DesignID, Alias)" />
+    <link from="GIResult (DesignID)" to="GIDesign (DesignID)" />
+    <link from="GIResult (ObjectName, DesignID)" to="GITable (Alias, DesignID)" />
+    <link from="GISort (DesignID)" to="GIDesign (DesignID)" />
+    <link from="GITable (DesignID)" to="GIDesign (DesignID)" />
+    <link from="GIWhere (DesignID)" to="GIDesign (DesignID)" />
+    <link from="SiteMap (Url)" to="GIDesign (DesignID)" type="WeakByUrl" linkname="toDesignById" baseurl="~/GenericInquiry/GenericInquiry.aspx" paramnames="id" />
+    <link from="SiteMap (Url)" to="GIDesign (Name)" type="WeakByUrl" linkname="toDesignByName" baseurl="~/GenericInquiry/GenericInquiry.aspx" />
+    <link from="ListEntryPoint (ListScreenID)" to="SiteMap (ScreenID)" />
+    <link from="SiteMap (ScreenID)" to="GIDesign (PrimaryScreenIDNew)" linkname="to1Screen" />
+    <link from="FilterHeader (ScreenID)" to="SiteMap (ScreenID)" />
+    <link from="FilterRow (FilterID)" to="FilterHeader (FilterID)" />
+    <link from="PivotTable (NoteID)" to="FilterHeader (RefNoteID)" />
+    <link from="PivotField (ScreenID, PivotTableID)" to="PivotTable (ScreenID, PivotTableID)" />
+    <link from="MUIScreen (NodeID)" to="SiteMap (NodeID)" />
+    <link from="MUIWorkspace (WorkspaceID)" to="MUIScreen (WorkspaceID)" type="FromMaster" linkname="workspaceToScreen" split-location="yes" updateable="True" />
+    <link from="MUISubcategory (SubcategoryID)" to="MUIScreen (SubcategoryID)" type="FromMaster" updateable="True" />
+    <link from="MUITile (ScreenID)" to="SiteMap (ScreenID)" />
+    <link from="MUIWorkspace (WorkspaceID)" to="MUITile (WorkspaceID)" type="FromMaster" linkname="workspaceToTile" split-location="yes" updateable="True" />
+    <link from="MUIArea (AreaID)" to="MUIWorkspace (AreaID)" type="FromMaster" updateable="True" />
+    <link from="MUIPinnedScreen (NodeID, WorkspaceID)" to="MUIScreen (NodeID, WorkspaceID)" type="WeakIfEmpty" isEmpty="Username" />
+    <link from="MUIFavoriteWorkspace (WorkspaceID)" to="MUIWorkspace (WorkspaceID)" type="WeakIfEmpty" isEmpty="Username" />
+    <link from="GIDesign (NoteID)" to="Note (NoteID)" type="Note" />
+    <link from="GIFilter (NoteID)" to="Note (NoteID)" type="Note" />
+    <link from="GIFilter (NoteID)" to="GIFilterKvExt (RecordID)" type="RowKvExt" />
+    <link from="GIGroupBy (NoteID)" to="Note (NoteID)" type="Note" />
+    <link from="GIOn (NoteID)" to="Note (NoteID)" type="Note" />
+    <link from="GIRelation (NoteID)" to="Note (NoteID)" type="Note" />
+    <link from="GIResult (NoteID)" to="Note (NoteID)" type="Note" />
+    <link from="GIResult (NoteID)" to="GIResultKvExt (RecordID)" type="RowKvExt" />
+    <link from="GISort (NoteID)" to="Note (NoteID)" type="Note" />
+    <link from="GITable (NoteID)" to="Note (NoteID)" type="Note" />
+    <link from="GIWhere (NoteID)" to="Note (NoteID)" type="Note" />
+    <link from="FilterHeader (NoteID)" to="Note (NoteID)" type="Note" />
+    <link from="FilterHeader (NoteID)" to="FilterHeaderKvExt (RecordID)" type="RowKvExt" />
+</relations>
+            <layout>
+    <table name="GIDesign">
+        <table name="GIFilter" uplink="(DesignID) = (DesignID)">
+            <table name="Note" uplink="(NoteID) = (NoteID)" />
+            <table name="GIFilterKvExt" uplink="(NoteID) = (RecordID)" />
+        </table>
+        <table name="GIGroupBy" uplink="(DesignID) = (DesignID)">
+            <table name="Note" uplink="(NoteID) = (NoteID)" />
+        </table>
+        <table name="GIMassAction" uplink="(DesignID) = (DesignID)" />
+        <table name="GIMassUpdateField" uplink="(DesignID) = (DesignID)" />
+        <table name="GINavigationScreen" uplink="(DesignID) = (DesignID)">
+            <table name="GINavigationParameter" uplink="(DesignID, LineNbr) = (DesignID, NavigationScreenLineNbr)" />
+            <table name="GINavigationCondition" uplink="(DesignID, LineNbr) = (DesignID, NavigationScreenLineNbr)" />
+        </table>
+        <table name="GIRecordDefault" uplink="(DesignID) = (DesignID)" />
+        <table name="GISort" uplink="(DesignID) = (DesignID)">
+            <table name="Note" uplink="(NoteID) = (NoteID)" />
+        </table>
+        <table name="GITable" uplink="(DesignID) = (DesignID)">
+            <table name="GIRelation" uplink="(DesignID, Alias) = (DesignID, ParentTable)">
+                <table name="GIOn" uplink="(DesignID, LineNbr) = (DesignID, RelationNbr)">
+                    <table name="Note" uplink="(NoteID) = (NoteID)" />
+                </table>
+                <table name="Note" uplink="(NoteID) = (NoteID)" />
+            </table>
+            <table name="GIResult" uplink="(Alias, DesignID) = (ObjectName, DesignID)">
+                <table name="Note" uplink="(NoteID) = (NoteID)" />
+                <table name="GIResultKvExt" uplink="(NoteID) = (RecordID)" />
+            </table>
+            <table name="Note" uplink="(NoteID) = (NoteID)" />
+        </table>
+        <table name="GIWhere" uplink="(DesignID) = (DesignID)">
+            <table name="Note" uplink="(NoteID) = (NoteID)" />
+        </table>
+        <table name="SiteMap" uplink="(DesignID) = (Url)" linkname="toDesignById">
+            <table name="ListEntryPoint" uplink="(ScreenID) = (ListScreenID)" />
+            <table name="FilterHeader" uplink="(ScreenID) = (ScreenID)">
+                <table name="FilterRow" uplink="(FilterID) = (FilterID)" />
+                <table name="PivotTable" uplink="(RefNoteID) = (NoteID)">
+                    <table name="PivotField" uplink="(ScreenID, PivotTableID) = (ScreenID, PivotTableID)" />
+                </table>
+                <table name="Note" uplink="(NoteID) = (NoteID)" />
+                <table name="FilterHeaderKvExt" uplink="(NoteID) = (RecordID)" />
+            </table>
+            <table name="MUIScreen" uplink="(NodeID) = (NodeID)">
+                <table name="MUIPinnedScreen" uplink="(NodeID, WorkspaceID) = (NodeID, WorkspaceID)" />
+            </table>
+            <table name="MUITile" uplink="(ScreenID) = (ScreenID)" />
+        </table>
+        <table name="SiteMap" uplink="(Name) = (Url)" linkname="toDesignByName">
+            <table name="ListEntryPoint" uplink="(ScreenID) = (ListScreenID)" />
+            <table name="FilterHeader" uplink="(ScreenID) = (ScreenID)">
+                <table name="FilterRow" uplink="(FilterID) = (FilterID)" />
+                <table name="PivotTable" uplink="(RefNoteID) = (NoteID)">
+                    <table name="PivotField" uplink="(ScreenID, PivotTableID) = (ScreenID, PivotTableID)" />
+                </table>
+                <table name="Note" uplink="(NoteID) = (NoteID)" />
+                <table name="FilterHeaderKvExt" uplink="(NoteID) = (RecordID)" />
+            </table>
+            <table name="MUIScreen" uplink="(NodeID) = (NodeID)">
+                <table name="MUIPinnedScreen" uplink="(NodeID, WorkspaceID) = (NodeID, WorkspaceID)" />
+            </table>
+            <table name="MUITile" uplink="(ScreenID) = (ScreenID)" />
+        </table>
+        <table name="SiteMap" uplink="(PrimaryScreenIDNew) = (ScreenID)" linkname="to1Screen">
+            <table name="ListEntryPoint" uplink="(ScreenID) = (ListScreenID)" />
+            <table name="FilterHeader" uplink="(ScreenID) = (ScreenID)">
+                <table name="FilterRow" uplink="(FilterID) = (FilterID)" />
+                <table name="PivotTable" uplink="(RefNoteID) = (NoteID)">
+                    <table name="PivotField" uplink="(ScreenID, PivotTableID) = (ScreenID, PivotTableID)" />
+                </table>
+                <table name="Note" uplink="(NoteID) = (NoteID)" />
+                <table name="FilterHeaderKvExt" uplink="(NoteID) = (RecordID)" />
+            </table>
+            <table name="MUIScreen" uplink="(NodeID) = (NodeID)">
+                <table name="MUIPinnedScreen" uplink="(NodeID, WorkspaceID) = (NodeID, WorkspaceID)" />
+            </table>
+            <table name="MUITile" uplink="(ScreenID) = (ScreenID)" />
+        </table>
+        <table name="Note" uplink="(NoteID) = (NoteID)" />
+    </table>
+</layout>
+    <data>
+      <GIDesign>
+        <row DesignID="6365a9eb-cfa6-4c6a-92f9-65defed34c17" Name="ContainersNeedingAttention" ScreenID="SB401060" FilterColCount="3" PageSize="0" ExportTop="0" NewRecordCreationEnabled="0" MassDeleteEnabled="0" AutoConfirmDelete="0" MassRecordsUpdateEnabled="0" MassActionsOnRecordsEnabled="0" ExposeViaOData="1" ExposeViaMobile="0">
+          <GITable Alias="Container" Name="StudioB.Containers.UsrContainer">
+            <GIResult LineNbr="1" SortOrder="1" IsActive="1" Field="ContainerCD" Width="120" IsVisible="1" DefaultNav="1" QuickFilter="0" FastFilter="1" Caption="Container ID" RowID="9c2d8980-f518-4511-9e01-ceda25cce9d1" />
+            <GIResult LineNbr="2" SortOrder="2" IsActive="1" Field="Status" Width="100" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Status" RowID="b003082d-e8fa-4217-ac3a-3188cc5c66c6" />
+            <GIResult LineNbr="3" SortOrder="3" IsActive="1" Field="CarrierCode" Width="100" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Carrier" RowID="28ccb30c-5a5d-45c8-b41d-83b6d823d0c0" />
+            <GIResult LineNbr="4" SortOrder="4" IsActive="1" Field="ETA" Width="100" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="ETA" RowID="51bb8634-63e3-43c7-b1bb-153fe09b193a" />
+            <GIResult LineNbr="5" SortOrder="5" IsActive="1" Field="LastEventDate" Width="140" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Last Event Date" RowID="db62731e-c1bf-468c-a28a-d2f410aba85d" />
+            <GIResult LineNbr="6" SortOrder="6" IsActive="1" Field="LastSyncDate" Width="140" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Last Sync Date" RowID="24c4b8e9-f260-4f6f-8aac-691dafb0a8ce" />
+          </GITable>
+          <GIWhere LineNbr="1" IsActive="1" DataFieldName="Container.Status" Condition="E " IsExpression="0" Value1="CUSTOMS_HOLD" Operation="A" />
+          <GISort LineNbr="1" IsActive="1" DataFieldName="Container.ETA" SortOrder="A" />
+          <SiteMap linkname="toDesignById">
+            <row Position="1140" Title="Containers Needing Attention" Url="~/GenericInquiry/GenericInquiry.aspx?id=6365a9eb-cfa6-4c6a-92f9-65defed34c17" Expanded="0" IsFolder="0" ScreenID="SB401060" NodeID="e6b1a8e3-8af8-444f-9dd8-2779396b7902" ParentID="9c89e3db-7c47-43c0-8554-5d2c9f2c0e87">
+              <MUIScreen IsPortal="0" WorkspaceID="95191203-a0b8-4fc0-8b20-4efe831708e9" Order="2070" SubcategoryID="acf1bb34-2055-411e-88be-d840efcc7424" />
+            </row>
+          </SiteMap>
+
+        </row>
+      </GIDesign>
+    </data>
+  </data-set>
+</GenericInquiryScreen>
+    <GenericInquiryScreen>
+  <data-set>
+                <relations format-version="3" relations-version="20240201" main-table="GIDesign" stable-sharing="True" file-name="(Name)">
+    <link from="GIFilter (DesignID)" to="GIDesign (DesignID)" />
+    <link from="GIGroupBy (DesignID)" to="GIDesign (DesignID)" />
+    <link from="GIMassAction (DesignID)" to="GIDesign (DesignID)" />
+    <link from="GIMassUpdateField (DesignID)" to="GIDesign (DesignID)" />
+    <link from="GINavigationScreen (DesignID)" to="GIDesign (DesignID)" />
+    <link from="GINavigationParameter (DesignID, NavigationScreenLineNbr)" to="GINavigationScreen (DesignID, LineNbr)" />
+    <link from="GINavigationCondition (DesignID, NavigationScreenLineNbr)" to="GINavigationScreen (DesignID, LineNbr)" />
+    <link from="GIOn (DesignID, RelationNbr)" to="GIRelation (DesignID, LineNbr)" />
+    <link from="GIRecordDefault (DesignID)" to="GIDesign (DesignID)" />
+    <link from="GIRelation (DesignID, ParentTable)" to="GITable (DesignID, Alias)" />
+    <link from="GIRelation (DesignID, ChildTable)" to="GITable (DesignID, Alias)" />
+    <link from="GIResult (DesignID)" to="GIDesign (DesignID)" />
+    <link from="GIResult (ObjectName, DesignID)" to="GITable (Alias, DesignID)" />
+    <link from="GISort (DesignID)" to="GIDesign (DesignID)" />
+    <link from="GITable (DesignID)" to="GIDesign (DesignID)" />
+    <link from="GIWhere (DesignID)" to="GIDesign (DesignID)" />
+    <link from="SiteMap (Url)" to="GIDesign (DesignID)" type="WeakByUrl" linkname="toDesignById" baseurl="~/GenericInquiry/GenericInquiry.aspx" paramnames="id" />
+    <link from="SiteMap (Url)" to="GIDesign (Name)" type="WeakByUrl" linkname="toDesignByName" baseurl="~/GenericInquiry/GenericInquiry.aspx" />
+    <link from="ListEntryPoint (ListScreenID)" to="SiteMap (ScreenID)" />
+    <link from="SiteMap (ScreenID)" to="GIDesign (PrimaryScreenIDNew)" linkname="to1Screen" />
+    <link from="FilterHeader (ScreenID)" to="SiteMap (ScreenID)" />
+    <link from="FilterRow (FilterID)" to="FilterHeader (FilterID)" />
+    <link from="PivotTable (NoteID)" to="FilterHeader (RefNoteID)" />
+    <link from="PivotField (ScreenID, PivotTableID)" to="PivotTable (ScreenID, PivotTableID)" />
+    <link from="MUIScreen (NodeID)" to="SiteMap (NodeID)" />
+    <link from="MUIWorkspace (WorkspaceID)" to="MUIScreen (WorkspaceID)" type="FromMaster" linkname="workspaceToScreen" split-location="yes" updateable="True" />
+    <link from="MUISubcategory (SubcategoryID)" to="MUIScreen (SubcategoryID)" type="FromMaster" updateable="True" />
+    <link from="MUITile (ScreenID)" to="SiteMap (ScreenID)" />
+    <link from="MUIWorkspace (WorkspaceID)" to="MUITile (WorkspaceID)" type="FromMaster" linkname="workspaceToTile" split-location="yes" updateable="True" />
+    <link from="MUIArea (AreaID)" to="MUIWorkspace (AreaID)" type="FromMaster" updateable="True" />
+    <link from="MUIPinnedScreen (NodeID, WorkspaceID)" to="MUIScreen (NodeID, WorkspaceID)" type="WeakIfEmpty" isEmpty="Username" />
+    <link from="MUIFavoriteWorkspace (WorkspaceID)" to="MUIWorkspace (WorkspaceID)" type="WeakIfEmpty" isEmpty="Username" />
+    <link from="GIDesign (NoteID)" to="Note (NoteID)" type="Note" />
+    <link from="GIFilter (NoteID)" to="Note (NoteID)" type="Note" />
+    <link from="GIFilter (NoteID)" to="GIFilterKvExt (RecordID)" type="RowKvExt" />
+    <link from="GIGroupBy (NoteID)" to="Note (NoteID)" type="Note" />
+    <link from="GIOn (NoteID)" to="Note (NoteID)" type="Note" />
+    <link from="GIRelation (NoteID)" to="Note (NoteID)" type="Note" />
+    <link from="GIResult (NoteID)" to="Note (NoteID)" type="Note" />
+    <link from="GIResult (NoteID)" to="GIResultKvExt (RecordID)" type="RowKvExt" />
+    <link from="GISort (NoteID)" to="Note (NoteID)" type="Note" />
+    <link from="GITable (NoteID)" to="Note (NoteID)" type="Note" />
+    <link from="GIWhere (NoteID)" to="Note (NoteID)" type="Note" />
+    <link from="FilterHeader (NoteID)" to="Note (NoteID)" type="Note" />
+    <link from="FilterHeader (NoteID)" to="FilterHeaderKvExt (RecordID)" type="RowKvExt" />
+</relations>
+            <layout>
+    <table name="GIDesign">
+        <table name="GIFilter" uplink="(DesignID) = (DesignID)">
+            <table name="Note" uplink="(NoteID) = (NoteID)" />
+            <table name="GIFilterKvExt" uplink="(NoteID) = (RecordID)" />
+        </table>
+        <table name="GIGroupBy" uplink="(DesignID) = (DesignID)">
+            <table name="Note" uplink="(NoteID) = (NoteID)" />
+        </table>
+        <table name="GIMassAction" uplink="(DesignID) = (DesignID)" />
+        <table name="GIMassUpdateField" uplink="(DesignID) = (DesignID)" />
+        <table name="GINavigationScreen" uplink="(DesignID) = (DesignID)">
+            <table name="GINavigationParameter" uplink="(DesignID, LineNbr) = (DesignID, NavigationScreenLineNbr)" />
+            <table name="GINavigationCondition" uplink="(DesignID, LineNbr) = (DesignID, NavigationScreenLineNbr)" />
+        </table>
+        <table name="GIRecordDefault" uplink="(DesignID) = (DesignID)" />
+        <table name="GISort" uplink="(DesignID) = (DesignID)">
+            <table name="Note" uplink="(NoteID) = (NoteID)" />
+        </table>
+        <table name="GITable" uplink="(DesignID) = (DesignID)">
+            <table name="GIRelation" uplink="(DesignID, Alias) = (DesignID, ParentTable)">
+                <table name="GIOn" uplink="(DesignID, LineNbr) = (DesignID, RelationNbr)">
+                    <table name="Note" uplink="(NoteID) = (NoteID)" />
+                </table>
+                <table name="Note" uplink="(NoteID) = (NoteID)" />
+            </table>
+            <table name="GIResult" uplink="(Alias, DesignID) = (ObjectName, DesignID)">
+                <table name="Note" uplink="(NoteID) = (NoteID)" />
+                <table name="GIResultKvExt" uplink="(NoteID) = (RecordID)" />
+            </table>
+            <table name="Note" uplink="(NoteID) = (NoteID)" />
+        </table>
+        <table name="GIWhere" uplink="(DesignID) = (DesignID)">
+            <table name="Note" uplink="(NoteID) = (NoteID)" />
+        </table>
+        <table name="SiteMap" uplink="(DesignID) = (Url)" linkname="toDesignById">
+            <table name="ListEntryPoint" uplink="(ScreenID) = (ListScreenID)" />
+            <table name="FilterHeader" uplink="(ScreenID) = (ScreenID)">
+                <table name="FilterRow" uplink="(FilterID) = (FilterID)" />
+                <table name="PivotTable" uplink="(RefNoteID) = (NoteID)">
+                    <table name="PivotField" uplink="(ScreenID, PivotTableID) = (ScreenID, PivotTableID)" />
+                </table>
+                <table name="Note" uplink="(NoteID) = (NoteID)" />
+                <table name="FilterHeaderKvExt" uplink="(NoteID) = (RecordID)" />
+            </table>
+            <table name="MUIScreen" uplink="(NodeID) = (NodeID)">
+                <table name="MUIPinnedScreen" uplink="(NodeID, WorkspaceID) = (NodeID, WorkspaceID)" />
+            </table>
+            <table name="MUITile" uplink="(ScreenID) = (ScreenID)" />
+        </table>
+        <table name="SiteMap" uplink="(Name) = (Url)" linkname="toDesignByName">
+            <table name="ListEntryPoint" uplink="(ScreenID) = (ListScreenID)" />
+            <table name="FilterHeader" uplink="(ScreenID) = (ScreenID)">
+                <table name="FilterRow" uplink="(FilterID) = (FilterID)" />
+                <table name="PivotTable" uplink="(RefNoteID) = (NoteID)">
+                    <table name="PivotField" uplink="(ScreenID, PivotTableID) = (ScreenID, PivotTableID)" />
+                </table>
+                <table name="Note" uplink="(NoteID) = (NoteID)" />
+                <table name="FilterHeaderKvExt" uplink="(NoteID) = (RecordID)" />
+            </table>
+            <table name="MUIScreen" uplink="(NodeID) = (NodeID)">
+                <table name="MUIPinnedScreen" uplink="(NodeID, WorkspaceID) = (NodeID, WorkspaceID)" />
+            </table>
+            <table name="MUITile" uplink="(ScreenID) = (ScreenID)" />
+        </table>
+        <table name="SiteMap" uplink="(PrimaryScreenIDNew) = (ScreenID)" linkname="to1Screen">
+            <table name="ListEntryPoint" uplink="(ScreenID) = (ListScreenID)" />
+            <table name="FilterHeader" uplink="(ScreenID) = (ScreenID)">
+                <table name="FilterRow" uplink="(FilterID) = (FilterID)" />
+                <table name="PivotTable" uplink="(RefNoteID) = (NoteID)">
+                    <table name="PivotField" uplink="(ScreenID, PivotTableID) = (ScreenID, PivotTableID)" />
+                </table>
+                <table name="Note" uplink="(NoteID) = (NoteID)" />
+                <table name="FilterHeaderKvExt" uplink="(NoteID) = (RecordID)" />
+            </table>
+            <table name="MUIScreen" uplink="(NodeID) = (NodeID)">
+                <table name="MUIPinnedScreen" uplink="(NodeID, WorkspaceID) = (NodeID, WorkspaceID)" />
+            </table>
+            <table name="MUITile" uplink="(ScreenID) = (ScreenID)" />
+        </table>
+        <table name="Note" uplink="(NoteID) = (NoteID)" />
+    </table>
+</layout>
+    <data>
+      <GIDesign>
+        <row DesignID="b7e3a1d4-92f6-4c8a-b5d1-1a2b3c4d5e6f" Name="InventoryQuantityDetail" ScreenID="GI007000" FilterColCount="3" PageSize="0" ExportTop="0" NewRecordCreationEnabled="0" MassDeleteEnabled="0" AutoConfirmDelete="0" MassRecordsUpdateEnabled="0" MassActionsOnRecordsEnabled="0" ExposeViaOData="1" ExposeViaMobile="0">
+          <GITable Alias="InventoryItem" Name="PX.Objects.IN.InventoryItem">
+            <GIRelation LineNbr="1" ChildTable="INSiteStatus" IsActive="1" JoinType="L">
+              <GIOn LineNbr="1" ParentField="InventoryID" Condition="E " ChildField="InventoryID" Operation="A" />
+            </GIRelation>
+            <GIRelation LineNbr="2" ChildTable="TemplateItem" IsActive="1" JoinType="L">
+              <GIOn LineNbr="1" ParentField="TemplateItemID" Condition="E " ChildField="InventoryID" Operation="A" />
+            </GIRelation>
+            <GIRelation LineNbr="3" ChildTable="POVendorInventory" IsActive="1" JoinType="L">
+              <GIOn LineNbr="1" ParentField="InventoryID" Condition="E " ChildField="InventoryID" Operation="A" />
+            </GIRelation>
+            <GIRelation LineNbr="4" ChildTable="WMSTLVendorLeadTimes" IsActive="1" JoinType="L">
+              <GIOn LineNbr="1" ParentField="InventoryID" Condition="E " ChildField="InventoryID" Operation="A" />
+            </GIRelation>
+            <GIRelation LineNbr="5" ChildTable="POLine" IsActive="1" JoinType="L">
+              <GIOn LineNbr="1" ParentField="InventoryID" Condition="E " ChildField="InventoryID" Operation="A" />
+            </GIRelation>
+            <GIResult LineNbr="1" SortOrder="1" IsActive="1" Field="InventoryCD" Width="120" IsVisible="1" DefaultNav="1" QuickFilter="0" FastFilter="1" Caption="Stock Item SKU" RowID="a1000001-0000-0000-0000-000000000001" />
+            <GIResult LineNbr="2" SortOrder="2" IsActive="1" Field="Descr" Width="220" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Description" RowID="a1000001-0000-0000-0000-000000000002" />
+            <GIResult LineNbr="6" SortOrder="6" IsActive="1" Field="ItemStatus" Width="80" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Status" RowID="a1000001-0000-0000-0000-000000000006" />
+            <GIResult LineNbr="10" SortOrder="10" IsActive="1" Field="CountryOfOrigin" Width="100" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Country of Origin" RowID="a1000001-0000-0000-0000-000000000010" />
+          </GITable>
+          <GITable Alias="INSiteStatus" Name="PX.Objects.IN.INSiteStatus">
+            <GIResult LineNbr="4" SortOrder="4" IsActive="1" Field="QtyAvail" Width="100" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Qty Available" RowID="a1000001-0000-0000-0000-000000000004" />
+            <GIResult LineNbr="5" SortOrder="5" IsActive="1" Field="QtyOnHand" Width="100" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Qty On Hand" RowID="a1000001-0000-0000-0000-000000000005" />
+          </GITable>
+          <GITable Alias="TemplateItem" Name="PX.Objects.IN.InventoryItem">
+            <GIResult LineNbr="3" SortOrder="3" IsActive="1" Field="Descr" Width="180" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Template Description" RowID="a1000001-0000-0000-0000-000000000003" />
+          </GITable>
+          <GITable Alias="POVendorInventory" Name="PX.Objects.PO.POVendorInventory">
+            <GIResult LineNbr="7" SortOrder="7" IsActive="1" Field="VendorID" Width="100" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Vendor" RowID="a1000001-0000-0000-0000-000000000007" />
+          </GITable>
+          <GITable Alias="WMSTLVendorLeadTimes" Name="WMSTLVendorLeadTimes">
+            <GIResult LineNbr="8" SortOrder="8" IsActive="1" Field="LeadTimeDays" Width="80" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Lead Time (Days)" RowID="a1000001-0000-0000-0000-000000000008" />
+          </GITable>
+          <GITable Alias="POLine" Name="PX.Objects.PO.POLine">
+            <GIRelation LineNbr="6" ChildTable="POOrder" IsActive="1" JoinType="L">
+              <GIOn LineNbr="1" ParentField="OrderType" Condition="E " ChildField="OrderType" Operation="A" />
+              <GIOn LineNbr="2" ParentField="OrderNbr" Condition="E " ChildField="OrderNbr" Operation="A" />
+            </GIRelation>
+            <GIRelation LineNbr="7" ChildTable="UsrContainerPOLink" IsActive="1" JoinType="L">
+              <GIOn LineNbr="1" ParentField="OrderType" Condition="E " ChildField="OrderType" Operation="A" />
+              <GIOn LineNbr="2" ParentField="OrderNbr" Condition="E " ChildField="OrderNbr" Operation="A" />
+              <GIOn LineNbr="3" ParentField="LineNbr" Condition="E " ChildField="LineNbr" Operation="A" />
+            </GIRelation>
+            <GIResult LineNbr="12" SortOrder="12" IsActive="1" Field="OpenQty" Width="80" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Open Qty on PO" RowID="a1000001-0000-0000-0000-000000000012" />
+            <GIResult LineNbr="13" SortOrder="13" IsActive="1" Field="UsrExpArrivalDate" Width="100" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Expected Arrival" RowID="a1000001-0000-0000-0000-000000000013" />
+          </GITable>
+          <GITable Alias="POOrder" Name="PX.Objects.PO.POOrder">
+            <GIResult LineNbr="11" SortOrder="11" IsActive="1" Field="OrderNbr" Width="100" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="PO Number" RowID="a1000001-0000-0000-0000-000000000011" />
+          </GITable>
+          <GITable Alias="UsrContainerPOLink" Name="StudioB.Containers.UsrContainerPOLink">
+            <GIRelation LineNbr="8" ChildTable="UsrContainer" IsActive="1" JoinType="L">
+              <GIOn LineNbr="1" ParentField="ContainerID" Condition="E " ChildField="ContainerID" Operation="A" />
+            </GIRelation>
+          </GITable>
+          <GITable Alias="UsrContainer" Name="StudioB.Containers.UsrContainer">
+            <GIResult LineNbr="14" SortOrder="14" IsActive="1" Field="ContainerCD" Width="100" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Container Number" RowID="a1000001-0000-0000-0000-000000000014" />
+          </GITable>
+          <GIWhere LineNbr="1" OpenBrackets="1" IsActive="1" DataFieldName="INSiteStatus.SiteID" Condition="E " IsExpression="0" Value1="99" Operation="O" />
+          <GIWhere LineNbr="2" CloseBrackets="1" IsActive="1" DataFieldName="INSiteStatus.SiteID" Condition="NU" IsExpression="0" Operation="A" />
+          <GIWhere LineNbr="3" IsActive="1" DataFieldName="InventoryItem.StkItem" Condition="E " IsExpression="0" Value1="True" Operation="A" />
+          <GIWhere LineNbr="4" OpenBrackets="1" IsActive="1" DataFieldName="POVendorInventory.IsDefault" Condition="E " IsExpression="0" Value1="True" Operation="O" />
+          <GIWhere LineNbr="5" CloseBrackets="1" IsActive="1" DataFieldName="POVendorInventory.IsDefault" Condition="NU" IsExpression="0" Operation="A" />
+          <GIWhere LineNbr="6" OpenBrackets="1" IsActive="1" DataFieldName="POLine.OpenQty" Condition="G " IsExpression="0" Value1="0" Operation="O" />
+          <GIWhere LineNbr="7" CloseBrackets="1" IsActive="1" DataFieldName="POLine.OpenQty" Condition="NU" IsExpression="0" Operation="A" />
+          <GIWhere LineNbr="8" OpenBrackets="1" IsActive="1" DataFieldName="POOrder.Status" Condition="E " IsExpression="0" Value1="N" Operation="O" />
+          <GIWhere LineNbr="9" IsActive="1" DataFieldName="POOrder.Status" Condition="E " IsExpression="0" Value1="O" Operation="O" />
+          <GIWhere LineNbr="10" CloseBrackets="1" IsActive="1" DataFieldName="POOrder.Status" Condition="NU" IsExpression="0" Operation="A" />
+          <GISort LineNbr="1" IsActive="1" DataFieldName="InventoryItem.InventoryCD" SortOrder="A" />
+          <SiteMap linkname="toDesignById">
+            <row Position="1100" Title="Inventory Quantity Detail" Url="~/GenericInquiry/GenericInquiry.aspx?id=b7e3a1d4-92f6-4c8a-b5d1-1a2b3c4d5e6f" Expanded="0" IsFolder="0" ScreenID="GI007000" NodeID="c8f2d3e4-a1b2-4567-89ab-cdef01234567" ParentID="d9e3f4a5-b2c3-4678-9abc-def012345678">
+              <MUIScreen IsPortal="0" WorkspaceID="e0f4a5b6-c3d4-4789-abcd-ef0123456789" Order="2030" SubcategoryID="f1a5b6c7-d4e5-489a-bcde-f01234567890" />
+            </row>
+          </SiteMap>
+
+        </row>
+      </GIDesign>
+    </data>
+  </data-set>
+</GenericInquiryScreen>
+    <GenericInquiryScreen>
+  <data-set>
+                <relations format-version="3" relations-version="20240201" main-table="GIDesign" stable-sharing="True" file-name="(Name)">
+    <link from="GIFilter (DesignID)" to="GIDesign (DesignID)" />
+    <link from="GIGroupBy (DesignID)" to="GIDesign (DesignID)" />
+    <link from="GIMassAction (DesignID)" to="GIDesign (DesignID)" />
+    <link from="GIMassUpdateField (DesignID)" to="GIDesign (DesignID)" />
+    <link from="GINavigationScreen (DesignID)" to="GIDesign (DesignID)" />
+    <link from="GINavigationParameter (DesignID, NavigationScreenLineNbr)" to="GINavigationScreen (DesignID, LineNbr)" />
+    <link from="GINavigationCondition (DesignID, NavigationScreenLineNbr)" to="GINavigationScreen (DesignID, LineNbr)" />
+    <link from="GIOn (DesignID, RelationNbr)" to="GIRelation (DesignID, LineNbr)" />
+    <link from="GIRecordDefault (DesignID)" to="GIDesign (DesignID)" />
+    <link from="GIRelation (DesignID, ParentTable)" to="GITable (DesignID, Alias)" />
+    <link from="GIRelation (DesignID, ChildTable)" to="GITable (DesignID, Alias)" />
+    <link from="GIResult (DesignID)" to="GIDesign (DesignID)" />
+    <link from="GIResult (ObjectName, DesignID)" to="GITable (Alias, DesignID)" />
+    <link from="GISort (DesignID)" to="GIDesign (DesignID)" />
+    <link from="GITable (DesignID)" to="GIDesign (DesignID)" />
+    <link from="GIWhere (DesignID)" to="GIDesign (DesignID)" />
+    <link from="SiteMap (Url)" to="GIDesign (DesignID)" type="WeakByUrl" linkname="toDesignById" baseurl="~/GenericInquiry/GenericInquiry.aspx" paramnames="id" />
+    <link from="SiteMap (Url)" to="GIDesign (Name)" type="WeakByUrl" linkname="toDesignByName" baseurl="~/GenericInquiry/GenericInquiry.aspx" />
+    <link from="ListEntryPoint (ListScreenID)" to="SiteMap (ScreenID)" />
+    <link from="SiteMap (ScreenID)" to="GIDesign (PrimaryScreenIDNew)" linkname="to1Screen" />
+    <link from="FilterHeader (ScreenID)" to="SiteMap (ScreenID)" />
+    <link from="FilterRow (FilterID)" to="FilterHeader (FilterID)" />
+    <link from="PivotTable (NoteID)" to="FilterHeader (RefNoteID)" />
+    <link from="PivotField (ScreenID, PivotTableID)" to="PivotTable (ScreenID, PivotTableID)" />
+    <link from="MUIScreen (NodeID)" to="SiteMap (NodeID)" />
+    <link from="MUIWorkspace (WorkspaceID)" to="MUIScreen (WorkspaceID)" type="FromMaster" linkname="workspaceToScreen" split-location="yes" updateable="True" />
+    <link from="MUISubcategory (SubcategoryID)" to="MUIScreen (SubcategoryID)" type="FromMaster" updateable="True" />
+    <link from="MUITile (ScreenID)" to="SiteMap (ScreenID)" />
+    <link from="MUIWorkspace (WorkspaceID)" to="MUITile (WorkspaceID)" type="FromMaster" linkname="workspaceToTile" split-location="yes" updateable="True" />
+    <link from="MUIArea (AreaID)" to="MUIWorkspace (AreaID)" type="FromMaster" updateable="True" />
+    <link from="MUIPinnedScreen (NodeID, WorkspaceID)" to="MUIScreen (NodeID, WorkspaceID)" type="WeakIfEmpty" isEmpty="Username" />
+    <link from="MUIFavoriteWorkspace (WorkspaceID)" to="MUIWorkspace (WorkspaceID)" type="WeakIfEmpty" isEmpty="Username" />
+    <link from="GIDesign (NoteID)" to="Note (NoteID)" type="Note" />
+    <link from="GIFilter (NoteID)" to="Note (NoteID)" type="Note" />
+    <link from="GIFilter (NoteID)" to="GIFilterKvExt (RecordID)" type="RowKvExt" />
+    <link from="GIGroupBy (NoteID)" to="Note (NoteID)" type="Note" />
+    <link from="GIOn (NoteID)" to="Note (NoteID)" type="Note" />
+    <link from="GIRelation (NoteID)" to="Note (NoteID)" type="Note" />
+    <link from="GIResult (NoteID)" to="Note (NoteID)" type="Note" />
+    <link from="GIResult (NoteID)" to="GIResultKvExt (RecordID)" type="RowKvExt" />
+    <link from="GISort (NoteID)" to="Note (NoteID)" type="Note" />
+    <link from="GITable (NoteID)" to="Note (NoteID)" type="Note" />
+    <link from="GIWhere (NoteID)" to="Note (NoteID)" type="Note" />
+    <link from="FilterHeader (NoteID)" to="Note (NoteID)" type="Note" />
+    <link from="FilterHeader (NoteID)" to="FilterHeaderKvExt (RecordID)" type="RowKvExt" />
+</relations>
+            <layout>
+    <table name="GIDesign">
+        <table name="GIFilter" uplink="(DesignID) = (DesignID)">
+            <table name="Note" uplink="(NoteID) = (NoteID)" />
+            <table name="GIFilterKvExt" uplink="(NoteID) = (RecordID)" />
+        </table>
+        <table name="GIGroupBy" uplink="(DesignID) = (DesignID)">
+            <table name="Note" uplink="(NoteID) = (NoteID)" />
+        </table>
+        <table name="GIMassAction" uplink="(DesignID) = (DesignID)" />
+        <table name="GIMassUpdateField" uplink="(DesignID) = (DesignID)" />
+        <table name="GINavigationScreen" uplink="(DesignID) = (DesignID)">
+            <table name="GINavigationParameter" uplink="(DesignID, LineNbr) = (DesignID, NavigationScreenLineNbr)" />
+            <table name="GINavigationCondition" uplink="(DesignID, LineNbr) = (DesignID, NavigationScreenLineNbr)" />
+        </table>
+        <table name="GIRecordDefault" uplink="(DesignID) = (DesignID)" />
+        <table name="GISort" uplink="(DesignID) = (DesignID)">
+            <table name="Note" uplink="(NoteID) = (NoteID)" />
+        </table>
+        <table name="GITable" uplink="(DesignID) = (DesignID)">
+            <table name="GIRelation" uplink="(DesignID, Alias) = (DesignID, ParentTable)">
+                <table name="GIOn" uplink="(DesignID, LineNbr) = (DesignID, RelationNbr)">
+                    <table name="Note" uplink="(NoteID) = (NoteID)" />
+                </table>
+                <table name="Note" uplink="(NoteID) = (NoteID)" />
+            </table>
+            <table name="GIResult" uplink="(Alias, DesignID) = (ObjectName, DesignID)">
+                <table name="Note" uplink="(NoteID) = (NoteID)" />
+                <table name="GIResultKvExt" uplink="(NoteID) = (RecordID)" />
+            </table>
+            <table name="Note" uplink="(NoteID) = (NoteID)" />
+        </table>
+        <table name="GIWhere" uplink="(DesignID) = (DesignID)">
+            <table name="Note" uplink="(NoteID) = (NoteID)" />
+        </table>
+        <table name="SiteMap" uplink="(DesignID) = (Url)" linkname="toDesignById">
+            <table name="ListEntryPoint" uplink="(ScreenID) = (ListScreenID)" />
+            <table name="FilterHeader" uplink="(ScreenID) = (ScreenID)">
+                <table name="FilterRow" uplink="(FilterID) = (FilterID)" />
+                <table name="PivotTable" uplink="(RefNoteID) = (NoteID)">
+                    <table name="PivotField" uplink="(ScreenID, PivotTableID) = (ScreenID, PivotTableID)" />
+                </table>
+                <table name="Note" uplink="(NoteID) = (NoteID)" />
+                <table name="FilterHeaderKvExt" uplink="(NoteID) = (RecordID)" />
+            </table>
+            <table name="MUIScreen" uplink="(NodeID) = (NodeID)">
+                <table name="MUIPinnedScreen" uplink="(NodeID, WorkspaceID) = (NodeID, WorkspaceID)" />
+            </table>
+            <table name="MUITile" uplink="(ScreenID) = (ScreenID)" />
+        </table>
+        <table name="SiteMap" uplink="(Name) = (Url)" linkname="toDesignByName">
+            <table name="ListEntryPoint" uplink="(ScreenID) = (ListScreenID)" />
+            <table name="FilterHeader" uplink="(ScreenID) = (ScreenID)">
+                <table name="FilterRow" uplink="(FilterID) = (FilterID)" />
+                <table name="PivotTable" uplink="(RefNoteID) = (NoteID)">
+                    <table name="PivotField" uplink="(ScreenID, PivotTableID) = (ScreenID, PivotTableID)" />
+                </table>
+                <table name="Note" uplink="(NoteID) = (NoteID)" />
+                <table name="FilterHeaderKvExt" uplink="(NoteID) = (RecordID)" />
+            </table>
+            <table name="MUIScreen" uplink="(NodeID) = (NodeID)">
+                <table name="MUIPinnedScreen" uplink="(NodeID, WorkspaceID) = (NodeID, WorkspaceID)" />
+            </table>
+            <table name="MUITile" uplink="(ScreenID) = (ScreenID)" />
+        </table>
+        <table name="SiteMap" uplink="(PrimaryScreenIDNew) = (ScreenID)" linkname="to1Screen">
+            <table name="ListEntryPoint" uplink="(ScreenID) = (ListScreenID)" />
+            <table name="FilterHeader" uplink="(ScreenID) = (ScreenID)">
+                <table name="FilterRow" uplink="(FilterID) = (FilterID)" />
+                <table name="PivotTable" uplink="(RefNoteID) = (NoteID)">
+                    <table name="PivotField" uplink="(ScreenID, PivotTableID) = (ScreenID, PivotTableID)" />
+                </table>
+                <table name="Note" uplink="(NoteID) = (NoteID)" />
+                <table name="FilterHeaderKvExt" uplink="(NoteID) = (RecordID)" />
+            </table>
+            <table name="MUIScreen" uplink="(NodeID) = (NodeID)">
+                <table name="MUIPinnedScreen" uplink="(NodeID, WorkspaceID) = (NodeID, WorkspaceID)" />
+            </table>
+            <table name="MUITile" uplink="(ScreenID) = (ScreenID)" />
+        </table>
+        <table name="Note" uplink="(NoteID) = (NoteID)" />
+    </table>
+</layout>
+    <data>
+      <GIDesign>
+        <row DesignID="6a7d8fbb-a1ae-4559-adf8-e5e63cb4c05d" Name="LandedCostSummary" ScreenID="SB401070" FilterColCount="3" PageSize="0" ExportTop="0" NewRecordCreationEnabled="0" MassDeleteEnabled="0" AutoConfirmDelete="0" MassRecordsUpdateEnabled="0" MassActionsOnRecordsEnabled="0" ExposeViaOData="1" ExposeViaMobile="0">
+          <GITable Alias="Receipt" Name="PX.Objects.PO.POReceiptLine">
+            <GIRelation LineNbr="1" ChildTable="Item" IsActive="1" JoinType="L">
+              <GIOn LineNbr="1" ParentField="InventoryID" Condition="E " ChildField="InventoryID" Operation="A" />
+            </GIRelation>
+            <GIRelation LineNbr="2" ChildTable="Link" IsActive="1" JoinType="L">
+              <GIOn LineNbr="1" ParentField="POType" Condition="E " ChildField="OrderType" Operation="A" />
+              <GIOn LineNbr="2" ParentField="PONbr" Condition="E " ChildField="OrderNbr" Operation="A" />
+              <GIOn LineNbr="3" ParentField="POLineNbr" Condition="E " ChildField="LineNbr" Operation="A" />
+            </GIRelation>
+            <GIResult LineNbr="2" SortOrder="2" IsActive="1" Field="ReceiptNbr" Width="100" IsVisible="1" DefaultNav="1" QuickFilter="0" FastFilter="1" Caption="Receipt Nbr" RowID="20fb5d15-0f39-4def-b7b3-02ea6d82f0b3" />
+            <GIResult LineNbr="4" SortOrder="4" IsActive="1" Field="Qty" Width="80" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Qty" RowID="a7ea124c-8008-421f-8beb-8e302e3d3482" />
+            <GIResult LineNbr="5" SortOrder="5" IsActive="1" Field="UnitCost" Width="80" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Unit Cost" RowID="e626f904-730f-4b5d-b573-cf692702040a" />
+            <GIResult LineNbr="6" SortOrder="6" IsActive="1" Field="UsrActualDutyAmt" Width="100" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Actual Duty" RowID="13347ac4-1ea3-4218-9f7a-5b11cb715dc1" />
+            <GIResult LineNbr="7" SortOrder="7" IsActive="1" Field="UsrActualFreightAmt" Width="100" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Actual Freight" RowID="e73f8a98-0a17-4c00-a053-e7efc2e5152b" />
+            <GIResult LineNbr="8" SortOrder="8" IsActive="1" Field="UsrBrokerageAmt" Width="100" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Brokerage" RowID="02461dec-4288-42c9-906a-f5cd9c3765f9" />
+            <GIResult LineNbr="9" SortOrder="9" IsActive="1" Field="UsrLandedCostPerUnit" Width="100" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Landed Cost/Unit" RowID="dbbd05dc-39e7-44e1-8397-041739dc6a0e" />
+          </GITable>
+          <GITable Alias="Link" Name="StudioB.Containers.UsrContainerPOLink">
+            <GIRelation LineNbr="3" ChildTable="Container" IsActive="1" JoinType="L">
+              <GIOn LineNbr="1" ParentField="ContainerID" Condition="E " ChildField="ContainerID" Operation="A" />
+            </GIRelation>
+          </GITable>
+          <GITable Alias="Container" Name="StudioB.Containers.UsrContainer">
+            <GIResult LineNbr="1" SortOrder="1" IsActive="1" Field="ContainerCD" Width="120" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Container ID" RowID="84fd5cf1-452f-4701-bdbe-1bf800720d56" />
+          </GITable>
+          <GITable Alias="Item" Name="PX.Objects.IN.InventoryItem">
+            <GIResult LineNbr="3" SortOrder="3" IsActive="1" Field="InventoryCD" Width="120" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Inventory ID" RowID="e56bf54a-ce29-4200-b2e7-ca47bbbecd53" />
+          </GITable>
+          <GISort LineNbr="1" IsActive="1" DataFieldName="Container.ContainerCD" SortOrder="A" />
+          <GISort LineNbr="2" IsActive="1" DataFieldName="Receipt.ReceiptNbr" SortOrder="A" />
+          <SiteMap linkname="toDesignById">
+            <row Position="1150" Title="Landed Cost Summary" Url="~/GenericInquiry/GenericInquiry.aspx?id=6a7d8fbb-a1ae-4559-adf8-e5e63cb4c05d" Expanded="0" IsFolder="0" ScreenID="SB401070" NodeID="643f1ff8-6141-4805-910e-a3930f5b2354" ParentID="9c89e3db-7c47-43c0-8554-5d2c9f2c0e87">
+              <MUIScreen IsPortal="0" WorkspaceID="95191203-a0b8-4fc0-8b20-4efe831708e9" Order="2080" SubcategoryID="acf1bb34-2055-411e-88be-d840efcc7424" />
+            </row>
+          </SiteMap>
+
+        </row>
+      </GIDesign>
+    </data>
+  </data-set>
+</GenericInquiryScreen>
+    <GenericInquiryScreen>
+  <data-set>
+                <relations format-version="3" relations-version="20240201" main-table="GIDesign" stable-sharing="True" file-name="(Name)">
+    <link from="GIFilter (DesignID)" to="GIDesign (DesignID)" />
+    <link from="GIGroupBy (DesignID)" to="GIDesign (DesignID)" />
+    <link from="GIMassAction (DesignID)" to="GIDesign (DesignID)" />
+    <link from="GIMassUpdateField (DesignID)" to="GIDesign (DesignID)" />
+    <link from="GINavigationScreen (DesignID)" to="GIDesign (DesignID)" />
+    <link from="GINavigationParameter (DesignID, NavigationScreenLineNbr)" to="GINavigationScreen (DesignID, LineNbr)" />
+    <link from="GINavigationCondition (DesignID, NavigationScreenLineNbr)" to="GINavigationScreen (DesignID, LineNbr)" />
+    <link from="GIOn (DesignID, RelationNbr)" to="GIRelation (DesignID, LineNbr)" />
+    <link from="GIRecordDefault (DesignID)" to="GIDesign (DesignID)" />
+    <link from="GIRelation (DesignID, ParentTable)" to="GITable (DesignID, Alias)" />
+    <link from="GIRelation (DesignID, ChildTable)" to="GITable (DesignID, Alias)" />
+    <link from="GIResult (DesignID)" to="GIDesign (DesignID)" />
+    <link from="GIResult (ObjectName, DesignID)" to="GITable (Alias, DesignID)" />
+    <link from="GISort (DesignID)" to="GIDesign (DesignID)" />
+    <link from="GITable (DesignID)" to="GIDesign (DesignID)" />
+    <link from="GIWhere (DesignID)" to="GIDesign (DesignID)" />
+    <link from="SiteMap (Url)" to="GIDesign (DesignID)" type="WeakByUrl" linkname="toDesignById" baseurl="~/GenericInquiry/GenericInquiry.aspx" paramnames="id" />
+    <link from="SiteMap (Url)" to="GIDesign (Name)" type="WeakByUrl" linkname="toDesignByName" baseurl="~/GenericInquiry/GenericInquiry.aspx" />
+    <link from="ListEntryPoint (ListScreenID)" to="SiteMap (ScreenID)" />
+    <link from="SiteMap (ScreenID)" to="GIDesign (PrimaryScreenIDNew)" linkname="to1Screen" />
+    <link from="FilterHeader (ScreenID)" to="SiteMap (ScreenID)" />
+    <link from="FilterRow (FilterID)" to="FilterHeader (FilterID)" />
+    <link from="PivotTable (NoteID)" to="FilterHeader (RefNoteID)" />
+    <link from="PivotField (ScreenID, PivotTableID)" to="PivotTable (ScreenID, PivotTableID)" />
+    <link from="MUIScreen (NodeID)" to="SiteMap (NodeID)" />
+    <link from="MUIWorkspace (WorkspaceID)" to="MUIScreen (WorkspaceID)" type="FromMaster" linkname="workspaceToScreen" split-location="yes" updateable="True" />
+    <link from="MUISubcategory (SubcategoryID)" to="MUIScreen (SubcategoryID)" type="FromMaster" updateable="True" />
+    <link from="MUITile (ScreenID)" to="SiteMap (ScreenID)" />
+    <link from="MUIWorkspace (WorkspaceID)" to="MUITile (WorkspaceID)" type="FromMaster" linkname="workspaceToTile" split-location="yes" updateable="True" />
+    <link from="MUIArea (AreaID)" to="MUIWorkspace (AreaID)" type="FromMaster" updateable="True" />
+    <link from="MUIPinnedScreen (NodeID, WorkspaceID)" to="MUIScreen (NodeID, WorkspaceID)" type="WeakIfEmpty" isEmpty="Username" />
+    <link from="MUIFavoriteWorkspace (WorkspaceID)" to="MUIWorkspace (WorkspaceID)" type="WeakIfEmpty" isEmpty="Username" />
+    <link from="GIDesign (NoteID)" to="Note (NoteID)" type="Note" />
+    <link from="GIFilter (NoteID)" to="Note (NoteID)" type="Note" />
+    <link from="GIFilter (NoteID)" to="GIFilterKvExt (RecordID)" type="RowKvExt" />
+    <link from="GIGroupBy (NoteID)" to="Note (NoteID)" type="Note" />
+    <link from="GIOn (NoteID)" to="Note (NoteID)" type="Note" />
+    <link from="GIRelation (NoteID)" to="Note (NoteID)" type="Note" />
+    <link from="GIResult (NoteID)" to="Note (NoteID)" type="Note" />
+    <link from="GIResult (NoteID)" to="GIResultKvExt (RecordID)" type="RowKvExt" />
+    <link from="GISort (NoteID)" to="Note (NoteID)" type="Note" />
+    <link from="GITable (NoteID)" to="Note (NoteID)" type="Note" />
+    <link from="GIWhere (NoteID)" to="Note (NoteID)" type="Note" />
+    <link from="FilterHeader (NoteID)" to="Note (NoteID)" type="Note" />
+    <link from="FilterHeader (NoteID)" to="FilterHeaderKvExt (RecordID)" type="RowKvExt" />
+</relations>
+            <layout>
+    <table name="GIDesign">
+        <table name="GIFilter" uplink="(DesignID) = (DesignID)">
+            <table name="Note" uplink="(NoteID) = (NoteID)" />
+            <table name="GIFilterKvExt" uplink="(NoteID) = (RecordID)" />
+        </table>
+        <table name="GIGroupBy" uplink="(DesignID) = (DesignID)">
+            <table name="Note" uplink="(NoteID) = (NoteID)" />
+        </table>
+        <table name="GIMassAction" uplink="(DesignID) = (DesignID)" />
+        <table name="GIMassUpdateField" uplink="(DesignID) = (DesignID)" />
+        <table name="GINavigationScreen" uplink="(DesignID) = (DesignID)">
+            <table name="GINavigationParameter" uplink="(DesignID, LineNbr) = (DesignID, NavigationScreenLineNbr)" />
+            <table name="GINavigationCondition" uplink="(DesignID, LineNbr) = (DesignID, NavigationScreenLineNbr)" />
+        </table>
+        <table name="GIRecordDefault" uplink="(DesignID) = (DesignID)" />
+        <table name="GISort" uplink="(DesignID) = (DesignID)">
+            <table name="Note" uplink="(NoteID) = (NoteID)" />
+        </table>
+        <table name="GITable" uplink="(DesignID) = (DesignID)">
+            <table name="GIRelation" uplink="(DesignID, Alias) = (DesignID, ParentTable)">
+                <table name="GIOn" uplink="(DesignID, LineNbr) = (DesignID, RelationNbr)">
+                    <table name="Note" uplink="(NoteID) = (NoteID)" />
+                </table>
+                <table name="Note" uplink="(NoteID) = (NoteID)" />
+            </table>
+            <table name="GIResult" uplink="(Alias, DesignID) = (ObjectName, DesignID)">
+                <table name="Note" uplink="(NoteID) = (NoteID)" />
+                <table name="GIResultKvExt" uplink="(NoteID) = (RecordID)" />
+            </table>
+            <table name="Note" uplink="(NoteID) = (NoteID)" />
+        </table>
+        <table name="GIWhere" uplink="(DesignID) = (DesignID)">
+            <table name="Note" uplink="(NoteID) = (NoteID)" />
+        </table>
+        <table name="SiteMap" uplink="(DesignID) = (Url)" linkname="toDesignById">
+            <table name="ListEntryPoint" uplink="(ScreenID) = (ListScreenID)" />
+            <table name="FilterHeader" uplink="(ScreenID) = (ScreenID)">
+                <table name="FilterRow" uplink="(FilterID) = (FilterID)" />
+                <table name="PivotTable" uplink="(RefNoteID) = (NoteID)">
+                    <table name="PivotField" uplink="(ScreenID, PivotTableID) = (ScreenID, PivotTableID)" />
+                </table>
+                <table name="Note" uplink="(NoteID) = (NoteID)" />
+                <table name="FilterHeaderKvExt" uplink="(NoteID) = (RecordID)" />
+            </table>
+            <table name="MUIScreen" uplink="(NodeID) = (NodeID)">
+                <table name="MUIPinnedScreen" uplink="(NodeID, WorkspaceID) = (NodeID, WorkspaceID)" />
+            </table>
+            <table name="MUITile" uplink="(ScreenID) = (ScreenID)" />
+        </table>
+        <table name="SiteMap" uplink="(Name) = (Url)" linkname="toDesignByName">
+            <table name="ListEntryPoint" uplink="(ScreenID) = (ListScreenID)" />
+            <table name="FilterHeader" uplink="(ScreenID) = (ScreenID)">
+                <table name="FilterRow" uplink="(FilterID) = (FilterID)" />
+                <table name="PivotTable" uplink="(RefNoteID) = (NoteID)">
+                    <table name="PivotField" uplink="(ScreenID, PivotTableID) = (ScreenID, PivotTableID)" />
+                </table>
+                <table name="Note" uplink="(NoteID) = (NoteID)" />
+                <table name="FilterHeaderKvExt" uplink="(NoteID) = (RecordID)" />
+            </table>
+            <table name="MUIScreen" uplink="(NodeID) = (NodeID)">
+                <table name="MUIPinnedScreen" uplink="(NodeID, WorkspaceID) = (NodeID, WorkspaceID)" />
+            </table>
+            <table name="MUITile" uplink="(ScreenID) = (ScreenID)" />
+        </table>
+        <table name="SiteMap" uplink="(PrimaryScreenIDNew) = (ScreenID)" linkname="to1Screen">
+            <table name="ListEntryPoint" uplink="(ScreenID) = (ListScreenID)" />
+            <table name="FilterHeader" uplink="(ScreenID) = (ScreenID)">
+                <table name="FilterRow" uplink="(FilterID) = (FilterID)" />
+                <table name="PivotTable" uplink="(RefNoteID) = (NoteID)">
+                    <table name="PivotField" uplink="(ScreenID, PivotTableID) = (ScreenID, PivotTableID)" />
+                </table>
+                <table name="Note" uplink="(NoteID) = (NoteID)" />
+                <table name="FilterHeaderKvExt" uplink="(NoteID) = (RecordID)" />
+            </table>
+            <table name="MUIScreen" uplink="(NodeID) = (NodeID)">
+                <table name="MUIPinnedScreen" uplink="(NodeID, WorkspaceID) = (NodeID, WorkspaceID)" />
+            </table>
+            <table name="MUITile" uplink="(ScreenID) = (ScreenID)" />
+        </table>
+        <table name="Note" uplink="(NoteID) = (NoteID)" />
+    </table>
+</layout>
+    <data>
+      <GIDesign>
+        <row DesignID="ca2a6f08-0ecd-499f-993f-b0dbafde5233" Name="POContainerLines" ScreenID="SB401040" FilterColCount="3" PageSize="0" ExportTop="0" NewRecordCreationEnabled="0" MassDeleteEnabled="0" AutoConfirmDelete="0" MassRecordsUpdateEnabled="0" MassActionsOnRecordsEnabled="0" ExposeViaOData="1" ExposeViaMobile="0">
+          <GITable Alias="Link" Name="StudioB.Containers.UsrContainerPOLink">
+            <GIRelation LineNbr="1" ChildTable="Container" IsActive="1" JoinType="L">
+              <GIOn LineNbr="1" ParentField="ContainerID" Condition="E " ChildField="ContainerID" Operation="A" />
+            </GIRelation>
+            <GIRelation LineNbr="2" ChildTable="PO" IsActive="1" JoinType="L">
+              <GIOn LineNbr="1" ParentField="OrderType" Condition="E " ChildField="OrderType" Operation="A" />
+              <GIOn LineNbr="2" ParentField="OrderNbr" Condition="E " ChildField="OrderNbr" Operation="A" />
+            </GIRelation>
+            <GIRelation LineNbr="3" ChildTable="Line" IsActive="1" JoinType="L">
+              <GIOn LineNbr="1" ParentField="OrderType" Condition="E " ChildField="OrderType" Operation="A" />
+              <GIOn LineNbr="2" ParentField="OrderNbr" Condition="E " ChildField="OrderNbr" Operation="A" />
+              <GIOn LineNbr="3" ParentField="LineNbr" Condition="E " ChildField="LineNbr" Operation="A" />
+            </GIRelation>
+            <GIResult LineNbr="3" SortOrder="3" IsActive="1" Field="OrderNbr" Width="100" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="PO Number" RowID="ae206494-e054-4df5-b5c2-b06e46de73f2" />
+            <GIResult LineNbr="4" SortOrder="4" IsActive="1" Field="LineNbr" Width="60" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Line Nbr" RowID="a50703a2-dbef-449a-861d-5661baef9f0c" />
+          </GITable>
+          <GITable Alias="Container" Name="StudioB.Containers.UsrContainer">
+            <GIResult LineNbr="1" SortOrder="1" IsActive="1" Field="ContainerCD" Width="120" IsVisible="1" DefaultNav="1" QuickFilter="0" FastFilter="1" Caption="Container ID" RowID="12f5907a-1330-4f0f-82b7-b3a07a06747e" />
+            <GIResult LineNbr="2" SortOrder="2" IsActive="1" Field="Status" Width="100" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Status" RowID="62580c08-e9e1-444e-933a-b30418b9a399" />
+            <GIResult LineNbr="8" SortOrder="8" IsActive="1" Field="ETA" Width="100" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="ETA" RowID="f9d03a3b-472e-46fc-bbac-2709e7742195" />
+          </GITable>
+          <GITable Alias="PO" Name="PX.Objects.PO.POOrder">
+          </GITable>
+          <GITable Alias="Line" Name="PX.Objects.PO.POLine">
+            <GIResult LineNbr="5" SortOrder="5" IsActive="1" Field="InventoryID" Width="100" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Inventory ID" RowID="6665196b-7261-4f97-8c28-a697fb877448" />
+            <GIResult LineNbr="6" SortOrder="6" IsActive="1" Field="OrderQty" Width="80" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Order Qty" RowID="906e6e7b-0924-451b-a45d-37c6d97247b3" />
+            <GIResult LineNbr="7" SortOrder="7" IsActive="1" Field="UsrExpArrivalDate" Width="100" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Expected Arrival" RowID="d0940037-6efc-423b-8aa8-67b4afea9f98" />
+          </GITable>
+          <GISort LineNbr="1" IsActive="1" DataFieldName="Container.ETA" SortOrder="D" />
+          <GISort LineNbr="2" IsActive="1" DataFieldName="Link.OrderNbr" SortOrder="A" />
+          <SiteMap linkname="toDesignById">
+            <row Position="1120" Title="PO Container Lines" Url="~/GenericInquiry/GenericInquiry.aspx?id=ca2a6f08-0ecd-499f-993f-b0dbafde5233" Expanded="0" IsFolder="0" ScreenID="SB401040" NodeID="099aa852-7bd9-4921-8f77-c63e5115da48" ParentID="9c89e3db-7c47-43c0-8554-5d2c9f2c0e87">
+              <MUIScreen IsPortal="0" WorkspaceID="95191203-a0b8-4fc0-8b20-4efe831708e9" Order="2050" SubcategoryID="acf1bb34-2055-411e-88be-d840efcc7424" />
+            </row>
+          </SiteMap>
+
+        </row>
+      </GIDesign>
+    </data>
+  </data-set>
+</GenericInquiryScreen>
+    <GenericInquiryScreen>
+  <data-set>
+                <relations format-version="3" relations-version="20240201" main-table="GIDesign" stable-sharing="True" file-name="(Name)">
+    <link from="GIFilter (DesignID)" to="GIDesign (DesignID)" />
+    <link from="GIGroupBy (DesignID)" to="GIDesign (DesignID)" />
+    <link from="GIMassAction (DesignID)" to="GIDesign (DesignID)" />
+    <link from="GIMassUpdateField (DesignID)" to="GIDesign (DesignID)" />
+    <link from="GINavigationScreen (DesignID)" to="GIDesign (DesignID)" />
+    <link from="GINavigationParameter (DesignID, NavigationScreenLineNbr)" to="GINavigationScreen (DesignID, LineNbr)" />
+    <link from="GINavigationCondition (DesignID, NavigationScreenLineNbr)" to="GINavigationScreen (DesignID, LineNbr)" />
+    <link from="GIOn (DesignID, RelationNbr)" to="GIRelation (DesignID, LineNbr)" />
+    <link from="GIRecordDefault (DesignID)" to="GIDesign (DesignID)" />
+    <link from="GIRelation (DesignID, ParentTable)" to="GITable (DesignID, Alias)" />
+    <link from="GIRelation (DesignID, ChildTable)" to="GITable (DesignID, Alias)" />
+    <link from="GIResult (DesignID)" to="GIDesign (DesignID)" />
+    <link from="GIResult (ObjectName, DesignID)" to="GITable (Alias, DesignID)" />
+    <link from="GISort (DesignID)" to="GIDesign (DesignID)" />
+    <link from="GITable (DesignID)" to="GIDesign (DesignID)" />
+    <link from="GIWhere (DesignID)" to="GIDesign (DesignID)" />
+    <link from="SiteMap (Url)" to="GIDesign (DesignID)" type="WeakByUrl" linkname="toDesignById" baseurl="~/GenericInquiry/GenericInquiry.aspx" paramnames="id" />
+    <link from="SiteMap (Url)" to="GIDesign (Name)" type="WeakByUrl" linkname="toDesignByName" baseurl="~/GenericInquiry/GenericInquiry.aspx" />
+    <link from="ListEntryPoint (ListScreenID)" to="SiteMap (ScreenID)" />
+    <link from="SiteMap (ScreenID)" to="GIDesign (PrimaryScreenIDNew)" linkname="to1Screen" />
+    <link from="FilterHeader (ScreenID)" to="SiteMap (ScreenID)" />
+    <link from="FilterRow (FilterID)" to="FilterHeader (FilterID)" />
+    <link from="PivotTable (NoteID)" to="FilterHeader (RefNoteID)" />
+    <link from="PivotField (ScreenID, PivotTableID)" to="PivotTable (ScreenID, PivotTableID)" />
+    <link from="MUIScreen (NodeID)" to="SiteMap (NodeID)" />
+    <link from="MUIWorkspace (WorkspaceID)" to="MUIScreen (WorkspaceID)" type="FromMaster" linkname="workspaceToScreen" split-location="yes" updateable="True" />
+    <link from="MUISubcategory (SubcategoryID)" to="MUIScreen (SubcategoryID)" type="FromMaster" updateable="True" />
+    <link from="MUITile (ScreenID)" to="SiteMap (ScreenID)" />
+    <link from="MUIWorkspace (WorkspaceID)" to="MUITile (WorkspaceID)" type="FromMaster" linkname="workspaceToTile" split-location="yes" updateable="True" />
+    <link from="MUIArea (AreaID)" to="MUIWorkspace (AreaID)" type="FromMaster" updateable="True" />
+    <link from="MUIPinnedScreen (NodeID, WorkspaceID)" to="MUIScreen (NodeID, WorkspaceID)" type="WeakIfEmpty" isEmpty="Username" />
+    <link from="MUIFavoriteWorkspace (WorkspaceID)" to="MUIWorkspace (WorkspaceID)" type="WeakIfEmpty" isEmpty="Username" />
+    <link from="GIDesign (NoteID)" to="Note (NoteID)" type="Note" />
+    <link from="GIFilter (NoteID)" to="Note (NoteID)" type="Note" />
+    <link from="GIFilter (NoteID)" to="GIFilterKvExt (RecordID)" type="RowKvExt" />
+    <link from="GIGroupBy (NoteID)" to="Note (NoteID)" type="Note" />
+    <link from="GIOn (NoteID)" to="Note (NoteID)" type="Note" />
+    <link from="GIRelation (NoteID)" to="Note (NoteID)" type="Note" />
+    <link from="GIResult (NoteID)" to="Note (NoteID)" type="Note" />
+    <link from="GIResult (NoteID)" to="GIResultKvExt (RecordID)" type="RowKvExt" />
+    <link from="GISort (NoteID)" to="Note (NoteID)" type="Note" />
+    <link from="GITable (NoteID)" to="Note (NoteID)" type="Note" />
+    <link from="GIWhere (NoteID)" to="Note (NoteID)" type="Note" />
+    <link from="FilterHeader (NoteID)" to="Note (NoteID)" type="Note" />
+    <link from="FilterHeader (NoteID)" to="FilterHeaderKvExt (RecordID)" type="RowKvExt" />
+</relations>
+            <layout>
+    <table name="GIDesign">
+        <table name="GIFilter" uplink="(DesignID) = (DesignID)">
+            <table name="Note" uplink="(NoteID) = (NoteID)" />
+            <table name="GIFilterKvExt" uplink="(NoteID) = (RecordID)" />
+        </table>
+        <table name="GIGroupBy" uplink="(DesignID) = (DesignID)">
+            <table name="Note" uplink="(NoteID) = (NoteID)" />
+        </table>
+        <table name="GIMassAction" uplink="(DesignID) = (DesignID)" />
+        <table name="GIMassUpdateField" uplink="(DesignID) = (DesignID)" />
+        <table name="GINavigationScreen" uplink="(DesignID) = (DesignID)">
+            <table name="GINavigationParameter" uplink="(DesignID, LineNbr) = (DesignID, NavigationScreenLineNbr)" />
+            <table name="GINavigationCondition" uplink="(DesignID, LineNbr) = (DesignID, NavigationScreenLineNbr)" />
+        </table>
+        <table name="GIRecordDefault" uplink="(DesignID) = (DesignID)" />
+        <table name="GISort" uplink="(DesignID) = (DesignID)">
+            <table name="Note" uplink="(NoteID) = (NoteID)" />
+        </table>
+        <table name="GITable" uplink="(DesignID) = (DesignID)">
+            <table name="GIRelation" uplink="(DesignID, Alias) = (DesignID, ParentTable)">
+                <table name="GIOn" uplink="(DesignID, LineNbr) = (DesignID, RelationNbr)">
+                    <table name="Note" uplink="(NoteID) = (NoteID)" />
+                </table>
+                <table name="Note" uplink="(NoteID) = (NoteID)" />
+            </table>
+            <table name="GIResult" uplink="(Alias, DesignID) = (ObjectName, DesignID)">
+                <table name="Note" uplink="(NoteID) = (NoteID)" />
+                <table name="GIResultKvExt" uplink="(NoteID) = (RecordID)" />
+            </table>
+            <table name="Note" uplink="(NoteID) = (NoteID)" />
+        </table>
+        <table name="GIWhere" uplink="(DesignID) = (DesignID)">
+            <table name="Note" uplink="(NoteID) = (NoteID)" />
+        </table>
+        <table name="SiteMap" uplink="(DesignID) = (Url)" linkname="toDesignById">
+            <table name="ListEntryPoint" uplink="(ScreenID) = (ListScreenID)" />
+            <table name="FilterHeader" uplink="(ScreenID) = (ScreenID)">
+                <table name="FilterRow" uplink="(FilterID) = (FilterID)" />
+                <table name="PivotTable" uplink="(RefNoteID) = (NoteID)">
+                    <table name="PivotField" uplink="(ScreenID, PivotTableID) = (ScreenID, PivotTableID)" />
+                </table>
+                <table name="Note" uplink="(NoteID) = (NoteID)" />
+                <table name="FilterHeaderKvExt" uplink="(NoteID) = (RecordID)" />
+            </table>
+            <table name="MUIScreen" uplink="(NodeID) = (NodeID)">
+                <table name="MUIPinnedScreen" uplink="(NodeID, WorkspaceID) = (NodeID, WorkspaceID)" />
+            </table>
+            <table name="MUITile" uplink="(ScreenID) = (ScreenID)" />
+        </table>
+        <table name="SiteMap" uplink="(Name) = (Url)" linkname="toDesignByName">
+            <table name="ListEntryPoint" uplink="(ScreenID) = (ListScreenID)" />
+            <table name="FilterHeader" uplink="(ScreenID) = (ScreenID)">
+                <table name="FilterRow" uplink="(FilterID) = (FilterID)" />
+                <table name="PivotTable" uplink="(RefNoteID) = (NoteID)">
+                    <table name="PivotField" uplink="(ScreenID, PivotTableID) = (ScreenID, PivotTableID)" />
+                </table>
+                <table name="Note" uplink="(NoteID) = (NoteID)" />
+                <table name="FilterHeaderKvExt" uplink="(NoteID) = (RecordID)" />
+            </table>
+            <table name="MUIScreen" uplink="(NodeID) = (NodeID)">
+                <table name="MUIPinnedScreen" uplink="(NodeID, WorkspaceID) = (NodeID, WorkspaceID)" />
+            </table>
+            <table name="MUITile" uplink="(ScreenID) = (ScreenID)" />
+        </table>
+        <table name="SiteMap" uplink="(PrimaryScreenIDNew) = (ScreenID)" linkname="to1Screen">
+            <table name="ListEntryPoint" uplink="(ScreenID) = (ListScreenID)" />
+            <table name="FilterHeader" uplink="(ScreenID) = (ScreenID)">
+                <table name="FilterRow" uplink="(FilterID) = (FilterID)" />
+                <table name="PivotTable" uplink="(RefNoteID) = (NoteID)">
+                    <table name="PivotField" uplink="(ScreenID, PivotTableID) = (ScreenID, PivotTableID)" />
+                </table>
+                <table name="Note" uplink="(NoteID) = (NoteID)" />
+                <table name="FilterHeaderKvExt" uplink="(NoteID) = (RecordID)" />
+            </table>
+            <table name="MUIScreen" uplink="(NodeID) = (NodeID)">
+                <table name="MUIPinnedScreen" uplink="(NodeID, WorkspaceID) = (NodeID, WorkspaceID)" />
+            </table>
+            <table name="MUITile" uplink="(ScreenID) = (ScreenID)" />
+        </table>
+        <table name="Note" uplink="(NoteID) = (NoteID)" />
+    </table>
+</layout>
+    <data>
+      <GIDesign>
+        <row DesignID="c51f9373-0b67-4955-9fce-ea35570bb2d0" Name="POContainers" ScreenID="SB401000" FilterColCount="3" PageSize="0" ExportTop="0" NewRecordCreationEnabled="0" MassDeleteEnabled="0" AutoConfirmDelete="0" MassRecordsUpdateEnabled="0" MassActionsOnRecordsEnabled="0" ExposeViaOData="1" ExposeViaMobile="0">
+          <GITable Alias="Container" Name="StudioB.Containers.UsrContainer">
+            <GIRelation LineNbr="1" ChildTable="ContainerPOLink" IsActive="1" JoinType="L">
+              <GIOn LineNbr="1" ParentField="ContainerID" Condition="E " ChildField="ContainerID" Operation="A" />
+            </GIRelation>
+            <GIResult LineNbr="1" SortOrder="1" IsActive="1" Field="ContainerCD" Width="120" IsVisible="1" DefaultNav="1" QuickFilter="0" FastFilter="1" Caption="Container ID" RowID="f1e9bb98-3378-45f5-89e5-6c69c48bcee1" />
+            <GIResult LineNbr="2" SortOrder="2" IsActive="1" Field="Status" Width="100" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Status" RowID="aafdcf58-7a3c-4533-a5ba-09a44856a23b" />
+            <GIResult LineNbr="3" SortOrder="3" IsActive="1" Field="CarrierCode" Width="100" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Carrier" RowID="ce695297-a923-4301-bd03-593cc8e9e836" />
+            <GIResult LineNbr="4" SortOrder="4" IsActive="1" Field="VesselName" Width="140" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Vessel" RowID="f6cd0615-e5b2-4e63-94ce-c141e3b730a0" />
+            <GIResult LineNbr="5" SortOrder="5" IsActive="1" Field="BookingRef" Width="120" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Booking Ref" RowID="8791c85b-5a46-4000-985e-81f671ed0e4c" />
+            <GIResult LineNbr="6" SortOrder="6" IsActive="1" Field="BillOfLading" Width="120" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Bill of Lading" RowID="bbd7cd82-598f-4d07-8fc7-60ae3f4f5aa6" />
+            <GIResult LineNbr="7" SortOrder="7" IsActive="1" Field="PortOfLoading" Width="120" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Port of Loading" RowID="da917edc-2bef-4a1c-a27f-f0b86747c92f" />
+            <GIResult LineNbr="8" SortOrder="8" IsActive="1" Field="PortOfDischarge" Width="120" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Port of Discharge" RowID="a5309545-3e9f-465b-8b91-f54b30707318" />
+            <GIResult LineNbr="9" SortOrder="9" IsActive="1" Field="ETD" Width="100" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="ETD" RowID="c2caab2d-5e31-4f60-aeb0-d4b005200e68" />
+            <GIResult LineNbr="10" SortOrder="10" IsActive="1" Field="ETA" Width="100" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="ETA" RowID="30573f0e-1fdc-4bb6-8510-ed85fa51c960" />
+            <GIResult LineNbr="11" SortOrder="11" IsActive="1" Field="ATA" Width="100" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="ATA" RowID="ff74dfb8-aa9a-4de9-931c-7ed1744acc67" />
+            <GIResult LineNbr="12" SortOrder="12" IsActive="1" Field="ContainerType" Width="100" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Container Type" RowID="12882732-320c-4d30-b107-91b4cdfe6d06" />
+          </GITable>
+          <GITable Alias="ContainerPOLink" Name="StudioB.Containers.UsrContainerPOLink">
+            <GIRelation LineNbr="2" ChildTable="PO" IsActive="1" JoinType="L">
+              <GIOn LineNbr="1" ParentField="OrderType" Condition="E " ChildField="OrderType" Operation="A" />
+              <GIOn LineNbr="2" ParentField="OrderNbr" Condition="E " ChildField="OrderNbr" Operation="A" />
+            </GIRelation>
+          </GITable>
+          <GITable Alias="PO" Name="PX.Objects.PO.POOrder">
+          </GITable>
+          <GIFilter LineNbr="1" Name="StatusFilter" DataFieldName="Container.Status" IsActive="1" />
+          <GIFilter LineNbr="2" Name="CarrierFilter" DataFieldName="Container.CarrierCode" IsActive="1" />
+          <GIWhere LineNbr="1" IsActive="1" DataFieldName="Container.Status" Condition="E " IsExpression="0" Value1="=[StatusFilter]" Operation="A" />
+          <GIWhere LineNbr="2" IsActive="1" DataFieldName="Container.CarrierCode" Condition="E " IsExpression="0" Value1="=[CarrierFilter]" Operation="A" />
+          <GISort LineNbr="1" IsActive="1" DataFieldName="Container.ETA" SortOrder="D" />
+          <SiteMap linkname="toDesignById">
+            <row Position="1100" Title="PO Containers" Url="~/GenericInquiry/GenericInquiry.aspx?id=c51f9373-0b67-4955-9fce-ea35570bb2d0" Expanded="0" IsFolder="0" ScreenID="SB401000" NodeID="52efd460-af44-4e6e-b860-68086c95297e" ParentID="9c89e3db-7c47-43c0-8554-5d2c9f2c0e87">
+              <MUIScreen IsPortal="0" WorkspaceID="95191203-a0b8-4fc0-8b20-4efe831708e9" Order="2030" SubcategoryID="acf1bb34-2055-411e-88be-d840efcc7424" />
+            </row>
+          </SiteMap>
+
+        </row>
+      </GIDesign>
+    </data>
+  </data-set>
+</GenericInquiryScreen>
     <ScreenWithRights AccessRightsMergeRule="ApplyAndKeep">
         <data-set>
             <relations format-version="3" relations-version="20240201" main-table="SiteMap">
