@@ -1224,10 +1224,48 @@ namespace StudioB.Containers
                     // Migrates IIG container data to AesthetikContainers tables.
                     MigrateIGCMContainers(conn);
 
-                    // ── GI system table investigation ─────────────────────────
-                    // Query: primary keys, unique constraints, foreign keys,
-                    // indexes, and row counts for all GI tables + SiteMap.
-                    string[] investigateTables = new[] { "GIDesign", "GIResult", "GIFilter", "GIWhere", "GISort", "GITable", "GIRelation", "GIOn", "SiteMap" };
+                    // ── EMERGENCY: Delete broken container tracking GIs ───────
+                    // Our GI definitions crash the GI engine with "duplicate key"
+                    // error, taking down SM208000 (GI Designer). Delete all 5 GIs
+                    // across all companies to restore the system.
+                    string[] brokenGINames = new[] { "POContainers", "SOContainers", "ContainerEvents", "CustomClassification", "POContainerLines" };
+                    foreach (string giName in brokenGINames)
+                    {
+                        try
+                        {
+                            string cleanupSql = string.Format(@"
+                                DECLARE @ids TABLE (DesignID uniqueidentifier, CID int);
+                                INSERT INTO @ids SELECT DesignID, CompanyID FROM GIDesign WHERE Name = N'{0}';
+                                DELETE FROM GIResult WHERE EXISTS (SELECT 1 FROM @ids i WHERE GIResult.DesignID = i.DesignID AND GIResult.CompanyID = i.CID);
+                                DELETE FROM GISort WHERE EXISTS (SELECT 1 FROM @ids i WHERE GISort.DesignID = i.DesignID AND GISort.CompanyID = i.CID);
+                                DELETE FROM GIGroupBy WHERE EXISTS (SELECT 1 FROM @ids i WHERE GIGroupBy.DesignID = i.DesignID AND GIGroupBy.CompanyID = i.CID);
+                                DELETE FROM GIFilter WHERE EXISTS (SELECT 1 FROM @ids i WHERE GIFilter.DesignID = i.DesignID AND GIFilter.CompanyID = i.CID);
+                                DELETE FROM GIWhere WHERE EXISTS (SELECT 1 FROM @ids i WHERE GIWhere.DesignID = i.DesignID AND GIWhere.CompanyID = i.CID);
+                                DELETE FROM GIOn WHERE EXISTS (SELECT 1 FROM @ids i WHERE GIOn.DesignID = i.DesignID AND GIOn.CompanyID = i.CID);
+                                DELETE FROM GIRelation WHERE EXISTS (SELECT 1 FROM @ids i WHERE GIRelation.DesignID = i.DesignID AND GIRelation.CompanyID = i.CID);
+                                DELETE FROM GITable WHERE EXISTS (SELECT 1 FROM @ids i WHERE GITable.DesignID = i.DesignID AND GITable.CompanyID = i.CID);
+                                DELETE FROM GIDesign WHERE EXISTS (SELECT 1 FROM @ids i WHERE GIDesign.DesignID = i.DesignID AND GIDesign.CompanyID = i.CID);",
+                                giName);
+                            using (var cmd = new SqlCommand(cleanupSql, conn))
+                            {
+                                cmd.CommandTimeout = 60;
+                                cmd.ExecuteNonQuery();
+                            }
+                            WriteLog(string.Format("[AesthetikContainers] Deleted broken GI '{0}' from all companies", giName));
+                        }
+                        catch (Exception ex)
+                        {
+                            WriteLog(string.Format("[AesthetikContainers] Failed to delete GI '{0}': {1}", giName, ex.Message));
+                        }
+                    }
+
+                    // GI creation DISABLED until ObjectName issue is resolved.
+                    // The container tracking GIs need proper investigation of how
+                    // ObjectName maps to DAC names in the GI engine before re-enabling.
+                    WriteLog("[AesthetikContainers] GI creation disabled — broken GIs cleaned up, SM208000 should be restored");
+
+                    // ── REMOVED: GI system table investigation (temporary diagnostic) ──
+                    string[] investigateTables = new string[0]; // no-op
                     foreach (string table in investigateTables)
                     {
                         try
@@ -1384,9 +1422,10 @@ namespace StudioB.Containers
                                 companyId, cleanEx.Message));
                         }
 
-                        // Each step isolated so schema mismatches don't block other steps.
-                        try { EnsureContainerTrackingGIs(conn, companyId); }
-                        catch (Exception ex) { WriteLog(string.Format("[AesthetikContainers] GI creation failed CID={0}: {1}", companyId, ex.Message)); }
+                        // GI creation DISABLED — broken GIs deleted above, will re-enable
+                        // after ObjectName investigation is complete.
+                        // try { EnsureContainerTrackingGIs(conn, companyId); }
+                        // catch (Exception ex) { WriteLog(...); }
 
                         try { EnsureContainerTrackingSiteMap(conn, companyId); }
                         catch (Exception ex) { WriteLog(string.Format("[AesthetikContainers] SiteMap update failed CID={0}: {1}", companyId, ex.Message)); }
