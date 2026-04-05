@@ -1235,29 +1235,6 @@ namespace StudioB.Containers
                         string companyName = kvp.Value;
                         WriteLog(string.Format("[AesthetikContainers] Processing company '{0}' (CompanyID={1})", companyName, companyId));
 
-
-
-                        // ── Diagnostic: log existing GI definitions for Phase 2 target names
-                        try {
-                            string[] phase2Names = new[] { "POContainers", "ContainerEvents", "POContainerLines", "ArrivingThisWeek", "ContainersNeedingAttention", "LandedCostSummary" };
-                            foreach (string giName in phase2Names)
-                            {
-                                using (var cmd = new SqlCommand("SELECT DesignID, Name FROM GIDesign WHERE Name = @name AND CompanyID = @cid", conn))
-                                {
-                                    cmd.Parameters.AddWithValue("@name", giName);
-                                    cmd.Parameters.AddWithValue("@cid", companyId);
-                                    using (var rdr = cmd.ExecuteReader())
-                                    {
-                                        if (rdr.Read())
-                                            WriteLog(string.Format("[DIAG] GIDesign FOUND: Name={0}, DesignID={1}, CID={2}", rdr["Name"], rdr["DesignID"], companyId));
-                                        else
-                                            WriteLog(string.Format("[DIAG] GIDesign CLEAN: Name={0}, CID={1}", giName, companyId));
-                                    }
-                                }
-                            }
-                        }
-                        catch (Exception ex) { WriteLog(string.Format("[DIAG] GIDesign query failed: {0}", ex.Message)); }
-
                         try { EnsureContainerTrackingSiteMap(conn, companyId); }
                         catch (Exception ex) { WriteLog(string.Format("[AesthetikContainers] SiteMap update failed CID={0}: {1}", companyId, ex.Message)); }
 
@@ -2554,6 +2531,7 @@ public partial class Page_SB_SB302030 : PXPage
                 <MUISubcategory>
                     <row IsPortal="0" SubcategoryID="38d13a6e-3076-42fb-9fce-62fa33897da6" Order="64" Name="Transactions" Icon="" IsSystem="0" />
                     <row IsPortal="0" SubcategoryID="0b491e12-c58d-4e47-8a0d-96dd3a8ab395" Order="128" Name="Configuration" Icon="" IsSystem="0" />
+                    <row IsPortal="0" SubcategoryID="acf1bb34-2055-411e-88be-d840efcc7424" Order="192" Name="Inquiries" Icon="" IsSystem="0" />
                 </MUISubcategory>
                 <MUIArea>
                     <row IsPortal="0" AreaID="62cfd5dc-8eb9-4e92-bbcd-e0a99eb5e5df" Order="20" Name="Operations" />
