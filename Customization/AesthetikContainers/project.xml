@@ -1235,6 +1235,8 @@ namespace StudioB.Containers
                         string companyName = kvp.Value;
                         WriteLog(string.Format("[AesthetikContainers] Processing company '{0}' (CompanyID={1})", companyName, companyId));
 
+
+
                         try { EnsureContainerTrackingSiteMap(conn, companyId); }
                         catch (Exception ex) { WriteLog(string.Format("[AesthetikContainers] SiteMap update failed CID={0}: {1}", companyId, ex.Message)); }
 
