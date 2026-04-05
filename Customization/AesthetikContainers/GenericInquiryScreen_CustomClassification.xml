@@ -1,0 +1,57 @@
+<GenericInquiryScreen>
+  <data-set>
+    <relations format-version="3" relations-version="20190410" main-table="GIDesign" stable-sharing="True" file-name="CustomClassification">
+      <link from="GIFilter (DesignID)" to="GIDesign (DesignID)" />
+      <link from="GIGroupBy (DesignID)" to="GIDesign (DesignID)" />
+      <link from="GINavigationCondition (DesignID)" to="GIDesign (DesignID)" />
+      <link from="GINavigationParameter (DesignID)" to="GIDesign (DesignID)" />
+      <link from="GINavigationScreen (DesignID)" to="GIDesign (DesignID)" />
+      <link from="GIOn (DesignID)" to="GIDesign (DesignID)" />
+      <link from="GIRelation (DesignID)" to="GIDesign (DesignID)" />
+      <link from="GIResult (DesignID)" to="GIDesign (DesignID)" />
+      <link from="GISort (DesignID)" to="GIDesign (DesignID)" />
+      <link from="GITable (DesignID)" to="GIDesign (DesignID)" />
+      <link from="GIWhere (DesignID)" to="GIDesign (DesignID)" />
+      <link from="GIOn (DesignID,LineNbr)" to="GIRelation (DesignID,LineNbr)" />
+      <link from="GIRelation (DesignID)" to="GITable (DesignID,Alias)" />
+      <link from="GIResult (DesignID)" to="GITable (DesignID,Alias)" />
+      <link from="SiteMap (linkname)" to="GIDesign (DesignID)" />
+      <link from="MUIScreen (linkname)" to="SiteMap (NodeID)" />
+    </relations>
+    <layout>
+      <group id="1" sorting="Natural" filtering="Natural" />
+    </layout>
+    <data>
+      <GIDesign>
+        <row DesignID="f1a00001-sb40-1030-gi04-000000000004" Name="CustomClassification" ScreenID="SB401030" FilterColCount="3" PageSize="0" ExportTop="0" NewRecordCreationEnabled="0" MassDeleteEnabled="0" AutoConfirmDelete="0" MassRecordsUpdateEnabled="0" MassActionsOnRecordsEnabled="0" ExposeViaOData="1" ExposeViaMobile="0">
+
+          <!-- Table 1: InventoryItem (single table) -->
+          <GITable Alias="Item" Name="PX.Objects.IN.InventoryItem">
+            <GIResult LineNbr="1" SortOrder="1" IsActive="1" Field="InventoryCD" Width="120" IsVisible="1" DefaultNav="1" QuickFilter="0" FastFilter="1" Caption="Inventory" RowID="f1a00004-sb40-1030-res1-000000000001" />
+            <GIResult LineNbr="2" SortOrder="2" IsActive="1" Field="Descr" Width="200" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Description" RowID="f1a00004-sb40-1030-res1-000000000002" />
+            <GIResult LineNbr="3" SortOrder="3" IsActive="1" Field="ItemStatus" Width="80" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Status" RowID="f1a00004-sb40-1030-res1-000000000003" />
+            <GIResult LineNbr="4" SortOrder="4" IsActive="1" Field="UsrDutyRate" Width="80" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Duty Rate" RowID="f1a00004-sb40-1030-res1-000000000004" />
+            <GIResult LineNbr="5" SortOrder="5" IsActive="1" Field="UsrPreferentialTariff" Width="80" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Preferential Tariff" RowID="f1a00004-sb40-1030-res1-000000000005" />
+            <GIResult LineNbr="6" SortOrder="6" IsActive="1" Field="UsrFiberContent" Width="120" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Fiber Content" RowID="f1a00004-sb40-1030-res1-000000000006" />
+            <GIResult LineNbr="7" SortOrder="7" IsActive="1" Field="UsrFreightClass" Width="80" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Freight Class" RowID="f1a00004-sb40-1030-res1-000000000007" />
+            <GIResult LineNbr="8" SortOrder="8" IsActive="1" Field="CountryOfOrigin" Width="100" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Country of Origin" RowID="f1a00004-sb40-1030-res1-000000000008" />
+          </GITable>
+
+          <!-- WHERE: Stock items only -->
+          <GIWhere LineNbr="1" IsActive="1" DataFieldName="Item.StkItem" Condition="E " IsExpression="0" Value1="True" Operation="A" />
+
+          <!-- SORT by Inventory CD ascending -->
+          <GISort LineNbr="1" IsActive="1" DataFieldName="Item.InventoryCD" SortOrder="A" />
+
+          <!-- SiteMap entry -->
+          <SiteMap linkname="toDesignById">
+            <row Position="800" Title="Custom Classification" Url="~/GenericInquiry/GenericInquiry.aspx?id=f1a00001-sb40-1030-gi04-000000000004" Expanded="0" IsFolder="0" ScreenID="SB401030" NodeID="f1a00004-sb40-1030-node-000000000001" ParentID="9c89e3db-7c47-43c0-8554-5d2c9f2c0e87">
+              <MUIScreen IsPortal="0" WorkspaceID="e0f4a5b6-c3d4-4789-abcd-ef0123456789" Order="2040" SubcategoryID="f1a5b6c7-d4e5-489a-bcde-f01234567890" />
+            </row>
+          </SiteMap>
+
+        </row>
+      </GIDesign>
+    </data>
+  </data-set>
+</GenericInquiryScreen>
