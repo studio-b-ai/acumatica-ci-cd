@@ -1,0 +1,70 @@
+<GenericInquiryScreen>
+  <data-set>
+    <relations format-version="3" relations-version="20190410" main-table="GIDesign" stable-sharing="True" file-name="ContainerEvents">
+      <link from="GIFilter (DesignID)" to="GIDesign (DesignID)" />
+      <link from="GIGroupBy (DesignID)" to="GIDesign (DesignID)" />
+      <link from="GINavigationCondition (DesignID)" to="GIDesign (DesignID)" />
+      <link from="GINavigationParameter (DesignID)" to="GIDesign (DesignID)" />
+      <link from="GINavigationScreen (DesignID)" to="GIDesign (DesignID)" />
+      <link from="GIOn (DesignID)" to="GIDesign (DesignID)" />
+      <link from="GIRelation (DesignID)" to="GIDesign (DesignID)" />
+      <link from="GIResult (DesignID)" to="GIDesign (DesignID)" />
+      <link from="GISort (DesignID)" to="GIDesign (DesignID)" />
+      <link from="GITable (DesignID)" to="GIDesign (DesignID)" />
+      <link from="GIWhere (DesignID)" to="GIDesign (DesignID)" />
+      <link from="GIOn (DesignID,LineNbr)" to="GIRelation (DesignID,LineNbr)" />
+      <link from="GIRelation (DesignID)" to="GITable (DesignID,Alias)" />
+      <link from="GIResult (DesignID)" to="GITable (DesignID,Alias)" />
+      <link from="SiteMap (linkname)" to="GIDesign (DesignID)" />
+      <link from="MUIScreen (linkname)" to="SiteMap (NodeID)" />
+    </relations>
+    <layout>
+      <group id="1" sorting="Natural" filtering="Natural" />
+    </layout>
+    <data>
+      <GIDesign>
+        <row DesignID="9b530442-4f3e-42d4-b23c-15ec0af087ab" Name="ContainerEvents" ScreenID="SB401020" FilterColCount="3" PageSize="0" ExportTop="0" NewRecordCreationEnabled="0" MassDeleteEnabled="0" AutoConfirmDelete="0" MassRecordsUpdateEnabled="0" MassActionsOnRecordsEnabled="0" ExposeViaOData="1" ExposeViaMobile="0">
+
+          <!-- Table 1: UsrContainerEvent (main/driving table) -->
+          <GITable Alias="Event" Name="StudioB.Containers.UsrContainerEvent">
+            <!-- JOIN 1: Event LEFT JOIN Container ON ContainerID -->
+            <GIRelation LineNbr="1" ChildTable="Container" IsActive="1" JoinType="L">
+              <GIOn LineNbr="1" ParentField="ContainerID" Condition="E " ChildField="ContainerID" Operation="A" />
+            </GIRelation>
+            <!-- Result columns from Event -->
+            <GIResult LineNbr="1" SortOrder="1" IsActive="1" Field="EventDateTime" Width="140" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Event Date/Time" RowID="4227fe87-3a3d-4fd3-91fe-8b2e32dbe1fe" />
+            <GIResult LineNbr="2" SortOrder="2" IsActive="1" Field="NormalizedEventCode" Width="120" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Event Code" RowID="6f23aa9c-4726-46d8-bfd2-00d2532b1c50" />
+            <GIResult LineNbr="3" SortOrder="3" IsActive="1" Field="EventClassifier" Width="120" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Classifier" RowID="1f51de27-8226-4d2c-9c5d-94fbba520cbe" />
+            <GIResult LineNbr="4" SortOrder="4" IsActive="1" Field="LocationName" Width="140" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Location" RowID="5e0412f0-6bb3-420f-a0b8-efc52c41b78a" />
+            <GIResult LineNbr="5" SortOrder="5" IsActive="1" Field="VesselName" Width="140" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Vessel" RowID="aeb136c0-7248-45c6-a451-b50a3c70767e" />
+            <GIResult LineNbr="6" SortOrder="6" IsActive="1" Field="Description" Width="220" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Description" RowID="47dca628-367d-4f0f-952b-aeedd6401425" />
+          </GITable>
+
+          <!-- Table 2: UsrContainer -->
+          <GITable Alias="Container" Name="StudioB.Containers.UsrContainer">
+            <GIResult LineNbr="7" SortOrder="7" IsActive="1" Field="ContainerCD" Width="120" IsVisible="1" DefaultNav="1" QuickFilter="0" FastFilter="1" Caption="Container ID" RowID="9896fa4d-1d9c-40dc-9b8f-495dc0e7cf99" />
+          </GITable>
+
+          <!-- Filters -->
+          <GIFilter LineNbr="1" Name="ContainerFilter" DataFieldName="Container.ContainerCD" IsActive="1" />
+          <GIFilter LineNbr="2" Name="EventCodeFilter" DataFieldName="Event.NormalizedEventCode" IsActive="1" />
+
+          <!-- WHERE: bind filters -->
+          <GIWhere LineNbr="1" IsActive="1" DataFieldName="Container.ContainerCD" Condition="E " IsExpression="0" Value1="=[ContainerFilter]" Operation="A" />
+          <GIWhere LineNbr="2" IsActive="1" DataFieldName="Event.NormalizedEventCode" Condition="E " IsExpression="0" Value1="=[EventCodeFilter]" Operation="A" />
+
+          <!-- SORT by EventDateTime descending -->
+          <GISort LineNbr="1" IsActive="1" DataFieldName="Event.EventDateTime" SortOrder="D" />
+
+          <!-- SiteMap entry -->
+          <SiteMap linkname="toDesignById">
+            <row Position="1110" Title="Container Events" Url="~/GenericInquiry/GenericInquiry.aspx?id=9b530442-4f3e-42d4-b23c-15ec0af087ab" Expanded="0" IsFolder="0" ScreenID="SB401020" NodeID="c6810a45-84db-4720-bec4-b0e4cd012a12" ParentID="9c89e3db-7c47-43c0-8554-5d2c9f2c0e87">
+              <MUIScreen IsPortal="0" WorkspaceID="95191203-a0b8-4fc0-8b20-4efe831708e9" Order="2040" SubcategoryID="acf1bb34-2055-411e-88be-d840efcc7424" />
+            </row>
+          </SiteMap>
+
+        </row>
+      </GIDesign>
+    </data>
+  </data-set>
+</GenericInquiryScreen>
