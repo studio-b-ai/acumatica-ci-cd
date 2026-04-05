@@ -215,24 +215,38 @@ fi
 ok "Authenticated to ${URL} (attempt ${LOGIN_ATTEMPT}/${LOGIN_MAX_RETRIES})"
 
 # ─── Step 1b: Backup existing package (if --backup) ─────────────────────────
+# Backup is best-effort — a corrupt or missing existing package must NOT block
+# the deploy.  We wrap the entire step so that any failure (HTTP 400/500,
+# invalid JSON, corrupt base64, bad zip) logs a warning and continues.
 if [[ "${BACKUP}" == true ]]; then
   log "Step 1b: Downloading backup of existing package..."
   BACKUP_DIR="${BACKUP_DIR:-dist/backup}"
   mkdir -p "${BACKUP_DIR}"
   BACKUP_FILE="${BACKUP_DIR}/${PROJECT}_backup_$(date +%Y%m%d-%H%M%S).zip"
 
-  BACKUP_RESPONSE=$(mktemp)
-  CLEANUP_FILES+=("${BACKUP_RESPONSE}")
+  # Run the backup attempt in a subshell so set -e failures don't abort the
+  # outer script.  The subshell exits non-zero on ANY error; we catch it below.
+  if (
+    set -e
+    BACKUP_RESPONSE=$(mktemp)
+    # Note: temp file cleaned up at end of subshell scope
 
-  HTTP_CODE=$(curl -s -o "${BACKUP_RESPONSE}" -w "%{http_code}" \
-    -X POST \
-    -H "Content-Type: application/json" \
-    -b "${COOKIE_JAR}" \
-    -d "{\"projectName\": \"${PROJECT}\"}" \
-    "${URL}/CustomizationApi/getProject")
+    HTTP_CODE=$(curl -s -o "${BACKUP_RESPONSE}" -w "%{http_code}" \
+      -X POST \
+      -H "Content-Type: application/json" \
+      -b "${COOKIE_JAR}" \
+      -d "{\"projectName\": \"${PROJECT}\"}" \
+      "${URL}/CustomizationApi/getProject")
 
-  if [[ "${HTTP_CODE}" == "200" ]]; then
-    # Response contains base64-encoded package — extract and decode
+    if [[ "${HTTP_CODE}" != "200" ]]; then
+      warn "Backup download returned HTTP ${HTTP_CODE}"
+      # Dump first 500 chars of response body for diagnostics
+      head -c 500 "${BACKUP_RESPONSE}" 2>/dev/null | sed 's/^/  /' >&2 || true
+      rm -f "${BACKUP_RESPONSE}" 2>/dev/null || true
+      exit 1
+    fi
+
+    # Extract base64 content from JSON response
     CONTENT_B64=$(python3 -c "
 import json, sys
 with open('${BACKUP_RESPONSE}') as f:
@@ -243,19 +257,47 @@ elif isinstance(data, str):
     print(data)
 else:
     print('')
-" 2>/dev/null)
+")
 
-    if [[ -n "${CONTENT_B64}" ]]; then
-      echo "${CONTENT_B64}" | base64 -d > "${BACKUP_FILE}" 2>/dev/null || \
-      echo "${CONTENT_B64}" | base64 --decode > "${BACKUP_FILE}" 2>/dev/null
-      BACKUP_SIZE=$(du -h "${BACKUP_FILE}" | cut -f1)
-      ok "Backup saved: ${BACKUP_FILE} (${BACKUP_SIZE})"
-    else
-      warn "Backup response did not contain package content — continuing without backup"
-      BACKUP_FILE=""
+    rm -f "${BACKUP_RESPONSE}" 2>/dev/null || true
+
+    if [[ -z "${CONTENT_B64}" ]]; then
+      warn "Backup response did not contain package content"
+      exit 1
     fi
+
+    # Decode base64 into the backup file
+    echo "${CONTENT_B64}" | base64 -d > "${BACKUP_FILE}" 2>/dev/null || \
+    echo "${CONTENT_B64}" | base64 --decode > "${BACKUP_FILE}" 2>/dev/null
+
+    # Validate the resulting file is a real zip
+    if ! python3 -c "
+import zipfile, sys
+try:
+    with zipfile.ZipFile('${BACKUP_FILE}') as zf:
+        if zf.testzip() is not None:
+            sys.exit(1)
+except Exception:
+    sys.exit(1)
+"; then
+      warn "Backup file is not a valid zip — existing package may be corrupt"
+      rm -f "${BACKUP_FILE}" 2>/dev/null || true
+      exit 1
+    fi
+
+    BACKUP_SIZE=$(du -h "${BACKUP_FILE}" | cut -f1)
+    ok "Backup saved: ${BACKUP_FILE} (${BACKUP_SIZE})"
+  ); then
+    # Subshell succeeded — backup is available
+    :
   else
-    warn "Could not download backup (HTTP ${HTTP_CODE}) — continuing without backup"
+    # Subshell failed — backup is NOT available; continue deploy anyway
+    warn "══════════════════════════════════════════════════════════════"
+    warn "Backup of existing package FAILED — deploy will continue"
+    warn "NO ROLLBACK SNAPSHOT IS AVAILABLE for project '${PROJECT}'"
+    warn "If this deploy causes issues, you will need to restore"
+    warn "the package manually from a prior artifact or git history."
+    warn "══════════════════════════════════════════════════════════════"
     BACKUP_FILE=""
   fi
 fi
