@@ -1235,6 +1235,8 @@ namespace StudioB.Containers
                         string companyName = kvp.Value;
                         WriteLog(string.Format("[AesthetikContainers] Processing company '{0}' (CompanyID={1})", companyName, companyId));
 
+
+
                         try { EnsureContainerTrackingSiteMap(conn, companyId); }
                         catch (Exception ex) { WriteLog(string.Format("[AesthetikContainers] SiteMap update failed CID={0}: {1}", companyId, ex.Message)); }
 
@@ -1406,21 +1408,13 @@ namespace StudioB.Containers
         // IGCM cleanup is no longer needed; the ISV artifacts are gone.
         private void EnsureContainerTrackingSiteMap(SqlConnection conn, int companyId)
         {
-            // SiteMap entries for 5 new Container Tracking screens.
+            // SiteMap entries for 4 Container Tracking form screens.
             // ParentID = 9c89e3db-7c47-43c0-8554-5d2c9f2c0e87 (Container Tracking workspace)
             // Idempotent: IF NOT EXISTS check per ScreenID + CompanyID.
             // NodeID uses NEWID() so each company gets unique nodes.
-            // GI SiteMap URLs must use the DesignID GUID, not the ScreenID.
-            // Acumatica resolves GenericInquiry.aspx?id= by DesignID only.
-            // These GUIDs must match the DesignIDs in the GI XML files.
             string[][] entries = new[]
             {
-                new[] { "SB401000", "PO Containers", "~/GenericInquiry/GenericInquiry.aspx?id=a1b2c3d4-1000-4000-8000-000000401000", "7.6" },
-                new[] { "SB401010", "SO Containers", "~/GenericInquiry/GenericInquiry.aspx?id=a1b2c3d4-1010-4000-8000-000000401010", "7.7" },
-                new[] { "SB401020", "Container Events", "~/GenericInquiry/GenericInquiry.aspx?id=a1b2c3d4-1020-4000-8000-000000401020", "7.8" },
                 new[] { "SB302000", "Freight Forwarders", "~/Pages/SB/SB302000.aspx", "7.9" },
-                new[] { "SB401030", "Custom Classification", "~/GenericInquiry/GenericInquiry.aspx?id=a1b2c3d4-1030-4000-8000-000000401030", "8.0" },
-                new[] { "SB401040", "PO Container Lines", "~/GenericInquiry/GenericInquiry.aspx?id=a1b2c3d4-1040-4000-8000-000000401040", "8.1" },
                 new[] { "SB302010", "Container Types", "~/Pages/SB/SB302010.aspx", "8.2" },
                 new[] { "SB302020", "Destinations/Ports", "~/Pages/SB/SB302020.aspx", "8.3" },
                 new[] { "SB302030", "Container Preferences", "~/Pages/SB/SB302030.aspx", "8.4" },
@@ -1447,7 +1441,7 @@ namespace StudioB.Containers
                     cmd.ExecuteNonQuery();
                 }
             }
-            WriteLog(string.Format("[AesthetikContainers] Container Tracking SiteMap (9 screens) for CompanyID={0} — OK", companyId));
+            WriteLog(string.Format("[AesthetikContainers] Container Tracking SiteMap (4 form screens) for CompanyID={0} — OK", companyId));
         }
 
         private void SeedContainerTypes(SqlConnection conn, int companyId)
