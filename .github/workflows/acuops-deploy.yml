@@ -736,12 +736,14 @@ jobs:
           TIMEZONE="${{ needs.build.outputs.timezone }}"
           TIMEZONE="${TIMEZONE:-America/Chicago}"
           HOUR=$(TZ="${TIMEZONE}" date +%H)
-          if [ "$HOUR" -ge 18 ] || [ "$HOUR" -lt 6 ]; then
+          DOW=$(TZ="${TIMEZONE}" date +%u)
+          # After-hours = weekends (Sat=6, Sun=7) OR before 6am OR after 5pm
+          if [ "$DOW" -ge 6 ] || [ "$HOUR" -ge 17 ] || [ "$HOUR" -lt 6 ]; then
             echo "after_hours=true" >> "$GITHUB_OUTPUT"
-            echo "After-hours deploy (${HOUR}:00 ${TIMEZONE}) — employee emails suppressed"
+            echo "After-hours deploy (day=${DOW} ${HOUR}:00 ${TIMEZONE}) — employee emails suppressed"
           else
             echo "after_hours=false" >> "$GITHUB_OUTPUT"
-            echo "Business-hours deploy (${HOUR}:00 ${TIMEZONE}) — employee emails will be sent"
+            echo "Business-hours deploy (day=${DOW} ${HOUR}:00 ${TIMEZONE}) — employee emails will be sent"
           fi
 
       # ── Countdown notification ───────────────────────────────────────
