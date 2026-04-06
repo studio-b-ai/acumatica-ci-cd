@@ -661,3 +661,97 @@ jobs:
             echo '```' >> "$GITHUB_STEP_SUMMARY"
           fi
 
+  # ──────────────────────────────────────────────
+  # Job 6: Post-Deploy Validation — run UI/runtime tests
+  # ──────────────────────────────────────────────
+  post-deploy-validation:
+    name: Trigger Runtime Tests
+    needs: [build, deploy]
+    runs-on: ubuntu-latest
+    # Run after successful publish OR when publish was skipped (CI-only changes).
+    # This lets test/workflow-only pushes validate against the existing deployment.
+    if: >
+      github.event_name != 'pull_request' && (
+        needs.deploy.result == 'success' ||
+        (needs.build.result == 'success' && needs.build.outputs.customization_changes == 'false')
+      )
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Checkout AcuOps pipeline
+        uses: actions/checkout@v4
+        with:
+          repository: studio-b-ai/acuops-pipeline
+          ref: ${{ vars.ACUOPS_PIPELINE_VERSION || 'main' }}
+          path: pipeline
+          token: ${{ secrets.GH_PAT_DISPATCH }}
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install test dependencies
+        run: |
+          pip install playwright pytest pytest-timeout
+          playwright install chromium
+
+      - name: Generate UI fixtures from audit data
+        timeout-minutes: 3
+        env:
+          ACUMATICA_URL: ${{ secrets.ACUMATICA_PROD_URL }}
+          ACUMATICA_USERNAME: ${{ secrets.ACUMATICA_PROD_USERNAME }}
+          ACUMATICA_PASSWORD: ${{ secrets.ACUMATICA_PROD_PASSWORD }}
+          ACUMATICA_TENANT: ${{ vars.ACUMATICA_TEST_TENANT }}
+        run: |
+          if [ -f scripts/heritage/generate_ui_fixtures.py ]; then
+            python scripts/heritage/generate_ui_fixtures.py --days 30 --output tests/fixtures/ui_screens.json
+          fi
+
+      - name: Run container tracking tests
+        timeout-minutes: 10
+        env:
+          ACUMATICA_URL: ${{ secrets.ACUMATICA_PROD_URL }}
+          ACUMATICA_USERNAME: ${{ secrets.ACUMATICA_PROD_USERNAME }}
+          ACUMATICA_PASSWORD: ${{ secrets.ACUMATICA_PROD_PASSWORD }}
+          ACUMATICA_TENANT: ${{ vars.ACUMATICA_TEST_TENANT }}
+        run: |
+          if [ -f tests/ui/test_container_tracking.py ]; then
+            python -m pytest tests/ui/test_container_tracking.py -v --tb=long --timeout=120 || {
+              echo "::warning::Container tracking tests failed — see logs above"
+              exit 1
+            }
+          else
+            echo "No test_container_tracking.py — skipping"
+          fi
+
+      - name: Run core UI tests
+        timeout-minutes: 8
+        env:
+          ACUMATICA_URL: ${{ secrets.ACUMATICA_PROD_URL }}
+          ACUMATICA_USERNAME: ${{ secrets.ACUMATICA_PROD_USERNAME }}
+          ACUMATICA_PASSWORD: ${{ secrets.ACUMATICA_PROD_PASSWORD }}
+          ACUMATICA_TENANT: ${{ vars.ACUMATICA_TEST_TENANT }}
+        run: |
+          if [ -d tests/ui/ ]; then
+            python -m pytest tests/ui/ --ignore=tests/ui/test_container_tracking.py -v --tb=long --timeout=120 || {
+              echo "::warning::Core UI tests failed — see logs above"
+              exit 1
+            }
+          else
+            echo "No tests/ui/ directory — skipping"
+          fi
+
+      - name: Publish test metrics
+        if: always()
+        env:
+          CI_METRICS_URL: ${{ vars.CI_METRICS_URL }}
+          CI_METRICS_AUTH: ${{ secrets.CI_METRICS_AUTH }}
+        run: |
+          if [ -n "${CI_METRICS_URL}" ] && [ -f pipeline/scripts/count-tests.py ]; then
+            python pipeline/scripts/count-tests.py --post "${CI_METRICS_URL}" --auth "${CI_METRICS_AUTH}" || true
+          elif [ -f pipeline/scripts/count-tests.py ]; then
+            python pipeline/scripts/count-tests.py
+          fi
