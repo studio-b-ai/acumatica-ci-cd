@@ -17,6 +17,12 @@
             <px:PXTextEdit ID="edDefaultInTransitWarehouse" runat="server" DataField="DefaultInTransitWarehouse" />
             <px:PXCheckBox ID="chkAutoLinkPOsByRef" runat="server" DataField="AutoLinkPOsByRef" />
             <px:PXNumberEdit ID="edTrackingPollIntervalHours" runat="server" DataField="TrackingPollIntervalHours" />
+            <px:PXLayoutRule ID="PXLayoutRule2" runat="server" StartColumn="True" LabelsWidth="SM" ControlSize="M" GroupCaption="Landed Cost Codes" />
+            <px:PXTextEdit ID="edLCCodeShipping" runat="server" DataField="LCCodeShipping" />
+            <px:PXTextEdit ID="edLCCodeDuty" runat="server" DataField="LCCodeDuty" />
+            <px:PXTextEdit ID="edLCCodeTariff" runat="server" DataField="LCCodeTariff" />
+            <px:PXTextEdit ID="edLCCodeBrokerage" runat="server" DataField="LCCodeBrokerage" />
+            <px:PXTextEdit ID="edLCCodeOther" runat="server" DataField="LCCodeOther" />
         </Template>
     </px:PXFormView>
 </asp:Content>

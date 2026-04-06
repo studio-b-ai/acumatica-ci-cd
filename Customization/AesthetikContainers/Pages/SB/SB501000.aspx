@@ -9,6 +9,7 @@
             <px:PXDSCallbackCommand Name="Delete" PostData="Self" />
             <px:PXDSCallbackCommand Name="First" PostData="Self" StartNewGroup="True" />
             <px:PXDSCallbackCommand Name="Last" PostData="Self" />
+            <px:PXDSCallbackCommand Name="CreateLandedCost" CommitChanges="True" />
         </CallbackCommands>
     </px:PXDataSource>
 </asp:Content>
@@ -72,6 +73,8 @@
                     <px:PXTextEdit ID="edPortOfDischarge" runat="server" DataField="PortOfDischarge" />
                     <px:PXTextEdit ID="edContainerType" runat="server" DataField="ContainerType" />
                     <px:PXTextEdit ID="edSealNbr" runat="server" DataField="SealNbr" />
+                    <px:PXTextEdit ID="edLandedCostRefNbr" runat="server" DataField="LandedCostRefNbr" />
+                    <px:PXTextEdit ID="edLandedCostStatus" runat="server" DataField="LandedCostStatus" />
                 </Template>
             </px:PXFormView>
             <px:PXTab ID="tabDetail" runat="server" Width="100%" DataSourceID="ds">
@@ -107,6 +110,24 @@
                                             <px:PXGridColumn DataField="InventoryItem__Descr" Width="180" />
                                             <px:PXGridColumn DataField="POLine__OrderQty" Width="80" />
                                             <px:PXGridColumn DataField="POLine__UOM" Width="60" />
+                                        </Columns>
+                                    </px:PXGridLevel>
+                                </Levels>
+                                <AutoSize Enabled="True" MinHeight="150" />
+                            </px:PXGrid>
+                        </Template>
+                    </px:PXTabItem>
+                    <px:PXTabItem Text="Costs">
+                        <Template>
+                            <px:PXGrid ID="gridCosts" runat="server" DataSourceID="ds" Width="100%" SkinID="Details">
+                                <Levels>
+                                    <px:PXGridLevel DataMember="Costs">
+                                        <Columns>
+                                            <px:PXGridColumn DataField="CostType" Width="100" CommitChanges="True" />
+                                            <px:PXGridColumn DataField="Description" Width="180" />
+                                            <px:PXGridColumn DataField="Amount" Width="100" />
+                                            <px:PXGridColumn DataField="VendorID" Width="140" CommitChanges="True" />
+                                            <px:PXGridColumn DataField="ReferenceNbr" Width="120" />
                                         </Columns>
                                     </px:PXGridLevel>
                                 </Levels>

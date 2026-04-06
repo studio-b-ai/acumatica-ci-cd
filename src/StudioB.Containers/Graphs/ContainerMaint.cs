@@ -39,6 +39,10 @@ namespace StudioB.Containers
             .Where<UsrContainerPOLink.containerID.IsEqual<UsrContainer.containerID.FromCurrent>>
             .View POLinks;
 
+        public SelectFrom<UsrContainerCost>
+            .Where<UsrContainerCost.containerID.IsEqual<UsrContainer.containerID.FromCurrent>>
+            .View Costs;
+
         protected virtual IEnumerable containers()
         {
             ContainerFilter filter = Filter.Current;
@@ -126,6 +130,123 @@ namespace StudioB.Containers
             container.LastSyncDate = DateTime.UtcNow;
             Container.Update(container);
             Actions.PressSave();
+        }
+
+        public PXAction<ContainerFilter> CreateLandedCost;
+        [PXButton(CommitChanges = true)]
+        [PXUIField(DisplayName = "Create Landed Cost", MapEnableRights = PXCacheRights.Update)]
+        protected void createLandedCost()
+        {
+            UsrContainer container = Container.Current;
+            if (container == null) return;
+
+            // Validate: container has costs
+            var costs = new List<UsrContainerCost>();
+            foreach (UsrContainerCost c in Costs.Select())
+            {
+                if ((c.Amount ?? 0m) > 0m) costs.Add(c);
+            }
+            if (costs.Count == 0)
+                throw new PXException("Add costs to this container before creating a Landed Cost document.");
+
+            // Validate: container has PO links
+            var poLinks = new List<UsrContainerPOLink>();
+            foreach (PXResult<UsrContainerPOLink, POOrder, BAccount, POLine, InventoryItem> row in POLinks.Select())
+            {
+                poLinks.Add((UsrContainerPOLink)row);
+            }
+            if (poLinks.Count == 0)
+                throw new PXException("Link at least one PO to this container before creating a Landed Cost document.");
+
+            // Validate: LC codes configured
+            var prefs = PXSelect<UsrContainerPrefs>.Select(this).TopFirst;
+            if (prefs == null)
+                throw new PXException("Configure Landed Cost Codes in Container Preferences (SB302030).");
+
+            // Warn if LC already created
+            if (!string.IsNullOrEmpty(container.LandedCostRefNbr))
+            {
+                if (Container.Ask("Landed Cost",
+                    string.Format("Landed Cost {0} already exists for this container. Create another?", container.LandedCostRefNbr),
+                    MessageButtons.YesNo) != WebDialogResult.Yes)
+                {
+                    return;
+                }
+            }
+
+            // Find released PO receipts linked to this container's POs
+            var receiptNbrs = new HashSet<string>();
+            foreach (var link in poLinks)
+            {
+                foreach (PXResult<POReceiptLine, POReceipt> rl in PXSelectJoin<POReceiptLine,
+                    InnerJoin<POReceipt, On<POReceipt.receiptType, Equal<POReceiptLine.receiptType>,
+                        And<POReceipt.receiptNbr, Equal<POReceiptLine.receiptNbr>>>>,
+                    Where<POReceiptLine.pOType, Equal<Required<POReceiptLine.pOType>>,
+                        And<POReceiptLine.pONbr, Equal<Required<POReceiptLine.pONbr>>,
+                        And<POReceipt.released, Equal<True>>>>>
+                    .Select(this, link.OrderType, link.OrderNbr))
+                {
+                    var receipt = (POReceipt)rl;
+                    receiptNbrs.Add(receipt.ReceiptNbr);
+                }
+            }
+
+            if (receiptNbrs.Count == 0)
+                throw new PXException("No released PO receipts found for the linked POs. Release receipts before creating a Landed Cost document.");
+
+            // Create the Landed Cost document via separate graph
+            var lcGraph = PXGraph.CreateInstance<POLandedCostDocEntry>();
+            var lcDoc = lcGraph.Document.Insert(new POLandedCostDoc());
+            lcDoc.DocDate = Accessinfo.BusinessDate;
+
+            // Set vendor from first cost row that has one
+            foreach (var cost in costs)
+            {
+                if (cost.VendorID != null)
+                {
+                    lcDoc.VendorID = cost.VendorID;
+                    break;
+                }
+            }
+            lcGraph.Document.Update(lcDoc);
+
+            // Add cost detail lines
+            foreach (var cost in costs)
+            {
+                string lcCode = GetLCCode(prefs, cost.CostType);
+                if (string.IsNullOrEmpty(lcCode))
+                {
+                    throw new PXException(
+                        string.Format("No Landed Cost Code configured for cost type '{0}'. Set it in Container Preferences (SB302030).", cost.CostType));
+                }
+
+                var detail = new POLandedCostDetail();
+                detail.LandedCostCodeID = lcCode;
+                detail.CuryLineAmt = cost.Amount;
+                detail.Descr = cost.Description ?? cost.CostType;
+                lcGraph.Details.Insert(detail);
+            }
+
+            lcGraph.Actions.PressSave();
+
+            // Store reference on container
+            container.LandedCostRefNbr = lcGraph.Document.Current.RefNbr;
+            container.LandedCostStatus = lcGraph.Document.Current.Status;
+            Container.Update(container);
+            Actions.PressSave();
+        }
+
+        private string GetLCCode(UsrContainerPrefs prefs, string costType)
+        {
+            switch (costType)
+            {
+                case "SHIPPING": return prefs.LCCodeShipping;
+                case "DUTY": return prefs.LCCodeDuty;
+                case "TARIFF": return prefs.LCCodeTariff;
+                case "BROKERAGE": return prefs.LCCodeBrokerage;
+                case "OTHER": return prefs.LCCodeOther;
+                default: return prefs.LCCodeOther;
+            }
         }
         #endregion
 
