@@ -924,7 +924,8 @@ jobs:
           steps.env.outputs.target == 'production' &&
           github.event.inputs.dry_run != 'true'
         env:
-          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+          SLACK_KEVIN_USER_ID: ${{ secrets.SLACK_KEVIN_USER_ID }}
         run: |
           PROJECT="${{ needs.build.outputs.project_name }}"
           VERIFY="${{ steps.verify.outcome }}"
@@ -934,10 +935,19 @@ jobs:
           echo "::error::Post-publish verification failed (verify=${VERIFY}, e2e=${E2E})"
           echo "Backup snapshot available as workflow artifact for manual restore via SM204505"
 
-          if [ -n "${SLACK_WEBHOOK_URL}" ]; then
-            curl -sf -X POST "${SLACK_WEBHOOK_URL}" \
+          if [ -n "${SLACK_BOT_TOKEN}" ] && [ -n "${SLACK_KEVIN_USER_ID}" ]; then
+            # Open DM channel with Kevin
+            DM_CHANNEL=$(curl -sf -X POST "https://slack.com/api/conversations.open" \
+              -H "Authorization: Bearer ${SLACK_BOT_TOKEN}" \
               -H "Content-Type: application/json" \
-              -d "{\"text\":\"⚠️ Deploy VERIFICATION FAILED — ${PROJECT}\nVerify: ${VERIFY} | E2E: ${E2E}\nCommit: ${GITHUB_SHA::8}\nLogs: ${RUN_URL}\nNo rollback attempted. Backup artifact available for manual restore via SM204505.\"}"
+              -d "{\"users\":\"${SLACK_KEVIN_USER_ID}\"}" | python3 -c "import sys,json; print(json.load(sys.stdin).get('channel',{}).get('id',''))" 2>/dev/null)
+
+            if [ -n "${DM_CHANNEL}" ]; then
+              curl -sf -X POST "https://slack.com/api/chat.postMessage" \
+                -H "Authorization: Bearer ${SLACK_BOT_TOKEN}" \
+                -H "Content-Type: application/json" \
+                -d "{\"channel\":\"${DM_CHANNEL}\",\"text\":\"⚠️ *Deploy verification failed* — ${PROJECT}\nVerify: ${VERIFY} | E2E: ${E2E}\nCommit: \`${GITHUB_SHA::8}\`\n<${RUN_URL}|View Logs>\nNo rollback attempted. Backup artifact available for manual restore via SM204505.\"}" > /dev/null
+            fi
           fi
           exit 1
 
@@ -1073,17 +1083,28 @@ jobs:
           fi
 
       # ── Slack failure notification ───────────────────────────────────
-      - name: Slack notification on failure
+      - name: DM Kevin on deploy failure
         if: failure()
         env:
-          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+          SLACK_KEVIN_USER_ID: ${{ secrets.SLACK_KEVIN_USER_ID }}
         run: |
           PROJECT="${{ needs.build.outputs.project_name }}"
           TARGET="${{ steps.env.outputs.target }}"
-          if [ -n "${SLACK_WEBHOOK_URL}" ]; then
-            curl -s -X POST "${SLACK_WEBHOOK_URL}" \
+          RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+
+          if [ -n "${SLACK_BOT_TOKEN}" ] && [ -n "${SLACK_KEVIN_USER_ID}" ]; then
+            DM_CHANNEL=$(curl -sf -X POST "https://slack.com/api/conversations.open" \
+              -H "Authorization: Bearer ${SLACK_BOT_TOKEN}" \
               -H "Content-Type: application/json" \
-              -d "{\"text\":\":x: *AcuOps Deploy FAILED*\nProject: \`${PROJECT}\`\nEnvironment: \`${TARGET}\`\nCommit: \`${GITHUB_SHA::8}\`\nActor: @${GITHUB_ACTOR}\nRun: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}\"}"
+              -d "{\"users\":\"${SLACK_KEVIN_USER_ID}\"}" | python3 -c "import sys,json; print(json.load(sys.stdin).get('channel',{}).get('id',''))" 2>/dev/null)
+
+            if [ -n "${DM_CHANNEL}" ]; then
+              curl -sf -X POST "https://slack.com/api/chat.postMessage" \
+                -H "Authorization: Bearer ${SLACK_BOT_TOKEN}" \
+                -H "Content-Type: application/json" \
+                -d "{\"channel\":\"${DM_CHANNEL}\",\"text\":\"🚨 *Deploy FAILED* — ${PROJECT} → \`${TARGET}\`\nCommit: \`${GITHUB_SHA::8}\`\n<${RUN_URL}|View Logs>\"}" > /dev/null
+            fi
           fi
 
       - name: Post deployment summary
@@ -1114,29 +1135,7 @@ jobs:
           git push origin "${TAG}"
           echo "Tagged: ${TAG}"
 
-      - name: Notify Slack on success
-        if: success()
-        env:
-          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-        run: |
-          PROJECT="${{ needs.build.outputs.project_name }}"
-          TARGET="${{ steps.env.outputs.target }}"
-          if [ -n "${SLACK_WEBHOOK_URL}" ]; then
-            curl -s -X POST "${SLACK_WEBHOOK_URL}" \
-              -H "Content-Type: application/json" \
-              -d "{
-                \"text\": \":white_check_mark: AcuOps Deploy: *${PROJECT}* -> \`${TARGET}\` — success\",
-                \"blocks\": [
-                  {
-                    \"type\": \"section\",
-                    \"text\": {
-                      \"type\": \"mrkdwn\",
-                      \"text\": \":white_check_mark: *AcuOps Deploy*\n*Project:* ${PROJECT}\n*Environment:* ${TARGET}\n*Commit:* \`${GITHUB_SHA::8}\`\n*Actor:* ${GITHUB_ACTOR}\"
-                    }
-                  }
-                ]
-              }" || true
-          fi
+      # Success notifications removed — Kevin only wants DMs on failures/decisions
 
   # ──────────────────────────────────────────────
   # Job 5: Validate — PR check (no publish)
