@@ -1395,13 +1395,13 @@ jobs:
   # ──────────────────────────────────────────────
   post-deploy-validation:
     name: Trigger Runtime Tests
-    needs: [build, invoke-agent]
+    needs: [build, deploy]
     runs-on: ubuntu-latest
     # Run after successful publish OR when publish was skipped (CI-only changes).
     # This lets test/workflow-only pushes validate against the existing deployment.
     if: >
       github.event_name != 'pull_request' && (
-        needs.invoke-agent.result == 'success' ||
+        needs.deploy.result == 'success' ||
         (needs.build.result == 'success' && needs.build.outputs.customization_changes == 'false')
       )
 
