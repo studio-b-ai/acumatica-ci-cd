@@ -116,6 +116,49 @@ Tasks:
 | #clients | C0AQWHLJLGK | Business activity |
 | Kevin DM | U0ALNRQ4KF0 | Failures and decisions only |
 
+## Phase 2 Completion (2026-04-06)
+
+Phase 2 is **complete**. PRs merged: acumatica-ci-cd#227, acudev#13.
+
+### What was delivered
+
+**Unified verify.py** (`scripts/verify.py` in acumatica-ci-cd):
+- Replaces `validate-publish.py` + `smoke-e2e.py` (both still exist in acuops-pipeline but workflow no longer calls them)
+- 5 check types: login, entity reachability, custom field schema, E2E DAC probes, GI health
+- Structured JSON output to stdout (for Phase 3 AI agent), human-readable to stderr
+- HTTP classification single source of truth: 200/204=PASS, 401=FAIL, 403=WARN, 404=FAIL, 500+=FAIL with body snippet
+- CLI: `python scripts/verify.py --manifest publish-manifest.json --environment production --json-output verify-result.json`
+- 43 unit tests, zero external dependencies
+
+**Knowledge base consolidation** (acudev repo):
+- `acudev-knowledge` (126K points) migrated into `studiob-knowledge` with domain/client/source_type tags
+- `acudev-knowledge` collection deleted
+- `studiob-knowledge` now has 126,018 points (official docs + operational knowledge)
+- AcuDev service queries `studiob-knowledge` exclusively
+- SearchFilter extended with domain/client/source filters
+- All ingestion pipelines tag new content with domain/client/source_type
+
+**Auto-ingestion** (wired into GH Actions workflow):
+- Deploy failures POST to `POST /ingest/incident` on AcuDev service
+- Deploy successes POST to same endpoint (production only)
+- Every incident feeds `studiob-knowledge` automatically
+- GitHub secrets set: `ACUDEV_URL`, `ACUDEV_API_KEY`
+
+**Supplemental collections** (unchanged, still separate):
+- `acumatica-community` — forum threads
+- `acumatica-stackoverflow` — SO Q&A
+
+### Key files
+
+| File | Repo | Purpose |
+|------|------|---------|
+| `scripts/verify.py` | acumatica-ci-cd | Unified post-publish verification |
+| `tests/test_verify.py` | acumatica-ci-cd | 43 tests for verify.py |
+| `.github/workflows/acuops-deploy.yml` | acumatica-ci-cd | Updated workflow (verify.py + auto-ingestion) |
+| `src/ingest/qdrant-ingest.ts` | acudev | STUDIOB_COLLECTION, extended SearchFilter |
+| `src/ingest/incident-ingestion.ts` | acudev | Deploy incident ingestion module |
+| `src/ingest/migrate-collection.ts` | acudev | One-time migration script (already run) |
+
 ## Decisions Made (2026-04-06)
 
 ### Phase 3 agent invocation
@@ -129,8 +172,8 @@ GH Actions triggers a Claude Code remote trigger via API after build/qualify pas
       -H "Authorization: Bearer $CLAUDE_TRIGGER_TOKEN"
 ```
 
-### verify.py status
-Unified `verify.py` (replacing `validate-publish.py` + `smoke-e2e.py`) is deferred to Phase 2. Phase 1 resolved the immediate disagreement (both scripts now treat 403 as warning). The merge is prerequisite for Phase 3 — the AI agent needs one script with structured JSON output, not two scripts with exit codes.
+### verify.py — ready for Phase 3
+`verify.py` produces structured JSON that the Phase 3 AI agent will parse. The agent calls it via Bash, reads the JSON output, and makes decisions. No exit-code gymnastics.
 
-### acudev-knowledge migration
-Same Qdrant instance as `studiob-knowledge`. `acudev-knowledge` has 126K points (official Acumatica docs, PDFs, help portal, GitHub examples). Phase 2 migrates these into `studiob-knowledge` with tags (domain=acumatica, client=null, source=official). After migration and AcuDev service update, **delete** `acudev-knowledge` — no reason to keep a stale copy. Community and SO collections remain separate.
+### studiob-knowledge — single brain
+All agents query `studiob-knowledge`. Filter by `domain` (acumatica|pipeline|infrastructure|business), `client` (aesthetik|wasala|studiob), `source_type` (official|incident|runbook|policy|architecture). The KB grows automatically via auto-ingestion — every deploy failure and resolution becomes searchable context for the Phase 4 recovery agent.
