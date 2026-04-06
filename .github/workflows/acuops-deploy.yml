@@ -377,7 +377,7 @@ jobs:
       - name: Download Acumatica SDK from GCS
         if: steps.check_csproj.outputs.has_csproj == 'true'
         run: |
-          SDK_VERSION=$(python3 -c "import yaml; c=yaml.safe_load(open('acuops.yaml')); print(c.get('validation', {}).get('acumatica_build_version', '24.208'))")
+          SDK_VERSION=$(grep 'acumatica_build_version' acuops.yaml | head -1 | sed 's/.*: *"\{0,1\}\([^"]*\)"\{0,1\}/\1/' || echo "24.208")
           echo "Downloading Acumatica SDK ${SDK_VERSION}..."
           mkdir -p lib
           gsutil -m cp "gs://aesthetik-acumatica-sdk/${SDK_VERSION}/*.dll" lib/
