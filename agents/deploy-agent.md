@@ -14,7 +14,7 @@ Heritage Fabrics is a mid-market textile distributor running Acumatica ERP. Ever
 
 ## Environment Variables
 
-These are available in your environment:
+These are loaded from `deploy-context.json` in Step 0 (Bootstrap). The GH Actions workflow injects all secrets into the artifact before uploading.
 
 | Variable | Purpose |
 |---|---|
@@ -33,21 +33,53 @@ These are available in your environment:
 | `ACUDEV_URL` | AcuDev API URL |
 | `ACUDEV_API_KEY` | AcuDev API key for auto-ingestion |
 
-## Step 1: Get Deploy Context
+## Step 0: Bootstrap
 
-Download artifacts from the latest completed workflow run.
+Download the deploy context artifact and export secrets as environment variables. This must run before any other step.
+
+### Get the latest run ID
 
 ```bash
-# Get the latest completed run ID
 RUN_ID=$(gh run list --repo studio-b-ai/acumatica-ci-cd \
   --workflow=acuops-deploy.yml --branch=main \
   --status=completed --limit=1 \
   --json databaseId -q '.[0].databaseId')
 
 echo "Run ID: $RUN_ID"
+```
 
-# Download deploy context and package artifacts
+### Download deploy context
+
+```bash
 gh run download "$RUN_ID" --name deploy-context --dir ./context
+```
+
+### Export secrets as environment variables
+
+```bash
+eval $(jq -r '.secrets | to_entries[] | "export \(.key)=\(.value)"' ./context/deploy-context.json)
+```
+
+### Verify bootstrap
+
+```bash
+# Sanity check — these must all be non-empty
+for var in ACUMATICA_PROD_URL ACUMATICA_SANDBOX_URL SLACK_BOT_TOKEN GH_TOKEN QDRANT_URL; do
+  if [ -z "${!var}" ]; then
+    echo "FATAL: $var is empty after bootstrap. Deploy context may be missing secrets."
+    exit 1
+  fi
+done
+echo "Bootstrap complete — all secrets loaded."
+```
+
+## Step 1: Get Deploy Context
+
+Download artifacts from the latest completed workflow run.
+
+```bash
+# Deploy context already downloaded in Step 0
+# Download package artifacts
 gh run download "$RUN_ID" --name package-artifacts --dir ./artifacts
 ```
 

@@ -488,7 +488,7 @@ jobs:
     steps:
       - name: Save deploy context
         run: |
-          cat > deploy-context.json <<'CONTEXT_EOF'
+          cat > deploy-context.json <<CONTEXT_EOF
           {
             "package_name": "${{ needs.build.outputs.package_name }}",
             "package_path": "${{ needs.build.outputs.package_path }}",
@@ -500,7 +500,23 @@ jobs:
             "commit_message": "${{ github.event.head_commit.message }}",
             "run_id": "${{ github.run_id }}",
             "ref": "${{ github.ref }}",
-            "environment": "${{ github.ref == 'refs/heads/main' && 'production' || 'staging' }}"
+            "environment": "${{ github.ref == 'refs/heads/main' && 'production' || 'staging' }}",
+            "secrets": {
+              "ACUMATICA_SANDBOX_URL": "${{ secrets.ACUMATICA_SANDBOX_URL }}",
+              "ACUMATICA_SANDBOX_USERNAME": "${{ secrets.ACUMATICA_SANDBOX_USERNAME }}",
+              "ACUMATICA_SANDBOX_PASSWORD": "${{ secrets.ACUMATICA_SANDBOX_PASSWORD }}",
+              "ACUMATICA_SANDBOX_TENANT": "${{ secrets.ACUMATICA_SANDBOX_TENANT }}",
+              "ACUMATICA_PROD_URL": "${{ secrets.ACUMATICA_PROD_URL }}",
+              "ACUMATICA_PROD_USERNAME": "${{ secrets.ACUMATICA_PROD_USERNAME }}",
+              "ACUMATICA_PROD_PASSWORD": "${{ secrets.ACUMATICA_PROD_PASSWORD }}",
+              "ACUMATICA_PROD_TENANT": "${{ secrets.ACUMATICA_PROD_TENANT }}",
+              "SLACK_BOT_TOKEN": "${{ secrets.SLACK_BOT_TOKEN }}",
+              "GH_TOKEN": "${{ secrets.GH_PAT_DISPATCH }}",
+              "QDRANT_URL": "${{ secrets.QDRANT_URL }}",
+              "VOYAGE_API_KEY": "${{ secrets.VOYAGE_API_KEY }}",
+              "ACUDEV_URL": "${{ secrets.ACUDEV_URL }}",
+              "ACUDEV_API_KEY": "${{ secrets.ACUDEV_API_KEY }}"
+            }
           }
           CONTEXT_EOF
 
