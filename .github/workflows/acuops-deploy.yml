@@ -380,7 +380,7 @@ jobs:
           SDK_VERSION=$(grep 'acumatica_build_version' acuops.yaml | head -1 | sed 's/.*: *"\{0,1\}\([^"]*\)"\{0,1\}/\1/' || echo "24.208")
           echo "Downloading Acumatica SDK ${SDK_VERSION}..."
           mkdir -p lib
-          gsutil -m cp "gs://aesthetik-acumatica-sdk/${SDK_VERSION}/*.dll" lib/
+          gcloud storage cp "gs://aesthetik-acumatica-sdk/${SDK_VERSION}/*.dll" lib/
           echo "SDK DLLs downloaded:"
           ls -lh lib/*.dll
 
