@@ -1,5 +1,5 @@
-<%@ Page Language="C#" MasterPageFile="~/MasterPages/TabView.master" AutoEventWireup="true" ValidateRequest="false" CodeFile="SB501000.aspx.cs" Inherits="Page_SB_SB501000" Title="Container Tracking" %>
-<%@ MasterType VirtualPath="~/MasterPages/TabView.master" %>
+<%@ Page Language="C#" MasterPageFile="~/MasterPages/FormDetail.master" AutoEventWireup="true" ValidateRequest="false" CodeFile="SB501000.aspx.cs" Inherits="Page_SB_SB501000" Title="Procurement Command Center" %>
+<%@ MasterType VirtualPath="~/MasterPages/FormDetail.master" %>
 <asp:Content ID="cont1" ContentPlaceHolderID="phDS" Runat="Server">
     <px:PXDataSource ID="ds" runat="server" Visible="True" Width="100%"
         TypeName="StudioB.Containers.ContainerMaint" PrimaryView="Filter">
