@@ -233,6 +233,63 @@ namespace StudioB.Containers
             container.LandedCostRefNbr = lcGraph.Document.Current.RefNbr;
             container.LandedCostStatus = lcGraph.Document.Current.Status;
             Container.Update(container);
+
+            // Backfill custom receipt line fields so per-unit calculator stays accurate.
+            // Aggregate container costs by type, then distribute proportionally across
+            // receipt lines by quantity.
+            decimal totalDuty = 0m, totalFreight = 0m, totalBrokerage = 0m;
+            foreach (var cost in costs)
+            {
+                switch (cost.CostType)
+                {
+                    case "DUTY": totalDuty += cost.Amount ?? 0m; break;
+                    case "TARIFF": totalDuty += cost.Amount ?? 0m; break;  // tariff rolls into duty
+                    case "SHIPPING": totalFreight += cost.Amount ?? 0m; break;
+                    case "BROKERAGE": totalBrokerage += cost.Amount ?? 0m; break;
+                }
+            }
+
+            if (totalDuty > 0m || totalFreight > 0m || totalBrokerage > 0m)
+            {
+                // Sum total receipt qty for proportional allocation
+                decimal totalQty = 0m;
+                var receiptLineKeys = new List<Tuple<string, string, int?>>();
+                foreach (var rl in receiptNbrs)
+                {
+                    foreach (POReceiptLine line in PXSelect<POReceiptLine,
+                        Where<POReceiptLine.receiptNbr, Equal<Required<POReceiptLine.receiptNbr>>>>
+                        .Select(this, rl))
+                    {
+                        totalQty += line.ReceiptQty ?? 0m;
+                        receiptLineKeys.Add(Tuple.Create(line.ReceiptType, line.ReceiptNbr, (int?)line.LineNbr));
+                    }
+                }
+
+                if (totalQty > 0m)
+                {
+                    var receiptGraph = PXGraph.CreateInstance<PX.Objects.PO.POReceiptEntry>();
+                    foreach (var key in receiptLineKeys)
+                    {
+                        POReceiptLine rl = PXSelect<POReceiptLine,
+                            Where<POReceiptLine.receiptType, Equal<Required<POReceiptLine.receiptType>>,
+                                And<POReceiptLine.receiptNbr, Equal<Required<POReceiptLine.receiptNbr>>,
+                                And<POReceiptLine.lineNbr, Equal<Required<POReceiptLine.lineNbr>>>>>>
+                            .Select(this, key.Item1, key.Item2, key.Item3);
+                        if (rl == null) continue;
+
+                        decimal share = (rl.ReceiptQty ?? 0m) / totalQty;
+                        var ext = PXCache<POReceiptLine>.GetExtension<POReceiptLineExt>(rl);
+                        if (ext != null)
+                        {
+                            ext.UsrActualDutyAmt = Math.Round(totalDuty * share, 2);
+                            ext.UsrActualFreightAmt = Math.Round(totalFreight * share, 2);
+                            ext.UsrBrokerageAmt = Math.Round(totalBrokerage * share, 2);
+                            this.Caches[typeof(POReceiptLine)].Update(rl);
+                        }
+                    }
+                }
+            }
+
             Actions.PressSave();
         }
 
