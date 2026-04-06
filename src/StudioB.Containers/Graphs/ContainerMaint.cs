@@ -39,6 +39,10 @@ namespace StudioB.Containers
             .Where<UsrContainerPOLink.containerID.IsEqual<UsrContainer.containerID.FromCurrent>>
             .View POLinks;
 
+        public SelectFrom<UsrContainerCost>
+            .Where<UsrContainerCost.containerID.IsEqual<UsrContainer.containerID.FromCurrent>>
+            .View Costs;
+
         protected virtual IEnumerable containers()
         {
             ContainerFilter filter = Filter.Current;
