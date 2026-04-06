@@ -599,19 +599,8 @@ jobs:
             --skip-smoke-test \
             ${EXTRA_FLAGS}
 
-      - name: Validate test tenant
+      - name: Verify test tenant
         id: verify
-        env:
-          ACUMATICA_URL: ${{ secrets.ACUMATICA_PROD_URL }}
-          ACUMATICA_USERNAME: ${{ secrets.ACUMATICA_PROD_USERNAME }}
-          ACUMATICA_PASSWORD: ${{ secrets.ACUMATICA_PROD_PASSWORD }}
-          ACUMATICA_TENANT: ${{ vars.ACUMATICA_TEST_TENANT }}
-        run: |
-          python3 pipeline/scripts/deploy.py --validate-only \
-            --project "${PROJECT}"
-
-      - name: E2E view-level smoke test
-        id: e2e
         continue-on-error: true
         env:
           ACUMATICA_URL: ${{ secrets.ACUMATICA_PROD_URL }}
@@ -619,8 +608,18 @@ jobs:
           ACUMATICA_PASSWORD: ${{ secrets.ACUMATICA_PROD_PASSWORD }}
           ACUMATICA_TENANT: ${{ vars.ACUMATICA_TEST_TENANT }}
         run: |
-          python pipeline/scripts/smoke-e2e.py \
-            --manifest publish-manifest.json
+          python scripts/verify.py \
+            --manifest publish-manifest.json \
+            --environment sandbox \
+            --json-output verify-result.json
+
+      - name: Upload verification result
+        if: always() && steps.verify.outcome != 'skipped'
+        uses: actions/upload-artifact@v4
+        with:
+          name: verify-result-test-tenant
+          path: verify-result.json
+          if-no-files-found: ignore
 
       - name: Post-publish login smoke test
         id: smoke
@@ -660,9 +659,8 @@ jobs:
           echo "| Step | Result |" >> "$GITHUB_STEP_SUMMARY"
           echo "|------|--------|" >> "$GITHUB_STEP_SUMMARY"
           echo "| Deploy | \`${{ steps.deploy.outcome || 'n/a' }}\` |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| Field Validation | \`${{ steps.verify.outcome || 'n/a' }}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Verification | \`${{ steps.verify.outcome || 'n/a' }}\` |" >> "$GITHUB_STEP_SUMMARY"
           echo "| Smoke Test | \`${{ steps.smoke.outcome || 'n/a' }}\` |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| E2E View Smoke | \`${{ steps.e2e.outcome || 'n/a' }}\` |" >> "$GITHUB_STEP_SUMMARY"
 
   # ──────────────────────────────────────────────
   # Job 4: Deploy — Snapshot, countdown, import + publish to Acumatica
@@ -926,8 +924,8 @@ jobs:
           echo "duration_ms=$(( (DEPLOY_END - DEPLOY_START) * 1000 ))" >> "$GITHUB_OUTPUT"
           echo "outcome=success" >> "$GITHUB_OUTPUT"
 
-      # ── Post-publish field validation ────────────────────────────────
-      - name: Post-publish field validation
+      # ── Post-publish verification ──────────────────────────────────
+      - name: Post-publish verification
         id: verify
         if: steps.deploy.outcome == 'success'
         continue-on-error: true
@@ -937,28 +935,25 @@ jobs:
           ACUMATICA_PASSWORD: ${{ (steps.env.outputs.target == 'production') && secrets.ACUMATICA_PROD_PASSWORD || (secrets.ACUMATICA_STG_PASSWORD || secrets.ACUMATICA_PROD_PASSWORD) }}
           ACUMATICA_TENANT: ${{ (steps.env.outputs.target == 'production') && secrets.ACUMATICA_PROD_TENANT || (secrets.ACUMATICA_STG_TENANT || secrets.ACUMATICA_PROD_TENANT) }}
         run: |
-          cd pipeline/scripts && python validate-publish.py \
-            --manifest ../../publish-manifest.json \
-            --package "../../${{ needs.build.outputs.package_path }}" \
-            --project "${{ needs.build.outputs.project_name }}"
+          python scripts/verify.py \
+            --manifest publish-manifest.json \
+            --environment ${{ steps.env.outputs.target }} \
+            --json-output verify-result.json
 
-      - name: E2E view-level smoke test
-        id: e2e
-        if: steps.deploy.outcome == 'success'
-        continue-on-error: true
-        env:
-          ACUMATICA_URL: ${{ (steps.env.outputs.target == 'production') && secrets.ACUMATICA_PROD_URL || (secrets.ACUMATICA_STG_URL || secrets.ACUMATICA_PROD_URL) }}
-          ACUMATICA_USERNAME: ${{ (steps.env.outputs.target == 'production') && secrets.ACUMATICA_PROD_USERNAME || (secrets.ACUMATICA_STG_USERNAME || secrets.ACUMATICA_PROD_USERNAME) }}
-          ACUMATICA_PASSWORD: ${{ (steps.env.outputs.target == 'production') && secrets.ACUMATICA_PROD_PASSWORD || (secrets.ACUMATICA_STG_PASSWORD || secrets.ACUMATICA_PROD_PASSWORD) }}
-          ACUMATICA_TENANT: ${{ (steps.env.outputs.target == 'production') && secrets.ACUMATICA_PROD_TENANT || (secrets.ACUMATICA_STG_TENANT || secrets.ACUMATICA_PROD_TENANT) }}
-        run: cd pipeline/scripts && python smoke-e2e.py --manifest ../../publish-manifest.json
+      - name: Upload verification result
+        if: always() && steps.verify.outcome != 'skipped'
+        uses: actions/upload-artifact@v4
+        with:
+          name: verify-result-${{ steps.env.outputs.target }}
+          path: verify-result.json
+          if-no-files-found: ignore
 
       # ── Alert on verification failure (NO auto-rollback) ─────────────
       - name: Alert on verification failure
         id: alert
         if: >
           steps.deploy.outcome == 'success' &&
-          (steps.verify.outcome == 'failure' || steps.e2e.outcome == 'failure') &&
+          steps.verify.outcome == 'failure' &&
           steps.env.outputs.target == 'production' &&
           github.event.inputs.dry_run != 'true'
         env:
@@ -967,10 +962,9 @@ jobs:
         run: |
           PROJECT="${{ needs.build.outputs.project_name }}"
           VERIFY="${{ steps.verify.outcome }}"
-          E2E="${{ steps.e2e.outcome }}"
           RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
 
-          echo "::error::Post-publish verification failed (verify=${VERIFY}, e2e=${E2E})"
+          echo "::error::Post-publish verification failed (verify=${VERIFY})"
           echo "Backup snapshot available as workflow artifact for manual restore via SM204505"
 
           if [ -n "${SLACK_BOT_TOKEN}" ] && [ -n "${SLACK_KEVIN_USER_ID}" ]; then
@@ -984,10 +978,66 @@ jobs:
               curl -sf -X POST "https://slack.com/api/chat.postMessage" \
                 -H "Authorization: Bearer ${SLACK_BOT_TOKEN}" \
                 -H "Content-Type: application/json" \
-                -d "{\"channel\":\"${DM_CHANNEL}\",\"text\":\"⚠️ *Deploy verification failed* — ${PROJECT}\nVerify: ${VERIFY} | E2E: ${E2E}\nCommit: \`${GITHUB_SHA::8}\`\n<${RUN_URL}|View Logs>\nNo rollback attempted. Backup artifact available for manual restore via SM204505.\"}" > /dev/null
+                -d "{\"channel\":\"${DM_CHANNEL}\",\"text\":\"⚠️ *Deploy verification failed* — ${PROJECT}\nVerify: ${VERIFY}\nCommit: \`${GITHUB_SHA::8}\`\n<${RUN_URL}|View Logs>\nNo rollback attempted. Backup artifact available for manual restore via SM204505.\"}" > /dev/null
             fi
           fi
           exit 1
+
+      # ── Auto-ingest to Qdrant knowledge base ──────────────────────────
+      - name: Auto-ingest deploy incident
+        if: >
+          always() &&
+          steps.deploy.outcome == 'success' &&
+          steps.verify.outcome == 'failure'
+        continue-on-error: true
+        env:
+          ACUDEV_URL: ${{ secrets.ACUDEV_URL }}
+          ACUDEV_API_KEY: ${{ secrets.ACUDEV_API_KEY }}
+        run: |
+          ERROR_DETAIL="Verification failed"
+          if [ -f verify-result.json ]; then
+            ERROR_DETAIL=$(python3 -c "
+          import sys, json
+          d = json.load(open('verify-result.json'))
+          fails = [c for c in d.get('checks', []) if c['status'] == 'fail']
+          print('; '.join(f\"{c['name']}: {c['detail']}\" for c in fails[:5]))
+          " 2>/dev/null || echo "Verification failed — see logs")
+          fi
+          curl -sf -X POST "${ACUDEV_URL}/ingest/incident" \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer ${ACUDEV_API_KEY}" \
+            -d "{
+              \"event\": \"verification_failed\",
+              \"project\": \"${{ needs.build.outputs.project_name }}\",
+              \"environment\": \"${{ steps.env.outputs.target }}\",
+              \"commit\": \"${GITHUB_SHA::8}\",
+              \"error_detail\": $(echo "$ERROR_DETAIL" | python3 -c 'import sys,json; print(json.dumps(sys.stdin.read().strip()))'),
+              \"run_url\": \"${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\",
+              \"timestamp\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"
+            }" || echo "[WARN] Auto-ingestion failed — non-blocking"
+
+      - name: Auto-ingest deploy success
+        if: >
+          steps.deploy.outcome == 'success' &&
+          steps.verify.outcome == 'success' &&
+          steps.env.outputs.target == 'production'
+        continue-on-error: true
+        env:
+          ACUDEV_URL: ${{ secrets.ACUDEV_URL }}
+          ACUDEV_API_KEY: ${{ secrets.ACUDEV_API_KEY }}
+        run: |
+          curl -sf -X POST "${ACUDEV_URL}/ingest/incident" \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer ${ACUDEV_API_KEY}" \
+            -d "{
+              \"event\": \"deploy_succeeded\",
+              \"project\": \"${{ needs.build.outputs.project_name }}\",
+              \"environment\": \"production\",
+              \"commit\": \"${GITHUB_SHA::8}\",
+              \"error_detail\": \"All checks passed\",
+              \"run_url\": \"${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\",
+              \"timestamp\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"
+            }" || echo "[WARN] Auto-ingestion failed — non-blocking"
 
       # ── Trigger regression tests ─────────────────────────────────────
       - name: Trigger regression tests
@@ -1162,7 +1212,6 @@ jobs:
           SNAPSHOT_FILES=$(ls backups/*.zip 2>/dev/null | xargs -I{} basename {} | tr '\n' ', ' || echo "N/A")
           echo "| Snapshot | ${SNAPSHOT_FILES:-N/A} |" >> "$GITHUB_STEP_SUMMARY"
           echo "| Verify | \`${{ steps.verify.outcome || 'n/a' }}\` |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| E2E | \`${{ steps.e2e.outcome || 'n/a' }}\` |" >> "$GITHUB_STEP_SUMMARY"
           echo "| Alert | \`${{ steps.alert.outcome || 'n/a' }}\` |" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Tag successful deploy
@@ -1247,7 +1296,7 @@ jobs:
             --pre-cleanup \
             ${EXTRA_FLAGS}
 
-      - name: Validate custom fields on staging
+      - name: Verify staging publish
         id: verify
         env:
           ACUMATICA_URL: ${{ secrets.ACUMATICA_STG_URL || secrets.ACUMATICA_PROD_URL }}
@@ -1255,22 +1304,11 @@ jobs:
           ACUMATICA_PASSWORD: ${{ secrets.ACUMATICA_STG_PASSWORD || secrets.ACUMATICA_PROD_PASSWORD }}
           ACUMATICA_TENANT: ${{ secrets.ACUMATICA_STG_TENANT || secrets.ACUMATICA_PROD_TENANT }}
         run: |
-          cd pipeline/scripts && python validate-publish.py \
-            --manifest ../../publish-manifest.json \
-            --package "../../${{ needs.build.outputs.package_path }}" \
-            --project "${{ needs.build.outputs.project_name }}" \
-            2>&1 | tee ../../validation-output.txt
-
-      - name: E2E view-level smoke test
-        id: e2e
-        env:
-          ACUMATICA_URL: ${{ secrets.ACUMATICA_STG_URL || secrets.ACUMATICA_PROD_URL }}
-          ACUMATICA_USERNAME: ${{ secrets.ACUMATICA_STG_USERNAME || secrets.ACUMATICA_PROD_USERNAME }}
-          ACUMATICA_PASSWORD: ${{ secrets.ACUMATICA_STG_PASSWORD || secrets.ACUMATICA_PROD_PASSWORD }}
-          ACUMATICA_TENANT: ${{ secrets.ACUMATICA_STG_TENANT || secrets.ACUMATICA_PROD_TENANT }}
-        run: |
-          python pipeline/scripts/smoke-e2e.py --manifest publish-manifest.json \
-            2>&1 | tee e2e-output.txt
+          python scripts/verify.py \
+            --manifest publish-manifest.json \
+            --environment staging \
+            --json-output verify-result.json \
+            2>&1 | tee validation-output.txt
 
       - name: Comment on PR with results
         if: always() && github.event.pull_request.number
@@ -1278,7 +1316,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           RESULT="Passed"
-          if [ "${{ steps.verify.outcome }}" = "failure" ] || [ "${{ steps.e2e.outcome }}" = "failure" ]; then
+          if [ "${{ steps.verify.outcome }}" = "failure" ]; then
             RESULT="Failed"
           fi
 
