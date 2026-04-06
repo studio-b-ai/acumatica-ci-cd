@@ -1778,4 +1778,16 @@ public partial class Page_SB_SB302030 : PXPage
             </data>
         </data-set>
     </ScreenWithRights>
+    <Sql Name="AesthetikContainers_UsrContainer_PCC_Columns_v1" Script="#CDATA">
+<![CDATA[
+IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('UsrContainer') AND name = 'TransportMode')
+  ALTER TABLE UsrContainer ADD TransportMode nvarchar(10) NULL;
+
+IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('UsrContainer') AND name = 'LandedCostRefNbr')
+  ALTER TABLE UsrContainer ADD LandedCostRefNbr nvarchar(15) NULL;
+
+IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('UsrContainer') AND name = 'LandedCostStatus')
+  ALTER TABLE UsrContainer ADD LandedCostStatus nvarchar(20) NULL;
+]]>
+    </Sql>
 </Customization>
