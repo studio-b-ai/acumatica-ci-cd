@@ -1,6 +1,7 @@
 using System;
 using PX.Data;
 using PX.Data.BQL;
+using PX.Objects.AP;
 using PX.Objects.CR;
 
 namespace StudioB.Containers
@@ -66,6 +67,27 @@ namespace StudioB.Containers
         [PXDBString(30, IsUnicode = true)]
         [PXUIField(DisplayName = "Reference Nbr")]
         public string ReferenceNbr { get; set; }
+        #endregion
+
+        #region APDocType
+        public abstract class apDocType : BqlString.Field<apDocType> { }
+        [PXDBString(3, IsFixed = true, IsUnicode = true)]
+        [PXUIField(DisplayName = "AP Doc Type")]
+        [APDocType.List]
+        public string APDocType { get; set; }
+        #endregion
+
+        #region APRefNbr
+        public abstract class apRefNbr : BqlString.Field<apRefNbr> { }
+        [PXDBString(15, IsUnicode = true)]
+        [PXUIField(DisplayName = "AP Ref Nbr")]
+        [PXSelector(typeof(Search<APInvoice.refNbr,
+            Where<APInvoice.docType, Equal<Current<UsrContainerCost.apDocType>>>>),
+            typeof(APInvoice.refNbr),
+            typeof(APInvoice.vendorID),
+            typeof(APInvoice.docDate),
+            typeof(APInvoice.status))]
+        public string APRefNbr { get; set; }
         #endregion
     }
 }

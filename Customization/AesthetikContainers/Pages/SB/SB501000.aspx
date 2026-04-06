@@ -128,6 +128,8 @@
                                             <px:PXGridColumn DataField="Amount" Width="100" />
                                             <px:PXGridColumn DataField="VendorID" Width="140" CommitChanges="True" />
                                             <px:PXGridColumn DataField="ReferenceNbr" Width="120" />
+                                            <px:PXGridColumn DataField="APDocType" Width="80" CommitChanges="True" />
+                                            <px:PXGridColumn DataField="APRefNbr" Width="110" CommitChanges="True" />
                                         </Columns>
                                     </px:PXGridLevel>
                                 </Levels>
