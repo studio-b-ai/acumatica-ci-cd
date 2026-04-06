@@ -64,30 +64,11 @@ on:
         required: false
         type: boolean
         default: false
-      skip_backup:
-        description: 'Skip pre-deploy backup'
-        required: false
-        type: boolean
-        default: false
-      skip_countdown:
-        description: 'Emergency deploy — skip countdown (still takes snapshot)'
-        required: false
-        type: boolean
-        default: false
       force_qualify:
         description: 'Skip qualification checks (emergency override)'
         required: false
         type: boolean
         default: false
-      countdown_complete:
-        description: 'Set by scheduled deploy — skip countdown'
-        required: false
-        type: boolean
-        default: false
-      force_deploy:
-        description: 'Type OVERRIDE to bypass test gate (emergency only)'
-        required: false
-        type: string
 
 jobs:
   # ──────────────────────────────────────────────
@@ -101,14 +82,10 @@ jobs:
       package_name: ${{ steps.package.outputs.name }}
       project_name: ${{ steps.config.outputs.project_name }}
       also_publish: ${{ steps.config.outputs.also_publish }}
-      also_publish_test: ${{ steps.config.outputs.also_publish_test }}
-      backup_enabled: ${{ steps.config.outputs.backup_enabled }}
       isv_prefix: ${{ steps.config.outputs.isv_prefix }}
       strict: ${{ steps.config.outputs.strict }}
       known_projects: ${{ steps.config.outputs.known_projects }}
       isv_packages: ${{ steps.config.outputs.isv_packages }}
-      test_tenant_enabled: ${{ steps.config.outputs.test_tenant_enabled }}
-      timezone: ${{ steps.config.outputs.timezone }}
       customization_changes: ${{ steps.detect_cust_changes.outputs.customization_changes }}
       plugin_changes: ${{ steps.plugin_check.outputs.plugin_changes }}
 
