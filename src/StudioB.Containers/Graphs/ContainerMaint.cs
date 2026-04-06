@@ -5,6 +5,8 @@ using PX.Data;
 using PX.Data.BQL;
 using PX.Data.BQL.Fluent;
 using PX.Objects.PO;
+using PX.Objects.CR;
+using PX.Objects.IN;
 
 namespace StudioB.Containers
 {
@@ -27,6 +29,13 @@ namespace StudioB.Containers
             .View Events;
 
         public SelectFrom<UsrContainerPOLink>
+            .LeftJoin<POOrder>.On<POOrder.orderType.IsEqual<UsrContainerPOLink.orderType>
+                .And<POOrder.orderNbr.IsEqual<UsrContainerPOLink.orderNbr>>>
+            .LeftJoin<BAccount>.On<BAccount.bAccountID.IsEqual<POOrder.vendorID>>
+            .LeftJoin<POLine>.On<POLine.orderType.IsEqual<UsrContainerPOLink.orderType>
+                .And<POLine.orderNbr.IsEqual<UsrContainerPOLink.orderNbr>>
+                .And<POLine.lineNbr.IsEqual<UsrContainerPOLink.lineNbr>>>
+            .LeftJoin<InventoryItem>.On<InventoryItem.inventoryID.IsEqual<POLine.inventoryID>>
             .Where<UsrContainerPOLink.containerID.IsEqual<UsrContainer.containerID.FromCurrent>>
             .View POLinks;
 

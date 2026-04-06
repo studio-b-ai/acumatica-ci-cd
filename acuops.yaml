@@ -42,12 +42,13 @@ validation:
   strict: true
   isv_prefix: ""
   min_acumatica_version: "24.2"
+  acumatica_build_version: "24.208"
 
 # ─── Client Identity ────────────────────────────────────────────────────────
 client:
   name: "Heritage Fabrics"
   code: "heritage-fabrics"
-  timezone: "America/Chicago"
+  timezone: "America/New_York"
   business_hours:
     start: 6
     end: 18
