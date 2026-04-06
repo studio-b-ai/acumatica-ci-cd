@@ -479,7 +479,77 @@ jobs:
         run: python pipeline/scripts/qualify.py
 
   # ──────────────────────────────────────────────
-  # Job 3: Test Tenant — Publish gate (pre-prod validation)
+  # Job 3: Invoke Deploy Agent
+  # ──────────────────────────────────────────────
+  invoke-agent:
+    name: Invoke Deploy Agent
+    needs: [build, qualify]
+    if: >-
+      always() &&
+      needs.build.result == 'success' &&
+      needs.build.outputs.customization_changes == 'true' &&
+      github.event_name != 'pull_request' &&
+      (
+        needs.qualify.result == 'success' ||
+        needs.qualify.result == 'skipped'
+      )
+    runs-on: ubuntu-latest
+    steps:
+      - name: Save deploy context
+        run: |
+          cat > deploy-context.json <<'CONTEXT_EOF'
+          {
+            "package_name": "${{ needs.build.outputs.package_name }}",
+            "package_path": "${{ needs.build.outputs.package_path }}",
+            "project_name": "${{ needs.build.outputs.project_name }}",
+            "also_publish": "${{ needs.build.outputs.also_publish }}",
+            "isv_prefix": "${{ needs.build.outputs.isv_prefix }}",
+            "known_projects": "${{ needs.build.outputs.known_projects }}",
+            "commit_sha": "${{ github.sha }}",
+            "commit_message": "${{ github.event.head_commit.message }}",
+            "run_id": "${{ github.run_id }}",
+            "ref": "${{ github.ref }}",
+            "environment": "${{ github.ref == 'refs/heads/main' && 'production' || 'staging' }}"
+          }
+          CONTEXT_EOF
+
+      - name: Upload deploy context
+        uses: actions/upload-artifact@v4
+        with:
+          name: deploy-context
+          path: deploy-context.json
+          retention-days: 7
+
+      - name: Invoke deploy agent
+        env:
+          CLAUDE_TRIGGER_TOKEN: ${{ secrets.CLAUDE_TRIGGER_TOKEN }}
+          CLAUDE_TRIGGER_ID: ${{ secrets.CLAUDE_TRIGGER_ID }}
+        run: |
+          if [ -z "$CLAUDE_TRIGGER_TOKEN" ] || [ -z "$CLAUDE_TRIGGER_ID" ]; then
+            echo "::warning::Deploy agent trigger not configured. Skipping agent invocation."
+            exit 0
+          fi
+
+          RESPONSE=$(curl -s -w "\n%{http_code}" -X POST \
+            "https://api.claude.ai/v1/code/triggers/${CLAUDE_TRIGGER_ID}/run" \
+            -H "Authorization: Bearer ${CLAUDE_TRIGGER_TOKEN}" \
+            -H "Content-Type: application/json")
+
+          HTTP_CODE=$(echo "$RESPONSE" | tail -1)
+          BODY=$(echo "$RESPONSE" | head -n -1)
+
+          echo "Trigger response: HTTP ${HTTP_CODE}"
+          echo "$BODY"
+
+          if [ "$HTTP_CODE" -ge 400 ]; then
+            echo "::error::Deploy agent trigger failed with HTTP ${HTTP_CODE}"
+            exit 1
+          fi
+
+          echo "Deploy agent triggered successfully. Agent will manage the deploy lifecycle."
+
+  # ──────────────────────────────────────────────
+  # Job 4: Test Tenant — Publish gate (pre-prod validation)
   # Publishes to a test tenant on the same instance, runs field validation
   # and smoke tests. Hard gate — failure blocks production deploy.
   # ──────────────────────────────────────────────
