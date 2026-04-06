@@ -115,3 +115,22 @@ Tasks:
 | #engineering | C0ARX7KM17S | AcuDev, enhancements |
 | #clients | C0AQWHLJLGK | Business activity |
 | Kevin DM | U0ALNRQ4KF0 | Failures and decisions only |
+
+## Decisions Made (2026-04-06)
+
+### Phase 3 agent invocation
+GH Actions triggers a Claude Code remote trigger via API after build/qualify pass. No AcuDev Railway hop — the agent IS the orchestrator. Build/qualify stay as GH Actions jobs (fast, stateless, no AI needed).
+
+```yaml
+- name: Invoke deploy agent
+  if: steps.qualify.outcome == 'success'
+  run: |
+    curl -X POST "https://api.claude.ai/v1/code/triggers/$TRIGGER_ID/run" \
+      -H "Authorization: Bearer $CLAUDE_TRIGGER_TOKEN"
+```
+
+### verify.py status
+Unified `verify.py` (replacing `validate-publish.py` + `smoke-e2e.py`) is deferred to Phase 2. Phase 1 resolved the immediate disagreement (both scripts now treat 403 as warning). The merge is prerequisite for Phase 3 — the AI agent needs one script with structured JSON output, not two scripts with exit codes.
+
+### acudev-knowledge migration
+Same Qdrant instance as `studiob-knowledge`. `acudev-knowledge` has 126K points (official Acumatica docs, PDFs, help portal, GitHub examples). Phase 2 migrates these into `studiob-knowledge` with tags (domain=acumatica, client=null, source=official). After migration and AcuDev service update, **delete** `acudev-knowledge` — no reason to keep a stale copy. Community and SO collections remain separate.
