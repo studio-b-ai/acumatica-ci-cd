@@ -48,7 +48,7 @@ validation:
 client:
   name: "Heritage Fabrics"
   code: "heritage-fabrics"
-  timezone: "America/Chicago"
+  timezone: "America/New_York"
   business_hours:
     start: 6
     end: 18
