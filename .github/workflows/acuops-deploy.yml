@@ -938,6 +938,8 @@ jobs:
           python scripts/verify.py \
             --manifest publish-manifest.json \
             --environment ${{ steps.env.outputs.target }} \
+            --package "${{ needs.build.outputs.package_path }}" \
+            --project "${{ needs.build.outputs.project_name }}" \
             --json-output verify-result.json
 
       - name: Upload verification result
@@ -1307,6 +1309,8 @@ jobs:
           python scripts/verify.py \
             --manifest publish-manifest.json \
             --environment staging \
+            --package "${{ needs.build.outputs.package_path }}" \
+            --project "${{ needs.build.outputs.project_name }}" \
             --json-output verify-result.json \
             2>&1 | tee validation-output.txt
 
