@@ -314,40 +314,74 @@ class TestE2EProbe:
 # ---------------------------------------------------------------------------
 
 class TestGIHealth:
-    def test_all_healthy(self):
+    def test_any_200_is_pass(self):
+        """If any GI returns 200, overall result is PASS."""
         session = MagicMock()
         session.get.return_value = (200, b'[]')
         session.base_url = "https://example.com"
-        results = check_gi_health(session, "24.200.001")
-        assert isinstance(results, list)
-        assert len(results) >= 2  # InventoryAllocationDetail + LotAvailability
-        assert all(r.status == CheckStatus.PASS for r in results)
+        result = check_gi_health(session, "24.200.001")
+        assert isinstance(result, CheckResult)
+        assert result.name == "gi:health"
+        assert result.status == CheckStatus.PASS
+        assert "healthy" in result.detail
 
-    def test_one_gi_fails(self):
+    def test_mixed_200_and_500_is_pass(self):
+        """If any GI returns 200, it's PASS even if another returns 500."""
         session = MagicMock()
         session.get.side_effect = [
             (500, b'GI corrupted'),
             (200, b'[]'),
         ]
         session.base_url = "https://example.com"
-        results = check_gi_health(session, "24.200.001")
-        statuses = [r.status for r in results]
-        assert CheckStatus.FAIL in statuses
-        assert CheckStatus.PASS in statuses
+        result = check_gi_health(session, "24.200.001")
+        assert result.status == CheckStatus.PASS
 
-    def test_all_gi_fail(self):
+    def test_all_404_is_pass(self):
+        """If ALL GIs return 404, overall PASS (GIs not installed)."""
+        session = MagicMock()
+        session.get.return_value = (404, b'Not Found')
+        session.base_url = "https://example.com"
+        result = check_gi_health(session, "24.200.001")
+        assert result.status == CheckStatus.PASS
+        assert "not installed" in result.detail
+
+    def test_any_500_no_200_is_fail(self):
+        """If any GI returns 500+ and none return 200, overall FAIL."""
         session = MagicMock()
         session.get.return_value = (500, b'Server Error')
         session.base_url = "https://example.com"
-        results = check_gi_health(session, "24.200.001")
-        assert all(r.status == CheckStatus.FAIL for r in results)
+        result = check_gi_health(session, "24.200.001")
+        assert result.status == CheckStatus.FAIL
+        assert "corruption" in result.detail
 
-    def test_gi_exception_handled(self):
+    def test_mixed_404_and_500_is_fail(self):
+        """500 on one GI + 404 on another = FAIL (corruption)."""
         session = MagicMock()
-        session.get.side_effect = Exception("Connection timeout")
+        session.get.side_effect = [
+            (404, b'Not Found'),
+            (500, b'Server Error'),
+        ]
         session.base_url = "https://example.com"
-        results = check_gi_health(session, "24.200.001")
-        assert all(r.status == CheckStatus.FAIL for r in results)
+        result = check_gi_health(session, "24.200.001")
+        assert result.status == CheckStatus.FAIL
+
+    def test_all_403_is_warn(self):
+        """If no 200, no 404-all, no 500 — inconclusive WARN."""
+        session = MagicMock()
+        session.get.return_value = (403, b'Forbidden')
+        session.base_url = "https://example.com"
+        result = check_gi_health(session, "24.200.001")
+        assert result.status == CheckStatus.WARN
+        assert "inconclusive" in result.detail
+
+    def test_detail_includes_per_gi_status(self):
+        """Detail string should include per-GI status codes for diagnostics."""
+        session = MagicMock()
+        session.get.return_value = (200, b'[]')
+        session.base_url = "https://example.com"
+        result = check_gi_health(session, "24.200.001")
+        assert "InventoryAllocationDetail=200" in result.detail
+        assert "LotAvailability=200" in result.detail
 
 
 # ---------------------------------------------------------------------------

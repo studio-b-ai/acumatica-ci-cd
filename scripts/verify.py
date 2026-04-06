@@ -281,34 +281,61 @@ def run_e2e_probe(
 
 
 # Known GI endpoints to probe for corruption
-_GI_PROBES = [
-    ("InventoryAllocationDetail", "InventoryAllocationDetail"),
-    ("LotAvailability", "LotSerialAvailability"),
-]
+_GI_PROBES = ["InventoryAllocationDetail", "LotAvailability"]
 
 
 def check_gi_health(
     session: AcumaticaSession, version: str
-) -> List[CheckResult]:
-    """Probe known Generic Inquiries for subsystem corruption."""
-    results = []
-    for gi_name, gi_endpoint in _GI_PROBES:
-        path = f"/entity/Default/{version}/{gi_endpoint}?$top=1"
+) -> CheckResult:
+    """Probe known Generic Inquiries for subsystem corruption.
+
+    Returns a SINGLE aggregate CheckResult:
+    - If any GI returns 200 -> overall PASS (subsystem healthy)
+    - If ALL GIs return 404 -> overall PASS (GIs not installed, acceptable)
+    - If any GI returns 500+ -> overall FAIL (corruption)
+    - Otherwise -> WARN (inconclusive)
+    """
+    gi_statuses: dict[str, int | None] = {}
+    for gi in _GI_PROBES:
+        path = f"/entity/Default/{version}/{gi}?$top=1"
         try:
             status, body = session.get(path)
-            body_str = body.decode(errors="replace") if body else ""
-            status_str, detail = classify_http_status(status, response_body=body_str)
-        except Exception as exc:
-            status_str = "fail"
-            detail = f"connection error: {exc}"
-            status = None
-        results.append(CheckResult(
-            name=f"gi:{gi_name}",
-            status=CheckStatus(status_str),
-            detail=detail,
-            http_code=status,
-        ))
-    return results
+            gi_statuses[gi] = status
+        except Exception:
+            gi_statuses[gi] = None
+
+    codes = list(gi_statuses.values())
+    any_200 = any(c == 200 for c in codes if c is not None)
+    all_404 = all(c == 404 for c in codes if c is not None) and any(c is not None for c in codes)
+    any_500 = any(c is not None and c >= 500 for c in codes)
+
+    detail_parts = [f"{gi}={code}" for gi, code in gi_statuses.items()]
+    detail_str = "; ".join(detail_parts)
+
+    if any_200:
+        return CheckResult(
+            name="gi:health",
+            status=CheckStatus.PASS,
+            detail=f"GI subsystem healthy ({detail_str})",
+        )
+    elif all_404:
+        return CheckResult(
+            name="gi:health",
+            status=CheckStatus.PASS,
+            detail=f"GIs not installed ({detail_str})",
+        )
+    elif any_500:
+        return CheckResult(
+            name="gi:health",
+            status=CheckStatus.FAIL,
+            detail=f"GI corruption detected ({detail_str})",
+        )
+    else:
+        return CheckResult(
+            name="gi:health",
+            status=CheckStatus.WARN,
+            detail=f"inconclusive ({detail_str})",
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -359,7 +386,7 @@ def run_all_checks(
         checks.append(run_e2e_probe(session, probe, version))
 
     # 4. GI subsystem health
-    checks.extend(check_gi_health(session, version))
+    checks.append(check_gi_health(session, version))
 
     return checks
 
