@@ -1104,7 +1104,7 @@ jobs:
           echo "| Snapshot | ${SNAPSHOT_FILES:-N/A} |" >> "$GITHUB_STEP_SUMMARY"
           echo "| Verify | \`${{ steps.verify.outcome || 'n/a' }}\` |" >> "$GITHUB_STEP_SUMMARY"
           echo "| E2E | \`${{ steps.e2e.outcome || 'n/a' }}\` |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| Rollback | \`${{ steps.rollback.outcome || 'n/a' }}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Alert | \`${{ steps.alert.outcome || 'n/a' }}\` |" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Tag successful deploy
         if: success() && steps.env.outputs.target == 'production'
