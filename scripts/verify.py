@@ -11,13 +11,17 @@ Zero external dependencies — stdlib only (urllib, json, ssl, etc.).
 """
 
 import argparse
+import base64
+import io
 import json
 import os
+import pathlib
 import ssl
 import sys
 import urllib.error
 import urllib.parse
 import urllib.request
+import zipfile
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import List, Optional, Tuple
@@ -164,6 +168,10 @@ class AcumaticaSession:
     def get(self, path: str) -> Tuple[int, bytes]:
         """HTTP GET. Returns (status_code, response_body_bytes)."""
         return self._request("GET", path)
+
+    def post(self, path: str, body: Optional[bytes] = None) -> Tuple[int, bytes]:
+        """HTTP POST. Returns (status_code, response_body_bytes)."""
+        return self._request("POST", path, body=body)
 
 
 # ---------------------------------------------------------------------------
@@ -339,6 +347,121 @@ def check_gi_health(
 
 
 # ---------------------------------------------------------------------------
+# ASPX file verification
+# ---------------------------------------------------------------------------
+
+def check_aspx_files(
+    session: AcumaticaSession, project_name: str, package_path: str
+) -> List[CheckResult]:
+    """Verify ASPX files on the instance match the deployed package.
+
+    Exports the published project via getProject API, extracts ASPX files,
+    and compares them against the original deployed package.
+    """
+    results: List[CheckResult] = []
+    package = pathlib.Path(package_path)
+
+    if not package.exists():
+        results.append(CheckResult(
+            name="aspx:package",
+            status=CheckStatus.WARN,
+            detail=f"package not found at {package_path} — skipping ASPX verification",
+        ))
+        return results
+
+    # Export current state from instance
+    try:
+        payload = json.dumps({"projectName": project_name}).encode()
+        status, body = session.post("/CustomizationApi/getProject", body=payload)
+    except Exception as exc:
+        results.append(CheckResult(
+            name="aspx:export",
+            status=CheckStatus.WARN,
+            detail=f"could not export project: {exc}",
+        ))
+        return results
+
+    if status != 200:
+        results.append(CheckResult(
+            name="aspx:export",
+            status=CheckStatus.WARN,
+            detail=f"getProject returned HTTP {status} — skipping ASPX verification",
+            http_code=status,
+        ))
+        return results
+
+    try:
+        b64_text = body.decode(errors="replace").strip().strip('"')
+        instance_zip = base64.b64decode(b64_text)
+    except Exception as exc:
+        results.append(CheckResult(
+            name="aspx:export",
+            status=CheckStatus.WARN,
+            detail=f"could not decode exported project: {exc}",
+        ))
+        return results
+
+    deployed_zip = package.read_bytes()
+
+    # Extract and compare ASPX files
+    with zipfile.ZipFile(io.BytesIO(deployed_zip)) as zf_deployed:
+        aspx_files = [
+            n for n in zf_deployed.namelist()
+            if n.lower().endswith(".aspx") and not n.startswith("__")
+        ]
+
+        if not aspx_files:
+            return results  # No ASPX files to verify
+
+        with zipfile.ZipFile(io.BytesIO(instance_zip)) as zf_instance:
+            instance_names = {
+                n.replace("\\", "/"): n for n in zf_instance.namelist()
+            }
+
+            for aspx in aspx_files:
+                normalized = aspx.replace("\\", "/")
+                deployed_content = zf_deployed.read(aspx).decode("utf-8").strip()
+
+                instance_key = instance_names.get(normalized)
+                if not instance_key:
+                    results.append(CheckResult(
+                        name=f"aspx:{normalized}",
+                        status=CheckStatus.WARN,
+                        detail="not found in exported project",
+                    ))
+                    continue
+
+                instance_content = zf_instance.read(instance_key).decode("utf-8").strip()
+
+                if deployed_content == instance_content:
+                    results.append(CheckResult(
+                        name=f"aspx:{normalized}",
+                        status=CheckStatus.PASS,
+                        detail="matches deployed package",
+                    ))
+                else:
+                    # Find first difference for debugging
+                    d_lines = deployed_content.splitlines()
+                    i_lines = instance_content.splitlines()
+                    diff_line = "unknown"
+                    for idx, (d, i) in enumerate(zip(d_lines, i_lines)):
+                        if d != i:
+                            diff_line = f"line {idx + 1}"
+                            break
+                    else:
+                        if len(d_lines) != len(i_lines):
+                            diff_line = f"line count ({len(d_lines)} vs {len(i_lines)})"
+
+                    results.append(CheckResult(
+                        name=f"aspx:{normalized}",
+                        status=CheckStatus.FAIL,
+                        detail=f"mismatch at {diff_line} — file not overwritten by import",
+                    ))
+
+    return results
+
+
+# ---------------------------------------------------------------------------
 # Orchestration
 # ---------------------------------------------------------------------------
 
@@ -363,7 +486,8 @@ def build_summary(checks: List[CheckResult]) -> str:
 
 
 def run_all_checks(
-    session: AcumaticaSession, manifest: dict, version: str
+    session: AcumaticaSession, manifest: dict, version: str,
+    package_path: str = "", project_name: str = "",
 ) -> List[CheckResult]:
     """Run all verification checks against the manifest."""
     checks: List[CheckResult] = []
@@ -387,6 +511,10 @@ def run_all_checks(
 
     # 4. GI subsystem health
     checks.append(check_gi_health(session, version))
+
+    # 5. ASPX file verification
+    if package_path and project_name:
+        checks.extend(check_aspx_files(session, project_name, package_path))
 
     return checks
 
@@ -468,6 +596,16 @@ def main():
         default=None,
         help="Optional file path to write JSON result",
     )
+    parser.add_argument(
+        "--package",
+        default=os.environ.get("ACUMATICA_PACKAGE", ""),
+        help="Path to deployed .zip package for ASPX verification (env: ACUMATICA_PACKAGE)",
+    )
+    parser.add_argument(
+        "--project",
+        default=os.environ.get("ACUMATICA_PROJECT", ""),
+        help="Customization project name for ASPX verification (env: ACUMATICA_PROJECT)",
+    )
     args = parser.parse_args()
 
     # Validate required fields
@@ -518,7 +656,10 @@ def main():
 
     try:
         # Run all checks
-        all_checks.extend(run_all_checks(session, manifest, args.endpoint_version))
+        all_checks.extend(run_all_checks(
+            session, manifest, args.endpoint_version,
+            package_path=args.package, project_name=args.project,
+        ))
     finally:
         session.logout()
 
