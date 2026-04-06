@@ -283,6 +283,24 @@
                             </px:PXGrid>
                         </Template>
                     </px:PXTabItem>
+                    <px:PXTabItem Text="Costs">
+                        <Template>
+                            <px:PXGrid ID="gridCosts" runat="server" DataSourceID="ds" Width="100%" SkinID="Details">
+                                <Levels>
+                                    <px:PXGridLevel DataMember="Costs">
+                                        <Columns>
+                                            <px:PXGridColumn DataField="CostType" Width="100" CommitChanges="True" />
+                                            <px:PXGridColumn DataField="Description" Width="180" />
+                                            <px:PXGridColumn DataField="Amount" Width="100" />
+                                            <px:PXGridColumn DataField="VendorID" Width="140" CommitChanges="True" />
+                                            <px:PXGridColumn DataField="ReferenceNbr" Width="120" />
+                                        </Columns>
+                                    </px:PXGridLevel>
+                                </Levels>
+                                <AutoSize Enabled="True" MinHeight="150" />
+                            </px:PXGrid>
+                        </Template>
+                    </px:PXTabItem>
                 </Items>
             </px:PXTab>
         </Template2>
