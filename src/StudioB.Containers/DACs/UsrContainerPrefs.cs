@@ -51,6 +51,36 @@ namespace StudioB.Containers
         [PXUIField(DisplayName = "Tracking Poll Interval (hours)")]
         public int? TrackingPollIntervalHours { get; set; }
         #endregion
+        #region LCCodeShipping
+        public abstract class lcCodeShipping : BqlString.Field<lcCodeShipping> { }
+        [PXDBString(15, IsUnicode = true)]
+        [PXUIField(DisplayName = "LC Code — Shipping")]
+        public string LCCodeShipping { get; set; }
+        #endregion
+        #region LCCodeDuty
+        public abstract class lcCodeDuty : BqlString.Field<lcCodeDuty> { }
+        [PXDBString(15, IsUnicode = true)]
+        [PXUIField(DisplayName = "LC Code — Duty")]
+        public string LCCodeDuty { get; set; }
+        #endregion
+        #region LCCodeTariff
+        public abstract class lcCodeTariff : BqlString.Field<lcCodeTariff> { }
+        [PXDBString(15, IsUnicode = true)]
+        [PXUIField(DisplayName = "LC Code — Tariff")]
+        public string LCCodeTariff { get; set; }
+        #endregion
+        #region LCCodeBrokerage
+        public abstract class lcCodeBrokerage : BqlString.Field<lcCodeBrokerage> { }
+        [PXDBString(15, IsUnicode = true)]
+        [PXUIField(DisplayName = "LC Code — Brokerage")]
+        public string LCCodeBrokerage { get; set; }
+        #endregion
+        #region LCCodeOther
+        public abstract class lcCodeOther : BqlString.Field<lcCodeOther> { }
+        [PXDBString(15, IsUnicode = true)]
+        [PXUIField(DisplayName = "LC Code — Other")]
+        public string LCCodeOther { get; set; }
+        #endregion
         #region NoteID
         public abstract class noteID : BqlGuid.Field<noteID> { }
         [PXNote]

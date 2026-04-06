@@ -162,6 +162,20 @@ namespace StudioB.Containers
         public string SealNbr { get; set; }
         #endregion
 
+        #region LandedCostRefNbr
+        public abstract class landedCostRefNbr : BqlString.Field<landedCostRefNbr> { }
+        [PXDBString(15, IsUnicode = true)]
+        [PXUIField(DisplayName = "Landed Cost Ref", Enabled = false)]
+        public string LandedCostRefNbr { get; set; }
+        #endregion
+
+        #region LandedCostStatus
+        public abstract class landedCostStatus : BqlString.Field<landedCostStatus> { }
+        [PXDBString(20, IsUnicode = true)]
+        [PXUIField(DisplayName = "LC Status", Enabled = false)]
+        public string LandedCostStatus { get; set; }
+        #endregion
+
         #region LastEventCode
         public abstract class lastEventCode : BqlString.Field<lastEventCode> { }
         [PXDBString(20, IsUnicode = true)]

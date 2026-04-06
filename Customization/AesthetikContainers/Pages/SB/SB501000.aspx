@@ -9,6 +9,7 @@
             <px:PXDSCallbackCommand Name="Delete" PostData="Self" />
             <px:PXDSCallbackCommand Name="First" PostData="Self" StartNewGroup="True" />
             <px:PXDSCallbackCommand Name="Last" PostData="Self" />
+            <px:PXDSCallbackCommand Name="CreateLandedCost" CommitChanges="True" />
         </CallbackCommands>
     </px:PXDataSource>
 </asp:Content>
@@ -72,6 +73,8 @@
                     <px:PXTextEdit ID="edPortOfDischarge" runat="server" DataField="PortOfDischarge" />
                     <px:PXTextEdit ID="edContainerType" runat="server" DataField="ContainerType" />
                     <px:PXTextEdit ID="edSealNbr" runat="server" DataField="SealNbr" />
+                    <px:PXTextEdit ID="edLandedCostRefNbr" runat="server" DataField="LandedCostRefNbr" />
+                    <px:PXTextEdit ID="edLandedCostStatus" runat="server" DataField="LandedCostStatus" />
                 </Template>
             </px:PXFormView>
             <px:PXTab ID="tabDetail" runat="server" Width="100%" DataSourceID="ds">
