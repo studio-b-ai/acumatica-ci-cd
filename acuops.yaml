@@ -42,6 +42,7 @@ validation:
   strict: true
   isv_prefix: ""
   min_acumatica_version: "24.2"
+  acumatica_build_version: "24.208"
 
 # ─── Client Identity ────────────────────────────────────────────────────────
 client:

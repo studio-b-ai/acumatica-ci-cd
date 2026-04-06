@@ -135,6 +135,15 @@ namespace StudioB.Containers
         public string Status { get; set; }
         #endregion
 
+        #region TransportMode
+        public abstract class transportMode : BqlString.Field<transportMode> { }
+        [PXDBString(10, IsUnicode = true)]
+        [PXUIField(DisplayName = "Transport Mode")]
+        [PXStringList(new string[] { "OCEAN", "AIR", "RAIL", "TRUCK" },
+                       new string[] { "Ocean", "Air", "Rail", "Truck" })]
+        public string TransportMode { get; set; }
+        #endregion
+
         #region ContainerType
         public abstract class containerType : BqlString.Field<containerType> { }
         [PXDBString(10, IsUnicode = true)]

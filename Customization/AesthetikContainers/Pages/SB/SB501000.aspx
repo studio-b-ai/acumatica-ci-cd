@@ -36,6 +36,7 @@
                         <Columns>
                             <px:PXGridColumn DataField="ContainerCD" Width="120" />
                             <px:PXGridColumn DataField="Status" Width="100" />
+                            <px:PXGridColumn DataField="TransportMode" Width="90" />
                             <px:PXGridColumn DataField="CarrierCode" Width="90" />
                             <px:PXGridColumn DataField="VesselName" Width="120" />
                             <px:PXGridColumn DataField="ETA" Width="90" />
@@ -59,6 +60,7 @@
                     <px:PXSelector ID="edContainerCD" runat="server" DataField="ContainerCD" Enabled="False" />
                     <px:PXDropDown ID="edStatus" runat="server" DataField="Status" CommitChanges="True" />
                     <px:PXTextEdit ID="edCarrierCode" runat="server" DataField="CarrierCode" />
+                    <px:PXDropDown ID="edTransportMode" runat="server" DataField="TransportMode" />
                     <px:PXTextEdit ID="edVesselName" runat="server" DataField="VesselName" />
                     <px:PXTextEdit ID="edBookingRef" runat="server" DataField="BookingRef" />
                     <px:PXTextEdit ID="edBillOfLading" runat="server" DataField="BillOfLading" />
@@ -97,9 +99,14 @@
                                 <Levels>
                                     <px:PXGridLevel DataMember="POLinks">
                                         <Columns>
-                                            <px:PXGridColumn DataField="OrderType" Width="70" />
-                                            <px:PXGridColumn DataField="OrderNbr" Width="100" />
-                                            <px:PXGridColumn DataField="LineNbr" Width="70" />
+                                            <px:PXGridColumn DataField="OrderType" Width="60" />
+                                            <px:PXGridColumn DataField="OrderNbr" Width="90" />
+                                            <px:PXGridColumn DataField="BAccount__AcctName" Width="140" />
+                                            <px:PXGridColumn DataField="LineNbr" Width="50" />
+                                            <px:PXGridColumn DataField="InventoryItem__InventoryCD" Width="120" />
+                                            <px:PXGridColumn DataField="InventoryItem__Descr" Width="180" />
+                                            <px:PXGridColumn DataField="POLine__OrderQty" Width="80" />
+                                            <px:PXGridColumn DataField="POLine__UOM" Width="60" />
                                         </Columns>
                                     </px:PXGridLevel>
                                 </Levels>

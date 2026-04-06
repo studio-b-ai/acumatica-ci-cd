@@ -94,6 +94,11 @@ on:
         required: false
         type: string
 
+permissions:
+  contents: read
+  id-token: write
+  pull-requests: write
+
 jobs:
   # ──────────────────────────────────────────────
   # Job 1: Build — Package customization into .zip
@@ -348,13 +353,20 @@ jobs:
       - name: Check for C# extension library
         id: check_csproj
         run: |
-          if ls Customization/*.csproj 1>/dev/null 2>&1; then
+          if ls src/*/*.csproj 1>/dev/null 2>&1; then
             echo "has_csproj=true" >> "$GITHUB_OUTPUT"
-            echo "Found C# project — will build extension library"
+            echo "Found C# project(s) in src/ — will build extension library"
           else
             echo "has_csproj=false" >> "$GITHUB_OUTPUT"
             echo "No C# project — packaging XML/ASPX only"
           fi
+
+      - name: Authenticate to GCP
+        if: steps.check_csproj.outputs.has_csproj == 'true'
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
 
       - name: Setup .NET (if C# extension exists)
         if: steps.check_csproj.outputs.has_csproj == 'true'
@@ -362,13 +374,35 @@ jobs:
         with:
           dotnet-version: '6.0.x'
 
+      - name: Download Acumatica SDK from GCS
+        if: steps.check_csproj.outputs.has_csproj == 'true'
+        run: |
+          SDK_VERSION=$(grep 'acumatica_build_version' acuops.yaml | head -1 | sed 's/.*: *"\{0,1\}\([^"]*\)"\{0,1\}/\1/' || echo "24.208")
+          echo "Downloading Acumatica SDK ${SDK_VERSION}..."
+          mkdir -p lib
+          gcloud storage cp "gs://aesthetik-acumatica-sdk/${SDK_VERSION}/*.dll" lib/
+          echo "SDK DLLs downloaded:"
+          ls -lh lib/*.dll
+
       - name: Build C# extension library
         if: steps.check_csproj.outputs.has_csproj == 'true'
         run: |
-          cd Customization
-          dotnet restore
-          dotnet build --configuration Release --no-restore
-          echo "Extension library built successfully"
+          for proj in src/*/*.csproj; do
+            echo "Building $(basename $proj)..."
+            dotnet restore "$proj"
+            dotnet build "$proj" --configuration Release --no-restore
+          done
+
+          # Copy built DLLs into customization Bin directories
+          for dll in src/*/bin/Release/net48/*.dll; do
+            DLLNAME=$(basename "$dll")
+            for bindir in Customization/*/Bin; do
+              if [ -d "$bindir" ]; then
+                cp "$dll" "$bindir/"
+                echo "Copied $DLLNAME → $bindir/"
+              fi
+            done
+          done
 
       - name: Package customization project
         id: package
