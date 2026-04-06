@@ -52,10 +52,17 @@ def navigate_and_wait(page: Page, screen_id: str, params: str = "", timeout: int
 # ── Screen Helpers ─────────────────────────────────────────────────────────
 
 def wait_for_screen_ready(page: Page, timeout: int = 15_000, frame: Frame | None = None):
-    """Wait for Acumatica screen to finish loading."""
+    """Wait for Acumatica screen to finish loading.
+
+    Looks for any form element in phF (standard screens use 'form',
+    Procurement Command Center uses 'frmFilter').
+    """
     ctx = _get_frame(page, frame)
     page.wait_for_load_state("domcontentloaded")
-    ctx.locator("#ctl00_phF_form").wait_for(state="visible", timeout=timeout)
+    # Match either #ctl00_phF_form (standard) or #ctl00_phF_frmFilter (dashboard)
+    ctx.locator("#ctl00_phF_form, #ctl00_phF_frmFilter").first.wait_for(
+        state="visible", timeout=timeout
+    )
     page.wait_for_timeout(500)
 
 

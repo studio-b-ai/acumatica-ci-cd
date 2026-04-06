@@ -534,43 +534,67 @@ class TestContainerMaintenanceCRUD:
     """SB501000 — Create, save, verify tabs, delete a container."""
 
     def test_create_and_delete_container(self, acumatica_page):
-        """Full lifecycle: add new → set fields → save → verify tabs → delete."""
+        """Full lifecycle: add new → set fields → save → verify tabs → delete.
+
+        SB501000 is a Procurement Command Center (FormDetail.master) with:
+        - phF: Filter form with KPI fields
+        - phG: PXSplitContainer with grid (Template1) and detail form (Template2)
+        Detail form fields use phG-based IDs, not phF.
+        """
         page = acumatica_page
         navigate_to_screen_safe(page, "SB501000")
         wait_for_screen(page, "SB501000")
 
-        # Add new record
+        # Add new record via toolbar
         click_add_new(page)
         assert_no_screen_errors(page, "SB501000 after Add New")
 
-        # Set ContainerCD (DIV-based selector field — use _text suffix for the INPUT)
+        # Set ContainerCD — field is in the detail form inside phG split container.
+        # Use partial ID match since ASP.NET generates full path from control hierarchy.
+        frame = get_main_frame(page)
         test_cd = f"TESTE2E{int(time.time()) % 100000}"
-        set_field_value(page, "ctl00_phF_form_edContainerCD_text", test_cd)
+        cd_input = frame.locator("input[id$='edContainerCD_text']").first
+        cd_input.click()
+        cd_input.fill(test_cd)
+        frame.evaluate("document.activeElement.blur()")
+        page.wait_for_timeout(500)
 
         # Save
         save_record(page)
         assert_no_screen_errors(page, "SB501000 after Save")
 
         # Verify Events tab loads
-        events_tab = page.locator("span:has-text('Events')").first
+        events_tab = frame.locator("span:has-text('Events')").first
         if events_tab.is_visible(timeout=3000):
             events_tab.click()
             page.wait_for_timeout(1000)
         assert_no_screen_errors(page, "SB501000 Events tab")
 
         # Verify PO Links tab loads
-        po_tab = page.locator("span:has-text('PO Links')").first
+        po_tab = frame.locator("span:has-text('PO Links')").first
         if po_tab.is_visible(timeout=3000):
             po_tab.click()
             page.wait_for_timeout(1000)
         assert_no_screen_errors(page, "SB501000 PO Links tab")
+
+        # Verify Costs tab loads
+        costs_tab = frame.locator("span:has-text('Costs')").first
+        if costs_tab.is_visible(timeout=3000):
+            costs_tab.click()
+            page.wait_for_timeout(1000)
+        assert_no_screen_errors(page, "SB501000 Costs tab")
 
         # Delete test record
         click_delete(page)
         page.wait_for_timeout(1000)
 
     def test_form_fields_visible_after_add_new(self, acumatica_page):
-        """Key form fields should be visible after clicking Add New."""
+        """Key form fields should be visible in the detail panel after Add New.
+
+        SB501000 uses a split container layout. Detail fields are in phG
+        inside frmDetail, not in phF (which holds the KPI filter form).
+        Use suffix-based selectors to match regardless of full ID path.
+        """
         page = acumatica_page
         navigate_to_screen_safe(page, "SB501000")
         wait_for_screen(page, "SB501000")
@@ -579,18 +603,18 @@ class TestContainerMaintenanceCRUD:
         page.wait_for_timeout(1000)
 
         frame = get_main_frame(page)
-        # ContainerCD (selector DIV with _text INPUT)
-        assert frame.locator("#ctl00_phF_form_edContainerCD_text").is_visible(timeout=5000), \
+        # ContainerCD (selector DIV with _text INPUT) — in detail form
+        assert frame.locator("input[id$='edContainerCD_text']").first.is_visible(timeout=5000), \
             "ContainerCD field not visible after Add New"
-        # CarrierCode (plain INPUT)
-        assert frame.locator("#ctl00_phF_form_edCarrierCode").is_visible(timeout=3000), \
+        # CarrierCode — in detail form
+        assert frame.locator("input[id$='edCarrierCode']").first.is_visible(timeout=3000), \
             "CarrierCode field not visible after Add New"
-        # PortOfLoading (plain INPUT)
-        assert frame.locator("#ctl00_phF_form_edPortOfLoading").is_visible(timeout=3000), \
-            "PortOfLoading field not visible after Add New"
-        # PortOfDischarge (plain INPUT)
-        assert frame.locator("#ctl00_phF_form_edPortOfDischarge").is_visible(timeout=3000), \
-            "PortOfDischarge field not visible after Add New"
+        # TransportMode — new field in detail form
+        assert frame.locator("[id$='edTransportMode']").first.is_visible(timeout=3000), \
+            "TransportMode field not visible after Add New"
+        # Status — in detail form
+        assert frame.locator("[id$='edStatus']").first.is_visible(timeout=3000), \
+            "Status field not visible after Add New"
 
         page.keyboard.press("Escape")
         page.wait_for_timeout(500)
@@ -737,7 +761,12 @@ class TestContainerE2EFlow:
         navigate_to_screen_safe(page, "SB501000")
         wait_for_screen(page, "SB501000")
         click_add_new(page)
-        set_field_value(page, "ctl00_phF_form_edContainerCD_text", test_cd)
+        # ContainerCD is in phG detail form, not phF — use suffix selector
+        frame = get_main_frame(page)
+        cd_input = frame.locator("input[id$='edContainerCD_text']").first
+        cd_input.click()
+        cd_input.fill(test_cd)
+        frame.evaluate("document.activeElement.blur()")
         page.wait_for_timeout(500)
 
         # Step 2: Save
@@ -765,8 +794,10 @@ class TestContainerE2EFlow:
             page.wait_for_load_state("domcontentloaded")
             page.wait_for_timeout(2000)
 
-        # Verify we're on our test record
-        current_cd = get_field_value(page, "ctl00_phF_form_edContainerCD_text")
+        # Verify we're on our test record — use suffix selector
+        frame = get_main_frame(page)
+        cd_el = frame.locator("input[id$='edContainerCD_text']").first
+        current_cd = cd_el.input_value() if cd_el.is_visible(timeout=3000) else ""
         if current_cd == test_cd:
             click_delete(page)
         else:
