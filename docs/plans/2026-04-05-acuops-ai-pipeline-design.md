@@ -228,17 +228,93 @@ inputs:
 - Use Slack Bot API (not webhook — webhooks can't DM)
 - Include action buttons: "View PR", "View Logs", "Approve Fix"
 
-### 4. AcuDev KB Integration
+### 4. Studio B Knowledge Base (Qdrant)
 
-Every deployment failure and resolution gets ingested into the AcuDev KB:
+The knowledge base is the institutional brain for all Studio B operations. It replaces Claude memory files as the primary store for operational knowledge, incident lessons, deploy patterns, and business rules.
+
+#### Collection Architecture
+
+```
+Qdrant Collections:
+┌─────────────────────────────────────────┐
+│  studiob-knowledge (primary)            │
+│                                         │
+│  Metadata tags:                         │
+│  • domain: acumatica | pipeline |       │
+│            infrastructure | business    │
+│  • client: aesthetik | wasala | studiob │
+│  • source: official | incident | policy │
+│            | runbook | architecture     │
+│  • version: 25.2 (where applicable)    │
+│                                         │
+│  Contains:                              │
+│  • Acumatica official docs (PDFs, wiki) │
+│  • Deploy incident reports & lessons    │
+│  • Pipeline patterns & anti-patterns    │
+│  • Business rules (hours, staff, SOPs)  │
+│  • Infrastructure config & runbooks     │
+│  • API quirks & workarounds             │
+├─────────────────────────────────────────┤
+│  acumatica-community (supplemental)     │
+│  • Forum threads, quality-scored        │
+│  • Searched when primary KB has low     │
+│    confidence                           │
+├─────────────────────────────────────────┤
+│  acumatica-stackoverflow (supplemental) │
+│  • SO Q&A, scored                       │
+│  • Same fallback role as community      │
+└─────────────────────────────────────────┘
+```
+
+#### Search Strategy
+
+1. Query `studiob-knowledge` first, filtered by relevant domain + client
+2. If confidence is low (top score < 0.7), broaden to community + SO
+3. Rerank: official > incident > policy > community > SO
+
+#### What Lives in the KB vs. Claude Memory Files
+
+**In Qdrant (studiob-knowledge):**
+- Operational knowledge: deploy patterns, API quirks, incident lessons
+- Business rules: staff schedules, notification policies, SOP references
+- Infrastructure: service URLs, environment configs, architecture decisions
+- Acumatica domain: DAC patterns, graph extensions, customization API behavior
+- Incident post-mortems: what broke, why, how it was fixed, prevention rules
+
+**In Claude memory files (kept minimal):**
+- User preferences: communication style, response verbosity
+- Session context: what repo we're in, what we're working on
+- Nothing operational — if an agent needs it to do its job, it goes in Qdrant
+
+#### Memory Migration
+
+The ~40 operational entries currently in CLAUDE.md memory files will be migrated to `studiob-knowledge` with proper domain/client/source tags. Examples:
+
+| Memory Entry | Domain | Client | Source |
+|---|---|---|---|
+| "publishBegin is instance-wide" | pipeline | aesthetik | incident |
+| "Never UPDATE FromUnit/ToUnit on INUnit" | acumatica | aesthetik | incident |
+| "Weekend deploys are after-hours" | pipeline | aesthetik | policy |
+| "App pool restart causes timeouts" | infrastructure | aesthetik | runbook |
+| "api-bot has full screen access" | acumatica | aesthetik | architecture |
+
+#### Auto-Ingestion
+
+Every deployment failure and resolution is automatically ingested:
 - Failure pattern (error message, screen, HTTP status)
-- Root cause
-- Fix applied
-- Prevention rule
+- Root cause analysis
+- Fix applied (with PR link)
+- Prevention rule for future agents
 
-The agent queries the KB before attempting any fix. Over time, the KB accumulates institutional knowledge that makes the agent faster and more accurate.
+The pipeline agent queries the KB before attempting any fix. Over time, the KB becomes the definitive source of "how things work here."
 
-**Ingestion endpoint:** POST /knowledge/ingest (Railway-hosted, existing)
+#### Embedding & Infrastructure
+
+- **Embedding model:** Voyage AI `voyage-3` (1024 dimensions)
+- **Chunking:** ~500 tokens with 50-token overlap, paragraph-boundary aware
+- **Hosting:** Qdrant on Railway (existing)
+- **Ingestion:** POST /knowledge/ingest (Railway-hosted, existing)
+- **All agents share the same KB** — pipeline agent, AcuDev, request portal, dashboard
 
 ### 5. GCE VM Management
 
@@ -265,28 +341,39 @@ The agent queries the KB before attempting any fix. Over time, the KB accumulate
 
 This is a big system. Build it incrementally:
 
-### Phase 1: Fix the immediate bugs (this week)
+### Phase 1: Pipeline hardening (this week)
 - Unified `verify.py` replacing both validation scripts
-- Branch protection on workflow_dispatch
-- Remove auto-rollback, replace with alert
+- Branch protection on workflow_dispatch (main only for prod)
+- Remove auto-rollback, replace with alert (Slack DM to Kevin)
 - Test gate becomes hard gate with OVERRIDE escape
-- Slack DM to Kevin instead of channel posts
+- SaaS sandbox as staging environment (configure secrets)
 
-### Phase 2: AI agent for deploy orchestration
+### Phase 2: Knowledge base consolidation
+- Create `studiob-knowledge` collection in Qdrant
+- Migrate ~40 operational memory entries with domain/client/source tags
+- Update ingestion endpoint to support new tagging schema
+- Set up auto-ingestion for deploy incidents
+- Migrate `acudev-knowledge` official content into `studiob-knowledge`
+- Slim down Claude memory files to user preferences only
+
+### Phase 3: AI agent for deploy orchestration
 - Claude Code / scheduled task manages the deploy lifecycle
 - Agent calls deploy.py, verify.py as tools
+- Agent queries studiob-knowledge for context before decisions
 - Agent handles sandbox → prod promotion
 - Structured output from verify.py feeds agent decisions
 
-### Phase 3: AI agent for failure recovery
+### Phase 4: AI agent for failure recovery
 - Agent diagnoses failures using KB + logs
 - GCE VM spin-up/teardown automation
 - Agent iterates on fixes in VM
 - Auto-PR + auto-merge on sandbox pass
+- Auto-ingestion of incident + resolution into KB
 
-### Phase 4: Full loop with request portal
+### Phase 5: Full loop with request portal
 - Portal enhancement requests trigger the full lifecycle
 - AI designs, implements, deploys, verifies
+- AcuDev draws from studiob-knowledge for all Acumatica work
 - Kevin reviews summaries, not code (unless escalated)
 
 ## Open Questions
