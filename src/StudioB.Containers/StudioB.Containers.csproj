@@ -13,6 +13,14 @@
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3" PrivateAssets="all" />
   </ItemGroup>
 
+  <!-- Acuminator static analysis — Windows-only (uses named memory maps) -->
+  <ItemGroup Condition="'$(OS)' == 'Windows_NT'">
+    <PackageReference Include="Acuminator.Analyzers" Version="4.0.1">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers</IncludeAssets>
+    </PackageReference>
+  </ItemGroup>
+
   <ItemGroup>
     <Reference Include="PX.Data">
       <HintPath>..\..\lib\PX.Data.dll</HintPath>
