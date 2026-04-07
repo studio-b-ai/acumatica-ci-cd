@@ -1232,40 +1232,85 @@ jobs:
   # ──────────────────────────────────────────────
   # Job 5: Invoke Deploy Agent (fire-and-forget)
   # ──────────────────────────────────────────────
+  # ──────────────────────────────────────────────
+  # Job: AI Failure Recovery — diagnose and fix sandbox failures
+  # ──────────────────────────────────────────────
+  # Runs AFTER sandbox-gate. If sandbox passed, this is a no-op.
+  # If sandbox failed, the agent reads test logs, diagnoses the failure,
+  # creates a fix PR, and re-triggers the pipeline. Max 3 attempts.
   invoke-agent:
-    name: Invoke Deploy Agent
-    needs: [build, qualify]
+    name: AI Failure Recovery
+    needs: [build, qualify, sandbox-gate]
     continue-on-error: true
     if: >-
       always() &&
       needs.build.result == 'success' &&
       needs.build.outputs.customization_changes == 'true' &&
-      github.event_name != 'pull_request' &&
-      (
-        needs.qualify.result == 'success' ||
-        needs.qualify.result == 'skipped'
-      )
+      needs.sandbox-gate.result == 'failure' &&
+      github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Run deploy agent
+      - name: Download sandbox test logs
+        run: |
+          # Get the sandbox-gate job ID and download its logs
+          JOB_ID=$(gh api repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/jobs \
+            --jq '.jobs[] | select(.name == "Sandbox Publish + UI Tests") | .id')
+          if [ -n "$JOB_ID" ]; then
+            gh api repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/jobs/$JOB_ID/logs \
+              > sandbox-gate-logs.txt 2>/dev/null || true
+          fi
+          # Also grab any test artifacts
+          gh run download ${{ github.run_id }} --name verify-result-sandbox --dir ./verify-results 2>/dev/null || true
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT_DISPATCH }}
+
+      - name: Run failure recovery agent
         uses: anthropics/claude-code-action@v1
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           prompt: |
-            Read agents/deploy-agent.md and follow it exactly.
+            The sandbox-gate job FAILED for this deploy. Your job is to diagnose the failure, fix it, and get the pipeline passing.
 
-            Deploy context:
-            - Package: ${{ needs.build.outputs.package_name }}
-            - Project: ${{ needs.build.outputs.project_name }}
-            - Also publish: ${{ needs.build.outputs.also_publish }}
+            ## Context
+            - Repository: ${{ github.repository }}
             - Commit: ${{ github.sha }}
             - Run ID: ${{ github.run_id }}
-            - Environment: ${{ github.ref == 'refs/heads/main' && 'production' || 'staging' }}
-          max_turns: 50
-          timeout_minutes: 30
+            - Project: ${{ needs.build.outputs.project_name }}
+
+            ## What to do
+
+            1. Read sandbox-gate-logs.txt to understand what failed (test failures, publish errors, timeouts)
+            2. Read verify-results/verify-result.json if it exists
+            3. Search studiob-knowledge (Qdrant) for matching failure patterns — embed the error with Voyage AI and search
+            4. Diagnose the root cause
+            5. If you can fix it (code change, config change, missing DB column, test update):
+               - Create a branch, commit the fix, push, and create a PR
+               - Post to Slack #ops (channel C0AR2UW2S66): "Sandbox failed: [diagnosis]. Fix PR: [link]"
+               - DM Kevin (user U0ALNRQ4KF0): "[diagnosis]. I created PR [link]. Merge to re-deploy."
+            6. If you can't fix it (infrastructure issue, Acumatica bug, permissions):
+               - DM Kevin with full diagnosis and recommendation
+               - Post to Slack #ops: "Sandbox failed: [diagnosis]. Escalating to Kevin."
+
+            ## Rules
+            - Max 3 fix attempts per run. If your first fix doesn't work, try twice more, then escalate.
+            - Never push directly to main. Always create a PR.
+            - Never deploy to production. Your job is to fix and PR — the pipeline handles the rest.
+            - Read agents/deploy-agent.md for Slack/Qdrant patterns (API calls, channel IDs, etc.)
+
+            ## Environment
+            - QDRANT_URL and VOYAGE_API_KEY are available as GitHub secrets (use gh CLI to access if needed)
+            - SLACK_BOT_TOKEN is available for Slack communication
+            - GH_TOKEN is available for GitHub operations
+          max_turns: 30
+          timeout_minutes: 20
+        env:
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+          QDRANT_URL: ${{ secrets.QDRANT_URL }}
+          VOYAGE_API_KEY: ${{ secrets.VOYAGE_API_KEY }}
+          GH_TOKEN: ${{ secrets.GH_PAT_DISPATCH }}
 
   # ──────────────────────────────────────────────
   # Job 4: Validate — PR check (no publish)
