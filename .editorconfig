@@ -1,0 +1,32 @@
+# .editorconfig for acumatica-ci-cd
+#
+# Scoped to C# source under src/ (Acumatica customization projects).
+# Primary purpose: control Acuminator Roslyn analyzer severity so
+# pre-existing code-style findings don't block CI/CD deploys.
+
+root = true
+
+[*.cs]
+# ─────────────────────────────────────────────────────────────────
+# Acuminator — Localization rules (PX1050, PX1053)
+# ─────────────────────────────────────────────────────────────────
+# Acuminator reports these as severity=error by default, which makes
+# dotnet build treat them as compile errors and skip DLL production.
+#
+# The codebase has pre-existing findings that accumulated before
+# build-validate ran on the self-hosted Windows runner (Linux build
+# never fired Acuminator). See acumatica-ci-cd#267 for the cleanup
+# tracking issue.
+#
+# Demoting to warning so build-validate produces DLLs while still
+# surfacing the findings in the build log and step summary. The
+# follow-up issue will fix them properly and we can reconsider the
+# severity once the backlog is clean.
+
+# PX1050 — Hardcoded strings in localization methods
+#   https://github.com/Acumatica/Acuminator/blob/master/docs/diagnostics/PX1050.md
+dotnet_diagnostic.PX1050.severity = warning
+
+# PX1053 — String concatenation in localization
+#   https://github.com/Acumatica/Acuminator/blob/master/docs/diagnostics/PX1053.md
+dotnet_diagnostic.PX1053.severity = warning
