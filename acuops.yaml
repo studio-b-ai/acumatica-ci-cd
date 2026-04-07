@@ -65,7 +65,11 @@ pipeline:
   isv_packages: []
   also_publish_test:
     - "AesthetikContainers"
-    - "AesthetikContainerGIs"
+    # AesthetikContainerGIs temporarily removed 2026-04-07 — orphan CustProject
+    # row on both sandbox and production blocks every publish. Production's
+    # ALSO_PUBLISH_PROJECTS variable also lacks it, so sandbox was out of sync
+    # and every sandbox-gate failed. Re-add after Acumatica support cleans the
+    # orphan, OR after we successfully run cleanup_orphan against it.
     - "StudioBAcuOps"
   test_tenant_enabled: true
 
