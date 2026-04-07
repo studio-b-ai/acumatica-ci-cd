@@ -508,6 +508,34 @@ jobs:
             pip install -r pipeline/requirements.txt
           fi
 
+      # ── Sandbox host assertion ──────────────────────────────────
+      # Defense-in-depth: refuse to publish if the SANDBOX_* secrets
+      # have been repointed at the prod instance or the prod-instance
+      # Heritage Test tenant. Both conditions cause prod app pool
+      # restarts (see 2026-04-07 incident).
+      - name: Verify SANDBOX secrets point at sandbox host
+        env:
+          ACUMATICA_URL: ${{ secrets.ACUMATICA_SANDBOX_URL }}
+          ACUMATICA_TENANT: ${{ secrets.ACUMATICA_SANDBOX_TENANT }}
+        run: |
+          set -e
+          if [[ -z "${ACUMATICA_URL}" ]]; then
+            echo "::error::ACUMATICA_SANDBOX_URL is empty"
+            exit 1
+          fi
+          HOST=$(echo "${ACUMATICA_URL}" | sed -E 's|^https?://||;s|/.*$||')
+          if [[ "${HOST}" != *"heritagefabrics-sandbox.acumatica.com"* ]]; then
+            echo "::error::ACUMATICA_SANDBOX_URL must point at heritagefabrics-sandbox.acumatica.com (got host: ${HOST})"
+            echo "::error::Refusing to publish — would restart the prod app pool. See 2026-04-07 incident."
+            exit 1
+          fi
+          if [[ "${ACUMATICA_TENANT}" == "Heritage Test" ]]; then
+            echo "::error::ACUMATICA_SANDBOX_TENANT is 'Heritage Test', which lives on the prod instance"
+            echo "::error::Refusing to publish — would restart the prod app pool."
+            exit 1
+          fi
+          echo "[OK] Sandbox host: ${HOST}, tenant: ${ACUMATICA_TENANT}"
+
       # ── Publish to sandbox ──────────────────────────────────────
       - name: Deploy to sandbox
         id: deploy
@@ -1237,14 +1265,22 @@ jobs:
   # ──────────────────────────────────────────────
   # Job: AI Failure Recovery — diagnose and fix sandbox failures
   # ──────────────────────────────────────────────
-  # Runs AFTER sandbox-gate. If sandbox passed, this is a no-op.
-  # If sandbox failed, the agent reads test logs, diagnoses the failure,
-  # creates a fix PR, and re-triggers the pipeline. Max 3 attempts.
+  # DISABLED 2026-04-07: dispatch loop. The recovery agent re-dispatched
+  # AcuOps Deploy after each sandbox-gate failure, and because
+  # ACUMATICA_SANDBOX_URL/TENANT secrets pointed at prod / Heritage Test,
+  # every retry recycled the prod app pool. 8 prod restarts in 14 hours.
+  # Re-enable only after:
+  #   1. ACUMATICA_SANDBOX_URL + ACUMATICA_SANDBOX_TENANT corrected
+  #   2. GH_PAT_DISPATCH replaced with a service-account PAT (so audit
+  #      log shows the agent, not Kevin)
+  #   3. Recovery agent capped at N total dispatches per 24h via an
+  #      external counter the agent itself cannot reset
   invoke-agent:
-    name: AI Failure Recovery
+    name: AI Failure Recovery (DISABLED)
     needs: [build, qualify, sandbox-gate]
     continue-on-error: true
     if: >-
+      false &&
       always() &&
       needs.build.result == 'success' &&
       needs.build.outputs.customization_changes == 'true' &&
