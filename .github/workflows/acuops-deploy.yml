@@ -424,14 +424,136 @@ jobs:
           retention-days: 30
 
   # ──────────────────────────────────────────────
+  # Job 1.5: Build-Validate — Windows-only Acuminator static analysis
+  # ──────────────────────────────────────────────
+  # Runs on the self-hosted Windows runner at acumatica-test.
+  # Linux build (Job 1) skips Acuminator entirely because the analyzer
+  # uses named memory maps that only work on Windows. This job rebuilds
+  # on Windows so Acuminator (PX1000-series rules) actually fires.
+  # Fails the pipeline on Acuminator errors OR C# compile errors.
+  # Warnings are surfaced in the step summary but do NOT block.
+  build-validate:
+    name: Build + Acuminator (self-hosted Windows)
+    needs: build
+    runs-on: [self-hosted, windows, acumatica-sdk]
+    timeout-minutes: 15
+    # Only run if the change touches C# source or the build system
+    if: needs.build.outputs.customization_changes == 'true'
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Check for C# extension library
+        id: check_csproj
+        shell: pwsh
+        run: |
+          $csprojs = Get-ChildItem -Path src -Recurse -Filter *.csproj -ErrorAction SilentlyContinue
+          if ($csprojs) {
+            "has_csproj=true" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+            Write-Host "Found $($csprojs.Count) C# project(s) — Acuminator will run"
+          } else {
+            "has_csproj=false" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+            Write-Host "No C# project — skipping Acuminator"
+          }
+
+      # SDK DLLs: prefer copying from the local Acumatica install
+      # (C:\Program Files\Acumatica ERP\) over a GCS download. The VM
+      # has Acumatica installed for running tests, so the DLLs are
+      # guaranteed to match the runtime the publish will target.
+      - name: Copy SDK DLLs from local Acumatica install
+        if: steps.check_csproj.outputs.has_csproj == 'true'
+        shell: pwsh
+        run: |
+          $libDir = "lib"
+          if (-not (Test-Path $libDir)) { New-Item -ItemType Directory -Path $libDir | Out-Null }
+          $sdkRoots = @(
+            "C:\Program Files\Acumatica ERP\Bin",
+            "C:\Program Files (x86)\Acumatica ERP\Bin"
+          )
+          $sdkRoot = $sdkRoots | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $sdkRoot) {
+            Write-Host "::error::No Acumatica SDK found on VM. Checked: $($sdkRoots -join ', ')"
+            exit 1
+          }
+          Write-Host "Using SDK from: $sdkRoot"
+          $needed = @(
+            "PX.Data.dll",
+            "PX.Data.BQL.Fluent.dll",
+            "PX.Objects.dll",
+            "PX.Common.dll",
+            "PX.Common.Std.dll",
+            "PX.DbServices.dll",
+            "PX.Web.Customization.dll"
+          )
+          foreach ($dll in $needed) {
+            $src = Join-Path $sdkRoot $dll
+            if (Test-Path $src) {
+              Copy-Item $src $libDir -Force
+              Write-Host "  copied $dll"
+            } else {
+              Write-Host "::warning::$dll not found at $src"
+            }
+          }
+          Get-ChildItem $libDir -Filter *.dll | Format-Table Name, @{N='Size';E={$_.Length}}
+
+      - name: Build with Acuminator
+        if: steps.check_csproj.outputs.has_csproj == 'true'
+        shell: pwsh
+        run: |
+          $buildLog = "build-validate.log"
+          $csprojs = Get-ChildItem -Path src -Recurse -Filter *.csproj
+          $overallErrors = 0
+          foreach ($proj in $csprojs) {
+            Write-Host "========================================="
+            Write-Host "Building $($proj.Name)..."
+            Write-Host "========================================="
+            # /warnaserror:NOTHING so warnings surface but don't block.
+            # Acuminator errors are reported as errors already, so
+            # default exit codes handle the gate.
+            dotnet restore "$($proj.FullName)" 2>&1 | Tee-Object -FilePath $buildLog -Append
+            dotnet build "$($proj.FullName)" --configuration Release --no-restore 2>&1 | Tee-Object -FilePath $buildLog -Append
+            if ($LASTEXITCODE -ne 0) {
+              $overallErrors++
+              Write-Host "::error::Build failed for $($proj.Name) (exit $LASTEXITCODE)"
+            }
+          }
+          # Surface Acuminator diagnostics in the step summary
+          $acuminatorHits = Select-String -Path $buildLog -Pattern 'PX\d{4}' -AllMatches -ErrorAction SilentlyContinue
+          if ($acuminatorHits) {
+            "## Acuminator findings" | Out-File $env:GITHUB_STEP_SUMMARY -Append
+            "" | Out-File $env:GITHUB_STEP_SUMMARY -Append
+            '```' | Out-File $env:GITHUB_STEP_SUMMARY -Append
+            $acuminatorHits | Select-Object -First 50 | ForEach-Object { $_.Line } | Out-File $env:GITHUB_STEP_SUMMARY -Append
+            '```' | Out-File $env:GITHUB_STEP_SUMMARY -Append
+          } else {
+            "## Acuminator: clean ✅" | Out-File $env:GITHUB_STEP_SUMMARY -Append
+          }
+          if ($overallErrors -gt 0) {
+            exit 1
+          }
+
+      - name: Upload build log
+        if: always() && steps.check_csproj.outputs.has_csproj == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-validate-log-${{ github.run_number }}
+          path: build-validate.log
+          retention-days: 14
+
+  # ──────────────────────────────────────────────
   # Job 2: Qualify — Agentic pre-deploy checks
   # ──────────────────────────────────────────────
   qualify:
     name: Pre-Deploy Qualification
-    needs: build
+    needs: [build, build-validate]
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    if: github.event_name != 'pull_request' && github.event.inputs.force_qualify != 'true'
+    if: >
+      always() &&
+      needs.build.result == 'success' &&
+      (needs.build-validate.result == 'success' || needs.build-validate.result == 'skipped') &&
+      github.event_name != 'pull_request' &&
+      github.event.inputs.force_qualify != 'true'
     outputs:
       decision: ${{ steps.qualify.outputs.decision }}
       needs_countdown: ${{ steps.qualify.outputs.needs_countdown }}
@@ -468,7 +590,7 @@ jobs:
   # ──────────────────────────────────────────────
   sandbox-gate:
     name: Sandbox Publish + UI Tests
-    needs: [build, qualify]
+    needs: [build, build-validate, qualify]
     runs-on: ubuntu-latest
     timeout-minutes: 40
     # Publish to the SANDBOX instance (separate from production — no app pool
@@ -477,6 +599,7 @@ jobs:
       always() &&
       needs.build.result == 'success' &&
       needs.build.outputs.customization_changes == 'true' &&
+      (needs.build-validate.result == 'success' || needs.build-validate.result == 'skipped') &&
       github.event_name != 'pull_request' &&
       github.event.inputs.force_qualify != 'true' && (
         needs.qualify.result == 'success' ||
@@ -704,12 +827,13 @@ jobs:
   # ──────────────────────────────────────────────
   deploy:
     name: Deploy to ${{ github.event.inputs.environment || (github.ref == 'refs/heads/main' && 'production' || 'staging') }}
-    needs: [build, qualify, sandbox-gate]
+    needs: [build, build-validate, qualify, sandbox-gate]
     runs-on: ubuntu-latest
     if: >
       always() &&
       needs.build.result == 'success' &&
       needs.build.outputs.customization_changes == 'true' &&
+      (needs.build-validate.result == 'success' || needs.build-validate.result == 'skipped') &&
       github.event_name != 'pull_request' &&
       (
         needs.sandbox-gate.result == 'success' ||
