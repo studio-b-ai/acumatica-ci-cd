@@ -37,8 +37,11 @@ namespace StudioB.Containers
                         ETA datetime NULL,
                         ATA datetime NULL,
                         Status nvarchar(20) NOT NULL DEFAULT 'BOOKED',
+                        TransportMode nvarchar(10) NULL,
                         ContainerType nvarchar(10) NULL,
                         SealNbr nvarchar(20) NULL,
+                        LandedCostRefNbr nvarchar(15) NULL,
+                        LandedCostStatus nvarchar(20) NULL,
                         LastEventCode nvarchar(20) NULL,
                         LastEventDate datetime NULL,
                         LastSyncDate datetime NULL,
@@ -52,6 +55,14 @@ namespace StudioB.Containers
                         tstamp timestamp NOT NULL,
                         CONSTRAINT PK_UsrContainer PRIMARY KEY (CompanyID, ContainerID)
                     ");
+
+                    // UsrContainer incremental columns — EnsureTable above only runs on
+                    // first CREATE. These EnsureColumn calls ALTER the existing table to
+                    // add columns added to UsrContainer DAC after the table was created.
+                    // Order matches DAC field definitions.
+                    EnsureColumn(conn, "UsrContainer", "TransportMode", "nvarchar(10) NULL");
+                    EnsureColumn(conn, "UsrContainer", "LandedCostRefNbr", "nvarchar(15) NULL");
+                    EnsureColumn(conn, "UsrContainer", "LandedCostStatus", "nvarchar(20) NULL");
 
                     EnsureTable(conn, "UsrContainerEvent", @"
                         CompanyID int NOT NULL DEFAULT 0,
