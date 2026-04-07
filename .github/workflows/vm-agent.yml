@@ -1,0 +1,135 @@
+# VM Agent Dispatch — run a Claude Code agent on the acumatica-test VM
+#
+# This workflow lets us dispatch arbitrary agent runs onto the
+# self-hosted Windows runner at acumatica-test. The agent executes ON
+# the VM, which means it has direct access to:
+#   - The live Acumatica install at C:\Program Files\Acumatica ERP\
+#   - The local SQL Server (via Windows auth or SSMS patterns)
+#   - The exact same network/credentials the runner uses
+#   - dotnet build + Acuminator for C# customization work
+#   - All the dev tools the bootstrap installs (VS Code, gh, Chrome, Python)
+#
+# Trigger modes:
+#   1. workflow_dispatch with a prompt_file path — run that file's
+#      contents as the agent prompt
+#   2. workflow_dispatch with an inline prompt — paste prompt text
+#      directly into the dispatch UI
+#   3. repository_dispatch (type: vm-agent-run) — scheduled or
+#      triggered from another automation
+#
+# Both prompt_file and prompt are optional; if both are set prompt_file
+# wins. At least one must be provided.
+
+name: VM Agent Dispatch
+
+on:
+  workflow_dispatch:
+    inputs:
+      prompt_file:
+        description: 'Path to prompt file in this repo (e.g. docs/prompts/2026-04-07-prod-restart-investigation.md)'
+        required: false
+        type: string
+      prompt:
+        description: 'Inline prompt text (ignored if prompt_file is set)'
+        required: false
+        type: string
+      task_name:
+        description: 'Short task name (for run display + Slack)'
+        required: false
+        type: string
+        default: 'ad-hoc'
+      timeout_minutes:
+        description: 'Hard timeout (minutes)'
+        required: false
+        type: number
+        default: 30
+  repository_dispatch:
+    types: [vm-agent-run]
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+  id-token: write
+
+jobs:
+  dispatch:
+    name: Agent run on acumatica-test (${{ github.event.inputs.task_name || github.event.client_payload.task_name || 'ad-hoc' }})
+    runs-on: [self-hosted, windows, acumatica-sdk]
+    timeout-minutes: ${{ fromJSON(github.event.inputs.timeout_minutes || '30') }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve prompt
+        id: prompt
+        shell: pwsh
+        run: |
+          $file = "${{ github.event.inputs.prompt_file || github.event.client_payload.prompt_file }}"
+          $inline = @"
+          ${{ github.event.inputs.prompt || github.event.client_payload.prompt }}
+          "@
+          if ($file -and (Test-Path $file)) {
+            $content = Get-Content $file -Raw
+            Write-Host "Using prompt file: $file ($($content.Length) chars)"
+            $content | Out-File -FilePath agent-prompt.md -Encoding utf8
+          } elseif ($inline.Trim()) {
+            Write-Host "Using inline prompt ($($inline.Length) chars)"
+            $inline | Out-File -FilePath agent-prompt.md -Encoding utf8
+          } else {
+            Write-Host "::error::No prompt provided. Set prompt_file or prompt."
+            exit 1
+          }
+          # Echo first 500 chars so we have provenance in the step log
+          Write-Host "---- prompt preview ----"
+          Get-Content agent-prompt.md -TotalCount 20
+          Write-Host "----"
+
+      - name: Verify Claude Code is installed
+        shell: pwsh
+        run: |
+          $claude = Get-Command claude -ErrorAction SilentlyContinue
+          if (-not $claude) {
+            Write-Host "::error::Claude Code CLI not found on PATH. Re-run bootstrap-acumatica-test.ps1."
+            exit 1
+          }
+          claude --version
+
+      - name: Run agent via claude-code-action
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          prompt_file: agent-prompt.md
+        env:
+          # Agent will likely need these to do useful work on the VM
+          GH_TOKEN: ${{ secrets.GH_PAT_DISPATCH }}
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          # Acumatica prod + sandbox creds — agent can run read-only
+          # queries against both. Publishing from the agent is blocked
+          # by the after-hours gate in acuops-deploy.yml.
+          ACUMATICA_PROD_URL: ${{ secrets.ACUMATICA_PROD_URL }}
+          ACUMATICA_PROD_USERNAME: ${{ secrets.ACUMATICA_PROD_USERNAME }}
+          ACUMATICA_PROD_PASSWORD: ${{ secrets.ACUMATICA_PROD_PASSWORD }}
+          ACUMATICA_PROD_TENANT: ${{ secrets.ACUMATICA_PROD_TENANT }}
+          ACUMATICA_SANDBOX_URL: ${{ secrets.ACUMATICA_SANDBOX_URL }}
+          ACUMATICA_SANDBOX_USERNAME: ${{ secrets.ACUMATICA_SANDBOX_USERNAME }}
+          ACUMATICA_SANDBOX_PASSWORD: ${{ secrets.ACUMATICA_SANDBOX_PASSWORD }}
+          ACUMATICA_SANDBOX_TENANT: ${{ secrets.ACUMATICA_SANDBOX_TENANT }}
+          # AcuDev knowledge base + session history
+          ACUDEV_URL: ${{ secrets.ACUDEV_URL }}
+          ACUDEV_API_KEY: ${{ secrets.ACUDEV_API_KEY }}
+
+      - name: Upload prompt + outputs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: vm-agent-run-${{ github.run_number }}
+          path: |
+            agent-prompt.md
+            **/agent-output*.md
+            **/agent-report*.md
+          retention-days: 30
+          if-no-files-found: ignore
