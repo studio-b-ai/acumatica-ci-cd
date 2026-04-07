@@ -298,7 +298,11 @@ if (-not $RunnerToken) {
         Remove-Item "$runnerDir\.credentials_rsaparams" -Force -ErrorAction SilentlyContinue
     }
 
-    Write-Host "    Configuring runner..." -ForegroundColor Yellow
+    Write-Host "    Configuring runner (as Windows service)..." -ForegroundColor Yellow
+    # --runasservice makes config.cmd create AND start the Windows service
+    # in one shot. Modern GH Actions runners on Windows do NOT ship svc.cmd;
+    # the service has to be installed via this flag at config time.
+    # --replace lets us re-run this cleanly on re-bootstrap.
     & "$runnerDir\config.cmd" `
         --url $RepoUrl `
         --token $RunnerToken `
@@ -306,16 +310,25 @@ if (-not $RunnerToken) {
         --labels "self-hosted,windows,acumatica-sdk" `
         --work "_work" `
         --unattended `
-        --replace
+        --replace `
+        --runasservice
 
     if ($LASTEXITCODE -ne 0) {
         Write-Fail "Runner configuration failed with exit code $LASTEXITCODE"
     } else {
-        Write-Done "Runner configured successfully"
-        Write-Host "    Installing runner as Windows service..." -ForegroundColor Yellow
-        & "$runnerDir\svc.cmd" install
-        & "$runnerDir\svc.cmd" start
-        Write-Done "Runner service installed and started"
+        Write-Done "Runner configured + installed as Windows service"
+        # Verify the service is actually running
+        $svcName = "actions.runner.$($RepoUrl.Split('/')[-2])-$($RepoUrl.Split('/')[-1]).$RunnerName"
+        $svc = Get-Service -Name $svcName -ErrorAction SilentlyContinue
+        if ($svc -and $svc.Status -eq "Running") {
+            Write-Done "Service $svcName is Running"
+        } elseif ($svc) {
+            Write-Host "    Service $svcName exists but status is $($svc.Status). Starting..." -ForegroundColor Yellow
+            Start-Service -Name $svcName
+            Write-Done "Service started"
+        } else {
+            Write-Fail "Service $svcName not found after config --runasservice"
+        }
     }
 }
 
