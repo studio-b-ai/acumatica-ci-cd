@@ -98,18 +98,20 @@ jobs:
           }
           claude --version
 
-      - name: Run agent via claude-code-action
-        uses: anthropics/claude-code-action@v1
-        with:
-          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
-          prompt_file: agent-prompt.md
+      # Use the locally-installed Claude Code CLI on the VM (not the
+      # claude-code-action GH Action wrapper). The Action is designed for
+      # Linux runners and uses bash/find/chmod internally — fails on
+      # Windows even with Git Bash on PATH. The local CLI works natively.
+      #
+      # Setting ANTHROPIC_API_KEY routes billing to the AcuOps CI-CD
+      # scoped key (Studio B workspace, $200/mo cap). Without it the CLI
+      # would use Kevin's personal subscription saved at first OAuth.
+      - name: Run agent via local Claude Code CLI
+        shell: pwsh
         env:
-          # Agent will likely need these to do useful work on the VM
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           GH_TOKEN: ${{ secrets.GH_PAT_DISPATCH }}
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-          # Acumatica prod + sandbox creds — agent can run read-only
-          # queries against both. Publishing from the agent is blocked
-          # by the after-hours gate in acuops-deploy.yml.
           ACUMATICA_PROD_URL: ${{ secrets.ACUMATICA_PROD_URL }}
           ACUMATICA_PROD_USERNAME: ${{ secrets.ACUMATICA_PROD_USERNAME }}
           ACUMATICA_PROD_PASSWORD: ${{ secrets.ACUMATICA_PROD_PASSWORD }}
@@ -118,9 +120,30 @@ jobs:
           ACUMATICA_SANDBOX_USERNAME: ${{ secrets.ACUMATICA_SANDBOX_USERNAME }}
           ACUMATICA_SANDBOX_PASSWORD: ${{ secrets.ACUMATICA_SANDBOX_PASSWORD }}
           ACUMATICA_SANDBOX_TENANT: ${{ secrets.ACUMATICA_SANDBOX_TENANT }}
-          # AcuDev knowledge base + session history
           ACUDEV_URL: ${{ secrets.ACUDEV_URL }}
           ACUDEV_API_KEY: ${{ secrets.ACUDEV_API_KEY }}
+        run: |
+          $promptContent = Get-Content agent-prompt.md -Raw
+          Write-Host "Running claude -p with $($promptContent.Length) char prompt..."
+          Write-Host "Model: default (claude-opus-4-6 via Studio B AcuOps key)"
+          Write-Host ""
+
+          # Pipe prompt via stdin so quoting/escaping isn't a problem.
+          # --output-format text gives clean stdout we can capture.
+          # --dangerously-skip-permissions because this is a CI runner
+          # with a bounded prompt and we explicitly trust the prompt
+          # source (it's a file in this repo at a known path).
+          $promptContent | claude -p --output-format text --dangerously-skip-permissions 2>&1 | Tee-Object -FilePath agent-output.md
+
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "::error::claude exited with $LASTEXITCODE"
+            exit $LASTEXITCODE
+          }
+
+          Write-Host ""
+          Write-Host "---- agent output (last 80 lines) ----"
+          Get-Content agent-output.md -Tail 80
+          Write-Host "----"
 
       - name: Upload prompt + outputs
         if: always()
