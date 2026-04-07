@@ -472,23 +472,24 @@ jobs:
   # ──────────────────────────────────────────────
   # Job 3: Test Tenant Publish Gate
   # ──────────────────────────────────────────────
-  test-tenant-gate:
-    name: Test Tenant Publish Gate
+  sandbox-gate:
+    name: Sandbox Publish + UI Tests
     needs: [build, qualify]
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 40
+    # Publish to the SANDBOX instance (separate from production — no app pool
+    # restart on prod). Run full UI test suite. Hard gate for production deploy.
     if: >
       always() &&
       needs.build.result == 'success' &&
       needs.build.outputs.customization_changes == 'true' &&
-      needs.build.outputs.test_tenant_enabled == 'true' &&
       github.event_name != 'pull_request' &&
       github.event.inputs.force_qualify != 'true' && (
         needs.qualify.result == 'success' ||
         needs.qualify.result == 'skipped'
       )
     concurrency:
-      group: test-tenant-publish
+      group: sandbox-publish
       cancel-in-progress: true
 
     steps:
@@ -507,19 +508,25 @@ jobs:
           name: customization-package
           path: dist/
 
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
       - name: Install Python dependencies
         run: |
           if [ -f pipeline/requirements.txt ]; then
             pip install -r pipeline/requirements.txt
           fi
 
-      - name: Deploy to test tenant
+      # ── Publish to sandbox ──────────────────────────────────────
+      - name: Deploy to sandbox
         id: deploy
         env:
-          ACUMATICA_URL: ${{ secrets.ACUMATICA_PROD_URL }}
-          ACUMATICA_USERNAME: ${{ secrets.ACUMATICA_PROD_USERNAME }}
-          ACUMATICA_PASSWORD: ${{ secrets.ACUMATICA_PROD_PASSWORD }}
-          ACUMATICA_TENANT: ${{ vars.ACUMATICA_TEST_TENANT }}
+          ACUMATICA_URL: ${{ secrets.ACUMATICA_SANDBOX_URL }}
+          ACUMATICA_USERNAME: ${{ secrets.ACUMATICA_SANDBOX_USERNAME }}
+          ACUMATICA_PASSWORD: ${{ secrets.ACUMATICA_SANDBOX_PASSWORD }}
+          ACUMATICA_TENANT: ${{ secrets.ACUMATICA_SANDBOX_TENANT }}
         run: |
           PROJECT="${{ needs.build.outputs.project_name }}"
           PACKAGE_FILE=$(ls dist/${PROJECT}_*.zip 2>/dev/null | head -1)
@@ -528,23 +535,16 @@ jobs:
           fi
 
           EXTRA_FLAGS=""
-          TEST_COPUBLISH=""
           for pkg in dist/*.zip; do
             if [ "${pkg}" != "${PACKAGE_FILE}" ]; then
               PKG_BASE=$(basename "${pkg}" .zip)
               PKG_NAME=$(echo "${PKG_BASE}" | sed 's/_[0-9]\{8\}-[0-9]\{6\}$//')
               EXTRA_FLAGS+=" --extra-import ${PKG_NAME}:${pkg}"
-              if [ -n "${TEST_COPUBLISH}" ]; then
-                TEST_COPUBLISH+=",${PKG_NAME}"
-              else
-                TEST_COPUBLISH="${PKG_NAME}"
-              fi
             fi
           done
 
-          # Test tenant uses only managed code — no ISV packages.
-          # --no-merge: test tenants may have orphaned ISV publish metadata
-          # that causes errors with merge=True. Clean compile bypasses this.
+          # Sandbox uses only managed code — no ISV packages.
+          # --no-merge: sandbox may have orphaned ISV publish metadata.
           TEST_ALSO="${{ needs.build.outputs.also_publish_test }}"
           python3 pipeline/scripts/deploy.py \
             --project "${PROJECT}" \
@@ -554,14 +554,14 @@ jobs:
             --skip-smoke-test \
             ${EXTRA_FLAGS}
 
-      - name: Verify test tenant
+      - name: Verify sandbox
         id: verify
         continue-on-error: true
         env:
-          ACUMATICA_URL: ${{ secrets.ACUMATICA_PROD_URL }}
-          ACUMATICA_USERNAME: ${{ secrets.ACUMATICA_PROD_USERNAME }}
-          ACUMATICA_PASSWORD: ${{ secrets.ACUMATICA_PROD_PASSWORD }}
-          ACUMATICA_TENANT: ${{ vars.ACUMATICA_TEST_TENANT }}
+          ACUMATICA_URL: ${{ secrets.ACUMATICA_SANDBOX_URL }}
+          ACUMATICA_USERNAME: ${{ secrets.ACUMATICA_SANDBOX_USERNAME }}
+          ACUMATICA_PASSWORD: ${{ secrets.ACUMATICA_SANDBOX_PASSWORD }}
+          ACUMATICA_TENANT: ${{ secrets.ACUMATICA_SANDBOX_TENANT }}
         run: |
           python scripts/verify.py \
             --manifest publish-manifest.json \
@@ -572,17 +572,17 @@ jobs:
         if: always() && steps.verify.outcome != 'skipped'
         uses: actions/upload-artifact@v4
         with:
-          name: verify-result-test-tenant
+          name: verify-result-sandbox
           path: verify-result.json
           if-no-files-found: ignore
 
-      - name: Post-publish login smoke test
+      - name: Post-publish smoke test
         id: smoke
         env:
-          ACUMATICA_URL: ${{ secrets.ACUMATICA_PROD_URL }}
-          ACUMATICA_USERNAME: ${{ secrets.ACUMATICA_PROD_USERNAME }}
-          ACUMATICA_PASSWORD: ${{ secrets.ACUMATICA_PROD_PASSWORD }}
-          ACUMATICA_TENANT: ${{ vars.ACUMATICA_TEST_TENANT }}
+          ACUMATICA_URL: ${{ secrets.ACUMATICA_SANDBOX_URL }}
+          ACUMATICA_USERNAME: ${{ secrets.ACUMATICA_SANDBOX_USERNAME }}
+          ACUMATICA_PASSWORD: ${{ secrets.ACUMATICA_SANDBOX_PASSWORD }}
+          ACUMATICA_TENANT: ${{ secrets.ACUMATICA_SANDBOX_TENANT }}
         run: |
           python -c "
           import sys, os
@@ -598,18 +598,70 @@ jobs:
           ok = client.smoke_test()
           client.logout()
           if not ok:
-              print('::error::Test tenant smoke test FAILED — login broken after publish. BLOCKING production deploy.')
+              print('::error::Sandbox smoke test FAILED — login broken after publish. BLOCKING production deploy.')
               sys.exit(1)
-          print('Test tenant smoke test passed — safe to proceed to production')
+          print('Sandbox smoke test passed')
           "
 
-      - name: Test tenant gate summary
+      # ── UI Tests — hard gate before production ──────────────────
+      - name: Install test dependencies
+        run: |
+          pip install playwright pytest pytest-timeout
+          playwright install chromium
+
+      - name: Generate UI fixtures from audit data
+        timeout-minutes: 3
+        env:
+          ACUMATICA_URL: ${{ secrets.ACUMATICA_SANDBOX_URL }}
+          ACUMATICA_USERNAME: ${{ secrets.ACUMATICA_SANDBOX_USERNAME }}
+          ACUMATICA_PASSWORD: ${{ secrets.ACUMATICA_SANDBOX_PASSWORD }}
+          ACUMATICA_TENANT: ${{ secrets.ACUMATICA_SANDBOX_TENANT }}
+        run: |
+          if [ -f scripts/heritage/generate_ui_fixtures.py ]; then
+            python scripts/heritage/generate_ui_fixtures.py --days 30 --output tests/fixtures/ui_screens.json
+          fi
+
+      - name: Run container tracking tests
+        timeout-minutes: 10
+        env:
+          ACUMATICA_URL: ${{ secrets.ACUMATICA_SANDBOX_URL }}
+          ACUMATICA_USERNAME: ${{ secrets.ACUMATICA_SANDBOX_USERNAME }}
+          ACUMATICA_PASSWORD: ${{ secrets.ACUMATICA_SANDBOX_PASSWORD }}
+          ACUMATICA_TENANT: ${{ secrets.ACUMATICA_SANDBOX_TENANT }}
+        run: |
+          if [ -f tests/ui/test_container_tracking.py ]; then
+            python -m pytest tests/ui/test_container_tracking.py -v --tb=long --timeout=120 || {
+              echo "::warning::Container tracking tests failed — see logs above"
+              exit 1
+            }
+          else
+            echo "No test_container_tracking.py — skipping"
+          fi
+
+      - name: Run core UI tests
+        timeout-minutes: 8
+        env:
+          ACUMATICA_URL: ${{ secrets.ACUMATICA_SANDBOX_URL }}
+          ACUMATICA_USERNAME: ${{ secrets.ACUMATICA_SANDBOX_USERNAME }}
+          ACUMATICA_PASSWORD: ${{ secrets.ACUMATICA_SANDBOX_PASSWORD }}
+          ACUMATICA_TENANT: ${{ secrets.ACUMATICA_SANDBOX_TENANT }}
+        run: |
+          if [ -d tests/ui/ ]; then
+            python -m pytest tests/ui/ --ignore=tests/ui/test_container_tracking.py -v --tb=long --timeout=120 || {
+              echo "::warning::Core UI tests failed — see logs above"
+              exit 1
+            }
+          else
+            echo "No tests/ui/ directory — skipping"
+          fi
+
+      - name: Sandbox gate summary
         if: always()
         run: |
-          echo "## Test Tenant Publish Gate" >> "$GITHUB_STEP_SUMMARY"
+          echo "## Sandbox Publish + UI Tests" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "Validates publish on the test tenant before deploying to production." >> "$GITHUB_STEP_SUMMARY"
-          echo "**Hard gate — failure blocks prod.**" >> "$GITHUB_STEP_SUMMARY"
+          echo "Publishes to sandbox (separate instance — no production impact)." >> "$GITHUB_STEP_SUMMARY"
+          echo "Runs full UI test suite. **Hard gate — failure blocks prod.**" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "| Step | Result |" >> "$GITHUB_STEP_SUMMARY"
           echo "|------|--------|" >> "$GITHUB_STEP_SUMMARY"
@@ -622,7 +674,7 @@ jobs:
   # ──────────────────────────────────────────────
   deploy:
     name: Deploy to ${{ github.event.inputs.environment || (github.ref == 'refs/heads/main' && 'production' || 'staging') }}
-    needs: [build, qualify, test-tenant-gate]
+    needs: [build, qualify, sandbox-gate]
     runs-on: ubuntu-latest
     if: >
       always() &&
@@ -630,8 +682,8 @@ jobs:
       needs.build.outputs.customization_changes == 'true' &&
       github.event_name != 'pull_request' &&
       (
-        needs.test-tenant-gate.result == 'success' ||
-        needs.test-tenant-gate.result == 'skipped' ||
+        needs.sandbox-gate.result == 'success' ||
+        needs.sandbox-gate.result == 'skipped' ||
         github.event.inputs.force_deploy == 'OVERRIDE'
       ) && (
         needs.qualify.result == 'success' ||
@@ -1394,11 +1446,11 @@ jobs:
   # Job 6: Post-Deploy Validation — run UI/runtime tests
   # ──────────────────────────────────────────────
   post-deploy-validation:
-    name: Trigger Runtime Tests
+    name: Post-Deploy Verification
     needs: [build, deploy]
     runs-on: ubuntu-latest
-    # Run after successful publish OR when publish was skipped (CI-only changes).
-    # This lets test/workflow-only pushes validate against the existing deployment.
+    # API-level smoke test against production after deploy.
+    # UI tests already ran against sandbox in sandbox-gate.
     if: >
       github.event_name != 'pull_request' && (
         needs.deploy.result == 'success' ||
@@ -1422,56 +1474,25 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install test dependencies
+      - name: Install Python dependencies
         run: |
-          pip install playwright pytest pytest-timeout
-          playwright install chromium
+          if [ -f pipeline/requirements.txt ]; then
+            pip install -r pipeline/requirements.txt
+          fi
 
-      - name: Generate UI fixtures from audit data
-        timeout-minutes: 3
+      - name: Post-deploy smoke test
+        timeout-minutes: 5
+        continue-on-error: true
         env:
           ACUMATICA_URL: ${{ secrets.ACUMATICA_PROD_URL }}
           ACUMATICA_USERNAME: ${{ secrets.ACUMATICA_PROD_USERNAME }}
           ACUMATICA_PASSWORD: ${{ secrets.ACUMATICA_PROD_PASSWORD }}
-          ACUMATICA_TENANT: ${{ vars.ACUMATICA_TEST_TENANT }}
+          ACUMATICA_TENANT: ${{ secrets.ACUMATICA_PROD_TENANT }}
         run: |
-          if [ -f scripts/heritage/generate_ui_fixtures.py ]; then
-            python scripts/heritage/generate_ui_fixtures.py --days 30 --output tests/fixtures/ui_screens.json
-          fi
-
-      - name: Run container tracking tests
-        timeout-minutes: 10
-        env:
-          ACUMATICA_URL: ${{ secrets.ACUMATICA_PROD_URL }}
-          ACUMATICA_USERNAME: ${{ secrets.ACUMATICA_PROD_USERNAME }}
-          ACUMATICA_PASSWORD: ${{ secrets.ACUMATICA_PROD_PASSWORD }}
-          ACUMATICA_TENANT: ${{ vars.ACUMATICA_TEST_TENANT }}
-        run: |
-          if [ -f tests/ui/test_container_tracking.py ]; then
-            python -m pytest tests/ui/test_container_tracking.py -v --tb=long --timeout=120 || {
-              echo "::warning::Container tracking tests failed — see logs above"
-              exit 1
-            }
-          else
-            echo "No test_container_tracking.py — skipping"
-          fi
-
-      - name: Run core UI tests
-        timeout-minutes: 8
-        env:
-          ACUMATICA_URL: ${{ secrets.ACUMATICA_PROD_URL }}
-          ACUMATICA_USERNAME: ${{ secrets.ACUMATICA_PROD_USERNAME }}
-          ACUMATICA_PASSWORD: ${{ secrets.ACUMATICA_PROD_PASSWORD }}
-          ACUMATICA_TENANT: ${{ vars.ACUMATICA_TEST_TENANT }}
-        run: |
-          if [ -d tests/ui/ ]; then
-            python -m pytest tests/ui/ --ignore=tests/ui/test_container_tracking.py -v --tb=long --timeout=120 || {
-              echo "::warning::Core UI tests failed — see logs above"
-              exit 1
-            }
-          else
-            echo "No tests/ui/ directory — skipping"
-          fi
+          python scripts/verify.py \
+            --manifest publish-manifest.json \
+            --environment production \
+            --json-output verify-result.json
 
       - name: Publish test metrics
         if: always()
