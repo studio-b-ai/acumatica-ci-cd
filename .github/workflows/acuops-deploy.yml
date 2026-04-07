@@ -69,6 +69,11 @@ on:
         required: false
         type: boolean
         default: false
+      force_business_hours:
+        description: 'EMERGENCY: deploy during business hours (6am-6pm ET Mon-Fri) — restarts app pool for live users'
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -780,22 +785,53 @@ jobs:
           path: backups/*.zip
           retention-days: 365
 
-      # ── Business hours detection ─────────────────────────────────────
+      # ── Business hours detection + HARD GATE ─────────────────────────
+      # Publishing to the production Acumatica instance restarts the app
+      # pool and kicks all live users. During business hours (6am–6pm ET
+      # Mon–Fri) the deploy job is BLOCKED unless force_business_hours is
+      # set. Sandbox-gate already ran against the separate sandbox
+      # instance — this only gates the real prod publish.
       - name: Check if after-hours
         id: hours
         run: |
           TIMEZONE="${{ needs.build.outputs.timezone }}"
-          TIMEZONE="${TIMEZONE:-America/Chicago}"
+          TIMEZONE="${TIMEZONE:-America/New_York}"
           HOUR=$(TZ="${TIMEZONE}" date +%H)
           DOW=$(TZ="${TIMEZONE}" date +%u)
-          # After-hours = weekends (Sat=6, Sun=7) OR before 6am OR after 5pm
-          if [ "$DOW" -ge 6 ] || [ "$HOUR" -ge 17 ] || [ "$HOUR" -lt 6 ]; then
+          # After-hours = weekends (Sat=6, Sun=7) OR before 6am OR after 6pm (18:00)
+          if [ "$DOW" -ge 6 ] || [ "$HOUR" -ge 18 ] || [ "$HOUR" -lt 6 ]; then
             echo "after_hours=true" >> "$GITHUB_OUTPUT"
             echo "After-hours deploy (day=${DOW} ${HOUR}:00 ${TIMEZONE}) — employee emails suppressed"
           else
             echo "after_hours=false" >> "$GITHUB_OUTPUT"
             echo "Business-hours deploy (day=${DOW} ${HOUR}:00 ${TIMEZONE}) — employee emails will be sent"
           fi
+
+      - name: Enforce after-hours gate for prod/staging publishes
+        if: >
+          steps.env.outputs.target != 'sandbox' &&
+          github.event.inputs.dry_run != 'true' &&
+          github.event.inputs.force_business_hours != 'true' &&
+          steps.hours.outputs.after_hours != 'true'
+        run: |
+          TIMEZONE="${{ needs.build.outputs.timezone }}"
+          TIMEZONE="${TIMEZONE:-America/New_York}"
+          HOUR=$(TZ="${TIMEZONE}" date +%H)
+          DOW=$(TZ="${TIMEZONE}" date +%u)
+          echo "::error::BLOCKED: business-hours deploy to ${{ steps.env.outputs.target }}."
+          echo "::error::Current local time: day=${DOW} ${HOUR}:00 ${TIMEZONE}"
+          echo "::error::Publishing to the production instance restarts the app pool and disconnects live users."
+          echo "::error::Deploys to prod/staging are held until 6:00 PM ET Mon-Fri, or any time on weekends."
+          echo "::error::To override for a genuine emergency, re-run with force_business_hours=true."
+          echo "## 🚫 Deploy blocked by after-hours gate" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Field | Value |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|-------|-------|" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Target | ${{ steps.env.outputs.target }} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Local time | day=${DOW} ${HOUR}:00 ${TIMEZONE} |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Window | Weekdays 6:00 PM ET – 6:00 AM ET, or anytime on weekends |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Override | Re-run with force_business_hours=true |" >> "$GITHUB_STEP_SUMMARY"
+          exit 1
 
       # ── Countdown notification ───────────────────────────────────────
       - name: Send maintenance countdown warnings
