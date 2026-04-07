@@ -26,13 +26,15 @@
 #     [5] VS Code                  -- IDE
 #     [6] SSMS                     -- SQL Server Management Studio
 #     [7] Google Chrome            -- Playwright default browser
+#     [8] Node.js 20 LTS           -- required for Claude Code
+#     [9] Claude Code              -- @anthropic-ai/claude-code CLI for agent dispatch
 #
 #   CI infrastructure:
-#     [8] GitHub Actions runner    -- self-hosted, registered as Windows service
+#     [10] GitHub Actions runner   -- self-hosted, registered as Windows service
 #
 # Switches:
-#   -SkipDevTools   skip sections 4-7 (only install build tools + runner)
-#   -SkipRunner     skip section 8 (only install tools, no runner registration)
+#   -SkipDevTools   skip sections 4-9 (only install build tools + runner)
+#   -SkipRunner     skip section 10 (only install tools, no runner registration)
 
 param(
     [Parameter(Mandatory=$false)]
@@ -231,9 +233,9 @@ try {
 try {
     $chromeExe = "C:\Program Files\Google\Chrome\Application\chrome.exe"
     if (Test-Path $chromeExe) {
-        Write-Step "7/8" "Chrome already installed" "Green"
+        Write-Step "7/10" "Chrome already installed" "Green"
     } else {
-        Write-Step "7/8" "Installing Google Chrome..."
+        Write-Step "7/10" "Installing Google Chrome..."
         $chromeInstaller = "$env:TEMP\chrome-installer.exe"
         Download-File "https://dl.google.com/chrome/install/latest/chrome_installer.exe" $chromeInstaller
         Start-Process -FilePath $chromeInstaller -ArgumentList "/silent", "/install" -Wait
@@ -244,10 +246,66 @@ try {
     Write-Fail "Chrome install failed: $_"
 }
 
+# ======================================================================
+# [8] Node.js 20 LTS (required for Claude Code CLI)
+# ======================================================================
+try {
+    if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
+        Write-Step "8/10" "Installing Node.js 20 LTS..."
+        $nodeInstaller = "$env:TEMP\node-installer.msi"
+        # Pin to a specific LTS so we don't chase moving /latest URLs
+        Download-File "https://nodejs.org/dist/v20.18.1/node-v20.18.1-x64.msi" $nodeInstaller
+        Start-Process -FilePath msiexec.exe -ArgumentList "/i", $nodeInstaller, "/quiet", "/norestart" -Wait
+        Remove-Item $nodeInstaller
+        # Add Node + npm global bin to current session PATH
+        $env:Path = "C:\Program Files\nodejs;$env:APPDATA\npm;$env:Path"
+        Write-Done "Node.js installed: $(node --version)"
+    } else {
+        Write-Step "8/10" "Node.js already installed: $(node --version)" "Green"
+    }
+} catch {
+    Write-Fail "Node.js install failed: $_"
+}
+
+# ======================================================================
+# [9] Claude Code CLI (@anthropic-ai/claude-code)
+# ======================================================================
+# Installed globally via npm. Enables:
+#   - Interactive use on the VM (RDP in, run `claude` in any dir)
+#   - claude-code-action dispatches from GH Actions when the workflow
+#     targets `runs-on: [self-hosted, windows]`
+#   - Local agent dispatches via `claude -p "prompt"` for scripted runs
+try {
+    if (-not (Get-Command claude -ErrorAction SilentlyContinue)) {
+        if (Get-Command npm -ErrorAction SilentlyContinue) {
+            Write-Step "9/10" "Installing Claude Code CLI via npm..."
+            # npm.cmd on Windows needs --force sometimes because of ENOLOCAL
+            # on network drives; HOME is C:\Users\kevin so it's fine here.
+            & npm install -g "@anthropic-ai/claude-code" 2>&1 | Out-Null
+            if ($LASTEXITCODE -eq 0) {
+                $env:Path = "$env:APPDATA\npm;$env:Path"
+                if (Get-Command claude -ErrorAction SilentlyContinue) {
+                    Write-Done "Claude Code installed: $(claude --version 2>&1 | Select-Object -First 1)"
+                } else {
+                    Write-Fail "npm install succeeded but 'claude' not on PATH"
+                }
+            } else {
+                Write-Fail "npm install -g @anthropic-ai/claude-code failed (exit $LASTEXITCODE)"
+            }
+        } else {
+            Write-Fail "Cannot install Claude Code -- npm not on PATH (did Node.js install fail?)"
+        }
+    } else {
+        Write-Step "9/10" "Claude Code already installed: $(claude --version 2>&1 | Select-Object -First 1)" "Green"
+    }
+} catch {
+    Write-Fail "Claude Code install failed: $_"
+}
+
 } # end !SkipDevTools
 
 # ======================================================================
-# [8] GitHub Actions Self-Hosted Runner
+# [10] GitHub Actions Self-Hosted Runner
 # ======================================================================
 if ($SkipRunner) {
     Write-Host ""
@@ -258,7 +316,7 @@ $runnerDir = "C:\actions-runner"
 
 # Download if not present
 if (-not (Test-Path "$runnerDir\config.cmd")) {
-    Write-Step "8/8" "Downloading GitHub Actions runner..."
+    Write-Step "10/10" "Downloading GitHub Actions runner..."
     try {
         New-Item -ItemType Directory -Force -Path $runnerDir | Out-Null
         Set-Location $runnerDir
@@ -274,7 +332,7 @@ if (-not (Test-Path "$runnerDir\config.cmd")) {
         Write-Fail "Runner download failed: $_"
     }
 } else {
-    Write-Step "8/8" "GitHub runner already downloaded at $runnerDir" "Green"
+    Write-Step "10/10" "GitHub runner already downloaded at $runnerDir" "Green"
 }
 
 # Configure + register
@@ -298,7 +356,11 @@ if (-not $RunnerToken) {
         Remove-Item "$runnerDir\.credentials_rsaparams" -Force -ErrorAction SilentlyContinue
     }
 
-    Write-Host "    Configuring runner..." -ForegroundColor Yellow
+    Write-Host "    Configuring runner (as Windows service)..." -ForegroundColor Yellow
+    # --runasservice makes config.cmd create AND start the Windows service
+    # in one shot. Modern GH Actions runners on Windows do NOT ship svc.cmd;
+    # the service has to be installed via this flag at config time.
+    # --replace lets us re-run this cleanly on re-bootstrap.
     & "$runnerDir\config.cmd" `
         --url $RepoUrl `
         --token $RunnerToken `
@@ -306,16 +368,25 @@ if (-not $RunnerToken) {
         --labels "self-hosted,windows,acumatica-sdk" `
         --work "_work" `
         --unattended `
-        --replace
+        --replace `
+        --runasservice
 
     if ($LASTEXITCODE -ne 0) {
         Write-Fail "Runner configuration failed with exit code $LASTEXITCODE"
     } else {
-        Write-Done "Runner configured successfully"
-        Write-Host "    Installing runner as Windows service..." -ForegroundColor Yellow
-        & "$runnerDir\svc.cmd" install
-        & "$runnerDir\svc.cmd" start
-        Write-Done "Runner service installed and started"
+        Write-Done "Runner configured + installed as Windows service"
+        # Verify the service is actually running
+        $svcName = "actions.runner.$($RepoUrl.Split('/')[-2])-$($RepoUrl.Split('/')[-1]).$RunnerName"
+        $svc = Get-Service -Name $svcName -ErrorAction SilentlyContinue
+        if ($svc -and $svc.Status -eq "Running") {
+            Write-Done "Service $svcName is Running"
+        } elseif ($svc) {
+            Write-Host "    Service $svcName exists but status is $($svc.Status). Starting..." -ForegroundColor Yellow
+            Start-Service -Name $svcName
+            Write-Done "Service started"
+        } else {
+            Write-Fail "Service $svcName not found after config --runasservice"
+        }
     }
 }
 
@@ -331,6 +402,8 @@ Write-Host "Installed tools:" -ForegroundColor Cyan
 if (Get-Command dotnet -ErrorAction SilentlyContinue) { Write-Host "  [OK] .NET SDK      : $(dotnet --version)" }
 if (Get-Command git -ErrorAction SilentlyContinue)    { Write-Host "  [OK] Git           : $(git --version)" }
 if (Get-Command python -ErrorAction SilentlyContinue) { Write-Host "  [OK] Python        : $(python --version)" }
+if (Get-Command node -ErrorAction SilentlyContinue)   { Write-Host "  [OK] Node.js       : $(node --version)" }
+if (Get-Command claude -ErrorAction SilentlyContinue) { Write-Host "  [OK] Claude Code   : $(claude --version 2>&1 | Select-Object -First 1)" }
 if (Get-Command gh -ErrorAction SilentlyContinue)     { Write-Host "  [OK] GitHub CLI    : $(gh --version | Select-Object -First 1)" }
 if (Test-Path "C:\Program Files\Microsoft VS Code\Code.exe")                                    { Write-Host "  [OK] VS Code       : installed" }
 if (Test-Path "C:\Program Files (x86)\Microsoft SQL Server Management Studio 20\Common7\IDE\Ssms.exe") { Write-Host "  [OK] SSMS 20       : installed" }
