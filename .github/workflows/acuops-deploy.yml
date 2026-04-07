@@ -456,45 +456,89 @@ jobs:
             Write-Host "No C# project — skipping Acuminator"
           }
 
-      # SDK DLLs: prefer copying from the local Acumatica install
-      # (C:\Program Files\Acumatica ERP\) over a GCS download. The VM
-      # has Acumatica installed for running tests, so the DLLs are
-      # guaranteed to match the runtime the publish will target.
-      - name: Copy SDK DLLs from local Acumatica install
+      # SDK DLLs: try the local Acumatica install first (fast, version
+      # guaranteed to match). If no install is found at the expected
+      # paths, fall back to downloading from GCS (matches the Linux
+      # build job). This makes build-validate resilient to VM topology
+      # where Acumatica might live at a non-default path or not be
+      # installed at all.
+      - name: Authenticate to GCP (for SDK fallback)
+        if: steps.check_csproj.outputs.has_csproj == 'true'
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - name: Setup gcloud (for SDK fallback)
+        if: steps.check_csproj.outputs.has_csproj == 'true'
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Acquire SDK DLLs (local install or GCS)
         if: steps.check_csproj.outputs.has_csproj == 'true'
         shell: pwsh
         run: |
           $libDir = "lib"
           if (-not (Test-Path $libDir)) { New-Item -ItemType Directory -Path $libDir | Out-Null }
+
+          # Candidate local install paths — add more if we find Acumatica
+          # at a different location on a future VM
           $sdkRoots = @(
             "C:\Program Files\Acumatica ERP\Bin",
-            "C:\Program Files (x86)\Acumatica ERP\Bin"
+            "C:\Program Files (x86)\Acumatica ERP\Bin",
+            "C:\Program Files\Acumatica ERP\Website\Bin",
+            "C:\AcumaticaERP\Bin"
           )
           $sdkRoot = $sdkRoots | Where-Object { Test-Path $_ } | Select-Object -First 1
-          if (-not $sdkRoot) {
-            Write-Host "::error::No Acumatica SDK found on VM. Checked: $($sdkRoots -join ', ')"
-            exit 1
-          }
-          Write-Host "Using SDK from: $sdkRoot"
-          $needed = @(
-            "PX.Data.dll",
-            "PX.Data.BQL.Fluent.dll",
-            "PX.Objects.dll",
-            "PX.Common.dll",
-            "PX.Common.Std.dll",
-            "PX.DbServices.dll",
-            "PX.Web.Customization.dll"
-          )
-          foreach ($dll in $needed) {
-            $src = Join-Path $sdkRoot $dll
-            if (Test-Path $src) {
-              Copy-Item $src $libDir -Force
-              Write-Host "  copied $dll"
-            } else {
-              Write-Host "::warning::$dll not found at $src"
+
+          if ($sdkRoot) {
+            Write-Host "Using local SDK from: $sdkRoot"
+            $needed = @(
+              "PX.Data.dll",
+              "PX.Data.BQL.Fluent.dll",
+              "PX.Objects.dll",
+              "PX.Common.dll",
+              "PX.Common.Std.dll",
+              "PX.DbServices.dll",
+              "PX.Web.Customization.dll"
+            )
+            foreach ($dll in $needed) {
+              $src = Join-Path $sdkRoot $dll
+              if (Test-Path $src) {
+                Copy-Item $src $libDir -Force
+                Write-Host "  copied $dll"
+              } else {
+                Write-Host "::warning::$dll not found at $src"
+              }
+            }
+          } else {
+            Write-Host "No local Acumatica install found. Checked:"
+            $sdkRoots | ForEach-Object { Write-Host "  $_" }
+            Write-Host "Falling back to GCS..."
+
+            # Read SDK version from acuops.yaml (same as Linux build)
+            $sdkVersion = "24.208"
+            if (Test-Path "acuops.yaml") {
+              $line = Get-Content acuops.yaml | Where-Object { $_ -match 'acumatica_build_version' } | Select-Object -First 1
+              if ($line -and $line -match '"?([0-9]+\.[0-9]+)"?') {
+                $sdkVersion = $matches[1]
+              }
+            }
+            Write-Host "SDK version: $sdkVersion"
+
+            # Use gcloud storage cp to pull the DLLs
+            & gcloud storage cp "gs://aesthetik-acumatica-sdk/$sdkVersion/*.dll" $libDir/
+            if ($LASTEXITCODE -ne 0) {
+              Write-Host "::error::Failed to download SDK DLLs from GCS"
+              exit 1
             }
           }
-          Get-ChildItem $libDir -Filter *.dll | Format-Table Name, @{N='Size';E={$_.Length}}
+
+          $dlls = Get-ChildItem $libDir -Filter *.dll
+          if ($dlls.Count -eq 0) {
+            Write-Host "::error::No SDK DLLs acquired (neither local nor GCS)"
+            exit 1
+          }
+          $dlls | Format-Table Name, @{N='Size';E={$_.Length}}
 
       - name: Build with Acuminator
         if: steps.check_csproj.outputs.has_csproj == 'true'
