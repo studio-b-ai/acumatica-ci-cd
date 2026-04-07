@@ -74,6 +74,11 @@ on:
         required: false
         type: boolean
         default: false
+      force_deploy:
+        description: 'EMERGENCY: bypass sandbox-gate failure. Set to "OVERRIDE" literally to activate.'
+        required: false
+        type: string
+        default: ''
 
 permissions:
   contents: read
