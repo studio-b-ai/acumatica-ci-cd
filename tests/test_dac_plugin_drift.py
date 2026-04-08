@@ -263,6 +263,100 @@ def parse_dac_file(source: str, file_path: str) -> list[DacField]:
     return fields
 
 
+# ─── Plugin file parser ──────────────────────────────────────────────────
+
+# EnsureColumn(conn, "TableName", "ColumnName", "type DDL");
+_ENSURE_COLUMN_RE = re.compile(
+    r'EnsureColumn\s*\(\s*conn\s*,\s*'
+    r'"(\w+)"\s*,\s*'           # table
+    r'"(\w+)"\s*,\s*'           # column
+    r'"([^"]+)"\s*\)\s*;',      # type DDL
+    re.MULTILINE,
+)
+
+# EnsureTable(conn, "TableName", @"...column DDL...");
+_ENSURE_TABLE_RE = re.compile(
+    r'EnsureTable\s*\(\s*conn\s*,\s*'
+    r'"(\w+)"\s*,\s*'           # table
+    r'@"([^"]*)"\s*\)\s*;',     # DDL body (verbatim string)
+    re.DOTALL,
+)
+
+
+def _split_top_level_commas(body: str) -> list[str]:
+    """Split a DDL body on commas that are not inside parentheses."""
+    parts: list[str] = []
+    depth = 0
+    current: list[str] = []
+    for ch in body:
+        if ch == "(":
+            depth += 1
+            current.append(ch)
+        elif ch == ")":
+            depth -= 1
+            current.append(ch)
+        elif ch == "," and depth == 0:
+            parts.append("".join(current))
+            current = []
+        else:
+            current.append(ch)
+    if current:
+        parts.append("".join(current))
+    return parts
+
+
+def _parse_ensure_table_body(body: str) -> dict[str, str]:
+    """Parse the DDL body of an EnsureTable call into {column: ddl_fragment}."""
+    columns: dict[str, str] = {}
+    for raw_line in _split_top_level_commas(body):
+        line = raw_line.strip()
+        if not line or line.startswith("CONSTRAINT"):
+            continue
+        # Split on first whitespace: "ColumnName type..."
+        parts = line.split(None, 1)
+        if len(parts) != 2:
+            continue
+        col_name, col_ddl = parts
+        if col_name == "CompanyID":
+            continue  # Boilerplate
+        columns[col_name] = col_ddl.strip()
+    return columns
+
+
+def parse_plugin_file(source: str) -> dict[str, dict[str, PluginColumn]]:
+    """Extract EnsureTable + EnsureColumn coverage from install plugin source."""
+    coverage: dict[str, dict[str, PluginColumn]] = {}
+
+    # EnsureTable blocks
+    for match in _ENSURE_TABLE_RE.finditer(source):
+        table_name = match.group(1)
+        ddl_body = match.group(2)
+        cols = _parse_ensure_table_body(ddl_body)
+        coverage.setdefault(table_name, {})
+        for col_name, col_ddl in cols.items():
+            coverage[table_name][col_name] = PluginColumn(
+                table=table_name,
+                column=col_name,
+                ddl=col_ddl,
+                source="EnsureTable",
+            )
+
+    # EnsureColumn calls
+    for match in _ENSURE_COLUMN_RE.finditer(source):
+        table_name = match.group(1)
+        col_name = match.group(2)
+        col_ddl = match.group(3).strip()
+        coverage.setdefault(table_name, {})
+        coverage[table_name][col_name] = PluginColumn(
+            table=table_name,
+            column=col_name,
+            ddl=col_ddl,
+            source="EnsureColumn",
+        )
+
+    return coverage
+
+
 # ─── Meta-tests ──────────────────────────────────────────────────────────
 
 def test_detector_catches_missing_column():
@@ -378,7 +472,7 @@ public class UsrTest : PXBqlTable, IBqlTable {
 
 
 def test_parse_dac_file_returns_empty_for_filter_dac():
-    """Filter DACs (no PXBqlTable base class) return an empty list."""
+    """Filter DACs use non-persistent attributes like [PXInt] — their fields are excluded."""
     source = """
 [Serializable]
 [PXCacheName("Filter")]
@@ -395,3 +489,33 @@ public class AddPOLineFilter : PXBqlTable, IBqlTable {
     # parse_dac_file should return an empty list (the field is unbound).
     fields = parse_dac_file(source, "fake.cs")
     assert len(fields) == 0
+
+
+def test_parse_plugin_file_extracts_ensure_column():
+    """EnsureColumn calls are captured with correct table/col/ddl."""
+    source = '''
+        EnsureColumn(conn, "UsrContainerPrefs", "LCCodeShipping", "nvarchar(15) NULL");
+        EnsureColumn(conn, "UsrContainerPrefs", "LCCodeDuty", "nvarchar(15) NULL");
+    '''
+    coverage = parse_plugin_file(source)
+    assert "UsrContainerPrefs" in coverage
+    assert "LCCodeShipping" in coverage["UsrContainerPrefs"]
+    assert coverage["UsrContainerPrefs"]["LCCodeShipping"].ddl == "nvarchar(15) NULL"
+    assert coverage["UsrContainerPrefs"]["LCCodeShipping"].source == "EnsureColumn"
+
+
+def test_parse_plugin_file_extracts_ensure_table():
+    """EnsureTable body columns are captured, CompanyID and CONSTRAINT lines skipped."""
+    source = '''
+        EnsureTable(conn, "UsrTest", @"
+            CompanyID int NOT NULL DEFAULT 0,
+            TestID int IDENTITY(1,1) NOT NULL,
+            TestName nvarchar(50) NULL,
+            CONSTRAINT PK_UsrTest PRIMARY KEY (CompanyID, TestID)
+        ");
+    '''
+    coverage = parse_plugin_file(source)
+    assert "UsrTest" in coverage
+    assert "CompanyID" not in coverage["UsrTest"]
+    assert coverage["UsrTest"]["TestID"].ddl == "int IDENTITY(1,1) NOT NULL"
+    assert coverage["UsrTest"]["TestName"].ddl == "nvarchar(50) NULL"
