@@ -101,7 +101,17 @@ If API verification passes, proceed with the 15-step execution order from `docs/
 
 1. ✅ Track 4.3.0 — API verification (done)
 2. 🔄 P1.1, P1.2, P1.3 deferred backlog (in parallel)
-3. **Track 2.0.b** — merge webhook-router PR #64. `cd ~/dev/webhook-router && /opt/homebrew/bin/gh pr merge 64 --squash --delete-branch --repo studio-b-ai/webhook-router`
+3. **Track 2.0.b — webhook-router PR #64 BLOCKER (NEW, surfaced 2026-04-07 night)**. The PR cannot merge as-is because CI fails on `src/__tests__/blind-shipper.test.ts:51` — the "no Heritage branding" test scans the codebase for tenant names and PR #64's `assertStagingConfigSafe()` guard has 11 matches at `config.ts:298–340` (lines like `if (host === "heritagefabrics.acumatica.com")` and `if (cfg.company.trim() === "Heritage Test")`). The security guard needs those exact strings; the productization test rejects them.
+
+   **Three options (Kevin has NOT picked one yet — ask him):**
+
+   - **(1) Quick:** allowlist the guard file in `blind-shipper.test.ts`. ~30 min. Loses the "no tenant names in code" invariant for that file.
+   - **(2) Right architectural fix:** rewrite the guard to use env-var-injected constants (`PROD_HOST_BLOCKLIST`, `TEST_TENANT_BLOCKLIST` on Railway, guard reads from env). ~1 session. This is also the right pattern for Track 3 (Studio B multi-tenant platform vision) because it makes the guard tenant-scoped config instead of hardcoded.
+   - **(3) Structural:** move the guard to a tenant-specific file excluded from the blind-shipper scan. Keeps the invariant but splits the codebase in a way that'll need to be revisited when the multi-tenant refactor happens.
+
+   **Recommendation: (2).** It's the productization-aligned fix and PR #64 becomes a concrete forcing function for Track 3's multi-tenant config pattern. Ask Kevin before executing.
+
+   Once resolved, merge via `/opt/homebrew/bin/gh pr merge 64 --squash --delete-branch --repo studio-b-ai/webhook-router`.
 4. **Track 2.1** — retire `GH_PAT_DISPATCH` via deploy keys. Full detail in `docs/plans/2026-04-07-agentic-pipeline-next-stage.md` Task 2.1.
 5. **Track 2.2** — build `daily-dispatch-cap` composite action. Full detail in same plan Task 2.2.
 6. **Track 2.3** — Safety Package A–F wired into `invoke-agent`, but with `agents/deploy-agent.md` as the runtime prompt (NOT the PR #248 failure-recovery prompt currently on main). Kill switch `INVOKE_AGENT_ENABLED=false` until 4.3.1+ pass.
