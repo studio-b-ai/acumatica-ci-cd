@@ -948,8 +948,8 @@ jobs:
         continue-on-error: true
         env:
           ACUMATICA_URL: ${{ secrets.ACUMATICA_SANDBOX_URL }}
-          ACUMATICA_USERNAME: ${{ secrets.ACUMATICA_SANDBOX_USERNAME }}
-          ACUMATICA_PASSWORD: ${{ secrets.ACUMATICA_SANDBOX_PASSWORD }}
+          ACUMATICA_USERNAME: ${{ secrets.ACUMATICA_VERIFY_USERNAME || secrets.ACUMATICA_SANDBOX_USERNAME }}
+          ACUMATICA_PASSWORD: ${{ secrets.ACUMATICA_VERIFY_PASSWORD || secrets.ACUMATICA_SANDBOX_PASSWORD }}
           ACUMATICA_TENANT: ${{ secrets.ACUMATICA_SANDBOX_TENANT }}
         run: |
           python scripts/verify.py \
@@ -1581,8 +1581,8 @@ jobs:
         continue-on-error: true
         env:
           ACUMATICA_URL: ${{ (steps.env.outputs.target == 'production') && secrets.ACUMATICA_PROD_URL || (secrets.ACUMATICA_STG_URL || secrets.ACUMATICA_PROD_URL) }}
-          ACUMATICA_USERNAME: ${{ (steps.env.outputs.target == 'production') && secrets.ACUMATICA_PROD_USERNAME || (secrets.ACUMATICA_STG_USERNAME || secrets.ACUMATICA_PROD_USERNAME) }}
-          ACUMATICA_PASSWORD: ${{ (steps.env.outputs.target == 'production') && secrets.ACUMATICA_PROD_PASSWORD || (secrets.ACUMATICA_STG_PASSWORD || secrets.ACUMATICA_PROD_PASSWORD) }}
+          ACUMATICA_USERNAME: ${{ secrets.ACUMATICA_VERIFY_USERNAME || ((steps.env.outputs.target == 'production') && secrets.ACUMATICA_PROD_USERNAME || (secrets.ACUMATICA_STG_USERNAME || secrets.ACUMATICA_PROD_USERNAME)) }}
+          ACUMATICA_PASSWORD: ${{ secrets.ACUMATICA_VERIFY_PASSWORD || ((steps.env.outputs.target == 'production') && secrets.ACUMATICA_PROD_PASSWORD || (secrets.ACUMATICA_STG_PASSWORD || secrets.ACUMATICA_PROD_PASSWORD)) }}
           ACUMATICA_TENANT: ${{ (steps.env.outputs.target == 'production') && secrets.ACUMATICA_PROD_TENANT || (secrets.ACUMATICA_STG_TENANT || secrets.ACUMATICA_PROD_TENANT) }}
         run: |
           python scripts/verify.py \
@@ -2050,8 +2050,8 @@ jobs:
         id: verify
         env:
           ACUMATICA_URL: ${{ secrets.ACUMATICA_STG_URL || secrets.ACUMATICA_PROD_URL }}
-          ACUMATICA_USERNAME: ${{ secrets.ACUMATICA_STG_USERNAME || secrets.ACUMATICA_PROD_USERNAME }}
-          ACUMATICA_PASSWORD: ${{ secrets.ACUMATICA_STG_PASSWORD || secrets.ACUMATICA_PROD_PASSWORD }}
+          ACUMATICA_USERNAME: ${{ secrets.ACUMATICA_VERIFY_USERNAME || secrets.ACUMATICA_STG_USERNAME || secrets.ACUMATICA_PROD_USERNAME }}
+          ACUMATICA_PASSWORD: ${{ secrets.ACUMATICA_VERIFY_PASSWORD || secrets.ACUMATICA_STG_PASSWORD || secrets.ACUMATICA_PROD_PASSWORD }}
           ACUMATICA_TENANT: ${{ secrets.ACUMATICA_STG_TENANT || secrets.ACUMATICA_PROD_TENANT }}
         run: |
           python scripts/verify.py \
@@ -2139,8 +2139,8 @@ jobs:
         continue-on-error: true
         env:
           ACUMATICA_URL: ${{ secrets.ACUMATICA_PROD_URL }}
-          ACUMATICA_USERNAME: ${{ secrets.ACUMATICA_PROD_USERNAME }}
-          ACUMATICA_PASSWORD: ${{ secrets.ACUMATICA_PROD_PASSWORD }}
+          ACUMATICA_USERNAME: ${{ secrets.ACUMATICA_VERIFY_USERNAME || secrets.ACUMATICA_PROD_USERNAME }}
+          ACUMATICA_PASSWORD: ${{ secrets.ACUMATICA_VERIFY_PASSWORD || secrets.ACUMATICA_PROD_PASSWORD }}
           ACUMATICA_TENANT: ${{ secrets.ACUMATICA_PROD_TENANT }}
         run: |
           python scripts/verify.py \
