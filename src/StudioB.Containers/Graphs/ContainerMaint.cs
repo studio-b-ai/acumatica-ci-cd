@@ -43,60 +43,110 @@ namespace StudioB.Containers
             .Where<UsrContainerCost.containerID.IsEqual<UsrContainer.containerID.FromCurrent>>
             .View Costs;
 
+        // --- 2026-04-07: Command Center redesign (RFC 1 Phase A) ---
+        public SelectFrom<UsrContainerETAHistory>
+            .Where<UsrContainerETAHistory.containerID.IsEqual<UsrContainer.containerID.FromCurrent>>
+            .OrderBy<UsrContainerETAHistory.recordedDate.Desc>
+            .View ETAHistory;
+
+        public SelectFrom<UsrContainerDocument>
+            .Where<UsrContainerDocument.containerID.IsEqual<UsrContainer.containerID.FromCurrent>>
+            .OrderBy<UsrContainerDocument.documentType.Asc>
+            .View Documents;
+        // --- end 2026-04-07 additions ---
+
         protected virtual IEnumerable containers()
         {
             ContainerFilter filter = Filter.Current;
 
-            if (filter != null && !string.IsNullOrEmpty(filter.StatusFilter))
-            {
-                string sf = filter.StatusFilter;
+            // --- 2026-04-07: ViewMode-driven filtering for Command Center tiles ---
+            string viewMode = filter?.ViewMode ?? "EXCEPTIONS";
+            DateTime today = Accessinfo.BusinessDate ?? DateTime.Today;
 
-                if (sf == "OPEN")
-                {
-                    foreach (UsrContainer row in SelectFrom<UsrContainer>
-                        .Where<UsrContainer.status.IsEqual<ContainerStatus.booked>
-                            .Or<UsrContainer.status.IsEqual<ContainerStatus.departed>>>
-                        .OrderBy<UsrContainer.eta.Asc>
-                        .View.Select(this))
-                    {
-                        yield return row;
-                    }
-                    yield break;
-                }
-                else if (sf == "ARRIVING_THIS_WEEK")
-                {
-                    DateTime weekStart = DateTime.Today.AddDays(-(int)DateTime.Today.DayOfWeek + (int)DayOfWeek.Monday);
-                    if (weekStart > DateTime.Today) weekStart = weekStart.AddDays(-7);
-                    DateTime weekEnd = weekStart.AddDays(7);
-
-                    foreach (UsrContainer row in SelectFrom<UsrContainer>
-                        .OrderBy<UsrContainer.eta.Asc>
-                        .View.Select(this))
-                    {
-                        if (row.ETA != null && row.ETA >= weekStart && row.ETA < weekEnd)
-                            yield return row;
-                    }
-                    yield break;
-                }
-                else
-                {
-                    foreach (UsrContainer row in SelectFrom<UsrContainer>
-                        .OrderBy<UsrContainer.eta.Asc>
-                        .View.Select(this))
-                    {
-                        if (row.Status == sf)
-                            yield return row;
-                    }
-                    yield break;
-                }
-            }
-
+            // Load all rows once, then apply post-filter. Container count is small enough
+            // (<1000 containers in HF's history) that in-memory filtering is acceptable,
+            // and it lets us apply risk-level logic that's hard to express in BQL.
+            var all = new List<UsrContainer>();
             foreach (UsrContainer row in SelectFrom<UsrContainer>
                 .OrderBy<UsrContainer.eta.Asc>
                 .View.Select(this))
             {
-                yield return row;
+                all.Add(row);
             }
+
+            // Legacy StatusFilter still honored for KPI card compatibility
+            if (filter != null && !string.IsNullOrEmpty(filter.StatusFilter))
+            {
+                string sf = filter.StatusFilter;
+                if (sf == "OPEN")
+                {
+                    foreach (var row in all)
+                        if (row.Status == ContainerStatus.Booked || row.Status == ContainerStatus.Departed)
+                            yield return row;
+                    yield break;
+                }
+                if (sf == "ARRIVING_THIS_WEEK")
+                {
+                    DateTime weekStart = today.AddDays(-(int)today.DayOfWeek + (int)DayOfWeek.Monday);
+                    if (weekStart > today) weekStart = weekStart.AddDays(-7);
+                    DateTime weekEnd = weekStart.AddDays(7);
+                    foreach (var row in all)
+                        if (row.ETA != null && row.ETA >= weekStart && row.ETA < weekEnd)
+                            yield return row;
+                    yield break;
+                }
+                foreach (var row in all)
+                    if (row.Status == sf) yield return row;
+                yield break;
+            }
+
+            // New ViewMode filtering
+            if (viewMode == "ALL")
+            {
+                foreach (var row in all) yield return row;
+                yield break;
+            }
+            if (viewMode == "ARRIVING")
+            {
+                DateTime horizon = today.AddDays(7);
+                foreach (var row in all)
+                    if (row.ETA.HasValue && row.ETA.Value.Date >= today.Date && row.ETA.Value.Date <= horizon.Date)
+                        yield return row;
+                yield break;
+            }
+
+            // EXCEPTIONS (default) and WATCH both require the risk level which is computed
+            // per-row at RowSelected time. To filter here we recompute cheaply inline.
+            foreach (var row in all)
+            {
+                string rl = ComputeRiskLevelInline(row, today);
+                if (viewMode == "EXCEPTIONS" && rl == ContainerRiskCalculator.RiskCritical)
+                    yield return row;
+                else if (viewMode == "WATCH" && rl == ContainerRiskCalculator.RiskWarning)
+                    yield return row;
+            }
+        }
+
+        /// <summary>
+        /// Lightweight inline risk level computation for the data delegate filter.
+        /// Counts of docs and ETA history are skipped here (set to 0) — they'd cost a query
+        /// per container which is too expensive at list time. Full risk level lands during
+        /// RowSelected for the currently displayed rows.
+        /// </summary>
+        private string ComputeRiskLevelInline(UsrContainer row, DateTime today)
+        {
+            int customsHoldDays = ContainerRiskCalculator.CustomsHoldDays(today, row.Status, row.LastSyncDate);
+            return ContainerRiskCalculator.ComputeRiskLevel(
+                today,
+                row.Status,
+                row.LastFreeDay,
+                row.ETA,
+                row.ISFFiledDate,
+                row.DepartedDate,
+                docsRequired: 0,
+                docsReceived: 0,
+                etaChangesLast7Days: 0,
+                customsHoldDays: customsHoldDays);
         }
         #endregion
 
@@ -312,33 +362,154 @@ namespace StudioB.Containers
         {
             if (e.Row == null) return;
 
+            DateTime today = Accessinfo.BusinessDate ?? DateTime.Today;
+            DateTime weekStart = today.AddDays(-(int)today.DayOfWeek + (int)DayOfWeek.Monday);
+            if (weekStart > today) weekStart = weekStart.AddDays(-7);
+            DateTime weekEnd = weekStart.AddDays(7);
+            DateTime horizon7 = today.AddDays(7);
+
+            // Legacy KPI counters
             int open = 0, inTransit = 0, arrivingThisWeek = 0, customsHold = 0;
 
-            DateTime weekStart = DateTime.Today.AddDays(-(int)DateTime.Today.DayOfWeek + (int)DayOfWeek.Monday);
-            if (weekStart > DateTime.Today) weekStart = weekStart.AddDays(-7);
-            DateTime weekEnd = weekStart.AddDays(7);
+            // Command Center tile data
+            var tile = new ContainerKPITileBuilder.KPIData();
 
             foreach (UsrContainer c in SelectFrom<UsrContainer>.View.Select(this))
             {
                 string status = c.Status ?? "";
+
+                // --- Legacy counters ---
                 if (status == ContainerStatus.Booked || status == ContainerStatus.Departed) open++;
                 if (status == ContainerStatus.InTransit) inTransit++;
                 if (status == ContainerStatus.CustomsHold) customsHold++;
                 if (c.ETA != null && c.ETA >= weekStart && c.ETA < weekEnd) arrivingThisWeek++;
+
+                // Skip terminal states from risk aggregation
+                if (status == ContainerStatus.Delivered || status == ContainerStatus.Cancelled)
+                    continue;
+
+                // --- Risk level (inline, without doc/history joins for perf) ---
+                int holdDays = ContainerRiskCalculator.CustomsHoldDays(today, status, c.LastSyncDate);
+                string rl = ContainerRiskCalculator.ComputeRiskLevel(
+                    today, status, c.LastFreeDay, c.ETA, c.ISFFiledDate, c.DepartedDate,
+                    docsRequired: 0, docsReceived: 0, etaChangesLast7Days: 0,
+                    customsHoldDays: holdDays);
+
+                // --- Tile 1 breakdown ---
+                if (rl == ContainerRiskCalculator.RiskCritical)
+                {
+                    tile.ActionCount++;
+
+                    if (c.LastFreeDay.HasValue && c.LastFreeDay.Value.Date < today.Date)
+                    {
+                        tile.ActionPastLFD++;
+                        if (c.DemurrageDailyRate.HasValue)
+                            tile.ActionPastLFDDailyRate += c.DemurrageDailyRate.Value;
+                    }
+                    if (status == ContainerStatus.CustomsHold && holdDays > 2)
+                        tile.ActionCustomsHold++;
+                    if (!c.ISFFiledDate.HasValue && !c.DepartedDate.HasValue &&
+                        status == ContainerStatus.Booked &&
+                        c.ETA.HasValue && (c.ETA.Value.Date - today.Date).TotalDays < 14)
+                        tile.ActionISFCutoff++;
+                }
+                // --- Tile 2 breakdown ---
+                else if (rl == ContainerRiskCalculator.RiskWarning)
+                {
+                    tile.WatchCount++;
+
+                    if (c.LastFreeDay.HasValue &&
+                        (c.LastFreeDay.Value.Date - today.Date).TotalDays <= 3)
+                    {
+                        // LFD-soon counted in ETA slipped bucket only if it's not already action-level
+                    }
+                    if (c.ETA.HasValue &&
+                        c.ETA.Value.Date <= horizon7.Date &&
+                        c.ETA.Value.Date >= today.Date)
+                        tile.WatchArrivingSoon++;
+                }
+
+                // --- Tile 3 exposure ---
+                decimal exposure = ContainerRiskCalculator.ComputeDemurrageExposure(
+                    today, c.LastFreeDay, c.DemurrageDailyRate,
+                    customsHoldDays: holdDays,
+                    customsHoldEstimatedCostPerDay: null);
+                if (exposure > 0m)
+                {
+                    tile.ExposureDemurrage += exposure;
+                }
             }
 
+            tile.ExposureTotal = tile.ExposureDemurrage + tile.ExposureDutyVariance + tile.ExposureOther;
+
+            // Assign legacy fields for backwards compat
             e.Row.KPIOpen = open;
             e.Row.KPIInTransit = inTransit;
             e.Row.KPIArrivingThisWeek = arrivingThisWeek;
             e.Row.KPICustomsHold = customsHold;
+
+            // Assign Command Center tile fields
+            e.Row.KPIActionCount = tile.ActionCount;
+            e.Row.KPIWatchCount = tile.WatchCount;
+            e.Row.KPIExposureTotal = tile.ExposureTotal;
+            e.Row.KPITilesHtml = ContainerKPITileBuilder.Build(tile);
         }
 
         protected void _(Events.RowSelected<UsrContainer> e)
         {
             if (e.Row == null) return;
-            bool isActive = e.Row.Status != ContainerStatus.Delivered && e.Row.Status != ContainerStatus.Cancelled;
-            PXUIFieldAttribute.SetEnabled<UsrContainer.containerCD>(e.Cache, e.Row, string.IsNullOrEmpty(e.Row.ContainerCD));
+            var row = e.Row;
+
+            bool isActive = row.Status != ContainerStatus.Delivered && row.Status != ContainerStatus.Cancelled;
+            PXUIFieldAttribute.SetEnabled<UsrContainer.containerCD>(e.Cache, row, string.IsNullOrEmpty(row.ContainerCD));
             RefreshTracking.SetEnabled(isActive);
+
+            // --- Compute per-row risk, LFD countdown, exposure, doc counts ---
+            DateTime today = Accessinfo.BusinessDate ?? DateTime.Today;
+            int holdDays = ContainerRiskCalculator.CustomsHoldDays(today, row.Status, row.LastSyncDate);
+
+            // Document counts — only for the currently displayed row, to keep list-time perf OK
+            int docsRequired = 0, docsReceived = 0;
+            if (row.ContainerID.HasValue)
+            {
+                foreach (UsrContainerDocument d in SelectFrom<UsrContainerDocument>
+                    .Where<UsrContainerDocument.containerID.IsEqual<@P.AsInt>>
+                    .View.Select(this, row.ContainerID))
+                {
+                    if (d.Required == true) docsRequired++;
+                    if (d.Status == "RECEIVED" || d.Status == "VERIFIED") docsReceived++;
+                }
+            }
+
+            row.DocsRequiredCount = docsRequired;
+            row.DocsReceivedCount = docsReceived;
+
+            // ETA change count (last 7 days) — only for the displayed row
+            int etaChanges = 0;
+            if (row.ContainerID.HasValue)
+            {
+                DateTime sevenDaysAgo = today.AddDays(-7);
+                foreach (UsrContainerETAHistory h in SelectFrom<UsrContainerETAHistory>
+                    .Where<UsrContainerETAHistory.containerID.IsEqual<@P.AsInt>
+                        .And<UsrContainerETAHistory.recordedDate.IsGreaterEqual<@P.AsDateTime>>>
+                    .View.Select(this, row.ContainerID, sevenDaysAgo))
+                {
+                    etaChanges++;
+                }
+            }
+
+            row.RiskLevel = ContainerRiskCalculator.ComputeRiskLevel(
+                today, row.Status, row.LastFreeDay, row.ETA, row.ISFFiledDate, row.DepartedDate,
+                docsRequired, docsReceived, etaChanges, holdDays);
+
+            if (row.LastFreeDay.HasValue)
+                row.DaysToLFD = (int)(row.LastFreeDay.Value.Date - today.Date).TotalDays;
+            else
+                row.DaysToLFD = null;
+
+            row.DemurrageExposure = ContainerRiskCalculator.ComputeDemurrageExposure(
+                today, row.LastFreeDay, row.DemurrageDailyRate,
+                holdDays, customsHoldEstimatedCostPerDay: null);
         }
         #endregion
 

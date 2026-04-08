@@ -197,6 +197,180 @@ namespace StudioB.Containers
         public DateTime? LastSyncDate { get; set; }
         #endregion
 
+        // --- 2026-04-07: Command Center redesign (RFC 1 Phase A) ---
+        // Milestone timestamps for status timeline strip
+        #region BookedDate
+        public abstract class bookedDate : BqlDateTime.Field<bookedDate> { }
+        [PXDBDate(PreserveTime = true)]
+        [PXUIField(DisplayName = "Booked On")]
+        public DateTime? BookedDate { get; set; }
+        #endregion
+
+        #region DepartedDate
+        public abstract class departedDate : BqlDateTime.Field<departedDate> { }
+        [PXDBDate(PreserveTime = true)]
+        [PXUIField(DisplayName = "Departed On")]
+        public DateTime? DepartedDate { get; set; }
+        #endregion
+
+        #region ArrivedPortDate
+        public abstract class arrivedPortDate : BqlDateTime.Field<arrivedPortDate> { }
+        [PXDBDate(PreserveTime = true)]
+        [PXUIField(DisplayName = "Arrived Port")]
+        public DateTime? ArrivedPortDate { get; set; }
+        #endregion
+
+        #region CustomsReleasedDate
+        public abstract class customsReleasedDate : BqlDateTime.Field<customsReleasedDate> { }
+        [PXDBDate(PreserveTime = true)]
+        [PXUIField(DisplayName = "Customs Released")]
+        public DateTime? CustomsReleasedDate { get; set; }
+        #endregion
+
+        #region DeliveredDate
+        public abstract class deliveredDate : BqlDateTime.Field<deliveredDate> { }
+        [PXDBDate(PreserveTime = true)]
+        [PXUIField(DisplayName = "Delivered On")]
+        public DateTime? DeliveredDate { get; set; }
+        #endregion
+
+        // Demurrage / free-time tracking
+        #region LastFreeDay
+        public abstract class lastFreeDay : BqlDateTime.Field<lastFreeDay> { }
+        [PXDBDate]
+        [PXUIField(DisplayName = "Last Free Day")]
+        public DateTime? LastFreeDay { get; set; }
+        #endregion
+
+        #region DemurrageDailyRate
+        public abstract class demurrageDailyRate : BqlDecimal.Field<demurrageDailyRate> { }
+        [PXDBDecimal(2)]
+        [PXUIField(DisplayName = "Demurrage $/Day")]
+        public decimal? DemurrageDailyRate { get; set; }
+        #endregion
+
+        // Freight forwarder / broker
+        #region FreightForwarderID
+        public abstract class freightForwarderID : BqlInt.Field<freightForwarderID> { }
+        [PXDBInt]
+        [PXUIField(DisplayName = "Forwarder")]
+        [PXSelector(typeof(Search<UsrFreightForwarder.forwarderID,
+            Where<UsrFreightForwarder.active, Equal<True>>>),
+            typeof(UsrFreightForwarder.forwarderCD),
+            typeof(UsrFreightForwarder.name),
+            SubstituteKey = typeof(UsrFreightForwarder.forwarderCD))]
+        public int? FreightForwarderID { get; set; }
+        #endregion
+
+        #region BrokerID
+        public abstract class brokerID : BqlInt.Field<brokerID> { }
+        [PXDBInt]
+        [PXUIField(DisplayName = "Customs Broker")]
+        [PXSelector(typeof(Search<UsrCustomsBroker.brokerID,
+            Where<UsrCustomsBroker.active, Equal<True>>>),
+            typeof(UsrCustomsBroker.brokerCD),
+            typeof(UsrCustomsBroker.description),
+            SubstituteKey = typeof(UsrCustomsBroker.brokerCD))]
+        public int? BrokerID { get; set; }
+        #endregion
+
+        // CBP entry capture
+        #region EntryNumber
+        public abstract class entryNumber : BqlString.Field<entryNumber> { }
+        [PXDBString(20, IsUnicode = true)]
+        [PXUIField(DisplayName = "Entry #")]
+        public string EntryNumber { get; set; }
+        #endregion
+
+        #region EntryType
+        public abstract class entryType : BqlString.Field<entryType> { }
+        [PXDBString(2, IsUnicode = true)]
+        [PXUIField(DisplayName = "Entry Type")]
+        [PXStringList(new string[] { "01", "03", "11", "23" },
+                       new string[] { "01 - Consumption", "03 - AD/CVD", "11 - Informal", "23 - Temporary" })]
+        public string EntryType { get; set; }
+        #endregion
+
+        #region EntryReleaseDate
+        public abstract class entryReleaseDate : BqlDateTime.Field<entryReleaseDate> { }
+        [PXDBDate]
+        [PXUIField(DisplayName = "Entry Released")]
+        public DateTime? EntryReleaseDate { get; set; }
+        #endregion
+
+        #region DutyPaid
+        public abstract class dutyPaid : BqlDecimal.Field<dutyPaid> { }
+        [PXDBDecimal(2)]
+        [PXUIField(DisplayName = "Duty Paid")]
+        public decimal? DutyPaid { get; set; }
+        #endregion
+
+        #region MPFAmount
+        public abstract class mPFAmount : BqlDecimal.Field<mPFAmount> { }
+        [PXDBDecimal(2)]
+        [PXUIField(DisplayName = "MPF")]
+        public decimal? MPFAmount { get; set; }
+        #endregion
+
+        #region HMFAmount
+        public abstract class hMFAmount : BqlDecimal.Field<hMFAmount> { }
+        [PXDBDecimal(2)]
+        [PXUIField(DisplayName = "HMF")]
+        public decimal? HMFAmount { get; set; }
+        #endregion
+
+        // ISF filing
+        #region ISFFiledDate
+        public abstract class iSFFiledDate : BqlDateTime.Field<iSFFiledDate> { }
+        [PXDBDate(PreserveTime = true)]
+        [PXUIField(DisplayName = "ISF Filed")]
+        public DateTime? ISFFiledDate { get; set; }
+        #endregion
+
+        #region ISFFilingNbr
+        public abstract class iSFFilingNbr : BqlString.Field<iSFFilingNbr> { }
+        [PXDBString(20, IsUnicode = true)]
+        [PXUIField(DisplayName = "ISF #")]
+        public string ISFFilingNbr { get; set; }
+        #endregion
+
+        // Unbound calculated fields for grid + tile rendering
+        #region RiskLevel
+        public abstract class riskLevel : BqlString.Field<riskLevel> { }
+        [PXString(1)]
+        [PXUIField(DisplayName = "●", Enabled = false)]
+        public string RiskLevel { get; set; }
+        #endregion
+
+        #region DaysToLFD
+        public abstract class daysToLFD : BqlInt.Field<daysToLFD> { }
+        [PXInt]
+        [PXUIField(DisplayName = "LFD (days)", Enabled = false)]
+        public int? DaysToLFD { get; set; }
+        #endregion
+
+        #region DemurrageExposure
+        public abstract class demurrageExposure : BqlDecimal.Field<demurrageExposure> { }
+        [PXDecimal(2)]
+        [PXUIField(DisplayName = "$ Exposure", Enabled = false)]
+        public decimal? DemurrageExposure { get; set; }
+        #endregion
+
+        #region DocsRequiredCount
+        public abstract class docsRequiredCount : BqlInt.Field<docsRequiredCount> { }
+        [PXInt]
+        [PXUIField(DisplayName = "Docs Required", Enabled = false)]
+        public int? DocsRequiredCount { get; set; }
+        #endregion
+
+        #region DocsReceivedCount
+        public abstract class docsReceivedCount : BqlInt.Field<docsReceivedCount> { }
+        [PXInt]
+        [PXUIField(DisplayName = "Docs Received", Enabled = false)]
+        public int? DocsReceivedCount { get; set; }
+        #endregion
+        // --- end 2026-04-07 additions ---
+
         #region NoteID
         public abstract class noteID : BqlGuid.Field<noteID> { }
         [PXNote]

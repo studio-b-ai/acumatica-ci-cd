@@ -14,14 +14,24 @@
     </px:PXDataSource>
 </asp:Content>
 <asp:Content ID="cont2" ContentPlaceHolderID="phF" Runat="Server">
+    <%-- 2026-04-07: Command Center redesign — RFC 1 Phase B
+         Replaces the four edKPI* number-edit fields with a single PXHtmlView
+         bound to Filter.KPITilesHtml. The graph populates the HTML string in
+         RowSelected<ContainerFilter> via ContainerKPITileBuilder.
+         See docs/plans/2026-04-07-sb501000-kpi-tile-approved.md for the spec.
+    --%>
     <px:PXFormView ID="frmFilter" runat="server" DataSourceID="ds" DataMember="Filter"
-        Width="100%" AllowAutoHide="false">
+        Width="100%" AllowAutoHide="false" CaptionVisible="False" RenderStyle="Simple"
+        SkinID="Transparent">
         <Template>
             <px:PXLayoutRule ID="PXLayoutRule1" runat="server" StartRow="True" />
-            <px:PXNumberEdit ID="edKPIOpen" runat="server" DataField="KPIOpen" Width="100px" />
-            <px:PXNumberEdit ID="edKPIInTransit" runat="server" DataField="KPIInTransit" Width="100px" />
-            <px:PXNumberEdit ID="edKPIArrivingThisWeek" runat="server" DataField="KPIArrivingThisWeek" Width="130px" />
-            <px:PXNumberEdit ID="edKPICustomsHold" runat="server" DataField="KPICustomsHold" Width="120px" />
+            <px:PXHtmlView ID="htmlKPITiles" runat="server" DataField="KPITilesHtml"
+                Height="160px" Width="100%" SkinID="Label" />
+            <%-- Hidden field backing the tile click handlers. sb501000SetViewMode()
+                 in the embedded JS writes to this field, then postData() refreshes
+                 the grid with the new filter. --%>
+            <px:PXDropDown ID="edViewMode" runat="server" DataField="ViewMode"
+                CommitChanges="True" Style="display:none;" />
         </Template>
     </px:PXFormView>
 </asp:Content>
