@@ -452,6 +452,17 @@ jobs:
           fi
           echo "All $VALIDATED projects passed validation"
 
+      # 2026-04-08: SB501000 shipped with stale Phase A/B CDATA for weeks — only
+      # the physical .aspx was updated as the screen evolved. Acumatica's import
+      # silently ignores ASPX CDATA in favor of the physical file, so the drift
+      # was invisible in prod until a reviewer noticed "Tab Labels:" rendering.
+      # This check enforces that every ASPX CDATA body in every project.xml
+      # matches its physical file verbatim, so the git diff accurately reflects
+      # what ships. Remediation is `python3 scripts/sync-aspx-cdata.py`.
+      - name: Verify ASPX CDATA matches physical files
+        run: |
+          python3 scripts/sync-aspx-cdata.py --check
+
       - name: Deploy Intelligence — Predict
         if: always()
         run: |
