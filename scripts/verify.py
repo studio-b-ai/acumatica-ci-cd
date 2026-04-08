@@ -165,13 +165,23 @@ class AcumaticaSession:
         except Exception:
             pass
 
+    def _retry_on_401(self, method: str, path: str, body: Optional[bytes] = None) -> Tuple[int, bytes]:
+        """Execute request, re-login once on 401 (post-publish app pool recycle)."""
+        status, resp_body = self._request(method, path, body=body)
+        if status == 401:
+            import time
+            time.sleep(10)
+            self.login()
+            status, resp_body = self._request(method, path, body=body)
+        return status, resp_body
+
     def get(self, path: str) -> Tuple[int, bytes]:
-        """HTTP GET. Returns (status_code, response_body_bytes)."""
-        return self._request("GET", path)
+        """HTTP GET. Returns (status_code, response_body_bytes). Retries once on 401."""
+        return self._retry_on_401("GET", path)
 
     def post(self, path: str, body: Optional[bytes] = None) -> Tuple[int, bytes]:
-        """HTTP POST. Returns (status_code, response_body_bytes)."""
-        return self._request("POST", path, body=body)
+        """HTTP POST. Returns (status_code, response_body_bytes). Retries once on 401."""
+        return self._retry_on_401("POST", path, body=body)
 
 
 # ---------------------------------------------------------------------------
