@@ -2,9 +2,13 @@
 
 > **Track 4.2 deliverable** from `2026-04-07-agentic-pipeline-next-stage-v2.md`. Reads alongside `2026-04-08-phase3-vs-reality-audit.md` (Track 4.1).
 >
-> **DECISION (2026-04-07 night session): Option (a) — Converge on Phase 3 — with a 1-hour API verification kill criterion gating the commitment.** See the "Decision + execution plan" section at the bottom. The three-option analysis above remains as the design rationale.
+> **DECISION (2026-04-07 night session): Option (a) — Converge on Phase 3 — with a 1-hour API verification kill criterion gating the commitment.**
 >
-> **No implementation code until:** (1) Track 4.3.0 API verification passes, AND (2) Track 2.4 dry run is green on the full-lifecycle agent.
+> **KILL CRITERION FIRED (2026-04-08 early AM session): API still broken — same `Unable to resolve organization UUID` error as 2026-04-06. Automatic fallback to option (c) Hybrid Formalized is now active.** See `docs/plans/2026-04-08-remote-trigger-api-status.md` for the verification result.
+>
+> **Active direction: (c) Hybrid Formalized.** Tracks 2.1 → 2.2 → 2.3 → 2.4 proceed with `invoke-agent` scoped to diagnosis-only and `claude-code-action@v1` as the runtime. Tracks 4.3.1 / 4.3.2 / 4.3.3 / 4.3.4 / 4.3.5 are **deferred indefinitely** pending upstream API fix. A quarterly re-test is scheduled — when the API recovers, (a) cutover can be revisited.
+>
+> **No implementation code changes to (c) path until:** Track 2.4 dry run is green.
 
 ## What this doc decides
 
