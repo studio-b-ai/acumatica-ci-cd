@@ -51,7 +51,12 @@ on:
     paths:
       - 'Customization/**'
       - 'src/**'
-      - '.github/workflows/acuops-deploy.yml'
+      # NOTE: acuops-deploy.yml is intentionally NOT in the path filter.
+      # Workflow-only edits used to trigger a full run (build + qualify +
+      # sandbox-gate + deploy). sandbox-gate would skip because
+      # customization_changes=false, but qualify + build still ran and
+      # counted against the dispatch cap. To test a workflow change, use
+      # workflow_dispatch or push a no-op Customization/ change.
   pull_request:
     branches: [main, staging]
     paths:
@@ -96,6 +101,11 @@ on:
         required: false
         type: string
         default: ''
+      acknowledge_unpublish:
+        description: 'Acknowledge that one or more currently-published projects will be UNPUBLISHED by this deploy. Set to "OVERRIDE" literally to proceed past the pre-publish audit.'
+        required: false
+        type: string
+        default: ''
 
 permissions:
   contents: read
@@ -133,6 +143,7 @@ jobs:
           github.event.inputs.force_deploy == 'OVERRIDE' ||
           github.event.inputs.skip_sandbox_gate == 'OVERRIDE' ||
           github.event.inputs.force_dispatch_cap == 'OVERRIDE' ||
+          github.event.inputs.acknowledge_unpublish == 'OVERRIDE' ||
           github.event.inputs.force_business_hours == 'true'
         run: |
           {
@@ -144,6 +155,7 @@ jobs:
             [[ "${{ github.event.inputs.force_deploy }}" == "OVERRIDE" ]]     && echo "| force_deploy | OVERRIDE (bypass sandbox-gate failure) |"
             [[ "${{ github.event.inputs.skip_sandbox_gate }}" == "OVERRIDE" ]] && echo "| skip_sandbox_gate | OVERRIDE (skip sandbox-gate entirely) |"
             [[ "${{ github.event.inputs.force_dispatch_cap }}" == "OVERRIDE" ]] && echo "| force_dispatch_cap | OVERRIDE (bypass 24h cap) |"
+            [[ "${{ github.event.inputs.acknowledge_unpublish }}" == "OVERRIDE" ]] && echo "| acknowledge_unpublish | OVERRIDE (allow projects to be unpublished) |"
             [[ "${{ github.event.inputs.force_business_hours }}" == "true" ]] && echo "| force_business_hours | true (deploy during business hours) |"
             echo ""
             echo "Triggered by: \`${{ github.triggering_actor }}\`"
@@ -1203,6 +1215,121 @@ jobs:
             echo "::error::Unknown target '${TARGET}' — expected 'production' or 'staging'"
             exit 1
           fi
+
+      # ── Pre-publish audit — refuse to unpublish anything silently ───
+      # publishBegin is instance-wide and unpublishes any currently-
+      # published project that is not in projectNames. Before the
+      # 2026-03-31 SEV-1, ISV packages were silently unpublished on
+      # every deploy because ALSO_PUBLISH_PROJECTS was incomplete.
+      # This step calls /CustomizationApi/getPublished on the deploy
+      # target and refuses to proceed if the upcoming publish would
+      # unpublish anything.
+      #
+      # Override: set acknowledge_unpublish="OVERRIDE" (workflow_dispatch
+      # only) when the unpublish is intentional. force_qualify=true also
+      # skips this step (used when prod is down and the audit can't
+      # reach the instance anyway).
+      - name: Pre-publish audit — verify nothing will be unpublished
+        if: >
+          github.event.inputs.force_qualify != 'true' &&
+          github.event.inputs.dry_run != 'true'
+        env:
+          ACUMATICA_URL: ${{ (steps.env.outputs.target == 'production') && secrets.ACUMATICA_PROD_URL || secrets.ACUMATICA_STG_URL }}
+          ACUMATICA_USERNAME: ${{ (steps.env.outputs.target == 'production') && secrets.ACUMATICA_PROD_USERNAME || secrets.ACUMATICA_STG_USERNAME }}
+          ACUMATICA_PASSWORD: ${{ (steps.env.outputs.target == 'production') && secrets.ACUMATICA_PROD_PASSWORD || secrets.ACUMATICA_STG_PASSWORD }}
+          ACUMATICA_TENANT: ${{ (steps.env.outputs.target == 'production') && secrets.ACUMATICA_PROD_TENANT || secrets.ACUMATICA_STG_TENANT }}
+          PROJECT_NAME: ${{ needs.build.outputs.project_name }}
+          ALSO_PUBLISH: ${{ needs.build.outputs.also_publish }}
+          ACKNOWLEDGE_UNPUBLISH: ${{ github.event.inputs.acknowledge_unpublish }}
+        run: |
+          python3 <<'PY'
+          import json, os, sys, ssl
+          import http.cookiejar
+          import urllib.request, urllib.error
+
+          base = os.environ["ACUMATICA_URL"].rstrip("/")
+          primary = os.environ["PROJECT_NAME"]
+          also = [p.strip() for p in os.environ.get("ALSO_PUBLISH", "").split(",") if p.strip()]
+          expected = set([primary] + also)
+
+          ctx = ssl.create_default_context()
+          ctx.check_hostname = False
+          ctx.verify_mode = ssl.CERT_NONE
+
+          # Full cookie jar — Acumatica sets 7 cookies on login
+          # (.ASPXAUTH, ASP.NET_SessionId, CompanyID, Locale, UserBranch,
+          # requestid, requeststat). Using getheader("Set-Cookie") only
+          # captures the first one, and CustomizationApi returns 401
+          # without ASP.NET_SessionId.
+          jar = http.cookiejar.CookieJar()
+          opener = urllib.request.build_opener(
+              urllib.request.HTTPSHandler(context=ctx),
+              urllib.request.HTTPCookieProcessor(jar),
+          )
+
+          def req(method, path, body=None):
+              hdrs = {"Content-Type": "application/json"}
+              url = base + "/" + path.lstrip("/")
+              r = urllib.request.Request(url, data=body, headers=hdrs, method=method)
+              try:
+                  with opener.open(r, timeout=30) as resp:
+                      return resp.status, resp.read()
+              except urllib.error.HTTPError as e:
+                  return e.code, e.read()
+
+          # Login
+          login_body = json.dumps({
+              "name":     os.environ["ACUMATICA_USERNAME"],
+              "password": os.environ["ACUMATICA_PASSWORD"],
+              "tenant":   os.environ["ACUMATICA_TENANT"],
+          }).encode()
+          status, body = req("POST", "/entity/auth/login", body=login_body)
+          if status not in (200, 204):
+              print("::error::Pre-publish audit: login failed (HTTP " + str(status) + "): " + body.decode(errors="replace")[:300])
+              sys.exit(1)
+
+          try:
+              # List currently-published customization projects
+              status, body = req("POST", "/CustomizationApi/getPublished")
+              if status != 200:
+                  print("::error::Pre-publish audit: getPublished failed (HTTP " + str(status) + "): " + body.decode(errors="replace")[:300])
+                  sys.exit(1)
+              data = json.loads(body)
+              currently = sorted({p.get("name", "") for p in data.get("projects", []) if p.get("name")})
+
+              print("Currently published (" + str(len(currently)) + "):")
+              for n in currently:
+                  print("  - " + n)
+              print("Expected after publish (" + str(len(expected)) + "):")
+              for n in sorted(expected):
+                  print("  - " + n)
+
+              would_unpublish = sorted(set(currently) - expected)
+
+              if not would_unpublish:
+                  print("[OK] Pre-publish audit passed — " + str(len(currently)) + " projects currently published, none will be unpublished.")
+                  sys.exit(0)
+
+              # Something would be unpublished
+              print("::error::Pre-publish audit: these currently-published projects would be UNPUBLISHED:")
+              for n in would_unpublish:
+                  print("::error::  - " + n)
+              print("::error::publishBegin is instance-wide. Any project not in projectNames is unpublished.")
+              print("::error::Add the missing projects to ALSO_PUBLISH_PROJECTS (GitHub Variable) or acuops.yaml publish.co_publish.")
+              print("::error::See 2026-03-31 SEV-1: ISV packages were unpublished because this check did not exist.")
+
+              if os.environ.get("ACKNOWLEDGE_UNPUBLISH") == "OVERRIDE":
+                  print("::warning::acknowledge_unpublish=OVERRIDE set — proceeding past pre-publish audit failure")
+                  sys.exit(0)
+
+              print("::error::To intentionally unpublish these projects, re-run with acknowledge_unpublish=OVERRIDE (workflow_dispatch only).")
+              sys.exit(1)
+          finally:
+              try:
+                  req("POST", "/entity/auth/logout")
+              except Exception:
+                  pass
+          PY
 
       - name: Load pipeline config from acuops.yaml
         id: pipeline_cfg
