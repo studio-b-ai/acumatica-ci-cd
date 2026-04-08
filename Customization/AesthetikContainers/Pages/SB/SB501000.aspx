@@ -10,6 +10,15 @@
             <px:PXDSCallbackCommand Name="First" PostData="Self" StartNewGroup="True" />
             <px:PXDSCallbackCommand Name="Last" PostData="Self" />
             <px:PXDSCallbackCommand Name="CreateLandedCost" CommitChanges="True" />
+            <%-- 2026-04-08: Phase E + F — new Command Center actions --%>
+            <px:PXDSCallbackCommand Name="MarkCustomsCleared" CommitChanges="True" StartNewGroup="True" />
+            <px:PXDSCallbackCommand Name="MarkDelivered" CommitChanges="True" />
+            <px:PXDSCallbackCommand Name="PrintReceivingDoc" />
+            <px:PXDSCallbackCommand Name="AddPOLink" CommitChanges="True" Visible="False" />
+            <px:PXDSCallbackCommand Name="RemovePOLink" CommitChanges="True" Visible="False" />
+            <px:PXDSCallbackCommand Name="AttachDocument" CommitChanges="True" Visible="False" />
+            <px:PXDSCallbackCommand Name="RecordETAUpdate" CommitChanges="True" Visible="False" />
+            <px:PXDSCallbackCommand Name="ImportForwarderCSV" CommitChanges="True" StartNewGroup="True" />
         </CallbackCommands>
     </px:PXDataSource>
 </asp:Content>
@@ -143,6 +152,13 @@
                     <px:PXTabItem Text="PO Links">
                         <Template>
                             <px:PXGrid ID="gridPOLinks" runat="server" DataSourceID="ds" Width="100%" SkinID="Details">
+                                <%-- 2026-04-08: Phase E — wire Add/Remove PO Line actions to toolbar --%>
+                                <ActionBar>
+                                    <CustomItems>
+                                        <px:PXToolBarButton Text="Add PO Line" CommandName="AddPOLink" CommandSourceID="ds" />
+                                        <px:PXToolBarButton Text="Remove PO Line" CommandName="RemovePOLink" CommandSourceID="ds" />
+                                    </CustomItems>
+                                </ActionBar>
                                 <Levels>
                                     <px:PXGridLevel DataMember="POLinks">
                                         <Columns>
@@ -181,8 +197,80 @@
                             </px:PXGrid>
                         </Template>
                     </px:PXTabItem>
+                    <%-- 2026-04-08: Phase E — Documents tab (per-container document checklist) --%>
+                    <px:PXTabItem Text="Documents">
+                        <Template>
+                            <px:PXGrid ID="gridDocuments" runat="server" DataSourceID="ds" Width="100%" SkinID="Details">
+                                <ActionBar>
+                                    <CustomItems>
+                                        <px:PXToolBarButton Text="Attach Document" CommandName="AttachDocument" CommandSourceID="ds" />
+                                    </CustomItems>
+                                </ActionBar>
+                                <Levels>
+                                    <px:PXGridLevel DataMember="Documents">
+                                        <Columns>
+                                            <px:PXGridColumn DataField="DocumentType" Width="180" CommitChanges="True" />
+                                            <px:PXGridColumn DataField="Required" Width="80" Type="CheckBox" />
+                                            <px:PXGridColumn DataField="Status" Width="100" CommitChanges="True" />
+                                            <px:PXGridColumn DataField="ReceivedDate" Width="110" />
+                                            <px:PXGridColumn DataField="Note" Width="240" />
+                                        </Columns>
+                                    </px:PXGridLevel>
+                                </Levels>
+                                <AutoSize Enabled="True" MinHeight="150" />
+                            </px:PXGrid>
+                        </Template>
+                    </px:PXTabItem>
+                    <%-- 2026-04-08: Phase E — ETA History tab (forwarder-lie detection) --%>
+                    <px:PXTabItem Text="ETA History">
+                        <Template>
+                            <px:PXGrid ID="gridETAHistory" runat="server" DataSourceID="ds" Width="100%" SkinID="Details">
+                                <ActionBar>
+                                    <CustomItems>
+                                        <px:PXToolBarButton Text="Snapshot Current ETA" CommandName="RecordETAUpdate" CommandSourceID="ds" />
+                                    </CustomItems>
+                                </ActionBar>
+                                <Levels>
+                                    <px:PXGridLevel DataMember="ETAHistory">
+                                        <Columns>
+                                            <px:PXGridColumn DataField="RecordedDate" Width="130" />
+                                            <px:PXGridColumn DataField="PreviousETA" Width="110" />
+                                            <px:PXGridColumn DataField="NewETA" Width="110" />
+                                            <px:PXGridColumn DataField="Source" Width="100" />
+                                            <px:PXGridColumn DataField="Note" Width="260" />
+                                        </Columns>
+                                    </px:PXGridLevel>
+                                </Levels>
+                                <AutoSize Enabled="True" MinHeight="150" />
+                            </px:PXGrid>
+                        </Template>
+                    </px:PXTabItem>
                 </Items>
             </px:PXTab>
+
+            <%-- 2026-04-08: Phase E — Smart panel for Add PO Line action.
+                 Graph declares AddPOLineFilter as a PXFilter and exposes it via
+                 AddPOLink action which calls AskExt() on this panel. --%>
+            <px:PXSmartPanel ID="pnlAddPOLine" runat="server" Style="z-index: 100;"
+                Caption="Add PO Line to Container" CaptionVisible="True"
+                LoadOnDemand="True" Key="AddPOLineFilter" AutoCallBack-Enabled="True"
+                AutoCallBack-Target="frmAddPOLineFilter"
+                AutoCallBack-ActiveBehavior="True" AcceptButtonID="btnAddPOLineOK" Width="420px">
+                <px:PXFormView ID="frmAddPOLineFilter" runat="server" DataSourceID="ds"
+                    Style="z-index: 100" Width="100%" CaptionVisible="False"
+                    DataMember="AddPOLineFilter" SkinID="Transparent">
+                    <Template>
+                        <px:PXLayoutRule ID="pnlLayoutRule1" runat="server" StartColumn="True" LabelsWidth="S" ControlSize="M" />
+                        <px:PXSelector ID="edPnlVendorID" runat="server" DataField="VendorID" CommitChanges="True" />
+                        <px:PXSelector ID="edPnlOrderNbr" runat="server" DataField="OrderNbr" CommitChanges="True" />
+                        <px:PXSelector ID="edPnlLineNbr" runat="server" DataField="LineNbr" CommitChanges="True" />
+                    </Template>
+                </px:PXFormView>
+                <div style="padding:8px; text-align:right;">
+                    <px:PXButton ID="btnAddPOLineOK" runat="server" DialogResult="OK" Text="Add" />
+                    <px:PXButton ID="btnAddPOLineCancel" runat="server" DialogResult="Cancel" Text="Cancel" />
+                </div>
+            </px:PXSmartPanel>
         </Template2>
     </px:PXSplitContainer>
 </asp:Content>

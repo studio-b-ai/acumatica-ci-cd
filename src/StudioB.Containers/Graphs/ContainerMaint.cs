@@ -156,7 +156,10 @@ namespace StudioB.Containers
             public const string Booked = "BOOKED";
             public const string Departed = "DEPARTED";
             public const string InTransit = "IN_TRANSIT";
+            public const string Arrived = "ARRIVED";
+            public const string Discharged = "DISCHARGED";
             public const string CustomsHold = "CUSTOMS_HOLD";
+            public const string GatedOut = "GATED_OUT";
             public const string Delivered = "DELIVERED";
             public const string Cancelled = "CANCELLED";
 
@@ -355,6 +358,301 @@ namespace StudioB.Containers
                 default: return prefs.LCCodeOther;
             }
         }
+
+        // --- 2026-04-08: Phase E — Operational actions for the command center ---
+
+        public PXAction<ContainerFilter> MarkCustomsCleared;
+        [PXButton(CommitChanges = true)]
+        [PXUIField(DisplayName = "Mark Customs Cleared", MapEnableRights = PXCacheRights.Update)]
+        protected void markCustomsCleared()
+        {
+            var c = Container.Current;
+            if (c == null) return;
+            if (c.CustomsReleasedDate.HasValue)
+            {
+                if (Container.Ask("Customs Already Cleared",
+                    string.Format("Customs was already marked released on {0:MMM d}. Overwrite?",
+                        c.CustomsReleasedDate.Value),
+                    MessageButtons.YesNo) != WebDialogResult.Yes)
+                    return;
+            }
+            DateTime now = Accessinfo.BusinessDate ?? DateTime.Today;
+            c.CustomsReleasedDate = now;
+            c.Status = ContainerStatus.GatedOut;
+            Container.Update(c);
+
+            var ev = (UsrContainerEvent)Events.Cache.CreateInstance();
+            ev.ContainerID = c.ContainerID;
+            ev.NormalizedEventCode = "CUSTOMS_CLEARED";
+            ev.CarrierEventCode = "CUSTOMS_CLEARED";
+            ev.EventDateTime = now;
+            ev.EventClassifier = "ACT";
+            ev.Description = "Customs released — marked manually via SB501000";
+            Events.Insert(ev);
+
+            Actions.PressSave();
+        }
+
+        public PXAction<ContainerFilter> MarkDelivered;
+        [PXButton(CommitChanges = true)]
+        [PXUIField(DisplayName = "Mark Delivered", MapEnableRights = PXCacheRights.Update)]
+        protected void markDelivered()
+        {
+            var c = Container.Current;
+            if (c == null) return;
+            DateTime now = Accessinfo.BusinessDate ?? DateTime.Today;
+            c.DeliveredDate = now;
+            c.Status = ContainerStatus.Delivered;
+            Container.Update(c);
+
+            var ev = (UsrContainerEvent)Events.Cache.CreateInstance();
+            ev.ContainerID = c.ContainerID;
+            ev.NormalizedEventCode = "DELIVERED";
+            ev.CarrierEventCode = "DELIVERED";
+            ev.EventDateTime = now;
+            ev.EventClassifier = "ACT";
+            ev.Description = "Delivered to warehouse — marked manually via SB501000";
+            Events.Insert(ev);
+
+            Actions.PressSave();
+        }
+
+        public PXAction<ContainerFilter> RecordETAUpdate;
+        [PXButton(CommitChanges = true)]
+        [PXUIField(DisplayName = "Record ETA Update", MapEnableRights = PXCacheRights.Update)]
+        protected void recordETAUpdate()
+        {
+            var c = Container.Current;
+            if (c == null) return;
+            // When the imports manager manually updates ETA on the form,
+            // we append a history row automatically via FieldUpdated. This
+            // action is for the "snapshot current ETA to history" convenience
+            // button — useful when the ETA didn't change but they want a
+            // tracked note.
+            var h = (UsrContainerETAHistory)ETAHistory.Cache.CreateInstance();
+            h.ContainerID = c.ContainerID;
+            h.PreviousETA = c.ETA;
+            h.NewETA = c.ETA;
+            h.RecordedDate = Accessinfo.BusinessDate ?? DateTime.Today;
+            h.Source = "MANUAL";
+            h.Note = "Manual snapshot";
+            ETAHistory.Insert(h);
+            Actions.PressSave();
+        }
+
+        public PXAction<ContainerFilter> AttachDocument;
+        [PXButton(CommitChanges = true)]
+        [PXUIField(DisplayName = "Attach Document", MapEnableRights = PXCacheRights.Update)]
+        protected void attachDocument()
+        {
+            var c = Container.Current;
+            if (c == null) return;
+            // Inserts a stub UsrContainerDocument row the user then fills in.
+            // Actual file upload happens via the NoteID file attachment UI
+            // that Acumatica exposes on any row with a PXNote field.
+            var d = (UsrContainerDocument)Documents.Cache.CreateInstance();
+            d.ContainerID = c.ContainerID;
+            d.DocumentType = "OTHER";
+            d.Required = true;
+            d.Status = "MISSING";
+            Documents.Insert(d);
+            Actions.PressSave();
+        }
+
+        public PXAction<ContainerFilter> PrintReceivingDoc;
+        [PXButton]
+        [PXUIField(DisplayName = "Print Receiving Doc", MapEnableRights = PXCacheRights.Select)]
+        protected void printReceivingDoc()
+        {
+            var c = Container.Current;
+            if (c == null) return;
+            // v1: stub — writes an event row so there's an audit trail and
+            // raises an info message. Actual PDF report rendering is Phase G
+            // polish work (will wire a PXReportTool.Launch here).
+            var ev = (UsrContainerEvent)Events.Cache.CreateInstance();
+            ev.ContainerID = c.ContainerID;
+            ev.NormalizedEventCode = "DOC_PRINTED";
+            ev.CarrierEventCode = "DOC_PRINTED";
+            ev.EventDateTime = Accessinfo.BusinessDate ?? DateTime.Today;
+            ev.EventClassifier = "ACT";
+            ev.Description = "Receiving document printed";
+            Events.Insert(ev);
+            Actions.PressSave();
+        }
+
+        public PXAction<ContainerFilter> AddPOLink;
+        [PXButton(CommitChanges = true)]
+        [PXUIField(DisplayName = "Add PO Line", MapEnableRights = PXCacheRights.Update)]
+        protected void addPOLink()
+        {
+            var c = Container.Current;
+            if (c == null) return;
+            // v1: opens the AddPOLineFilter smart panel where the user picks
+            // an open PO line to attach. The panel is declared on the ASPX.
+            if (AddPOLineFilter.AskExt() == WebDialogResult.OK)
+            {
+                var f = AddPOLineFilter.Current;
+                if (f?.OrderType == null || string.IsNullOrEmpty(f.OrderNbr)) return;
+                var link = (UsrContainerPOLink)POLinks.Cache.CreateInstance();
+                link.ContainerID = c.ContainerID;
+                link.OrderType = f.OrderType;
+                link.OrderNbr = f.OrderNbr;
+                link.LineNbr = f.LineNbr;
+                POLinks.Insert(link);
+                Actions.PressSave();
+            }
+        }
+
+        public PXAction<ContainerFilter> RemovePOLink;
+        [PXButton(CommitChanges = true)]
+        [PXUIField(DisplayName = "Remove PO Line", MapEnableRights = PXCacheRights.Delete)]
+        protected void removePOLink()
+        {
+            var current = POLinks.Current;
+            if (current == null) return;
+            if (Container.Ask("Remove PO Link",
+                "Remove this PO line from the container?",
+                MessageButtons.YesNo) != WebDialogResult.Yes) return;
+            POLinks.Delete(current);
+            Actions.PressSave();
+        }
+
+        // --- Phase F: Forwarder CSV import ---
+        // Reads the most recent file attachment on the graph's Filter view,
+        // parses it as CSV (forwarder-exported format: ContainerNumber, NewETA,
+        // NewStatus, EventDate, EventDescription), and updates containers +
+        // writes ETA history + event rows.
+        public PXAction<ContainerFilter> ImportForwarderCSV;
+        [PXButton(CommitChanges = true)]
+        [PXUIField(DisplayName = "Import Forwarder CSV", MapEnableRights = PXCacheRights.Update)]
+        protected void importForwarderCSV()
+        {
+            // Find the most recently uploaded file attached to the Filter view
+            Guid[] fileIds = PXNoteAttribute.GetFileNotes(Filter.Cache, Filter.Current);
+            if (fileIds == null || fileIds.Length == 0)
+            {
+                throw new PXException(
+                    "Attach the forwarder CSV file to this screen first using the paperclip icon, then click Import Forwarder CSV.");
+            }
+
+            // Load the most recently attached file
+            var upload = PXGraph.CreateInstance<PX.SM.UploadFileMaintenance>();
+            var file = upload.GetFile(fileIds[fileIds.Length - 1]);
+            if (file == null || file.BinData == null || file.BinData.Length == 0)
+            {
+                throw new PXException("The attached file is empty or could not be read.");
+            }
+
+            string csvText = System.Text.Encoding.UTF8.GetString(file.BinData);
+            // Strip BOM if present
+            if (csvText.Length > 0 && csvText[0] == '\uFEFF')
+                csvText = csvText.Substring(1);
+
+            var result = ForwarderImportParser.Parse(csvText);
+            if (result.Errors != null && result.Errors.Count > 0)
+            {
+                throw new PXException("CSV parse failed: " + string.Join(" | ", result.Errors));
+            }
+
+            int updated = 0, eventsAdded = 0, notFound = 0, rowErrors = 0;
+            var notFoundNumbers = new List<string>();
+            DateTime today = Accessinfo.BusinessDate ?? DateTime.Today;
+
+            foreach (var row in result.Rows)
+            {
+                if (!string.IsNullOrEmpty(row.ParseError))
+                {
+                    rowErrors++;
+                    continue;
+                }
+
+                UsrContainer container = SelectFrom<UsrContainer>
+                    .Where<UsrContainer.containerCD.IsEqual<@P.AsString>>
+                    .View.SelectSingleBound(this, null, row.ContainerNumber);
+
+                if (container == null)
+                {
+                    notFound++;
+                    if (notFoundNumbers.Count < 5) notFoundNumbers.Add(row.ContainerNumber);
+                    continue;
+                }
+
+                bool changed = false;
+
+                if (row.NewETA.HasValue && row.NewETA.Value != container.ETA)
+                {
+                    var hist = (UsrContainerETAHistory)ETAHistory.Cache.CreateInstance();
+                    hist.ContainerID = container.ContainerID;
+                    hist.PreviousETA = container.ETA;
+                    hist.NewETA = row.NewETA.Value;
+                    hist.RecordedDate = today;
+                    hist.Source = "XLSX";
+                    hist.Note = "Forwarder CSV import";
+                    ETAHistory.Cache.Insert(hist);
+
+                    container.ETA = row.NewETA.Value;
+                    changed = true;
+                }
+
+                if (!string.IsNullOrEmpty(row.NewStatus) && row.NewStatus != container.Status)
+                {
+                    container.Status = row.NewStatus;
+                    changed = true;
+                }
+
+                if (changed)
+                {
+                    Containers.Cache.Update(container);
+                    updated++;
+                }
+
+                if (row.EventDate.HasValue || !string.IsNullOrEmpty(row.EventDescription))
+                {
+                    var ev = (UsrContainerEvent)Events.Cache.CreateInstance();
+                    ev.ContainerID = container.ContainerID;
+                    ev.NormalizedEventCode = !string.IsNullOrEmpty(row.NewStatus) ? row.NewStatus : "UPDATE";
+                    ev.CarrierEventCode = "CSV_IMPORT";
+                    ev.EventDateTime = row.EventDate ?? today;
+                    ev.EventClassifier = "ACT";
+                    ev.Description = row.EventDescription ?? "Forwarder CSV update";
+                    Events.Cache.Insert(ev);
+                    eventsAdded++;
+                }
+            }
+
+            Actions.PressSave();
+
+            var summary = new System.Text.StringBuilder();
+            summary.AppendFormat("Import complete. Updated {0} containers, added {1} events.",
+                updated, eventsAdded);
+            if (notFound > 0)
+            {
+                summary.Append(" ");
+                summary.AppendFormat("{0} container(s) not found: {1}{2}",
+                    notFound,
+                    string.Join(", ", notFoundNumbers),
+                    notFound > notFoundNumbers.Count ? " …" : "");
+            }
+            if (rowErrors > 0)
+            {
+                summary.AppendFormat(" {0} row(s) had parse errors.", rowErrors);
+            }
+            Filter.View.Ask("Forwarder CSV Import", summary.ToString(), MessageButtons.OK);
+        }
+
+        // --- Add PO Line filter + selector view for the smart panel ---
+        public PXFilter<AddPOLineFilter> AddPOLineFilter;
+
+        public SelectFrom<POLine>
+            .LeftJoin<POOrder>.On<POOrder.orderType.IsEqual<POLine.orderType>
+                .And<POOrder.orderNbr.IsEqual<POLine.orderNbr>>>
+            .LeftJoin<InventoryItem>.On<InventoryItem.inventoryID.IsEqual<POLine.inventoryID>>
+            .Where<POLine.lineType.IsEqual<POLineType.goodsForInventory>
+                .And<POLine.completed.IsEqual<False>>>
+            .OrderBy<POLine.orderType.Asc, POLine.orderNbr.Asc, POLine.lineNbr.Asc>
+            .View OpenPOLines;
+
+        // --- end 2026-04-08 actions ---
         #endregion
 
         #region Event Handlers

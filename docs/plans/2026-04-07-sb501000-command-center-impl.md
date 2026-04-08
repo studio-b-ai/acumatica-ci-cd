@@ -166,6 +166,102 @@ This is the smallest user-visible change that proves the Phase A graph logic is 
 
 Build + tests still green. 21/21 tests passing.
 
-## Phase D-F (pending)
+## Phase E — Actions, Documents/ETA History tabs, CustomsBroker screen (COMPLETE)
+
+### New actions in `ContainerMaint`
+
+| Action | Purpose |
+|---|---|
+| `MarkCustomsCleared` | Stamps `CustomsReleasedDate`, flips status to `GATED_OUT`, writes event row. Prompts for overwrite if already set. |
+| `MarkDelivered` | Stamps `DeliveredDate`, flips status to `DELIVERED`, writes event row. |
+| `RecordETAUpdate` | Manual ETA history snapshot — useful when the ETA didn't move but the user wants a tracked note. |
+| `AttachDocument` | Inserts a `UsrContainerDocument` row the user then fills in via the grid. File attachments via Acumatica's native `NoteID` mechanism. |
+| `PrintReceivingDoc` | v1 stub — writes an event row. Real PDF rendering is future work (`PXReportTool.Launch`). |
+| `AddPOLink` | Opens the new `pnlAddPOLine` smart panel where the user picks a vendor → open PO → line. Creates a `UsrContainerPOLink` row on OK. |
+| `RemovePOLink` | Deletes the currently-selected PO link with confirmation dialog. |
+
+### New smart panel
+`pnlAddPOLine` on SB501000 — three cascading `PXSelector`s (Vendor → Order → Line) backed by the new `AddPOLineFilter` DAC. Filters POs by vendor and status (not closed/cancelled). Filters lines by the chosen order.
+
+### New DAC
+`AddPOLineFilter` — non-persistent filter for the smart panel. Cascading selectors wired via `Current<>` references.
+
+### Enhanced ContainerStatus constants
+Added `Arrived`, `Discharged`, and `GatedOut` as explicit constants on `ContainerStatus` class (they existed in the `UsrContainer.Status` PXStringList but weren't exposed as C# constants).
+
+### New tabs in SB501000 tabDetail
+
+| Tab | Content |
+|---|---|
+| **Documents** | Grid over `Documents` view (UsrContainerDocument). Columns: DocumentType, Required checkbox, Status, ReceivedDate, Note. Action bar has "Attach Document" button wired to `AttachDocument` action. |
+| **ETA History** | Grid over `ETAHistory` view. Columns: RecordedDate, PreviousETA, NewETA, Source, Note. Action bar has "Snapshot Current ETA" button wired to `RecordETAUpdate`. |
+
+### Graph-level toolbar
+`CallbackCommands` on the `PXDataSource` extended with all new actions. Visible buttons: `MarkCustomsCleared`, `MarkDelivered`, `PrintReceivingDoc`, `ImportForwarderCSV`. Hidden (triggered from tab action bars): `AddPOLink`, `RemovePOLink`, `AttachDocument`, `RecordETAUpdate`.
+
+### CustomsBroker maintenance screen (SB302040)
+- New graph: `CustomsBrokerMaint` (simple `PXGraph<CustomsBrokerMaint, UsrCustomsBroker>`)
+- New ASPX: `SB302040.aspx` + `SB302040.aspx.cs`
+- Registered in `project.xml`: File entries + SiteMap row at position 8.5 under the container management menu parent.
+
+## Phase F — Forwarder CSV import (COMPLETE)
+
+Pragmatic v1: CSV instead of XLSX. Forwarders already support "Export to Excel → Save as CSV" in one click, and CSV parsing has zero dependencies vs. EPPlus/ClosedXML which aren't in Acumatica's base DLL set.
+
+### New pure-logic class
+`ForwarderImportParser` — zero Acumatica dependency, unit-testable. Accepts a CSV string and returns a `ParseResult` with:
+- `Rows` — `List<ParsedRow>` with per-row `ParseError` so bad rows don't kill the whole import
+- `Errors` — file-level errors (empty file, bad header, no data rows)
+
+Expected header columns: `ContainerNumber, NewETA, NewStatus, EventDate, EventDescription`.
+
+Handles:
+- Quoted fields with embedded commas (`"In transit, Hamburg → LA"`)
+- Escaped quotes (`""`)
+- Windows + Unix line endings
+- 9 common date formats (ISO, US M/d/yyyy, 15-Apr-2026, etc.)
+- Blank lines skipped
+- Rows with extra columns accepted
+- Line number preserved in each parsed row for error reporting
+
+### New action
+`ImportForwarderCSV` in `ContainerMaint`:
+1. Reads the most recent file attached to the `Filter` view via `PXNoteAttribute.GetFileNotes`
+2. Loads the file via `PX.SM.UploadFileMaintenance.GetFile`
+3. Strips BOM, decodes UTF-8
+4. Parses via `ForwarderImportParser.Parse`
+5. For each row: matches container by CD, updates ETA (writes history row), updates Status, creates event row if description provided
+6. Returns summary dialog: "Updated X containers, added Y events. N container(s) not found: ABC, DEF …"
+
+### Unit tests — 20 new tests, all passing
+`ForwarderImportParserTests.cs` covers:
+- CSV splitting (simple, quoted with commas, escaped quotes, empty, trailing empty)
+- File-level errors (empty, whitespace-only, header-only, too-few columns)
+- Happy path (one row, multiple rows, status uppercasing, various date formats)
+- Error handling (bad date → per-row error, missing container, blank line skipping, Windows line endings)
+- Edge cases (extra columns beyond header, line number preservation)
+
+Initial run caught 1 failure — "header only" case now correctly surfaces a file-level error.
+
+## Phase G — Polish + empty states (COMPLETE)
+
+- Empty states for KPI tiles were already built in Phase A (`ContainerKPITileBuilder` handles `count == 0` with desaturated green accent).
+- Row coloring JS has fallback for `risk-g` (OK) rows — they render default background, green circle.
+- Timeline strip handles nullable dates, renders `&nbsp;` for unknown stops.
+- Unit tests grew from 21 → 41 (added ForwarderImportParser coverage).
+
+### Build state
+```
+dotnet build src/StudioB.Containers/  →  0 errors, 0 warnings
+dotnet test  tests/dotnet/StudioB.Containers.Tests/  →  41/41 passing
+ASPX balance — SB501000: delta 0, SB302040: delta 0
+```
+
+### Remaining for Phase G after merge
+- Heritage Test soak (minimum 2 business days)
+- Kevin sign-off before production deploy
+- Production deploy (app pool restart)
+
+Those are deployment gates, not code.
 
 Grid risk column + row coloring, timeline strip, grouped detail form, new actions, Documents + ETA History tabs, XLSX forwarder import, stylesheet polish, Heritage Test soak, production promote.

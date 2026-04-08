@@ -21,5 +21,8 @@
     <Compile Include="..\..\..\src\StudioB.Containers\Graphs\ContainerRiskCalculator.cs">
       <Link>Linked\ContainerRiskCalculator.cs</Link>
     </Compile>
+    <Compile Include="..\..\..\src\StudioB.Containers\Graphs\ForwarderImportParser.cs">
+      <Link>Linked\ForwarderImportParser.cs</Link>
+    </Compile>
   </ItemGroup>
 </Project>
