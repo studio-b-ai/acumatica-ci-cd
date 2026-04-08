@@ -54,14 +54,20 @@ class DriftEntry:
 
 
 def _normalize_ddl(ddl: str) -> str:
-    """Canonicalize whitespace and case for DDL comparison.
+    """Canonicalize DDL for drift comparison.
 
-    Collapses internal whitespace, lowercases, and tightens spaces around
-    punctuation (`(`, `)`, `,`) so that 'decimal(19, 2) NULL' and
-    'decimal(19,2) NULL' compare equal — SQL Server treats them identically.
+    - Lowercase + collapse whitespace
+    - Tighten spaces around punctuation
+    - Strip DEFAULT clauses (everything from 'default' keyword to end of string)
+    - Normalize decimal(N,M) to decimal(*,M) — comparison is scale-only because
+      [PXDBDecimal(N)] in Acumatica DACs specifies scale, not total precision.
     """
     s = re.sub(r'\s+', ' ', ddl.strip().lower())
     s = re.sub(r'\s*([(),])\s*', r'\1', s)
+    # Strip DEFAULT clause (comes after NULL/NOT NULL, runs to end of string)
+    s = re.sub(r'\s+default\s+.+$', '', s)
+    # Normalize decimal precision: decimal(19,4) → decimal(*,4)
+    s = re.sub(r'decimal\(\d+,(\d+)\)', r'decimal(*,\1)', s)
     return s
 
 
@@ -194,16 +200,28 @@ def _compute_expected_ddl(attribute: str,
                           args: str,
                           has_default: bool,
                           default_value: Optional[str],
-                          is_key: bool) -> str:
+                          is_key: bool,
+                          has_pxdb_default: bool = False) -> str:
     """Canonical DAC attribute → SQL type fragment mapping.
 
-    Returns e.g. 'nvarchar(15) NULL' or 'decimal(19,2) NOT NULL DEFAULT 1'.
+    Returns the SQL type + nullability only. DEFAULT clauses are intentionally
+    omitted — the drift detector treats DEFAULT as a runtime/Acumatica concern
+    and strips them from comparison. Decimal precision is emitted as '*'
+    because [PXDBDecimal(N)] specifies only scale; plugin authors may choose
+    any precision that accommodates the data range.
+
+    Examples:
+      [PXDBString(15, IsUnicode = true)]       -> "nvarchar(15) NULL"
+      [PXDBString(15, IsKey = true, ...)]      -> "nvarchar(15) NOT NULL"
+      [PXDBDecimal(2)]                         -> "decimal(*,2) NULL"
+      [PXDBInt] + [PXDBDefault(typeof(X))]     -> "int NOT NULL"
+      [PXDBBool]                               -> "bit NOT NULL"
+      [PXDBIdentity]                           -> "int IDENTITY(1,1) NOT NULL"
     """
     # Parse the arg string (e.g. "15, IsUnicode = true, IsFixed = true, IsKey = true")
     size = None
     is_unicode = False
     is_fixed = False
-    # First positional arg is size
     if args:
         first = args.split(",")[0].strip()
         if first.isdigit():
@@ -228,8 +246,11 @@ def _compute_expected_ddl(attribute: str,
     elif attribute == "PXDBBool":
         sql_type = "bit"
     elif attribute == "PXDBDecimal":
+        # [PXDBDecimal(N)] specifies scale only. Precision is Acumatica's
+        # runtime default (typically 28); plugin authors may use any
+        # precision that fits the data. Compare on scale only via '*'.
         scale = int(args.strip()) if args and args.strip().isdigit() else 2
-        sql_type = f"decimal(19,{scale})"
+        sql_type = f"decimal(*,{scale})"
     elif attribute == "PXDBDate":
         sql_type = "datetime"
     elif attribute == "PXDBGuid":
@@ -239,28 +260,12 @@ def _compute_expected_ddl(attribute: str,
     else:
         raise ValueError(f"unrecognized DAC attribute: {attribute}")
 
-    # Nullability + default
-    if is_key or has_default:
-        # NOT NULL with default
-        if attribute == "PXDBBool":
-            default_sql = "DEFAULT 1" if default_value == "true" else "DEFAULT 0"
-            return f"{sql_type} NOT NULL {default_sql}"
-        if attribute == "PXDBInt" and default_value and default_value.isdigit():
-            return f"{sql_type} NOT NULL DEFAULT {default_value}"
-        if is_key and attribute == "PXDBString":
-            return f"{sql_type} NOT NULL DEFAULT ''"
-        if has_default and default_value:
-            # Normalize string literals: "X" → 'X' (SQL Server uses single quotes)
-            normalized_default = default_value
-            if normalized_default.startswith('"') and normalized_default.endswith('"'):
-                normalized_default = "'" + normalized_default[1:-1] + "'"
-            return f"{sql_type} NOT NULL DEFAULT {normalized_default}"
-        return f"{sql_type} NOT NULL"
-
-    # Nullable (default case)
-    if attribute == "PXDBBool":
-        return f"{sql_type} NOT NULL DEFAULT 0"
-    return f"{sql_type} NULL"
+    # Nullability. Any of these imply NOT NULL:
+    #   - IsKey=true on the attribute
+    #   - [PXDefault] (presence of the attribute, with or without args)
+    #   - [PXDBDefault(typeof(X))] for parent-ID propagation
+    is_not_null = is_key or has_default or has_pxdb_default
+    return f"{sql_type} {'NOT NULL' if is_not_null else 'NULL'}"
 
 
 def parse_dac_file(source: str, file_path: str) -> list[DacField]:
@@ -289,6 +294,7 @@ def parse_dac_file(source: str, file_path: str) -> list[DacField]:
         pxdb_args = ""
         has_default = False
         default_value = None
+        has_pxdb_default = False
         for attr_name, attr_args in attrs:
             if attr_name in _DB_BOUND_ATTRIBUTES:
                 pxdb_attr = attr_name
@@ -299,6 +305,10 @@ def parse_dac_file(source: str, file_path: str) -> list[DacField]:
                 if attr_args:
                     first_arg = attr_args.split(",")[0].strip()
                     default_value = first_arg
+            elif attr_name == "PXDBDefault":
+                # [PXDBDefault(typeof(Parent.id))] is Acumatica's parent-ID
+                # propagation — implies NOT NULL at runtime.
+                has_pxdb_default = True
 
         if pxdb_attr is None:
             # Unbound field — skip
@@ -317,7 +327,8 @@ def parse_dac_file(source: str, file_path: str) -> list[DacField]:
         is_key = "IsKey = true" in pxdb_args
 
         expected_ddl = _compute_expected_ddl(
-            pxdb_attr, pxdb_args, has_default, default_value, is_key
+            pxdb_attr, pxdb_args, has_default, default_value, is_key,
+            has_pxdb_default=has_pxdb_default,
         )
 
         fields.append(DacField(
@@ -616,7 +627,7 @@ def test_detector_catches_decimal_precision_mismatch():
         table="UsrTest", file_path="fake.cs", line_number=1,
         field_name="Rate", attribute="PXDBDecimal", args="2",
         is_key=False, has_default=False, default_value=None,
-        expected_ddl="decimal(19,2) NULL",
+        expected_ddl="decimal(*,2) NULL",  # CHANGED: was "decimal(19,2) NULL"
     )
     coverage = {"UsrTest": {"Rate": PluginColumn(
         table="UsrTest", column="Rate", ddl="decimal(19,4) NULL", source="EnsureColumn"
@@ -670,3 +681,61 @@ def test_normalize_ddl_collapses_whitespace_around_punctuation():
     # And the inequality cases still hold
     assert _normalize_ddl("nvarchar(15)") != _normalize_ddl("nvarchar(15) NULL")
     assert _normalize_ddl("decimal(19,2) NULL") != _normalize_ddl("decimal(19,4) NULL")
+
+
+def test_parse_dac_file_pxdb_default_implies_not_null():
+    """[PXDBDefault(typeof(X))] is Acumatica's parent-ID propagation — NOT NULL."""
+    source = """
+public class UsrChild : PXBqlTable, IBqlTable {
+    #region ParentID
+    public abstract class parentID : BqlInt.Field<parentID> { }
+    [PXDBInt]
+    [PXDBDefault(typeof(UsrParent.parentID))]
+    [PXParent(typeof(Select<UsrParent>))]
+    public int? ParentID { get; set; }
+    #endregion
+}
+"""
+    fields = parse_dac_file(source, "fake.cs")
+    assert len(fields) == 1
+    assert fields[0].field_name == "ParentID"
+    assert fields[0].expected_ddl == "int NOT NULL"
+
+
+def test_normalize_ddl_strips_default_clause():
+    """DEFAULT clauses are runtime Acumatica concern — ignored in comparison."""
+    assert _normalize_ddl("int NOT NULL DEFAULT 0") == _normalize_ddl("int NOT NULL")
+    assert _normalize_ddl("nvarchar(20) NOT NULL DEFAULT ''") == _normalize_ddl("nvarchar(20) NOT NULL")
+    assert _normalize_ddl("datetime NOT NULL DEFAULT GETUTCDATE()") == _normalize_ddl("datetime NOT NULL")
+    assert _normalize_ddl("decimal(19,2) NOT NULL DEFAULT 0") == _normalize_ddl("decimal(*,2) NOT NULL")
+
+
+def test_normalize_ddl_strips_decimal_precision():
+    """decimal(N,M) comparison is scale-only; precision is plugin author's choice."""
+    assert _normalize_ddl("decimal(19,2) NULL") == _normalize_ddl("decimal(6,2) NULL")
+    assert _normalize_ddl("decimal(28,1) NULL") == _normalize_ddl("decimal(6,1) NULL")
+    # But different scales still differ
+    assert _normalize_ddl("decimal(19,2) NULL") != _normalize_ddl("decimal(19,4) NULL")
+
+
+def test_compute_expected_ddl_omits_default_clause():
+    """_compute_expected_ddl must not emit DEFAULT clauses."""
+    # Bare [PXDBString(20, IsUnicode=true)] with [PXDefault] — NOT NULL, no DEFAULT
+    ddl = _compute_expected_ddl("PXDBString", "20, IsUnicode = true",
+                                 has_default=True, default_value=None,
+                                 is_key=False)
+    assert ddl == "nvarchar(20) NOT NULL"
+    assert "DEFAULT" not in ddl
+
+    # [PXDBBool] + [PXDefault(true)] — NOT NULL, no DEFAULT 1
+    ddl = _compute_expected_ddl("PXDBBool", "",
+                                 has_default=True, default_value="true",
+                                 is_key=False)
+    assert ddl == "bit NOT NULL"
+    assert "DEFAULT" not in ddl
+
+    # [PXDBDecimal(2)] alone — scale-only decimal, NULL
+    ddl = _compute_expected_ddl("PXDBDecimal", "2",
+                                 has_default=False, default_value=None,
+                                 is_key=False)
+    assert ddl == "decimal(*,2) NULL"
