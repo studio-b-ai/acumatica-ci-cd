@@ -12,6 +12,7 @@ Design: docs/plans/2026-04-08-dac-plugin-drift-design.md
 from __future__ import annotations
 
 import re
+import pytest
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
@@ -19,6 +20,12 @@ from typing import Optional
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DAC_DIR = REPO_ROOT / "src" / "StudioB.Containers" / "DACs"
 PLUGIN_FILE = REPO_ROOT / "src" / "StudioB.Containers" / "Graphs" / "AesthetikContainersInstall.cs"
+
+# DAC files that are filter/transient and don't need plugin coverage
+_EXCLUDED_DAC_FILES = {
+    "ContainerFilter.cs",
+    "AddPOLineFilter.cs",
+}
 
 
 @dataclass(frozen=True)
@@ -739,3 +746,29 @@ def test_compute_expected_ddl_omits_default_clause():
                                  has_default=False, default_value=None,
                                  is_key=False)
     assert ddl == "decimal(*,2) NULL"
+
+
+# ─── Real test ────────────────────────────────────────────────────────────
+
+@pytest.mark.xfail(reason="6 known drift bugs — 5 decimal precision + 1 nchar/nvarchar — fix in Task 6", strict=True)
+def test_studiob_containers_dac_matches_plugin():
+    """Every DAC field in src/StudioB.Containers/DACs/ must have plugin coverage."""
+    assert DAC_DIR.exists(), f"DAC dir not found: {DAC_DIR}"
+    assert PLUGIN_FILE.exists(), f"Plugin file not found: {PLUGIN_FILE}"
+
+    # Parse all DAC files
+    all_fields: list[DacField] = []
+    for cs_file in sorted(DAC_DIR.glob("Usr*.cs")):
+        if cs_file.name in _EXCLUDED_DAC_FILES:
+            continue
+        source = cs_file.read_text(encoding="utf-8")
+        all_fields.extend(parse_dac_file(source, str(cs_file.relative_to(REPO_ROOT))))
+
+    # Parse the plugin
+    plugin_source = PLUGIN_FILE.read_text(encoding="utf-8")
+    coverage = parse_plugin_file(plugin_source)
+
+    # Find drift
+    drift = find_drift(all_fields, coverage)
+
+    assert not drift, format_remediation(drift)
