@@ -961,6 +961,106 @@ jobs:
           echo "If this is an emergency, merge to main first."
           exit 1
 
+      # ── Deploy-target host assertion ────────────────────────────────
+      # Defense-in-depth: refuse to run the deploy job if the resolved
+      # URL/tenant for the chosen target is wrong. Mirrors the
+      # sandbox-gate guard added after the 2026-04-07 incident.
+      #
+      # Production: must publish to the prod instance + prod tenant.
+      #   Refuses `-sandbox` host drift, refuses tenant="Heritage Test"
+      #   masquerading as production, refuses empty secrets.
+      # Staging:    Heritage Fabrics has no separate staging instance.
+      #   "staging" = Heritage Test tenant on the PROD instance, which
+      #   still recycles the prod app pool. Assertion requires the
+      #   expected host/tenant pair and refuses the blank STG→PROD
+      #   fallback (which would silently publish the real prod tenant).
+      #
+      # Expected values are hardcoded here intentionally — the host
+      # allowlist is a safety control, not configuration. Commercial
+      # clients will fork this workflow and set their own values.
+      - name: Verify deploy-target URL/tenant
+        env:
+          TARGET: ${{ steps.env.outputs.target }}
+          PROD_URL: ${{ secrets.ACUMATICA_PROD_URL }}
+          PROD_TENANT: ${{ secrets.ACUMATICA_PROD_TENANT }}
+          STG_URL: ${{ secrets.ACUMATICA_STG_URL }}
+          STG_TENANT: ${{ secrets.ACUMATICA_STG_TENANT }}
+        run: |
+          set -e
+
+          EXPECTED_PROD_HOST="heritagefabrics.acumatica.com"
+          EXPECTED_PROD_TENANT="Heritage Fabrics"
+          EXPECTED_STG_HOST="heritagefabrics.acumatica.com"
+          EXPECTED_STG_TENANT="Heritage Test"
+
+          host_of() {
+            echo "$1" | sed -E 's|^https?://||; s|/.*$||; s|:.*$||'
+          }
+
+          if [[ "${TARGET}" == "production" ]]; then
+            if [[ -z "${PROD_URL}" ]]; then
+              echo "::error::ACUMATICA_PROD_URL is empty — refusing to deploy"
+              exit 1
+            fi
+            if [[ -z "${PROD_TENANT}" ]]; then
+              echo "::error::ACUMATICA_PROD_TENANT is empty — refusing to deploy"
+              exit 1
+            fi
+            HOST=$(host_of "${PROD_URL}")
+            if [[ "${HOST}" != "${EXPECTED_PROD_HOST}" ]]; then
+              echo "::error::ACUMATICA_PROD_URL host is '${HOST}', expected '${EXPECTED_PROD_HOST}'"
+              echo "::error::Refusing to deploy — wrong prod instance. See 2026-04-07 incident."
+              exit 1
+            fi
+            if [[ "${HOST}" == *"sandbox"* ]]; then
+              echo "::error::ACUMATICA_PROD_URL host contains 'sandbox' — that's the sandbox instance, not prod"
+              exit 1
+            fi
+            if [[ "${PROD_TENANT}" == "Heritage Test" ]]; then
+              echo "::error::ACUMATICA_PROD_TENANT is 'Heritage Test' — that's the test tenant, not production"
+              echo "::error::Publishing to Heritage Test under the 'production' banner still recycles prod but targets the wrong tenant."
+              exit 1
+            fi
+            if [[ "${PROD_TENANT}" != "${EXPECTED_PROD_TENANT}" ]]; then
+              echo "::error::ACUMATICA_PROD_TENANT is '${PROD_TENANT}', expected '${EXPECTED_PROD_TENANT}'"
+              exit 1
+            fi
+            echo "[OK] Production target — host: ${HOST}, tenant: ${PROD_TENANT}"
+
+          elif [[ "${TARGET}" == "staging" ]]; then
+            # Require STG secrets to be explicitly set. The downstream
+            # env blocks fall back to PROD_* when STG_* is empty, which
+            # is exactly how today's incident could recur on the
+            # staging path. No silent fallback — fail loudly.
+            if [[ -z "${STG_URL}" ]]; then
+              echo "::error::ACUMATICA_STG_URL is empty and fallback-to-prod is unsafe"
+              echo "::error::Set ACUMATICA_STG_URL explicitly, or change target to 'production'."
+              exit 1
+            fi
+            if [[ -z "${STG_TENANT}" ]]; then
+              echo "::error::ACUMATICA_STG_TENANT is empty and fallback-to-prod is unsafe"
+              echo "::error::Set ACUMATICA_STG_TENANT explicitly, or change target to 'production'."
+              exit 1
+            fi
+            HOST=$(host_of "${STG_URL}")
+            if [[ "${HOST}" != "${EXPECTED_STG_HOST}" ]]; then
+              echo "::error::ACUMATICA_STG_URL host is '${HOST}', expected '${EXPECTED_STG_HOST}'"
+              exit 1
+            fi
+            if [[ "${STG_TENANT}" != "${EXPECTED_STG_TENANT}" ]]; then
+              echo "::error::ACUMATICA_STG_TENANT is '${STG_TENANT}', expected '${EXPECTED_STG_TENANT}'"
+              echo "::error::Staging publishes must target Heritage Test on the prod instance."
+              exit 1
+            fi
+            echo "::warning::Staging deploys publish to Heritage Test on the PROD instance."
+            echo "::warning::This STILL RECYCLES the prod app pool. Treat as a prod change."
+            echo "[OK] Staging target — host: ${HOST}, tenant: ${STG_TENANT}"
+
+          else
+            echo "::error::Unknown target '${TARGET}' — expected 'production' or 'staging'"
+            exit 1
+          fi
+
       - name: Load pipeline config from acuops.yaml
         id: pipeline_cfg
         run: |
