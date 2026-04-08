@@ -5,6 +5,20 @@ lot/serial class rename completed successfully.
 
 NOTE: Acumatica renders all screen content inside a 'main' iframe.
 All DOM interactions must use page.frame("main"), not page directly.
+
+GOTCHA fixed 2026-04-08: this file historically tested ONE item (00004)
+which was a happy-path item that the UOM migration v3 cleanly handled.
+Item 00006 (and an unknown number of others) had its BaseUnit flipped
+to YDS by Section 2 of the migration, but never received a YDS→YDS
+self-conversion row from Section 1 (which only seeded from existing
+PIECE→PIECE rows). Save fails on those items with:
+  "The PIECE value specified in the To Unit box differs from the YDS
+   base unit specified for the <item> item."
+The new TestStockItemSaveSample class iterates a sample of items and
+verifies each can be saved via the REST API (which exercises the same
+graph validation as a UI save). Pairs with EnsureItemUomConsistency in
+AesthetikContainersInstall.cs which idempotently INSERTs the missing
+self-conversions on every publish.
 """
 import pytest
 from helpers import ACUMATICA_URL, navigate_and_wait
@@ -16,6 +30,11 @@ ITEM_CD = "00004"
 EXPECTED_UOM = "YDS"
 EXPECTED_LOT_CLASS = "BOLTID"
 CUSTOMER_ID = "C000002"
+
+# How many stock items to sample-save in TestStockItemSaveSample.
+# Trade-off: larger N catches more bugs but slows the test suite.
+# 25 is enough to catch a 5%+ corruption rate with high confidence.
+SAVE_SAMPLE_SIZE = 25
 
 
 # ── Check 1: Base UOM ─────────────────────────────────────────────────────
@@ -197,6 +216,107 @@ class TestSalesOrderOperations:
             # Cleanup
             s.delete(f"{ACUMATICA_URL}/entity/Default/24.200.001/SalesOrder/{order_id}", timeout=30)
             print("Cleaned up test order")
+
+        finally:
+            s.post(f"{ACUMATICA_URL}/entity/auth/logout")
+
+
+# ── Check 5: Stock Item Save Sample ────────────────────────────────────────
+#
+# Catches the 2026-04-08 incident class: items where UOM Migration v3
+# Section 1 didn't seed a YDS→YDS self-conversion (because the item
+# never had a PIECE→PIECE row to seed from), so save fails on graph
+# validation. The pre-existing TestBaseUom + TestInUnitConversions
+# tests verified ONE item (00004) and only checked LOAD, not SAVE —
+# they passed even after item 00006 was broken.
+#
+# This test:
+#   1. Pulls a sample of YDS-base StockItems via REST API
+#   2. PUT-saves each one (no-op edit) and verifies a 200/204 response
+#   3. Aggregates failures into one assertion so the report names every
+#      broken item, not just the first
+
+@pytest.mark.ui
+class TestStockItemSaveSample:
+
+    def test_sample_of_stock_items_can_be_saved(self):
+        """Pull a sample of YDS-base stock items via REST and verify each saves.
+
+        Save invokes the graph validation pipeline (same as UI save), so
+        any item missing a YDS→YDS self-conversion row in INUnit will fail
+        with the UnitVerifying error. Iterating across a sample catches
+        the partial-migration class of bugs that single-item tests miss.
+        """
+        import requests, warnings
+        warnings.filterwarnings("ignore")
+
+        from helpers import ACUMATICA_USERNAME, ACUMATICA_PASSWORD, ACUMATICA_TENANT
+
+        s = requests.Session()
+        r = s.post(f"{ACUMATICA_URL}/entity/auth/login", json={
+            "name": ACUMATICA_USERNAME,
+            "password": ACUMATICA_PASSWORD,
+            "tenant": ACUMATICA_TENANT,
+        }, timeout=30)
+        assert r.status_code == 204, f"REST API login failed: {r.status_code}"
+
+        try:
+            # Pull the first SAVE_SAMPLE_SIZE stock items with BaseUnit=YDS.
+            # $top + $select keeps the response small. We don't $filter on
+            # BaseUnit because Acumatica's contract API filter syntax is
+            # finicky — instead we filter client-side from the result.
+            r = s.get(
+                f"{ACUMATICA_URL}/entity/Default/24.200.001/StockItem"
+                f"?$top={SAVE_SAMPLE_SIZE * 3}"
+                f"&$select=InventoryID,BaseUnit",
+                headers={"Accept": "application/json"},
+                timeout=60,
+            )
+            assert r.status_code == 200, (
+                f"Failed to list stock items (HTTP {r.status_code}): {r.text[:300]}"
+            )
+
+            items = r.json()
+            yds_items = [
+                it for it in items
+                if (it.get("BaseUnit", {}) or {}).get("value") == EXPECTED_UOM
+            ][:SAVE_SAMPLE_SIZE]
+
+            assert len(yds_items) > 0, (
+                f"Could not find any YDS-base stock items in the first "
+                f"{SAVE_SAMPLE_SIZE * 3} stock items. UOM migration may have "
+                f"left no items in the expected base unit."
+            )
+
+            print(f"Sampling {len(yds_items)} YDS-base stock items for save check...")
+
+            failures = []
+            for it in yds_items:
+                inv_id_obj = it.get("InventoryID", {}) or {}
+                inv_cd = inv_id_obj.get("value", "<unknown>").strip()
+
+                # No-op PUT — same data the GET returned. Acumatica
+                # treats this as a save and runs full validation.
+                payload = {"InventoryID": {"value": inv_cd}}
+                pr = s.put(
+                    f"{ACUMATICA_URL}/entity/Default/24.200.001/StockItem",
+                    json=payload,
+                    headers={
+                        "Content-Type": "application/json",
+                        "Accept": "application/json",
+                    },
+                    timeout=30,
+                )
+                if pr.status_code not in (200, 201, 204):
+                    body_excerpt = pr.text[:300].replace("\n", " ")
+                    failures.append(f"{inv_cd} → HTTP {pr.status_code}: {body_excerpt}")
+
+            assert not failures, (
+                f"{len(failures)} of {len(yds_items)} sampled stock items "
+                f"failed to save:\n" + "\n".join(failures[:20]) +
+                ("\n..." if len(failures) > 20 else "")
+            )
+            print(f"✅ All {len(yds_items)} sampled stock items saved cleanly")
 
         finally:
             s.post(f"{ACUMATICA_URL}/entity/auth/logout")

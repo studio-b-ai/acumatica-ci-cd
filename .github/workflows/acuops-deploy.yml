@@ -335,6 +335,15 @@ jobs:
       # Prevents app pool restarts when only CI/test/script files change.
       # The workflow path filter includes scripts/* and .github/workflows/*,
       # which trigger the build but should NOT trigger a publish.
+      #
+      # 2026-04-08 fix: this step previously only diff'd 'Customization/'.
+      # That excluded src/StudioB.Containers/** changes — including the
+      # AesthetikContainersInstall.cs CustomizationPlugin which IS a
+      # publishable customization (it's the schema migration runner).
+      # PR #285 was a real customization fix that sat in main undeployed
+      # for hours because of this gap. Now also diffs 'src/' so that any
+      # change to compiled-DLL source OR install-plugin code triggers a
+      # real validation + deploy gate, not just a vacuous Build success.
       - name: Detect customization changes
         id: detect_cust_changes
         run: |
@@ -345,15 +354,19 @@ jobs:
             exit 0
           fi
 
-          # Compare against parent commit (push event)
-          CHANGED=$(git diff --name-only HEAD~1 HEAD -- 'Customization/' 2>/dev/null || true)
+          # Compare against parent commit (push event). Treat changes to
+          # EITHER Customization/ (the project files) OR src/ (the
+          # CustomizationPlugin + DAC + graph extension source that
+          # compiles into the DLL bundled inside Customization/*/Bin/) as
+          # customization changes. Both feed the published artifact.
+          CHANGED=$(git diff --name-only HEAD~1 HEAD -- 'Customization/' 'src/' 2>/dev/null || true)
           if [ -n "$CHANGED" ]; then
             echo "customization_changes=true" >> "$GITHUB_OUTPUT"
-            echo "Customization files changed — will publish:"
+            echo "Customization or src/ files changed — will publish:"
             echo "$CHANGED"
           else
             echo "customization_changes=false" >> "$GITHUB_OUTPUT"
-            echo "No Customization/ changes — skipping publish (CI/test/script-only change)"
+            echo "No Customization/ or src/ changes — skipping publish (CI/test/script-only change)"
           fi
 
       - name: Detect plugin changes

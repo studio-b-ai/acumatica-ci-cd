@@ -339,6 +339,9 @@ namespace StudioB.Containers
                         try { EnsureContainerTrackingSiteMap(conn, companyId); }
                         catch (Exception ex) { WriteLog(string.Format("[AesthetikContainers] SiteMap update failed CID={0}: {1}", companyId, ex.Message)); }
 
+                        try { EnsureItemUomConsistency(conn, companyId); }
+                        catch (Exception ex) { WriteLog(string.Format("[AesthetikContainers] EnsureItemUomConsistency failed CID={0}: {1}", companyId, ex.Message)); }
+
                         try { SeedContainerTypes(conn, companyId); }
                         catch (Exception ex) { WriteLog(string.Format("[AesthetikContainers] Seed types failed CID={0}: {1}", companyId, ex.Message)); }
 
@@ -564,6 +567,76 @@ namespace StudioB.Containers
                 }
             }
             WriteLog(string.Format("[AesthetikContainers] Container Tracking SiteMap (4 form screens) for CompanyID={0} — OK", companyId));
+        }
+
+        // ── EnsureItemUomConsistency ────────────────────────────────────────
+        // Closes the gap left by UOM Migration v3 Section 1 (commit cf514c0,
+        // 2026-04-04). That section only inserted YDS→YDS self-conversions
+        // for items that already had a PIECE→PIECE self-conversion to seed
+        // from. Items WITHOUT a pre-existing PIECE→PIECE row got their
+        // BaseUnit flipped to YDS by Section 2 but never received a
+        // matching INUnit self-conversion. Result: save fails on those
+        // items because INUnitAttribute.UnitVerifying(unit=null) fires.
+        //
+        // Confirmed in production 2026-04-08: item 00006 hits
+        //   "The PIECE value specified in the To Unit box differs from the
+        //    YDS base unit specified for the 00006 item."
+        // on save.
+        //
+        // INSERT-only, idempotent. Never DELETE INUnit rows — see
+        // KB doc "INSERT not rename INUnit records" + the failed prior
+        // migrations that hit unique-key collisions on UPDATE/DELETE.
+        private void EnsureItemUomConsistency(SqlConnection conn, int companyId)
+        {
+            // System user GUID + customization screen ID for audit columns —
+            // matches EnsureContainerTrackingSiteMap.
+            const string systemUserId = "B5344897-037E-4D58-B5C3-1BDFD0F47BF4";
+            const string customizationScreenId = "SM208000";
+
+            // INUnit unique key is (CompanyID, UnitType, ItemClassID, InventoryID, FromUnit).
+            // For UnitType=1 (per-item) the ItemClassID is 0 and InventoryID is the item ID.
+            // The NOT EXISTS check is on (UnitType=1, InventoryID, FromUnit='YDS') —
+            // matching the unique key — so this insert can never violate the constraint.
+            string sql = @"
+                INSERT INTO INUnit (
+                    CompanyID, UnitType, ItemClassID, InventoryID,
+                    FromUnit, ToUnit, UnitRate, UnitMultDiv,
+                    PriceAdjustmentMultiplier, CompanyMask,
+                    CreatedByID, CreatedByScreenID, CreatedDateTime,
+                    LastModifiedByID, LastModifiedByScreenID, LastModifiedDateTime
+                )
+                SELECT
+                    i.CompanyID, 1, 0, i.InventoryID,
+                    'YDS', 'YDS', 1.0, 'M',
+                    1.0, 1,
+                    @user, @screen, GETUTCDATE(),
+                    @user, @screen, GETUTCDATE()
+                FROM InventoryItem i
+                WHERE i.CompanyID = @cid
+                  AND i.BaseUnit = 'YDS'
+                  AND NOT EXISTS (
+                      SELECT 1 FROM INUnit u
+                      WHERE u.CompanyID = i.CompanyID
+                        AND u.UnitType = 1
+                        AND u.ItemClassID = 0
+                        AND u.InventoryID = i.InventoryID
+                        AND u.FromUnit = 'YDS'
+                  );";
+            using (var cmd = new SqlCommand(sql, conn))
+            {
+                cmd.Parameters.AddWithValue("@cid", companyId);
+                cmd.Parameters.AddWithValue("@user", new Guid(systemUserId));
+                cmd.Parameters.AddWithValue("@screen", customizationScreenId);
+                int rows = cmd.ExecuteNonQuery();
+                if (rows > 0)
+                    WriteLog(string.Format(
+                        "[AesthetikContainers] Inserted {0} missing YDS→YDS self-conversions for CompanyID={1} (closing UOM v3 Section 1 gap)",
+                        rows, companyId));
+                else
+                    WriteLog(string.Format(
+                        "[AesthetikContainers] EnsureItemUomConsistency CID={0} — no missing rows, all items have YDS→YDS self-conv",
+                        companyId));
+            }
         }
 
         private void SeedContainerTypes(SqlConnection conn, int companyId)
