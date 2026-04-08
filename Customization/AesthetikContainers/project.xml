@@ -510,6 +510,52 @@ public partial class Page_SB_SB302030 : PXPage
 }
 ]]></CDATA>
     </File>
+    <File AppRelativePath="Pages\SB\SB302040.aspx" Source="#CDATA">
+        <CDATA name="Source"><![CDATA[<%@ Page Language="C#" MasterPageFile="~/MasterPages/FormView.master" AutoEventWireup="true" ValidateRequest="false" CodeFile="SB302040.aspx.cs" Inherits="Page_SB_SB302040" Title="Customs Brokers" %>
+<%@ MasterType VirtualPath="~/MasterPages/FormView.master" %>
+<asp:Content ID="cont1" ContentPlaceHolderID="phDS" Runat="Server">
+    <px:PXDataSource ID="ds" runat="server" Visible="True" Width="100%"
+        TypeName="StudioB.Containers.CustomsBrokerMaint" PrimaryView="Broker">
+        <CallbackCommands>
+            <px:PXDSCallbackCommand Name="Insert" PostData="Self" />
+            <px:PXDSCallbackCommand CommitChanges="True" Name="Save" />
+            <px:PXDSCallbackCommand Name="Delete" PostData="Self" />
+            <px:PXDSCallbackCommand Name="First" PostData="Self" StartNewGroup="True" />
+            <px:PXDSCallbackCommand Name="Last" PostData="Self" />
+        </CallbackCommands>
+    </px:PXDataSource>
+</asp:Content>
+<asp:Content ID="cont2" ContentPlaceHolderID="phF" Runat="Server">
+    <px:PXFormView ID="form" runat="server" DataSourceID="ds" DataMember="Broker" Width="100%">
+        <Template>
+            <px:PXLayoutRule ID="PXLayoutRule1" runat="server" StartColumn="True" LabelsWidth="M" ControlSize="XM" />
+            <px:PXSelector ID="edBrokerCD" runat="server" DataField="BrokerCD" />
+            <px:PXTextEdit ID="edDescription" runat="server" DataField="Description" />
+            <px:PXTextEdit ID="edFilerCode" runat="server" DataField="FilerCode" />
+            <px:PXCheckBox ID="chkActive" runat="server" DataField="Active" />
+            <px:PXLayoutRule ID="PXLayoutRule2" runat="server" StartColumn="True" LabelsWidth="M" ControlSize="XM" />
+            <px:PXTextEdit ID="edContactName" runat="server" DataField="ContactName" />
+            <px:PXMailEdit ID="edEmail" runat="server" DataField="Email" />
+            <px:PXMaskEdit ID="edPhone" runat="server" DataField="Phone" />
+            <px:PXLayoutRule ID="PXLayoutRule3" runat="server" StartRow="True" LabelsWidth="M" ControlSize="XXL" />
+            <px:PXTextEdit ID="edNotes" runat="server" DataField="Notes" />
+        </Template>
+    </px:PXFormView>
+</asp:Content>
+]]></CDATA>
+    </File>
+    <File AppRelativePath="Pages\SB\SB302040.aspx.cs" Source="#CDATA">
+        <CDATA name="Source"><![CDATA[using System;
+using PX.Web.UI;
+
+public partial class Page_SB_SB302040 : PXPage
+{
+    protected void Page_Load(object sender, EventArgs e)
+    {
+    }
+}
+]]></CDATA>
+    </File>
     <GenericInquiryScreen>
   <data-set>
                 <relations format-version="3" relations-version="20240201" main-table="GIDesign" stable-sharing="True" file-name="(Name)">
@@ -1768,6 +1814,10 @@ public partial class Page_SB_SB302030 : PXPage
                         <RolesInGraph Rolename="*" ApplicationName="/" Accessrights="0" />
                     </row>
                     <row Position="8.4" Title="Container Preferences" Url="~/Pages/SB/SB302030.aspx" ScreenID="SB302030" NodeID="a1b2c3d4-0008-4000-8000-000000000008" ParentID="9c89e3db-7c47-43c0-8554-5d2c9f2c0e87" SelectedUI="E">
+                        <RolesInGraph Rolename="Administrator" ApplicationName="/" Accessrights="4" />
+                        <RolesInGraph Rolename="*" ApplicationName="/" Accessrights="0" />
+                    </row>
+                    <row Position="8.5" Title="Customs Brokers" Url="~/Pages/SB/SB302040.aspx" ScreenID="SB302040" NodeID="a1b2c3d4-0009-4000-8000-000000000009" ParentID="9c89e3db-7c47-43c0-8554-5d2c9f2c0e87" SelectedUI="E">
                         <RolesInGraph Rolename="Administrator" ApplicationName="/" Accessrights="4" />
                         <RolesInGraph Rolename="*" ApplicationName="/" Accessrights="0" />
                     </row>
