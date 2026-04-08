@@ -73,7 +73,7 @@ def find_drift(dac_fields: list[DacField],
 # ─── DAC file parser ─────────────────────────────────────────────────────
 
 # Attribute names we care about. Others (PXDefault, PXUIField, etc.) are handled as modifiers.
-_PXDB_ATTRIBUTES = {
+_DB_BOUND_ATTRIBUTES = {
     "PXDBString", "PXDBInt", "PXDBBool", "PXDBDecimal",
     "PXDBDate", "PXDBGuid", "PXDBIdentity", "PXDBText",
     "PXRSACryptString",
@@ -165,7 +165,7 @@ def _compute_expected_ddl(attribute: str,
     elif attribute == "PXRSACryptString":
         sql_type = f"nvarchar({size})" if size else "nvarchar"
     else:
-        sql_type = "UNKNOWN"
+        raise ValueError(f"unrecognized DAC attribute: {attribute}")
 
     # Nullability + default
     if is_key or has_default:
@@ -178,7 +178,11 @@ def _compute_expected_ddl(attribute: str,
         if is_key and attribute == "PXDBString":
             return f"{sql_type} NOT NULL DEFAULT ''"
         if has_default and default_value:
-            return f"{sql_type} NOT NULL DEFAULT {default_value}"
+            # Normalize string literals: "X" → 'X' (SQL Server uses single quotes)
+            normalized_default = default_value
+            if normalized_default.startswith('"') and normalized_default.endswith('"'):
+                normalized_default = "'" + normalized_default[1:-1] + "'"
+            return f"{sql_type} NOT NULL DEFAULT {normalized_default}"
         return f"{sql_type} NOT NULL"
 
     # Nullable (default case)
@@ -214,7 +218,7 @@ def parse_dac_file(source: str, file_path: str) -> list[DacField]:
         has_default = False
         default_value = None
         for attr_name, attr_args in attrs:
-            if attr_name in _PXDB_ATTRIBUTES:
+            if attr_name in _DB_BOUND_ATTRIBUTES:
                 pxdb_attr = attr_name
                 pxdb_args = attr_args
             elif attr_name == "PXDefault":
@@ -304,6 +308,9 @@ namespace StudioB.Containers {
     assert fields[0].field_name == "TestField"
     assert fields[0].attribute == "PXDBString"
     assert fields[0].expected_ddl == "nvarchar(20) NULL"
+    assert fields[0].table == "UsrTest"
+    assert fields[0].is_key == False
+    assert fields[0].has_default == False
 
 
 def test_parse_dac_file_skips_unbound_fields():
@@ -338,5 +345,53 @@ public class UsrTest : PXBqlTable, IBqlTable {
     #endregion
 }
 """
+    fields = parse_dac_file(source, "fake.cs")
+    assert len(fields) == 0
+
+
+def test_parse_dac_file_audit_skip_is_selective():
+    """When a DAC has both audit and real fields, only real fields are returned."""
+    source = """
+public class UsrTest : PXBqlTable, IBqlTable {
+    #region TestName
+    public abstract class testName : BqlString.Field<testName> { }
+    [PXDBString(50, IsUnicode = true)]
+    [PXUIField(DisplayName = "Name")]
+    public string TestName { get; set; }
+    #endregion
+    #region CreatedByID
+    public abstract class createdByID : BqlGuid.Field<createdByID> { }
+    [PXDBCreatedByID]
+    public Guid? CreatedByID { get; set; }
+    #endregion
+    #region Tstamp
+    public abstract class tstamp : BqlByteArray.Field<tstamp> { }
+    [PXDBTimestamp]
+    public byte[] Tstamp { get; set; }
+    #endregion
+}
+"""
+    fields = parse_dac_file(source, "fake.cs")
+    assert len(fields) == 1
+    assert fields[0].field_name == "TestName"
+    assert fields[0].expected_ddl == "nvarchar(50) NULL"
+
+
+def test_parse_dac_file_returns_empty_for_filter_dac():
+    """Filter DACs (no PXBqlTable base class) return an empty list."""
+    source = """
+[Serializable]
+[PXCacheName("Filter")]
+public class AddPOLineFilter : PXBqlTable, IBqlTable {
+    #region VendorID
+    public abstract class vendorID : BqlInt.Field<vendorID> { }
+    [PXInt]
+    [PXUIField(DisplayName = "Vendor")]
+    public int? VendorID { get; set; }
+    #endregion
+}
+"""
+    # Filter DACs have [PXInt] (not PXDBInt) — non-persistent fields.
+    # parse_dac_file should return an empty list (the field is unbound).
     fields = parse_dac_file(source, "fake.cs")
     assert len(fields) == 0
