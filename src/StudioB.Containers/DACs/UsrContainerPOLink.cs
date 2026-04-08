@@ -25,7 +25,7 @@ namespace StudioB.Containers
 
         #region OrderType
         public abstract class orderType : BqlString.Field<orderType> { }
-        [PXDBString(2, IsFixed = true, IsUnicode = true)]
+        [PXDBString(2, IsUnicode = true)]
         [PXDefault(POOrderType.RegularOrder)]
         [PXUIField(DisplayName = "PO Type")]
         public string OrderType { get; set; }

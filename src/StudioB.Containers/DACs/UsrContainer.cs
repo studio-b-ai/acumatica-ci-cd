@@ -244,7 +244,7 @@ namespace StudioB.Containers
 
         #region DemurrageDailyRate
         public abstract class demurrageDailyRate : BqlDecimal.Field<demurrageDailyRate> { }
-        [PXDBDecimal(2)]
+        [PXDBDecimal(4)]
         [PXUIField(DisplayName = "Demurrage $/Day")]
         public decimal? DemurrageDailyRate { get; set; }
         #endregion
@@ -300,21 +300,21 @@ namespace StudioB.Containers
 
         #region DutyPaid
         public abstract class dutyPaid : BqlDecimal.Field<dutyPaid> { }
-        [PXDBDecimal(2)]
+        [PXDBDecimal(4)]
         [PXUIField(DisplayName = "Duty Paid")]
         public decimal? DutyPaid { get; set; }
         #endregion
 
         #region MPFAmount
         public abstract class mPFAmount : BqlDecimal.Field<mPFAmount> { }
-        [PXDBDecimal(2)]
+        [PXDBDecimal(4)]
         [PXUIField(DisplayName = "MPF")]
         public decimal? MPFAmount { get; set; }
         #endregion
 
         #region HMFAmount
         public abstract class hMFAmount : BqlDecimal.Field<hMFAmount> { }
-        [PXDBDecimal(2)]
+        [PXDBDecimal(4)]
         [PXUIField(DisplayName = "HMF")]
         public decimal? HMFAmount { get; set; }
         #endregion

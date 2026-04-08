@@ -750,7 +750,6 @@ def test_compute_expected_ddl_omits_default_clause():
 
 # ─── Real test ────────────────────────────────────────────────────────────
 
-@pytest.mark.xfail(reason="6 known drift bugs — 5 decimal precision + 1 nchar/nvarchar — fix in Task 6", strict=True)
 def test_studiob_containers_dac_matches_plugin():
     """Every DAC field in src/StudioB.Containers/DACs/ must have plugin coverage."""
     assert DAC_DIR.exists(), f"DAC dir not found: {DAC_DIR}"
