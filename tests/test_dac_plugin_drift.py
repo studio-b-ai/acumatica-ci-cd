@@ -1,5 +1,5 @@
 """
-DAC/plugin schema drift detector — Python layer.
+DAC/plugin schema drift detector.
 
 Parses src/StudioB.Containers/DACs/Usr*.cs for [PXDB*] attributes and
 src/StudioB.Containers/Graphs/AesthetikContainersInstall.cs for EnsureTable
@@ -7,6 +7,14 @@ and EnsureColumn calls, then asserts every DAC field has matching plugin
 coverage with exact type match.
 
 Design: docs/plans/2026-04-08-dac-plugin-drift-design.md
+
+NOTE: The original design included a second C# xUnit layer using reflection
+on the compiled StudioB.Containers.dll. It was dropped — every Usr*.cs DAC
+in this project inherits PXBqlTable directly with no custom base classes or
+macro-expanded attributes, so reflection would see the same fields regex
+sees. If a future DAC introduces inheritance or #define expansion, revisit
+reflection-based coverage. The sandbox gate in AcuOps Deploy remains an
+independent second line of defense against publish-time schema errors.
 """
 
 from __future__ import annotations
