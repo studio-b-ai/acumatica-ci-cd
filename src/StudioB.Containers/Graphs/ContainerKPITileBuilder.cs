@@ -179,6 +179,42 @@ namespace StudioB.Containers
 .cmd-tile-sublabel { font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; color: #4a5568; margin-bottom: 6px; }
 .cmd-tile-subtext { font-size: 11px; color: #4a5568; line-height: 1.45; font-variant-numeric: tabular-nums; }
 .cmd-tile-subtext div { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* --- Phase C: Grid row risk coloring --- */
+/* Applied by ContainerGridRowColorScript to <tr> rows based on RiskLevel cell. */
+#gridContainers tr.risk-r > td {
+  background-color: #fdecea !important;
+  box-shadow: inset 3px 0 0 0 #d64045;
+}
+#gridContainers tr.risk-r:hover > td {
+  background-color: #fadcd9 !important;
+}
+#gridContainers tr.risk-a > td {
+  background-color: #fef5e7 !important;
+  box-shadow: inset 3px 0 0 0 #e8a33d;
+}
+#gridContainers tr.risk-a:hover > td {
+  background-color: #fcebd3 !important;
+}
+/* Risk letter cells — render as colored pills */
+#gridContainers td[aria-label='Risk Level'] {
+  font-weight: 700;
+  font-size: 14px;
+  color: transparent;
+  position: relative;
+}
+#gridContainers td[aria-label='Risk Level']:after {
+  content: '\25CF'; /* ● */
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 12px;
+  color: #4a5568;
+}
+#gridContainers tr.risk-r td[aria-label='Risk Level']:after { color: #d64045; }
+#gridContainers tr.risk-a td[aria-label='Risk Level']:after { color: #e8a33d; }
+#gridContainers tr:not(.risk-r):not(.risk-a) td[aria-label='Risk Level']:after { color: #2d8a5f; }
 ";
 
         private const string ClickHandlerScript = @"
@@ -203,6 +239,47 @@ window.sb501000ShowExposurePanel = function() {
     }
   } catch(e) { console.error('sb501000ShowExposurePanel failed', e); }
 };
+
+/* --- Phase C: apply risk-r / risk-a classes to grid rows based on RiskLevel cell --- */
+window.sb501000ApplyRiskRowColors = function() {
+  try {
+    var gridRoot = document.getElementById('gridContainers');
+    if (!gridRoot) return;
+    var rows = gridRoot.querySelectorAll('tr[id*=""grid""]');
+    rows.forEach(function(row) {
+      var cells = row.querySelectorAll('td');
+      if (cells.length === 0) return;
+      // RiskLevel is the first user column in the grid. Acumatica may inject
+      // selection/checkbox cells before it, so scan for a cell whose content
+      // is a single letter R/A/G.
+      var riskCell = null;
+      for (var i = 0; i < cells.length; i++) {
+        var txt = (cells[i].innerText || cells[i].textContent || '').trim();
+        if (txt === 'R' || txt === 'A' || txt === 'G') { riskCell = cells[i]; break; }
+      }
+      if (!riskCell) return;
+      var level = (riskCell.innerText || riskCell.textContent || '').trim();
+      row.classList.remove('risk-r', 'risk-a', 'risk-g');
+      if (level === 'R') row.classList.add('risk-r');
+      else if (level === 'A') row.classList.add('risk-a');
+      else if (level === 'G') row.classList.add('risk-g');
+    });
+  } catch(e) { console.error('sb501000ApplyRiskRowColors failed', e); }
+};
+
+// Run on initial load and after every grid refresh. Acumatica's grid fires
+// updates through px_alls events; the simplest robust approach is to poll on
+// a short interval until the grid is settled, then re-run on any click within
+// the screen (which covers tile clicks, sort, filter, paging).
+(function() {
+  var apply = window.sb501000ApplyRiskRowColors;
+  var count = 0;
+  var tick = setInterval(function() {
+    apply();
+    if (++count > 10) clearInterval(tick);
+  }, 300);
+  document.addEventListener('click', function() { setTimeout(apply, 150); }, true);
+})();
 </script>
 ";
     }

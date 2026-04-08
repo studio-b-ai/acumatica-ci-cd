@@ -483,6 +483,9 @@ namespace StudioB.Containers
 
             row.DocsRequiredCount = docsRequired;
             row.DocsReceivedCount = docsReceived;
+            row.DocsSummary = docsRequired > 0
+                ? string.Format("{0}/{1}", docsReceived, docsRequired)
+                : "—";
 
             // ETA change count (last 7 days) — only for the displayed row
             int etaChanges = 0;

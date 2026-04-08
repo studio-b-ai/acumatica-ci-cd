@@ -45,13 +45,21 @@
                 <Levels>
                     <px:PXGridLevel DataMember="Containers">
                         <Columns>
+                            <%-- 2026-04-07: Phase C — Risk indicator + operational columns.
+                                 The Risk column is a one-letter code (R/A/G) that JS in
+                                 ContainerGridRowColorScript maps to row-level CSS classes. --%>
+                            <px:PXGridColumn DataField="RiskLevel" Width="30" TextAlign="Center" />
                             <px:PXGridColumn DataField="ContainerCD" Width="120" />
-                            <px:PXGridColumn DataField="Status" Width="100" />
-                            <px:PXGridColumn DataField="TransportMode" Width="90" />
-                            <px:PXGridColumn DataField="CarrierCode" Width="90" />
+                            <px:PXGridColumn DataField="Status" Width="110" />
+                            <px:PXGridColumn DataField="TransportMode" Width="70" />
+                            <px:PXGridColumn DataField="CarrierCode" Width="80" />
                             <px:PXGridColumn DataField="VesselName" Width="120" />
                             <px:PXGridColumn DataField="ETA" Width="90" />
                             <px:PXGridColumn DataField="ATA" Width="90" />
+                            <px:PXGridColumn DataField="LastFreeDay" Width="90" />
+                            <px:PXGridColumn DataField="DaysToLFD" Width="60" TextAlign="Right" />
+                            <px:PXGridColumn DataField="DocsSummary" Width="60" TextAlign="Center" />
+                            <px:PXGridColumn DataField="DemurrageExposure" Width="100" TextAlign="Right" />
                             <px:PXGridColumn DataField="PortOfDischarge" Width="90" />
                             <px:PXGridColumn DataField="LastEventCode" Width="100" />
                         </Columns>

@@ -369,6 +369,13 @@ namespace StudioB.Containers
         [PXUIField(DisplayName = "Docs Received", Enabled = false)]
         public int? DocsReceivedCount { get; set; }
         #endregion
+
+        #region DocsSummary
+        public abstract class docsSummary : BqlString.Field<docsSummary> { }
+        [PXString(10)]
+        [PXUIField(DisplayName = "Docs", Enabled = false)]
+        public string DocsSummary { get; set; }
+        #endregion
         // --- end 2026-04-07 additions ---
 
         #region NoteID

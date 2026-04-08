@@ -140,6 +140,32 @@ After deploy, users will see:
 
 This is the smallest user-visible change that proves the Phase A graph logic is working end-to-end in production.
 
-## Phase C-F (pending)
+## Phase C — Grid risk column + row coloring + operational columns (COMPLETE)
+
+### Files modified
+
+- **`src/StudioB.Containers/DACs/UsrContainer.cs`**: added `DocsSummary` unbound string field — rendered as `"5/8"` or `"—"` in the grid.
+- **`src/StudioB.Containers/Graphs/ContainerMaint.cs`**: `RowSelected<UsrContainer>` populates `DocsSummary` based on required/received counts.
+- **`src/StudioB.Containers/Graphs/ContainerKPITileBuilder.cs`**: extended the embedded CSS with grid row risk classes (`.risk-r`, `.risk-a`, `.risk-g`) and a colored pill treatment for the `RiskLevel` cell that renders as a `●` circle. Extended the inline JS with `sb501000ApplyRiskRowColors()` — a function that scans grid rows for a cell containing `R`/`A`/`G` and applies the corresponding row class. Runs on a short polling interval after load + on every click within the screen (covering tile clicks, sort, filter, paging without needing to hook Acumatica's internal events).
+- **`Customization/AesthetikContainers/Pages/SB/SB501000.aspx`**: added new grid columns — `RiskLevel` (width 30, centered, leftmost), `LastFreeDay` (90), `DaysToLFD` (60, right-aligned), `DocsSummary` (60, centered), `DemurrageExposure` (100, right-aligned). Resized existing columns to fit.
+
+### What users will see
+
+- Leftmost grid column now shows a colored `●` circle per row: red for CRITICAL, amber for WARNING, green for OK. The letter R/A/G is the underlying data but rendered transparent with a pseudo-element overlay.
+- CRITICAL rows have a pale red background and a red left-edge shadow. WARNING rows have a pale amber background and amber left-edge shadow. OK rows render normally.
+- New columns visible: LFD date, days-to-LFD (negative = past), docs summary, `$` exposure.
+- Row colors persist through sort, filter, paging, and tile clicks.
+
+### What Phase C does NOT do
+
+- Detail form is still flat (Phase D).
+- No timeline strip (Phase D).
+- Tab labels still static nouns (Phase D).
+- No new actions (Phase E).
+- No Documents or ETA History tabs populated in the UI (Phase E).
+
+Build + tests still green. 21/21 tests passing.
+
+## Phase D-F (pending)
 
 Grid risk column + row coloring, timeline strip, grouped detail form, new actions, Documents + ETA History tabs, XLSX forwarder import, stylesheet polish, Heritage Test soak, production promote.
