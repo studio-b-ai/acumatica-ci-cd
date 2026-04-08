@@ -32,11 +32,16 @@ name: AcuOps Deploy
 # ━━━ CONCURRENCY CONTROL ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # Acumatica publishes restart the app pool and recompile ALL customization
 # projects. Overlapping publishes can corrupt the runtime state.
+#
 # Only ONE deploy may run per branch at a time. If a new push arrives while
-# a deploy is in progress, the in-progress run is cancelled.
+# a deploy is in progress, the new run is QUEUED (not cancelled). Cancelling
+# a GitHub Actions run does NOT stop an Acumatica publishEnd that is already
+# executing server-side — cancelling mid-publish can leave the instance in a
+# half-compiled state. Queue instead, so the first publish finishes cleanly
+# before the second begins.
 concurrency:
   group: acumatica-deploy-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 on:
   repository_dispatch:
@@ -65,7 +70,7 @@ on:
         type: boolean
         default: false
       force_qualify:
-        description: 'Skip qualification checks (emergency override)'
+        description: 'Skip the agentic qualify job + pre-deploy smoke test (for when prod is down). Does NOT skip sandbox-gate — use skip_sandbox_gate for that.'
         required: false
         type: boolean
         default: false
@@ -79,6 +84,16 @@ on:
         required: false
         type: string
         default: ''
+      skip_sandbox_gate:
+        description: 'EMERGENCY: skip sandbox-gate entirely (for when the sandbox instance is down). Set to "OVERRIDE" literally.'
+        required: false
+        type: string
+        default: ''
+      force_dispatch_cap:
+        description: 'EMERGENCY: bypass the 24h dispatch cap. Set to "OVERRIDE" literally. Required if >=20 deploy runs have executed in the last 24h.'
+        required: false
+        type: string
+        default: ''
 
 permissions:
   contents: read
@@ -87,10 +102,117 @@ permissions:
 
 jobs:
   # ──────────────────────────────────────────────
+  # Job 0: Dispatch guard — hard cap on deploys per 24h
+  # ──────────────────────────────────────────────
+  # 2026-04-07 incident: the AI Failure Recovery agent dispatched the
+  # pipeline 8 times in 14 hours, each recycling the prod app pool
+  # because secrets were misconfigured. invoke-agent has since been
+  # disabled, but nothing else caps total deploys-per-day. This job
+  # refuses to run if the workflow has already dispatched >=CAP times
+  # (non-skipped, non-cancelled) in the last 24 hours.
+  #
+  # CAP is intentionally loose (20). Today's incident was 8 dispatches,
+  # so 20 gives headroom for normal churn + CI-only runs (which trip
+  # the guard too because the filter doesn't distinguish publishes
+  # from no-op runs). Tune downward after baseline run volume is
+  # observed — see docs/prompts/2026-04-08-prod-restart-followups.md.
+  #
+  # Override: set force_dispatch_cap="OVERRIDE" (workflow_dispatch
+  # input). PR validations are exempt — they don't publish.
+  dispatch-guard:
+    name: 24h Dispatch Cap
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Audit emergency overrides
+        if: >
+          github.event.inputs.force_qualify == 'true' ||
+          github.event.inputs.force_deploy == 'OVERRIDE' ||
+          github.event.inputs.skip_sandbox_gate == 'OVERRIDE' ||
+          github.event.inputs.force_dispatch_cap == 'OVERRIDE' ||
+          github.event.inputs.force_business_hours == 'true'
+        run: |
+          {
+            echo "## ⚠️ Emergency override(s) in use"
+            echo ""
+            echo "| Override | Value |"
+            echo "|----------|-------|"
+            [[ "${{ github.event.inputs.force_qualify }}" == "true" ]]        && echo "| force_qualify | true (skip qualify + smoke test) |"
+            [[ "${{ github.event.inputs.force_deploy }}" == "OVERRIDE" ]]     && echo "| force_deploy | OVERRIDE (bypass sandbox-gate failure) |"
+            [[ "${{ github.event.inputs.skip_sandbox_gate }}" == "OVERRIDE" ]] && echo "| skip_sandbox_gate | OVERRIDE (skip sandbox-gate entirely) |"
+            [[ "${{ github.event.inputs.force_dispatch_cap }}" == "OVERRIDE" ]] && echo "| force_dispatch_cap | OVERRIDE (bypass 24h cap) |"
+            [[ "${{ github.event.inputs.force_business_hours }}" == "true" ]] && echo "| force_business_hours | true (deploy during business hours) |"
+            echo ""
+            echo "Triggered by: \`${{ github.triggering_actor }}\`"
+            echo "Commit: \`${{ github.sha }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "::warning::Emergency override(s) active on this run — see step summary"
+
+      - name: Count recent deploy runs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OVERRIDE: ${{ github.event.inputs.force_dispatch_cap }}
+          CAP: '20'
+        run: |
+          set -e
+          if [[ "${OVERRIDE}" == "OVERRIDE" ]]; then
+            echo "::warning::Dispatch cap bypassed via force_dispatch_cap=OVERRIDE"
+            echo "## Dispatch cap bypassed" >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "An operator set \`force_dispatch_cap=OVERRIDE\` — the 24h cap of ${CAP} deploys was bypassed for this run." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          # GitHub returns ISO-8601 timestamps. Compute the 24h cutoff.
+          CUTOFF=$(date -u -d '24 hours ago' +'%Y-%m-%dT%H:%M:%SZ' 2>/dev/null \
+            || python3 -c "from datetime import datetime, timedelta, timezone; print((datetime.now(timezone.utc)-timedelta(hours=24)).strftime('%Y-%m-%dT%H:%M:%SZ'))")
+          echo "Counting deploy runs since ${CUTOFF}"
+
+          # Query the last 100 runs of this workflow, filter to push +
+          # repository_dispatch + workflow_dispatch that are neither
+          # skipped nor cancelled, and that started within the last 24h.
+          # Exclude this run itself (github.run_id).
+          COUNT=$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/acuops-deploy.yml/runs?per_page=100" \
+            --jq "[.workflow_runs[]
+                    | select(.id != ${GITHUB_RUN_ID})
+                    | select(.event == \"push\" or .event == \"repository_dispatch\" or .event == \"workflow_dispatch\")
+                    | select(.conclusion != \"skipped\" and .conclusion != \"cancelled\")
+                    | select(.created_at >= \"${CUTOFF}\")
+                  ] | length")
+          echo "Recent deploy runs in last 24h: ${COUNT} (cap: ${CAP})"
+
+          if (( COUNT >= CAP )); then
+            echo "::error::24h dispatch cap exceeded: ${COUNT} runs in the last 24h (cap: ${CAP})"
+            echo "::error::This is an incident-driven safety fuse. If this is intentional, re-run with force_dispatch_cap=OVERRIDE (workflow_dispatch only)."
+            echo "::error::See 2026-04-07 incident: the AI Failure Recovery agent dispatched 8 deploys in 14 hours, all of which recycled the prod app pool."
+            {
+              echo "## 🚫 24h Dispatch Cap Exceeded"
+              echo ""
+              echo "| Field | Value |"
+              echo "|-------|-------|"
+              echo "| Runs in last 24h | ${COUNT} |"
+              echo "| Cap | ${CAP} |"
+              echo "| Override | workflow_dispatch with \`force_dispatch_cap=OVERRIDE\` |"
+              echo ""
+              echo "Prevents runaway dispatch loops from recycling the prod app pool repeatedly. See 2026-04-07 incident runbook."
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+
+          echo "[OK] ${COUNT} deploys in last 24h — under cap of ${CAP}"
+
+  # ──────────────────────────────────────────────
   # Job 1: Build — Package customization into .zip
   # ──────────────────────────────────────────────
   build:
     name: Build Customization Package
+    needs: [dispatch-guard]
+    # PRs skip the dispatch guard (if: github.event_name != 'pull_request'),
+    # so we accept 'skipped' in addition to 'success'.
+    if: >
+      always() &&
+      (needs.dispatch-guard.result == 'success' || needs.dispatch-guard.result == 'skipped')
     runs-on: ubuntu-latest
     outputs:
       package_path: ${{ steps.package.outputs.path }}
@@ -675,19 +797,32 @@ jobs:
     timeout-minutes: 40
     # Publish to the SANDBOX instance (separate from production — no app pool
     # restart on prod). Run full UI test suite. Hard gate for production deploy.
+    #
+    # NOTE: force_qualify=true no longer skips this job. force_qualify now
+    # only skips the agentic qualify checks and the pre-deploy smoke test
+    # (both of which probe the prod instance). sandbox-gate runs against a
+    # SEPARATE sandbox instance, so there is no reason to skip it in an
+    # emergency — prod being down does not affect the sandbox.
+    #
+    # The only way to skip sandbox-gate entirely is to set
+    # skip_sandbox_gate="OVERRIDE" via workflow_dispatch. Use only when the
+    # sandbox instance itself is down (rare).
     if: >
       always() &&
       needs.build.result == 'success' &&
       needs.build.outputs.customization_changes == 'true' &&
       (needs.build-validate.result == 'success' || needs.build-validate.result == 'skipped') &&
       github.event_name != 'pull_request' &&
-      github.event.inputs.force_qualify != 'true' && (
+      github.event.inputs.skip_sandbox_gate != 'OVERRIDE' && (
         needs.qualify.result == 'success' ||
         needs.qualify.result == 'skipped'
       )
     concurrency:
+      # Queue sandbox publishes, never cancel in-flight ones. Cancelling
+      # a GH Actions run does not stop the Acumatica publishEnd already
+      # executing on the sandbox instance.
       group: sandbox-publish
-      cancel-in-progress: true
+      cancel-in-progress: false
 
     steps:
       - uses: actions/checkout@v4
