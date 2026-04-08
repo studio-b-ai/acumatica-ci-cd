@@ -1920,7 +1920,10 @@ jobs:
           # Also grab any test artifacts
           gh run download ${{ github.run_id }} --name verify-result-sandbox --dir ./verify-results 2>/dev/null || true
         env:
-          GH_TOKEN: ${{ secrets.GH_PAT_DISPATCH }}
+          # Same-repo gh api + gh run download — built-in GITHUB_TOKEN is
+          # sufficient and shows up as github-actions[bot] in audit logs
+          # (Safety Package gate #2: agent attribution must not be Kevin).
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Run failure recovery agent
         uses: anthropics/claude-code-action@v1
@@ -1965,7 +1968,11 @@ jobs:
           SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
           QDRANT_URL: ${{ secrets.QDRANT_URL }}
           VOYAGE_API_KEY: ${{ secrets.VOYAGE_API_KEY }}
-          GH_TOKEN: ${{ secrets.GH_PAT_DISPATCH }}
+          # AI Failure Recovery agent only operates in this repo: creates a
+          # branch, commits a fix, opens a PR. Built-in GITHUB_TOKEN is
+          # sufficient — Slack uses SLACK_BOT_TOKEN, not gh.
+          # Audit log will show github-actions[bot] (Safety Package gate #2).
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   # ──────────────────────────────────────────────
   # Job 4: Validate — PR check (no publish)
