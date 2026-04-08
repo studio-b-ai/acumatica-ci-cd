@@ -53,6 +53,11 @@ class DriftEntry:
     suggested_fix: str        # ready-to-paste EnsureColumn line
 
 
+def _normalize_ddl(ddl: str) -> str:
+    """Canonicalize whitespace and case for DDL comparison."""
+    return re.sub(r'\s+', ' ', ddl.strip().lower())
+
+
 def find_drift(dac_fields: list[DacField],
                plugin_coverage: dict[str, dict[str, PluginColumn]]) -> list[DriftEntry]:
     """Compare DAC fields against plugin coverage. Returns drift entries."""
@@ -60,6 +65,7 @@ def find_drift(dac_fields: list[DacField],
     for field in dac_fields:
         table_cols = plugin_coverage.get(field.table, {})
         plugin_col = table_cols.get(field.field_name)
+
         if plugin_col is None:
             drift.append(DriftEntry(
                 dac_field=field,
@@ -67,7 +73,66 @@ def find_drift(dac_fields: list[DacField],
                 reason="missing",
                 suggested_fix=f'EnsureColumn(conn, "{field.table}", "{field.field_name}", "{field.expected_ddl}");',
             ))
+            continue
+
+        if _normalize_ddl(plugin_col.ddl) != _normalize_ddl(field.expected_ddl):
+            drift.append(DriftEntry(
+                dac_field=field,
+                plugin_column=plugin_col,
+                reason="type_mismatch",
+                suggested_fix=f'EnsureColumn(conn, "{field.table}", "{field.field_name}", "{field.expected_ddl}");',
+            ))
+
     return drift
+
+
+def format_remediation(drift_entries: list[DriftEntry]) -> str:
+    """Format drift entries as a copy-pasteable auto-remediation block."""
+    if not drift_entries:
+        return "No drift detected."
+
+    # Group by table
+    by_table: dict[str, list[DriftEntry]] = {}
+    for entry in drift_entries:
+        by_table.setdefault(entry.dac_field.table, []).append(entry)
+
+    out: list[str] = []
+    out.append("")
+    out.append("DAC drift detected in StudioB.Containers:")
+    out.append("")
+
+    for table, entries in by_table.items():
+        missing = [e for e in entries if e.reason == "missing"]
+        mismatched = [e for e in entries if e.reason == "type_mismatch"]
+        file_path = entries[0].dac_field.file_path
+
+        out.append(f"Table: {table} (DAC: {file_path})")
+
+        if missing:
+            out.append(f"  Missing plugin coverage for {len(missing)} field(s).")
+            out.append("  Paste the following into AesthetikContainersInstall.cs:")
+            out.append("")
+            # Compute column width for alignment
+            max_field_len = max(len(e.dac_field.field_name) for e in missing)
+            for e in missing:
+                padded_name = f'"{e.dac_field.field_name}",'.ljust(max_field_len + 3)
+                out.append(
+                    f'      EnsureColumn(conn, "{table}", {padded_name} '
+                    f'"{e.dac_field.expected_ddl}");'
+                )
+            out.append("")
+
+        if mismatched:
+            out.append(f"  Type mismatch on {len(mismatched)} field(s):")
+            for e in mismatched:
+                out.append(
+                    f"      {e.dac_field.field_name}: "
+                    f"DAC expects '{e.dac_field.expected_ddl}' but plugin has '{e.plugin_column.ddl}'"
+                )
+            out.append("  Update the existing EnsureColumn/EnsureTable DDL to match the DAC.")
+            out.append("")
+
+    return "\n".join(out)
 
 
 # ─── DAC file parser ─────────────────────────────────────────────────────
@@ -519,3 +584,72 @@ def test_parse_plugin_file_extracts_ensure_table():
     assert "CompanyID" not in coverage["UsrTest"]
     assert coverage["UsrTest"]["TestID"].ddl == "int IDENTITY(1,1) NOT NULL"
     assert coverage["UsrTest"]["TestName"].ddl == "nvarchar(50) NULL"
+
+
+def test_detector_catches_length_mismatch():
+    """DAC says nvarchar(50), plugin says nvarchar(20) → type_mismatch."""
+    field = DacField(
+        table="UsrTest", file_path="fake.cs", line_number=1,
+        field_name="Name", attribute="PXDBString", args="50, IsUnicode = true",
+        is_key=False, has_default=False, default_value=None,
+        expected_ddl="nvarchar(50) NULL",
+    )
+    coverage = {"UsrTest": {"Name": PluginColumn(
+        table="UsrTest", column="Name", ddl="nvarchar(20) NULL", source="EnsureColumn"
+    )}}
+    drift = find_drift([field], coverage)
+    assert len(drift) == 1
+    assert drift[0].reason == "type_mismatch"
+    assert "nvarchar(50) NULL" in drift[0].suggested_fix
+
+
+def test_detector_catches_decimal_precision_mismatch():
+    """DAC says PXDBDecimal(2), plugin says decimal(19,4) → type_mismatch."""
+    field = DacField(
+        table="UsrTest", file_path="fake.cs", line_number=1,
+        field_name="Rate", attribute="PXDBDecimal", args="2",
+        is_key=False, has_default=False, default_value=None,
+        expected_ddl="decimal(19,2) NULL",
+    )
+    coverage = {"UsrTest": {"Rate": PluginColumn(
+        table="UsrTest", column="Rate", ddl="decimal(19,4) NULL", source="EnsureColumn"
+    )}}
+    drift = find_drift([field], coverage)
+    assert len(drift) == 1
+    assert drift[0].reason == "type_mismatch"
+
+
+def test_detector_passes_when_all_covered():
+    """Happy path: DAC field matches plugin exactly → no drift."""
+    field = DacField(
+        table="UsrTest", file_path="fake.cs", line_number=1,
+        field_name="Name", attribute="PXDBString", args="50, IsUnicode = true",
+        is_key=False, has_default=False, default_value=None,
+        expected_ddl="nvarchar(50) NULL",
+    )
+    coverage = {"UsrTest": {"Name": PluginColumn(
+        table="UsrTest", column="Name", ddl="nvarchar(50) NULL", source="EnsureColumn"
+    )}}
+    drift = find_drift([field], coverage)
+    assert drift == []
+
+
+def test_format_remediation_produces_pasteable_output():
+    """format_remediation includes the full EnsureColumn line with correct quoting."""
+    field = DacField(
+        table="UsrContainerPrefs", file_path="src/StudioB.Containers/DACs/UsrContainerPrefs.cs",
+        line_number=55, field_name="LCCodeShipping",
+        attribute="PXDBString", args="15, IsUnicode = true",
+        is_key=False, has_default=False, default_value=None,
+        expected_ddl="nvarchar(15) NULL",
+    )
+    drift = [DriftEntry(
+        dac_field=field,
+        plugin_column=None,
+        reason="missing",
+        suggested_fix='EnsureColumn(conn, "UsrContainerPrefs", "LCCodeShipping", "nvarchar(15) NULL");',
+    )]
+    output = format_remediation(drift)
+    assert 'EnsureColumn(conn, "UsrContainerPrefs"' in output
+    assert 'nvarchar(15) NULL' in output
+    assert 'UsrContainerPrefs.cs' in output
