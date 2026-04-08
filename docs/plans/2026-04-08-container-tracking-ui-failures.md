@@ -1,8 +1,46 @@
 # Container Tracking UI Test Failures — investigation + fix plan
 
+> ## ⚠ CORRECTION (2026-04-08, after PR #289 merged)
+>
+> **The original investigation in this doc reached a wrong conclusion about Failure #2 (PO301000 button).** Preserved below as a learning artifact. Read this section first.
+>
+> ### What actually happened
+>
+> A second Claude session (`claude/zealous-noether` → PR #289 squash `630cca4`) ran the test against the live sandbox via Playwright and found the real root cause:
+>
+> 1. **`/Main?ScreenId=PO301000` redirects to home in this tenant.** AesthetikWMS shadows PO301000 with PO3010PL via the customization layer. The standard framed-nav route (`/Main?ScreenId=PO301000`) sends users to home because the screen registration was overridden. So the original test wasn't even loading the form it claimed to be testing — it was looking for "CONTAINER TRACKING" on the home page, which obviously doesn't have it.
+> 2. **`page.locator("text=CONTAINER TRACKING")` couldn't pierce iframes anyway.** Acumatica renders forms inside `iframe[name='main']`. The default Playwright `text=` locator searches the top document, not nested frames. Even if the form HAD loaded, the locator would have returned `count() == 0`. The original assertion `assert btn.count() > 0` was vacuous: it has been silently false for 2 reasons since the test was added.
+> 3. **The CONTAINER TRACKING button was deployed correctly the entire time.** PR #70's Sprint 2 work was never broken. `POOrderEntry_Extension.cs:13` defines the `ViewContainer` PXAction with `[PXButton]` + `[PXUIField(DisplayName = "Container Tracking")]`, and Acumatica's graph extension auto-promotes it to the top toolbar. Verified live in sandbox: 2 visible matches with class `qp-tool-bar-text`.
+>
+> ### The fix that shipped (PR #289)
+>
+> Test-only change, no DLL/schema/SQL/project.xml. New test pattern: `acumatica_page.goto(.../Pages/PO/PO301000.aspx)` then look for the button via top-level locator. Bypasses the framed wrapper entirely, which is the right approach for **screen-shadowed forms** where `/Main?ScreenId=...` redirects.
+>
+> ### Two valid Playwright patterns for Acumatica forms (KB-worthy)
+>
+> | Pattern | When to use | Example |
+> |---|---|---|
+> | `get_main_frame(page).locator(...)` | Tests using `/Main?ScreenId=XXXXXX` framed nav, where the form renders into `iframe[name='main']`. Most existing `test_container_tracking.py` tests use this. | Workspace test (now skipped), other PO301000 field tests |
+> | `page.goto(.../Pages/.../XXXXXX.aspx)` then top-level locator | Screen-shadowed forms (e.g. AesthetikWMS shadowing PO301000 → PO3010PL) OR when you want to skip the framed wrapper entirely | `test_container_tracking_button_exists` (PR #289) |
+>
+> A KB doc on this is being written by `claude/zealous-noether` titled `"Acumatica iframe + screen-shadowing test patterns — when to use direct-aspx vs iframe-scoped locators"`. The screen-shadowing trap (a customization can shadow a stock screen so framed-nav goes to home) is the more interesting half — easy to miss without live verification.
+>
+> ### What this doc gets right vs wrong
+>
+> - **Failure #1 (workspace) — diagnosis still correct.** The MUIWorkspace row really is missing, the `85e6542` history really is the cause, and the `EnsureContainerTrackingMUI` CustomizationPlugin path really is the right fix. **Status: deferred follow-up.** Will be implemented in a separate PR (`claude/ensure-workspace-mui-rows`) **after** the 6 PM ET deploy of PR #289 + Phase A-G is verified clean. Schema introspection is in flight via REST API on the current branch.
+> - **Failure #2 (button) — diagnosis was wrong.** Original section below claimed it needed graph-extension wiring + project.xml ASPX edit + DLL recompile. None of that was true. The graph extension was already correct; the test was just looking in the wrong place.
+>
+> ### Lesson
+>
+> **Verify against the running system before classifying a fix as "moderate" or "needs DLL recompile".** My investigation read source code + git history + project.xml, then made a conclusion without ever loading the actual screen in a browser. The other session's first action was to run the test live and inspect the DOM, which gave the right answer in minutes.
+>
+> Per CLAUDE.md rule #4 ("Verify before claiming success" — and inversely, before claiming failure): a 30-second sandbox load is worth more than 30 minutes of code reading.
+>
+> ---
+
 **Context:** 2026-04-08 sandbox-gate failures on dispatch run 24121131536 (sha `f2449d8`). Two `tests/ui/test_container_tracking.py` failures remain after PR #285 fixed the SB501000 install plugin schema bug.
 
-**Status:** Investigation complete. Both fixes need Kevin sign-off + sandbox dry-run before merge. **Customization changes deferred** — risk of repeating the 2026-04-05 PO301000 breakage.
+**Status (original — superseded above):** Investigation complete. Both fixes need Kevin sign-off + sandbox dry-run before merge. **Customization changes deferred** — risk of repeating the 2026-04-05 PO301000 breakage.
 
 ---
 
