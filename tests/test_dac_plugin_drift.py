@@ -54,8 +54,15 @@ class DriftEntry:
 
 
 def _normalize_ddl(ddl: str) -> str:
-    """Canonicalize whitespace and case for DDL comparison."""
-    return re.sub(r'\s+', ' ', ddl.strip().lower())
+    """Canonicalize whitespace and case for DDL comparison.
+
+    Collapses internal whitespace, lowercases, and tightens spaces around
+    punctuation (`(`, `)`, `,`) so that 'decimal(19, 2) NULL' and
+    'decimal(19,2) NULL' compare equal — SQL Server treats them identically.
+    """
+    s = re.sub(r'\s+', ' ', ddl.strip().lower())
+    s = re.sub(r'\s*([(),])\s*', r'\1', s)
+    return s
 
 
 def find_drift(dac_fields: list[DacField],
@@ -653,3 +660,13 @@ def test_format_remediation_produces_pasteable_output():
     assert 'EnsureColumn(conn, "UsrContainerPrefs"' in output
     assert 'nvarchar(15) NULL' in output
     assert 'UsrContainerPrefs.cs' in output
+
+
+def test_normalize_ddl_collapses_whitespace_around_punctuation():
+    """_normalize_ddl should treat 'decimal(19, 2)' and 'decimal(19,2)' as equal."""
+    assert _normalize_ddl("decimal(19, 2) NULL") == _normalize_ddl("decimal(19,2) NULL")
+    assert _normalize_ddl("nvarchar (15) NULL") == _normalize_ddl("nvarchar(15) NULL")
+    assert _normalize_ddl("NVARCHAR(15) NULL") == _normalize_ddl("nvarchar(15) null")
+    # And the inequality cases still hold
+    assert _normalize_ddl("nvarchar(15)") != _normalize_ddl("nvarchar(15) NULL")
+    assert _normalize_ddl("decimal(19,2) NULL") != _normalize_ddl("decimal(19,4) NULL")
