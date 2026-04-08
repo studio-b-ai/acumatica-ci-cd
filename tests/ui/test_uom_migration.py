@@ -261,14 +261,15 @@ class TestStockItemSaveSample:
         assert r.status_code == 204, f"REST API login failed: {r.status_code}"
 
         try:
-            # Pull the first SAVE_SAMPLE_SIZE stock items with BaseUnit=YDS.
-            # $top + $select keeps the response small. We don't $filter on
-            # BaseUnit because Acumatica's contract API filter syntax is
-            # finicky — instead we filter client-side from the result.
+            # Pull the first SAVE_SAMPLE_SIZE*3 stock items with their
+            # BaseUOM + Description. The REST contract field is BaseUOM,
+            # NOT BaseUnit — the DAC column is named BaseUnit but the
+            # endpoint exposes it as BaseUOM. Description is needed so
+            # we can do a touched-field PUT and revert below.
             r = s.get(
                 f"{ACUMATICA_URL}/entity/Default/24.200.001/StockItem"
                 f"?$top={SAVE_SAMPLE_SIZE * 3}"
-                f"&$select=InventoryID,BaseUnit",
+                f"&$select=InventoryID,Description,BaseUOM",
                 headers={"Accept": "application/json"},
                 timeout=60,
             )
@@ -279,7 +280,7 @@ class TestStockItemSaveSample:
             items = r.json()
             yds_items = [
                 it for it in items
-                if (it.get("BaseUnit", {}) or {}).get("value") == EXPECTED_UOM
+                if (it.get("BaseUOM", {}) or {}).get("value") == EXPECTED_UOM
             ][:SAVE_SAMPLE_SIZE]
 
             assert len(yds_items) > 0, (
@@ -290,17 +291,31 @@ class TestStockItemSaveSample:
 
             print(f"Sampling {len(yds_items)} YDS-base stock items for save check...")
 
+            # CRITICAL: a no-op PUT (body = only InventoryID) returns 200
+            # without calling Persist() because no field changed. That
+            # means ValidateUnitConversions never runs and the test
+            # silently passes on broken items. Use a touched-field PUT
+            # (Description + " [DIAG ...]") to force Persist, then
+            # PUT-revert if the touch succeeds. Revert is skipped on
+            # failure because nothing was written when Persist threw.
+            import datetime
+            diag_marker = f" [DIAG-UOM {datetime.datetime.utcnow().strftime('%H%M%S')}]"
+
             failures = []
+            unreverted = []
             for it in yds_items:
                 inv_id_obj = it.get("InventoryID", {}) or {}
                 inv_cd = inv_id_obj.get("value", "<unknown>").strip()
+                orig_desc = (it.get("Description", {}) or {}).get("value") or ""
 
-                # No-op PUT — same data the GET returned. Acumatica
-                # treats this as a save and runs full validation.
-                payload = {"InventoryID": {"value": inv_cd}}
+                # Touched-field PUT: flips Description to force Persist.
+                touch_payload = {
+                    "InventoryID": {"value": inv_cd},
+                    "Description": {"value": orig_desc + diag_marker},
+                }
                 pr = s.put(
                     f"{ACUMATICA_URL}/entity/Default/24.200.001/StockItem",
-                    json=payload,
+                    json=touch_payload,
                     headers={
                         "Content-Type": "application/json",
                         "Accept": "application/json",
@@ -308,9 +323,50 @@ class TestStockItemSaveSample:
                     timeout=30,
                 )
                 if pr.status_code not in (200, 201, 204):
-                    body_excerpt = pr.text[:300].replace("\n", " ")
-                    failures.append(f"{inv_cd} → HTTP {pr.status_code}: {body_excerpt}")
+                    # Save failed — nothing was written, so no revert needed.
+                    # Extract the innerException since the outer wrapper
+                    # just says "Operation failed".
+                    inner_msg = ""
+                    try:
+                        body = pr.json()
+                        inner_msg = (body.get("innerException") or {}).get(
+                            "exceptionMessage", ""
+                        ) or body.get("exceptionMessage", "")
+                    except Exception:
+                        inner_msg = pr.text[:300].replace("\n", " ")
+                    failures.append(
+                        f"{inv_cd} → HTTP {pr.status_code}: {inner_msg[:250]}"
+                    )
+                    continue
 
+                # Save succeeded — revert immediately to leave data unchanged.
+                revert_payload = {
+                    "InventoryID": {"value": inv_cd},
+                    "Description": {"value": orig_desc},
+                }
+                rr = s.put(
+                    f"{ACUMATICA_URL}/entity/Default/24.200.001/StockItem",
+                    json=revert_payload,
+                    headers={
+                        "Content-Type": "application/json",
+                        "Accept": "application/json",
+                    },
+                    timeout=30,
+                )
+                if rr.status_code not in (200, 201, 204):
+                    unreverted.append(
+                        f"{inv_cd}: touch succeeded but revert failed "
+                        f"(HTTP {rr.status_code}) — manual cleanup required, "
+                        f"Description has {diag_marker!r} appended"
+                    )
+
+            # Report unreverted touches separately so a revert failure
+            # cannot be silently hidden by the main assertion.
+            assert not unreverted, (
+                f"{len(unreverted)} touch-PUTs succeeded but their reverts "
+                f"failed — data was mutated on save-successful items:\n"
+                + "\n".join(unreverted)
+            )
             assert not failures, (
                 f"{len(failures)} of {len(yds_items)} sampled stock items "
                 f"failed to save:\n" + "\n".join(failures[:20]) +

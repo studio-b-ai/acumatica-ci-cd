@@ -593,10 +593,23 @@ namespace StudioB.Containers
             const string systemUserId = "B5344897-037E-4D58-B5C3-1BDFD0F47BF4";
             const string customizationScreenId = "SM208000";
 
-            // INUnit unique key is (CompanyID, UnitType, ItemClassID, InventoryID, FromUnit).
+            // INUnit unique key is (CompanyID, UnitType, ItemClassID, InventoryID, FromUnit, ToUnit).
             // For UnitType=1 (per-item) the ItemClassID is 0 and InventoryID is the item ID.
-            // The NOT EXISTS check is on (UnitType=1, InventoryID, FromUnit='YDS') —
-            // matching the unique key — so this insert can never violate the constraint.
+            //
+            // CRITICAL: the NOT EXISTS guard must check BOTH FromUnit AND ToUnit.
+            // Checking FromUnit alone (the prior bug) misses the case where an item
+            // has a legacy cross-conversion row like (FromUnit='YDS', ToUnit='PIECE',
+            // rate=36) left behind from its pre-v3 days when PIECE was the base.
+            // Every YDS-base item in Heritage Fabrics prod has that legacy row
+            // because v3 is INSERT-only and preserved existing rows by design.
+            // Without the ToUnit='YDS' check, NOT EXISTS returned true for every
+            // affected item and the plugin inserted zero rows — the Wednesday
+            // 2026-04-08 incident (15/15 sampled YDS items still broken after
+            // PR #292 deployed because the guard was under-specified).
+            //
+            // With both clauses: the guard only matches a true self-conversion
+            // row, so items that have (YDS→PIECE) but no (YDS→YDS) correctly
+            // receive the missing self-conversion.
             string sql = @"
                 INSERT INTO INUnit (
                     CompanyID, UnitType, ItemClassID, InventoryID,
@@ -621,6 +634,7 @@ namespace StudioB.Containers
                         AND u.ItemClassID = 0
                         AND u.InventoryID = i.InventoryID
                         AND u.FromUnit = 'YDS'
+                        AND u.ToUnit = 'YDS'
                   );";
             using (var cmd = new SqlCommand(sql, conn))
             {
