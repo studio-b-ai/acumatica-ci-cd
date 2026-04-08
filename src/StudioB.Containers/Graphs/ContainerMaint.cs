@@ -60,7 +60,9 @@ namespace StudioB.Containers
             ContainerFilter filter = Filter.Current;
 
             // --- 2026-04-07: ViewMode-driven filtering for Command Center tiles ---
-            string viewMode = filter?.ViewMode ?? "EXCEPTIONS";
+            // 2026-04-08: default changed from "EXCEPTIONS" to "ALL" so users see the
+            // full container pipeline on screen open; KPI tiles drill down to exceptions.
+            string viewMode = filter?.ViewMode ?? "ALL";
             DateTime today = Accessinfo.BusinessDate ?? DateTime.Today;
 
             // Load all rows once, then apply post-filter. Container count is small enough

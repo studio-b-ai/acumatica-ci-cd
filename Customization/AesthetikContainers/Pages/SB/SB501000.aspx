@@ -87,11 +87,18 @@
             <px:PXFormView ID="frmTimeline" runat="server" DataSourceID="ds" DataMember="Container"
                 Width="100%" CaptionVisible="False" RenderStyle="Simple" SkinID="Transparent">
                 <Template>
+                    <%-- 2026-04-08: explicit layout rule so the hidden edTabLabelsJson
+                         below doesn't render a "Tab Labels:" label cell. Without this,
+                         PXFormView auto-layout wraps the field in a label-column +
+                         value-column row and Style="display:none;" only hits the
+                         inner input, leaving the label visible. Pattern mirrors
+                         frmFilter which correctly hides edViewMode the same way. --%>
+                    <px:PXLayoutRule runat="server" StartRow="True" />
                     <px:PXHtmlView ID="htmlTimeline" runat="server" DataField="TimelineHtml"
                         Height="90px" Width="100%" SkinID="Label" />
                     <%-- Hidden field carrying tab label JSON for the JS updater --%>
                     <px:PXTextEdit ID="edTabLabelsJson" runat="server" DataField="TabLabelsJson"
-                        Style="display:none;" />
+                        SuppressLabel="True" Style="display:none;" />
                 </Template>
             </px:PXFormView>
             <px:PXFormView ID="frmDetail" runat="server" DataSourceID="ds" DataMember="Container"
