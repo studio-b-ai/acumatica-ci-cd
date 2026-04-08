@@ -91,12 +91,41 @@ namespace StudioB.Containers
                         CONSTRAINT PK_UsrContainerPOLink PRIMARY KEY (CompanyID, LinkID)
                     ");
 
+                    // Container Costs child table — shipped DAC in PR #232 (Bucket B
+                    // Phase 1) but the EnsureTable was missed, so SB501000 opened the
+                    // BQL select against UsrContainerCost and SQL Server returned
+                    // "Invalid object name 'UsrContainerCost'" on any prod tenant
+                    // that didn't have the table manually created. CRUD child table,
+                    // shown as a tab on the Procurement Command Center screen.
+                    EnsureTable(conn, "UsrContainerCost", @"
+                        CompanyID int NOT NULL DEFAULT 0,
+                        CostID int IDENTITY(1,1) NOT NULL,
+                        ContainerID int NOT NULL,
+                        CostType nvarchar(20) NOT NULL DEFAULT '',
+                        Description nvarchar(100) NULL,
+                        Amount decimal(19,4) NOT NULL DEFAULT 0,
+                        VendorID int NULL,
+                        ReferenceNbr nvarchar(30) NULL,
+                        APDocType nchar(3) NULL,
+                        APRefNbr nvarchar(15) NULL,
+                        NoteID uniqueidentifier NULL,
+                        CreatedByID uniqueidentifier NULL,
+                        CreatedByScreenID char(8) NULL,
+                        CreatedDateTime datetime NULL,
+                        LastModifiedByID uniqueidentifier NULL,
+                        LastModifiedByScreenID char(8) NULL,
+                        LastModifiedDateTime datetime NULL,
+                        tstamp timestamp NOT NULL,
+                        CONSTRAINT PK_UsrContainerCost PRIMARY KEY (CompanyID, CostID)
+                    ");
+
                     // Indexes
                     EnsureIndex(conn, "UsrContainer", "IX_UsrContainer_ContainerCD", "CompanyID, ContainerCD");
                     EnsureIndex(conn, "UsrContainer", "IX_UsrContainer_Status", "CompanyID, Status");
                     EnsureIndex(conn, "UsrContainerEvent", "IX_UsrContainerEvent_ContainerID", "CompanyID, ContainerID, EventDateTime DESC");
                     EnsureIndex(conn, "UsrContainerPOLink", "IX_UsrContainerPOLink_ContainerID", "CompanyID, ContainerID");
                     EnsureIndex(conn, "UsrContainerPOLink", "IX_UsrContainerPOLink_PO", "CompanyID, OrderType, OrderNbr");
+                    EnsureIndex(conn, "UsrContainerCost", "IX_UsrContainerCost_ContainerID", "CompanyID, ContainerID");
 
                     // SOShipment container fields
                     EnsureColumn(conn, "SOShipment", "UsrIncludeInContainer", "bit NULL DEFAULT 0");
