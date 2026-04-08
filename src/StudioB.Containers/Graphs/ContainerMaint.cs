@@ -60,8 +60,11 @@ namespace StudioB.Containers
             ContainerFilter filter = Filter.Current;
 
             // --- 2026-04-07: ViewMode-driven filtering for Command Center tiles ---
-            // 2026-04-08: default changed from "EXCEPTIONS" to "ALL" so users see the
-            // full container pipeline on screen open; KPI tiles drill down to exceptions.
+            // The ViewMode default lives on ContainerFilter.viewMode's PXDefault
+            // attribute, NOT here. PR #295 tried to change it here and had no
+            // effect because PXDefault populates filter.ViewMode before this
+            // delegate runs. The ?? fallback is purely defensive against the
+            // edge case where Filter.Current is null during early init.
             string viewMode = filter?.ViewMode ?? "ALL";
             DateTime today = Accessinfo.BusinessDate ?? DateTime.Today;
 

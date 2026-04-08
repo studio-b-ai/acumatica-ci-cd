@@ -20,7 +20,16 @@ namespace StudioB.Containers
         #region ViewMode
         public abstract class viewMode : BqlString.Field<viewMode> { }
         [PXString(15)]
-        [PXDefault("EXCEPTIONS")]
+        // 2026-04-08: default changed from "EXCEPTIONS" to "ALL". The original
+        // intent was an exception-first screen that drilled in when the user
+        // clicked a tile, but HF users opened the screen and saw "No records
+        // found" (0 exceptions) with no obvious path to the full container
+        // pipeline. Default is now ALL; tiles still drill down to EXCEPTIONS
+        // / WATCH / ARRIVING. PR #295 tried to fix this at the ContainerMaint
+        // containers() delegate via `filter?.ViewMode ?? "ALL"` but that was
+        // dead code because PXDefault populates the field before the delegate
+        // runs — the source of truth is this attribute.
+        [PXDefault("ALL")]
         [PXUIField(DisplayName = "View")]
         [PXStringList(
             new string[] { "EXCEPTIONS", "WATCH", "ARRIVING", "ALL" },
