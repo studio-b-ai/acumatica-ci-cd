@@ -423,7 +423,18 @@ namespace StudioB.Containers
         #region TabLabelsJson
         public abstract class tabLabelsJson : BqlString.Field<tabLabelsJson> { }
         [PXString(500)]
-        [PXUIField(DisplayName = "Tab Labels", Enabled = false)]
+        // 2026-04-08: Visible=false hides the field server-side so Acumatica
+        // never emits a label cell for it. The SB501000.aspx template tried
+        // to hide this with Style="display:none;" on edTabLabelsJson, but that
+        // left "Tab Labels:" + the raw JSON value visible in prod because the
+        // auto-layout wraps the control in a label+value row regardless.
+        // PR #295 added a PXLayoutRule + SuppressLabel to frmTimeline to fix
+        // it at the ASPX level, but the ASPX never landed in prod (--no-merge
+        // bug — see project_no_merge_aspx_bug.md — skips ASPX extraction for
+        // co-published projects). Server-side Visible=false ships via the DLL
+        // (Phase 1 of publish), bypassing the --no-merge bug. The JS tab
+        // label updater targets the control's DOM id which is still emitted.
+        [PXUIField(DisplayName = "Tab Labels", Enabled = false, Visible = false)]
         public string TabLabelsJson { get; set; }
         #endregion
         // --- end 2026-04-08 additions ---
