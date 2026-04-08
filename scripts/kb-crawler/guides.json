@@ -1,0 +1,359 @@
+{
+  "formref": {
+    "label": "Form Reference",
+    "edition": "reference",
+    "title": "Acumatica",
+    "root_pageid": "d06f0877-860a-430f-8ee6-3d4fdb6a0db5",
+    "tree_guid": "d562bede-d318-516c-a4eb-d8c447af2252"
+  },
+  "framework": {
+    "label": "Acumatica Framework",
+    "edition": "developer",
+    "title": "Acumatica Framework Guide",
+    "root_pageid": "2e919932-c74e-48ff-b85a-bc5d76360367",
+    "tree_guid": "73019742-84e3-4454-ada0-904017859150"
+  },
+  "crm": {
+    "label": "Customer Relationship Management",
+    "edition": "distribution",
+    "title": "Customer Relationship Management (CRM)",
+    "root_pageid": "49510a48-74a7-45a9-9490-e67cb2b2cc55",
+    "tree_guid": "20f237dd-409f-4338-b5ef-39cff26e1923"
+  },
+  "customization": {
+    "label": "Customization",
+    "edition": "developer",
+    "title": "Customization Guide",
+    "root_pageid": "316b14fa-f406-4788-993c-7b043b1c5bd9",
+    "tree_guid": "34d5aaf6-a66c-493d-ae9c-333dd0bcb6fc"
+  },
+  "customization_update": {
+    "label": "Customization Update",
+    "edition": "developer",
+    "title": "Customization Update",
+    "root_pageid": "accaa580-527e-46da-b260-445bdf9baa6c",
+    "tree_guid": "1428df3b-52d2-4c3a-b041-6db3934fbdad"
+  },
+  "workflow_api": {
+    "label": "Workflow API",
+    "edition": "developer",
+    "title": "Workflow API Guide",
+    "root_pageid": "d739b4ca-7b1a-4871-904f-b29e677ea9c6",
+    "tree_guid": "38a91376-77ab-4a5b-8ba6-4521546ef862"
+  },
+  "integration_dev": {
+    "label": "Integration Development",
+    "edition": "developer",
+    "title": "Integration Development Guide",
+    "root_pageid": "ff22837c-cd3a-410e-b768-88ca6e53b165",
+    "tree_guid": "73019742-84e3-4454-ada0-904017859151"
+  },
+  "mobile_framework": {
+    "label": "Mobile Framework",
+    "edition": "developer",
+    "title": "Working with the Mobile Framework",
+    "root_pageid": "5dacbf34-ac82-41b4-b498-839c173f587c",
+    "tree_guid": "73019742-84e3-4454-ada0-904017859152"
+  },
+  "plugin_dev": {
+    "label": "Plug-In Development",
+    "edition": "developer",
+    "title": "Plug-In Development Guide",
+    "root_pageid": "03156779-6d2b-4723-b2f5-49baf251f7e3",
+    "tree_guid": "73019742-84e3-4554-ada0-904017859152"
+  },
+  "unit_test": {
+    "label": "Unit Test Framework",
+    "edition": "developer",
+    "title": "Unit Test Framework Guide",
+    "root_pageid": "d900ede4-dc94-4773-88f4-752d49161a8f",
+    "tree_guid": "77e0b064-f52d-4047-bcd1-edd3afec5aad"
+  },
+  "barcode_engine": {
+    "label": "Barcode-Driven Engine",
+    "edition": "developer",
+    "title": "Barcode-Driven Engine Guide",
+    "root_pageid": "422a7a11-bd6e-4eba-ba34-f70612ad1b1f",
+    "tree_guid": "50ee5fd8-0443-4aed-9ed3-ca3ce7f88a65"
+  },
+  "platform_api": {
+    "label": "Platform API Reference",
+    "edition": "developer",
+    "title": "Acumatica",
+    "root_pageid": "9fc9dcc2-03ad-9c6c-70db-bf8c444b1bc7",
+    "tree_guid": "69bf9d26-d4d9-4511-8793-1a73dcaf87ce"
+  },
+  "ui_development": {
+    "label": "UI Development",
+    "edition": "ui-developer",
+    "title": "UI Developer Guide",
+    "root_pageid": "2486983c-0cbe-47ce-b73e-f9ea666cdbe9",
+    "tree_guid": "9f7aa4b7-0ee8-493c-82be-fb5922595fdd"
+  },
+  "ui_components": {
+    "label": "UI Components",
+    "edition": "ui-developer",
+    "title": "UI Component Guide",
+    "root_pageid": "01fb46ae-afe8-4e38-8cde-b8ffe87970dc",
+    "tree_guid": "4441a276-18a1-4ca1-808b-78508407a017"
+  },
+  "frontend_api": {
+    "label": "Frontend API Reference",
+    "edition": "ui-developer",
+    "title": "Function actionConfig",
+    "root_pageid": "674b9f3a-47ad-c975-e0ea-0707ced9c420",
+    "tree_guid": "0d8a4914-4d0e-4e2d-8f4c-2b7e87ec75ff"
+  },
+  "sys_admin": {
+    "label": "System Administration",
+    "edition": "administrator",
+    "title": "Overview of the System Administrator's Tasks",
+    "root_pageid": "0684e517-9384-43b3-b6ae-d13bc92c0ccf",
+    "tree_guid": "20f237dd-409f-4338-b5ef-39cff26e1930"
+  },
+  "integration": {
+    "label": "Integration",
+    "edition": "administrator",
+    "title": "Integrating Acumatica ERP with Avalara Avatax",
+    "root_pageid": "f048ad33-3308-49aa-aac8-fec1a470fc0f",
+    "tree_guid": "20f237dd-409f-4338-b5ef-39cff26e1931"
+  },
+  "portal_admin": {
+    "label": "Portal Administration",
+    "edition": "administrator",
+    "title": "Self-Service Portal",
+    "root_pageid": "37516f24-6bf1-4a2c-8554-49665f71db3d",
+    "tree_guid": "20f237dd-409f-4338-b5ef-39cff26e1929"
+  },
+  "modern_portal_admin": {
+    "label": "Modern Customer Portal Administration",
+    "edition": "administrator",
+    "title": "Modern Customer Portal for Administrators",
+    "root_pageid": "44189df7-b4cd-47c4-9294-9c1321731245",
+    "tree_guid": "ada63a18-8c0d-4146-81c8-2a3ed6a7aa55"
+  },
+  "installation": {
+    "label": "Installation",
+    "edition": "implementation",
+    "title": "Acumatica ERP Installation Guide",
+    "root_pageid": "a7107850-2ba2-48c3-913f-efbed9f306d8",
+    "tree_guid": "b5004480-b8ac-4294-a2f4-035e2d0c657e"
+  },
+  "implementation": {
+    "label": "Implementation",
+    "edition": "implementation",
+    "title": "Acumatica ERP Implementation Guide",
+    "root_pageid": "a4be22b4-ae3b-43e0-a004-150a98b7cda8",
+    "tree_guid": "dfb882d4-f5be-44d0-a729-9698faed3326"
+  },
+  "finance_migration": {
+    "label": "Finance Data Migration",
+    "edition": "implementation",
+    "title": "Migrating Documents to Acumatica ERP",
+    "root_pageid": "3e631d3c-e29b-4abf-a130-3a4f0d26e72e",
+    "tree_guid": "cd8742e5-3850-455c-a308-bf450027501d"
+  },
+  "reporting": {
+    "label": "Reporting Tools",
+    "edition": "implementation",
+    "title": "Overview of Reporting",
+    "root_pageid": "0f484be7-8b40-4276-9d9a-5dcbc8d6e047",
+    "tree_guid": "c9650508-8c8f-4770-8e8e-927b3000eccf"
+  },
+  "workflow_ui": {
+    "label": "Workflow UI",
+    "edition": "implementation",
+    "title": "Workflow UI Guide",
+    "root_pageid": "8ce8c907-9854-4bbd-b8f2-557703b9812f",
+    "tree_guid": "0f75140e-eed1-4b62-8df5-96367e34549d"
+  },
+  "dac_overview": {
+    "label": "DAC Overview",
+    "edition": "implementation",
+    "title": "DAC Overview",
+    "root_pageid": "1a7d4bc2-bf8e-4b48-aa58-020c8d996d63",
+    "tree_guid": "21f48e0c-5911-43b3-af4e-239f8f9d26d5"
+  },
+  "getting_started": {
+    "label": "Getting Started",
+    "edition": "enduser",
+    "title": "Acumatica",
+    "root_pageid": "004432da-e259-4416-8809-aabf230ee9b7",
+    "tree_guid": "20f237dd-409f-4338-b5ef-39cff26e1911"
+  },
+  "general_ledger": {
+    "label": "General Ledger",
+    "edition": "enduser",
+    "title": "General Ledger",
+    "root_pageid": "4cfa2671-7fca-4a9d-8234-ea34071bcdac",
+    "tree_guid": "afaacb68-7539-4366-ae71-d9b989052b9a"
+  },
+  "accounts_payable": {
+    "label": "Accounts Payable",
+    "edition": "enduser",
+    "title": "Accounts Payable",
+    "root_pageid": "578189e0-3d99-4c08-8f5e-1aa1484d2981",
+    "tree_guid": "cd8742e5-3850-455c-a308-38950027501d"
+  },
+  "accounts_receivable": {
+    "label": "Accounts Receivable",
+    "edition": "enduser",
+    "title": "Accounts Receivable",
+    "root_pageid": "c1a6f5cf-5894-4b94-ac66-ff799c5913c8",
+    "tree_guid": "815efbd7-1572-4012-ba9a-dbb965876d3e"
+  },
+  "cash_management": {
+    "label": "Cash Management",
+    "edition": "enduser",
+    "title": "Cash Management",
+    "root_pageid": "5c84298f-a971-4859-a663-f7923ed9bc4c",
+    "tree_guid": "ac706f49-0328-42f0-9c04-a2b7ef3d6fb3"
+  },
+  "taxes": {
+    "label": "Taxes",
+    "edition": "enduser",
+    "title": "Taxes",
+    "root_pageid": "e81ed34c-1c6d-4a8b-9903-1f326e615bd9",
+    "tree_guid": "4757c986-1b22-44a1-8a27-7f7f2cd35a4f"
+  },
+  "credit_policy": {
+    "label": "Credit Policy Management",
+    "edition": "enduser",
+    "title": "Managing Credit Policy",
+    "root_pageid": "f6f0ebb5-8a46-42c9-98c1-ed700894f0ee",
+    "tree_guid": "229dd191-8997-477d-966c-1016fb278d3a"
+  },
+  "currency_management": {
+    "label": "Currency Management",
+    "edition": "enduser",
+    "title": "Acumatica",
+    "root_pageid": "28551b85-f18d-4e5a-87e2-997c072f7d93",
+    "tree_guid": "0acfc931-3aec-4bf6-aede-b59d8c27e92b"
+  },
+  "deferred_revenue": {
+    "label": "Deferred Revenue",
+    "edition": "enduser",
+    "title": "Deferred Revenue",
+    "root_pageid": "5248fb98-b500-4b24-84b5-5831531bf4c2",
+    "tree_guid": "837ab57c-107f-4536-a138-0b78937b29fc"
+  },
+  "fixed_assets": {
+    "label": "Fixed Assets",
+    "edition": "enduser",
+    "title": "Fixed Assets",
+    "root_pageid": "0a9a0050-1cbc-4a1d-b511-3c42ee18e851",
+    "tree_guid": "7e4091ab-7240-4c3c-bcae-8b4a4183bc91"
+  },
+  "automated_warehouse": {
+    "label": "Automated Warehouse Operations",
+    "edition": "enduser",
+    "title": "Automated Warehouse Operations: General Information",
+    "root_pageid": "d4328fa2-3191-40a5-8f2b-11a3ca38c18d",
+    "tree_guid": "613c1d19-2180-48dc-8b53-688d4fa98175"
+  },
+  "organization_management": {
+    "label": "Organization Management",
+    "edition": "enduser",
+    "title": "Organization Structure",
+    "root_pageid": "858838bd-ed2b-4fc9-85d3-823b33645736",
+    "tree_guid": "20f237dd-409f-4338-b5ef-39cff26e1924"
+  },
+  "project_accounting": {
+    "label": "Project Accounting",
+    "edition": "enduser",
+    "title": "Projects",
+    "root_pageid": "63993445-4475-4b24-a6c0-c27095a136dd",
+    "tree_guid": "20f237dd-409f-4338-b5ef-39cff26e1925"
+  },
+  "field_services": {
+    "label": "Field Services",
+    "edition": "enduser",
+    "title": "Field Services Guide",
+    "root_pageid": "2843468d-1638-47d7-bb13-e3d3a016945a",
+    "tree_guid": "20f237dd-409f-4338-b5ef-39cff26e1926"
+  },
+  "contract_management": {
+    "label": "Contract Management",
+    "edition": "enduser",
+    "title": "Contract Management Guide",
+    "root_pageid": "51314298-4111-4892-a2a1-b20f1cdb1d4b",
+    "tree_guid": "18372e97-836d-4688-8559-6e3f548301b2"
+  },
+  "prices_discounts": {
+    "label": "Prices and Discounts",
+    "edition": "enduser",
+    "title": "Overview of Prices and Discounts",
+    "root_pageid": "21006413-8bf9-4117-87e5-432527984395",
+    "tree_guid": "1341051a-f796-4873-860c-3068bdfcde41"
+  },
+  "construction": {
+    "label": "Construction",
+    "edition": "enduser",
+    "title": "Construction",
+    "root_pageid": "4f2c25f8-6c71-4399-abbf-cba6feacc2ed",
+    "tree_guid": "d796390a-1fab-4d3d-beac-2d97ee3020b8"
+  },
+  "payroll": {
+    "label": "Payroll",
+    "edition": "enduser",
+    "title": "Overview of the Payroll Process",
+    "root_pageid": "c592236a-31ab-4e32-afed-45bbc7b1a0cd",
+    "tree_guid": "31f257dd-409f-4338-b5ef-39cff26e1930"
+  },
+  "retail_commerce": {
+    "label": "Retail Commerce",
+    "edition": "enduser",
+    "title": "Integration with BigCommerce",
+    "root_pageid": "75f585a3-3af4-4302-9b8c-01a123a0dc25",
+    "tree_guid": "52d29284-c545-4fba-8871-3641103f54c2"
+  },
+  "modern_customer_portal": {
+    "label": "Modern Customer Portal",
+    "edition": "enduser",
+    "title": "Modern Customer Portal for Users",
+    "root_pageid": "e7d35db3-a18a-4184-8ef7-79f8d611823c",
+    "tree_guid": "40621ef2-d76e-4d2a-b6ef-b834fe228961"
+  },
+  "self_service_portal": {
+    "label": "Self-Service Portal",
+    "edition": "enduser",
+    "title": "Self-Service Portal Overview",
+    "root_pageid": "414552d7-c156-461b-b064-4119de76c903",
+    "tree_guid": "d562bede-d318-416c-a4eb-d8c447af225e"
+  },
+  "release_notes": {
+    "label": "Release Notes",
+    "edition": "reference",
+    "title": "Release Notes",
+    "root_pageid": "258373da-50b0-4c84-94d6-78ab7f28baf1",
+    "tree_guid": "d562bede-d318-516c-a4eb-d8c447af225e"
+  },
+  "user_interface": {
+    "label": "User Interface",
+    "edition": "reference",
+    "title": "Acumatica ERP Interface Guide",
+    "root_pageid": "86177e2b-ba51-483e-9ac2-6c3a02b48cc7",
+    "tree_guid": "5f840b3d-a58f-472e-9303-dca2591698dc"
+  },
+  "form_quick_ref": {
+    "label": "Form Quick Reference",
+    "edition": "reference",
+    "title": "Form and Report Quick Reference",
+    "root_pageid": "ec2728d3-ea18-4287-bb73-796161873d6c",
+    "tree_guid": "d562bede-d318-516c-a4eb-d8c447af2251"
+  },
+  "report_reference": {
+    "label": "Report Reference",
+    "edition": "reference",
+    "title": "Accounts Payable Reports",
+    "root_pageid": "937ead64-b973-4c31-bcd4-303ef8734c06",
+    "tree_guid": "d562bede-d318-516c-a4eb-d8c447af2253"
+  },
+  "customization_tool_ref": {
+    "label": "Customization Tool Reference",
+    "edition": "reference",
+    "title": "Customization Tool Reference Guide",
+    "root_pageid": "bd53c0c9-c01b-4cec-a70f-28482c47e861",
+    "tree_guid": "03c8efcc-839e-4b36-a6ea-97a9e32d023f"
+  }
+}
