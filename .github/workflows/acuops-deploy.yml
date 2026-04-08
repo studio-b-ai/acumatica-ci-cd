@@ -252,7 +252,7 @@ jobs:
           repository: studio-b-ai/acuops-pipeline
           ref: ${{ vars.ACUOPS_PIPELINE_VERSION || 'main' }}
           path: pipeline
-          token: ${{ secrets.GH_PAT_DISPATCH }}
+          ssh-key: ${{ secrets.ACUOPS_PIPELINE_DEPLOY_KEY }}
 
       - name: Load acuops.yaml config
         id: config
@@ -792,7 +792,7 @@ jobs:
           repository: studio-b-ai/acuops-pipeline
           ref: ${{ vars.ACUOPS_PIPELINE_VERSION || 'main' }}
           path: pipeline
-          token: ${{ secrets.GH_PAT_DISPATCH }}
+          ssh-key: ${{ secrets.ACUOPS_PIPELINE_DEPLOY_KEY }}
       - name: Run qualification checks
         id: qualify
         timeout-minutes: 4
@@ -853,7 +853,7 @@ jobs:
           repository: studio-b-ai/acuops-pipeline
           ref: ${{ vars.ACUOPS_PIPELINE_VERSION || 'main' }}
           path: pipeline
-          token: ${{ secrets.GH_PAT_DISPATCH }}
+          ssh-key: ${{ secrets.ACUOPS_PIPELINE_DEPLOY_KEY }}
 
       - name: Download package artifact
         uses: actions/download-artifact@v4
@@ -1099,7 +1099,7 @@ jobs:
           repository: studio-b-ai/acuops-pipeline
           ref: ${{ vars.ACUOPS_PIPELINE_VERSION || 'main' }}
           path: pipeline
-          token: ${{ secrets.GH_PAT_DISPATCH }}
+          ssh-key: ${{ secrets.ACUOPS_PIPELINE_DEPLOY_KEY }}
 
       - name: Determine target environment
         id: env
@@ -1997,7 +1997,7 @@ jobs:
           repository: studio-b-ai/acuops-pipeline
           ref: ${{ vars.ACUOPS_PIPELINE_VERSION || 'main' }}
           path: pipeline
-          token: ${{ secrets.GH_PAT_DISPATCH }}
+          ssh-key: ${{ secrets.ACUOPS_PIPELINE_DEPLOY_KEY }}
 
       - name: Download package artifact
         uses: actions/download-artifact@v4
@@ -2121,7 +2121,7 @@ jobs:
           repository: studio-b-ai/acuops-pipeline
           ref: ${{ vars.ACUOPS_PIPELINE_VERSION || 'main' }}
           path: pipeline
-          token: ${{ secrets.GH_PAT_DISPATCH }}
+          ssh-key: ${{ secrets.ACUOPS_PIPELINE_DEPLOY_KEY }}
 
       - name: Setup Python
         uses: actions/setup-python@v5
