@@ -578,8 +578,15 @@ jobs:
     needs: build
     runs-on: [self-hosted, windows, acumatica-sdk]
     timeout-minutes: 15
-    # Only run if the change touches C# source or the build system
-    if: needs.build.outputs.customization_changes == 'true'
+    # Only run if the change touches C# source or the build system.
+    # 2026-04-08: need `!cancelled()` prefix because PR #277 made `build`
+    # conditional (`if: always() && ...`) via dispatch-guard; without the
+    # prefix GitHub prepends an implicit `success()` that fails due to the
+    # skipped dispatch-guard upstream, even when `build` itself succeeds.
+    if: >-
+      !cancelled() &&
+      needs.build.result == 'success' &&
+      needs.build.outputs.customization_changes == 'true'
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -1967,7 +1974,14 @@ jobs:
     name: Validate on Staging
     needs: build
     runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request'
+    # 2026-04-08: `!cancelled()` prefix — see build-validate above.
+    # PR #277 made build conditional on dispatch-guard; without `!cancelled()`
+    # the implicit success() check fails because dispatch-guard is skipped
+    # on PR events, preventing this PR validation job from ever running.
+    if: >-
+      !cancelled() &&
+      needs.build.result == 'success' &&
+      github.event_name == 'pull_request'
     continue-on-error: true
     concurrency:
       group: staging-validate
