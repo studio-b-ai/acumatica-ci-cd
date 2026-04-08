@@ -376,7 +376,57 @@ namespace StudioB.Containers
         [PXUIField(DisplayName = "Docs", Enabled = false)]
         public string DocsSummary { get; set; }
         #endregion
-        // --- end 2026-04-07 additions ---
+
+        // --- 2026-04-08: Phase D — Timeline + tab count fields (unbound, per-row) ---
+        #region TimelineHtml
+        public abstract class timelineHtml : BqlString.Field<timelineHtml> { }
+        [PXString(8000)]
+        [PXUIField(DisplayName = "Timeline", Enabled = false)]
+        public string TimelineHtml { get; set; }
+        #endregion
+
+        #region EventsCount
+        public abstract class eventsCount : BqlInt.Field<eventsCount> { }
+        [PXInt]
+        [PXUIField(DisplayName = "Events", Enabled = false)]
+        public int? EventsCount { get; set; }
+        #endregion
+
+        #region POLinksCount
+        public abstract class pOLinksCount : BqlInt.Field<pOLinksCount> { }
+        [PXInt]
+        [PXUIField(DisplayName = "POs", Enabled = false)]
+        public int? POLinksCount { get; set; }
+        #endregion
+
+        #region POLinksTotal
+        public abstract class pOLinksTotal : BqlDecimal.Field<pOLinksTotal> { }
+        [PXDecimal(2)]
+        [PXUIField(DisplayName = "PO Total", Enabled = false)]
+        public decimal? POLinksTotal { get; set; }
+        #endregion
+
+        #region CostsCount
+        public abstract class costsCount : BqlInt.Field<costsCount> { }
+        [PXInt]
+        [PXUIField(DisplayName = "Costs", Enabled = false)]
+        public int? CostsCount { get; set; }
+        #endregion
+
+        #region CostsTotal
+        public abstract class costsTotal : BqlDecimal.Field<costsTotal> { }
+        [PXDecimal(2)]
+        [PXUIField(DisplayName = "Costs Total", Enabled = false)]
+        public decimal? CostsTotal { get; set; }
+        #endregion
+
+        #region TabLabelsJson
+        public abstract class tabLabelsJson : BqlString.Field<tabLabelsJson> { }
+        [PXString(500)]
+        [PXUIField(DisplayName = "Tab Labels", Enabled = false)]
+        public string TabLabelsJson { get; set; }
+        #endregion
+        // --- end 2026-04-08 additions ---
 
         #region NoteID
         public abstract class noteID : BqlGuid.Field<noteID> { }

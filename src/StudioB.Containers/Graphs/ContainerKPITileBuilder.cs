@@ -240,6 +240,40 @@ window.sb501000ShowExposurePanel = function() {
   } catch(e) { console.error('sb501000ShowExposurePanel failed', e); }
 };
 
+/* --- Phase D: update tabDetail tab labels from TabLabelsJson hidden field --- */
+window.sb501000ApplyTabLabels = function() {
+  try {
+    var hidden = document.getElementById('edTabLabelsJson');
+    if (!hidden) return;
+    var raw = hidden.value || (hidden.firstChild && hidden.firstChild.value) || '';
+    if (!raw) return;
+    var labels;
+    try { labels = JSON.parse(raw); } catch(e) { return; }
+    var tabContainer = document.getElementById('tabDetail');
+    if (!tabContainer) return;
+    // Acumatica renders tab headers as elements inside a header strip.
+    // We match by current tab text (Events, PO Links, Costs) to find the
+    // right header and rewrite its label. This is resilient to exact DOM
+    // structure changes between Acumatica versions.
+    var knownTexts = ['Events', 'PO Links', 'Costs'];
+    knownTexts.forEach(function(baseText, idx) {
+      var newLabel = labels[String(idx)];
+      if (!newLabel) return;
+      var headers = tabContainer.querySelectorAll('td, div, span, a');
+      for (var i = 0; i < headers.length; i++) {
+        var h = headers[i];
+        var t = (h.textContent || '').trim();
+        // Match either the base text alone OR an already-updated version
+        // (so re-runs replace prior labels cleanly).
+        if (t === baseText || (t.indexOf(baseText) === 0 && t.length < 60 && h.children.length === 0)) {
+          h.textContent = newLabel;
+          break;
+        }
+      }
+    });
+  } catch(e) { console.error('sb501000ApplyTabLabels failed', e); }
+};
+
 /* --- Phase C: apply risk-r / risk-a classes to grid rows based on RiskLevel cell --- */
 window.sb501000ApplyRiskRowColors = function() {
   try {
@@ -272,13 +306,16 @@ window.sb501000ApplyRiskRowColors = function() {
 // a short interval until the grid is settled, then re-run on any click within
 // the screen (which covers tile clicks, sort, filter, paging).
 (function() {
-  var apply = window.sb501000ApplyRiskRowColors;
+  var applyAll = function() {
+    if (window.sb501000ApplyRiskRowColors) window.sb501000ApplyRiskRowColors();
+    if (window.sb501000ApplyTabLabels) window.sb501000ApplyTabLabels();
+  };
   var count = 0;
   var tick = setInterval(function() {
-    apply();
+    applyAll();
     if (++count > 10) clearInterval(tick);
   }, 300);
-  document.addEventListener('click', function() { setTimeout(apply, 150); }, true);
+  document.addEventListener('click', function() { setTimeout(applyAll, 150); }, true);
 })();
 </script>
 ";

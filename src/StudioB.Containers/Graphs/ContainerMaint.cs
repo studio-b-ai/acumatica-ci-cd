@@ -513,7 +513,94 @@ namespace StudioB.Containers
             row.DemurrageExposure = ContainerRiskCalculator.ComputeDemurrageExposure(
                 today, row.LastFreeDay, row.DemurrageDailyRate,
                 holdDays, customsHoldEstimatedCostPerDay: null);
+
+            // --- Phase D: Timeline strip + tab count aggregation ---
+            if (row.ContainerID.HasValue)
+            {
+                // Events count — simple row count from the child view
+                int eventsCount = 0;
+                foreach (UsrContainerEvent ev in SelectFrom<UsrContainerEvent>
+                    .Where<UsrContainerEvent.containerID.IsEqual<@P.AsInt>>
+                    .View.Select(this, row.ContainerID))
+                {
+                    eventsCount++;
+                }
+                row.EventsCount = eventsCount;
+
+                // PO links count + total extended cost
+                int poLinksCount = 0;
+                decimal poLinksTotal = 0m;
+                foreach (PXResult<UsrContainerPOLink, POLine> pr in SelectFrom<UsrContainerPOLink>
+                    .LeftJoin<POLine>.On<POLine.orderType.IsEqual<UsrContainerPOLink.orderType>
+                        .And<POLine.orderNbr.IsEqual<UsrContainerPOLink.orderNbr>>
+                        .And<POLine.lineNbr.IsEqual<UsrContainerPOLink.lineNbr>>>
+                    .Where<UsrContainerPOLink.containerID.IsEqual<@P.AsInt>>
+                    .View.Select(this, row.ContainerID))
+                {
+                    poLinksCount++;
+                    var line = (POLine)pr;
+                    if (line?.ExtCost != null) poLinksTotal += line.ExtCost.Value;
+                }
+                row.POLinksCount = poLinksCount;
+                row.POLinksTotal = poLinksTotal;
+
+                // Costs count + total
+                int costsCount = 0;
+                decimal costsTotal = 0m;
+                foreach (UsrContainerCost c in SelectFrom<UsrContainerCost>
+                    .Where<UsrContainerCost.containerID.IsEqual<@P.AsInt>>
+                    .View.Select(this, row.ContainerID))
+                {
+                    costsCount++;
+                    if (c.Amount != null) costsTotal += c.Amount.Value;
+                }
+                row.CostsCount = costsCount;
+                row.CostsTotal = costsTotal;
+            }
+            else
+            {
+                row.EventsCount = 0;
+                row.POLinksCount = 0;
+                row.POLinksTotal = 0m;
+                row.CostsCount = 0;
+                row.CostsTotal = 0m;
+            }
+
+            // Build the timeline HTML for the selected row
+            row.TimelineHtml = ContainerTimelineBuilder.Build(new ContainerTimelineBuilder.TimelineData
+            {
+                Status = row.Status,
+                BookedDate = row.BookedDate,
+                DepartedDate = row.DepartedDate,
+                ArrivedPortDate = row.ArrivedPortDate,
+                CustomsReleasedDate = row.CustomsReleasedDate,
+                DeliveredDate = row.DeliveredDate,
+                ETD = row.ETD,
+                ETA = row.ETA,
+                ATA = row.ATA,
+                CustomsHoldDays = holdDays,
+            });
+
+            // Build the JSON payload that the client-side tab label updater consumes.
+            // Key-value pairs: tab index → label text. Tabs in SB501000:
+            //   0 = Events, 1 = PO Links, 2 = Costs
+            // (Phase E will add Docs and ETA History tabs.)
+            string docsBadge = "";
+            if (docsRequired > 0)
+            {
+                bool complete = docsReceived >= docsRequired;
+                docsBadge = string.Format(" ({0}/{1})", docsReceived, docsRequired);
+                if (!complete) docsBadge += " \u25CF"; // red dot suffix rendered by JS
+            }
+            row.TabLabelsJson = string.Format(
+                "{{\"0\":\"Events ({0})\",\"1\":\"POs ({1}) \u2022 ${2:N0}\",\"2\":\"Costs ({3}) \u2022 ${4:N0}\"}}",
+                eventsCount(row),
+                row.POLinksCount, row.POLinksTotal,
+                row.CostsCount, row.CostsTotal);
         }
+
+        // Helper for format-string nullable int — keeps the composite string clean
+        private static int eventsCount(UsrContainer row) => row.EventsCount ?? 0;
         #endregion
 
         #region Persist Override

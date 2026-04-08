@@ -81,13 +81,8 @@ namespace StudioB.Containers
         public string KPITilesHtml { get; set; }
         #endregion
 
-        // Rendered HTML for status timeline strip (current container)
-        #region TimelineHtml
-        public abstract class timelineHtml : BqlString.Field<timelineHtml> { }
-        [PXString(4000)]
-        [PXUIField(DisplayName = "Timeline", Enabled = false)]
-        public string TimelineHtml { get; set; }
-        #endregion
+        // (TimelineHtml moved to UsrContainer in Phase D — per-row field,
+        //  not filter-scoped. Leaving this comment as a breadcrumb.)
 
         // --- Legacy KPI fields (kept for backwards compat; replaced by tile fields above) ---
         #region KPIOpen

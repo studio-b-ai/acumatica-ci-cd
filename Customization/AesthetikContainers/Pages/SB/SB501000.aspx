@@ -72,27 +72,53 @@
             </px:PXGrid>
         </Template1>
         <Template2>
+            <%-- 2026-04-08: Phase D — Status timeline strip + grouped detail form.
+                 Timeline rendered via PXHtmlView bound to UsrContainer.TimelineHtml,
+                 populated in ContainerMaint.RowSelected<UsrContainer>. --%>
+            <px:PXFormView ID="frmTimeline" runat="server" DataSourceID="ds" DataMember="Container"
+                Width="100%" CaptionVisible="False" RenderStyle="Simple" SkinID="Transparent">
+                <Template>
+                    <px:PXHtmlView ID="htmlTimeline" runat="server" DataField="TimelineHtml"
+                        Height="90px" Width="100%" SkinID="Label" />
+                    <%-- Hidden field carrying tab label JSON for the JS updater --%>
+                    <px:PXTextEdit ID="edTabLabelsJson" runat="server" DataField="TabLabelsJson"
+                        Style="display:none;" />
+                </Template>
+            </px:PXFormView>
             <px:PXFormView ID="frmDetail" runat="server" DataSourceID="ds" DataMember="Container"
                 Width="100%" CaptionVisible="False">
                 <Template>
-                    <px:PXLayoutRule ID="PXLayoutRule3" runat="server" StartColumn="True" LabelsWidth="SM" ControlSize="M" />
+                    <%-- Group 1: Identity --%>
+                    <px:PXLayoutRule ID="lrIdentity" runat="server" StartColumn="True"
+                        StartGroup="True" GroupCaption="Identity" LabelsWidth="SM" ControlSize="M" />
                     <px:PXSelector ID="edContainerCD" runat="server" DataField="ContainerCD" Enabled="False" />
                     <px:PXDropDown ID="edStatus" runat="server" DataField="Status" CommitChanges="True" />
                     <px:PXTextEdit ID="edCarrierCode" runat="server" DataField="CarrierCode" />
                     <px:PXDropDown ID="edTransportMode" runat="server" DataField="TransportMode" />
                     <px:PXTextEdit ID="edVesselName" runat="server" DataField="VesselName" />
+                    <px:PXTextEdit ID="edSealNbr" runat="server" DataField="SealNbr" />
+
+                    <%-- Group 2: Booking & Docs --%>
+                    <px:PXLayoutRule ID="lrBooking" runat="server" StartColumn="True"
+                        StartGroup="True" GroupCaption="Booking &amp; Docs" LabelsWidth="SM" ControlSize="M" />
                     <px:PXTextEdit ID="edBookingRef" runat="server" DataField="BookingRef" />
                     <px:PXTextEdit ID="edBillOfLading" runat="server" DataField="BillOfLading" />
-                    <px:PXLayoutRule ID="PXLayoutRule4" runat="server" StartColumn="True" LabelsWidth="SM" ControlSize="M" />
+                    <px:PXTextEdit ID="edContainerType" runat="server" DataField="ContainerType" />
+                    <px:PXSelector ID="edFreightForwarderID" runat="server" DataField="FreightForwarderID" />
+                    <px:PXSelector ID="edBrokerID" runat="server" DataField="BrokerID" />
+                    <px:PXTextEdit ID="edLandedCostRefNbr" runat="server" DataField="LandedCostRefNbr" />
+                    <px:PXTextEdit ID="edLandedCostStatus" runat="server" DataField="LandedCostStatus" />
+
+                    <%-- Group 3: Timeline & Ports --%>
+                    <px:PXLayoutRule ID="lrTimeline" runat="server" StartColumn="True"
+                        StartGroup="True" GroupCaption="Timeline &amp; Ports" LabelsWidth="SM" ControlSize="M" />
                     <px:PXDateTimeEdit ID="edETD" runat="server" DataField="ETD" />
                     <px:PXDateTimeEdit ID="edETA" runat="server" DataField="ETA" CommitChanges="True" />
                     <px:PXDateTimeEdit ID="edATA" runat="server" DataField="ATA" />
+                    <px:PXDateTimeEdit ID="edLastFreeDay" runat="server" DataField="LastFreeDay" />
+                    <px:PXNumberEdit ID="edDemurrageDailyRate" runat="server" DataField="DemurrageDailyRate" />
                     <px:PXTextEdit ID="edPortOfLoading" runat="server" DataField="PortOfLoading" />
                     <px:PXTextEdit ID="edPortOfDischarge" runat="server" DataField="PortOfDischarge" />
-                    <px:PXTextEdit ID="edContainerType" runat="server" DataField="ContainerType" />
-                    <px:PXTextEdit ID="edSealNbr" runat="server" DataField="SealNbr" />
-                    <px:PXTextEdit ID="edLandedCostRefNbr" runat="server" DataField="LandedCostRefNbr" />
-                    <px:PXTextEdit ID="edLandedCostStatus" runat="server" DataField="LandedCostStatus" />
                 </Template>
             </px:PXFormView>
             <px:PXTab ID="tabDetail" runat="server" Width="100%" DataSourceID="ds">
