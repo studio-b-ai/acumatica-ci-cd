@@ -63,6 +63,25 @@ namespace StudioB.Containers
                     EnsureColumn(conn, "UsrContainer", "TransportMode", "nvarchar(10) NULL");
                     EnsureColumn(conn, "UsrContainer", "LandedCostRefNbr", "nvarchar(15) NULL");
                     EnsureColumn(conn, "UsrContainer", "LandedCostStatus", "nvarchar(20) NULL");
+                    // 2026-04-07: Phase A Command Center redesign — new milestone,
+                    // demurrage, forwarder/broker, CBP entry, and ISF fields.
+                    EnsureColumn(conn, "UsrContainer", "BookedDate",          "datetime NULL");
+                    EnsureColumn(conn, "UsrContainer", "DepartedDate",        "datetime NULL");
+                    EnsureColumn(conn, "UsrContainer", "ArrivedPortDate",     "datetime NULL");
+                    EnsureColumn(conn, "UsrContainer", "CustomsReleasedDate", "datetime NULL");
+                    EnsureColumn(conn, "UsrContainer", "DeliveredDate",       "datetime NULL");
+                    EnsureColumn(conn, "UsrContainer", "LastFreeDay",         "datetime NULL");
+                    EnsureColumn(conn, "UsrContainer", "DemurrageDailyRate",  "decimal(19,4) NULL");
+                    EnsureColumn(conn, "UsrContainer", "FreightForwarderID",  "int NULL");
+                    EnsureColumn(conn, "UsrContainer", "BrokerID",            "int NULL");
+                    EnsureColumn(conn, "UsrContainer", "EntryNumber",         "nvarchar(20) NULL");
+                    EnsureColumn(conn, "UsrContainer", "EntryType",           "nvarchar(2) NULL");
+                    EnsureColumn(conn, "UsrContainer", "EntryReleaseDate",    "datetime NULL");
+                    EnsureColumn(conn, "UsrContainer", "DutyPaid",            "decimal(19,4) NULL");
+                    EnsureColumn(conn, "UsrContainer", "MPFAmount",           "decimal(19,4) NULL");
+                    EnsureColumn(conn, "UsrContainer", "HMFAmount",           "decimal(19,4) NULL");
+                    EnsureColumn(conn, "UsrContainer", "ISFFiledDate",        "datetime NULL");
+                    EnsureColumn(conn, "UsrContainer", "ISFFilingNbr",        "nvarchar(20) NULL");
 
                     EnsureTable(conn, "UsrContainerEvent", @"
                         CompanyID int NOT NULL DEFAULT 0,
@@ -119,6 +138,65 @@ namespace StudioB.Containers
                         CONSTRAINT PK_UsrContainerCost PRIMARY KEY (CompanyID, CostID)
                     ");
 
+                    // 2026-04-07: Phase A Command Center — new child tables for ETA
+                    // history audit trail and per-container document checklist, plus a
+                    // new root table for customs broker master data.
+                    EnsureTable(conn, "UsrContainerETAHistory", @"
+                        CompanyID int NOT NULL DEFAULT 0,
+                        ETAHistoryID int IDENTITY(1,1) NOT NULL,
+                        ContainerID int NOT NULL,
+                        RecordedDate datetime NOT NULL DEFAULT GETUTCDATE(),
+                        PreviousETA datetime NULL,
+                        NewETA datetime NOT NULL,
+                        Source nvarchar(10) NOT NULL DEFAULT 'MANUAL',
+                        Note nvarchar(255) NULL,
+                        CreatedByID uniqueidentifier NULL,
+                        CreatedDateTime datetime NULL,
+                        tstamp timestamp NOT NULL,
+                        CONSTRAINT PK_UsrContainerETAHistory PRIMARY KEY (CompanyID, ETAHistoryID)
+                    ");
+
+                    EnsureTable(conn, "UsrContainerDocument", @"
+                        CompanyID int NOT NULL DEFAULT 0,
+                        DocumentID int IDENTITY(1,1) NOT NULL,
+                        ContainerID int NOT NULL,
+                        DocumentType nvarchar(10) NOT NULL DEFAULT 'OTHER',
+                        Required bit NOT NULL DEFAULT 1,
+                        Status nvarchar(10) NOT NULL DEFAULT 'MISSING',
+                        ReceivedDate datetime NULL,
+                        VerifiedBy uniqueidentifier NULL,
+                        Note nvarchar(255) NULL,
+                        NoteID uniqueidentifier NULL,
+                        CreatedByID uniqueidentifier NULL,
+                        CreatedDateTime datetime NULL,
+                        LastModifiedByID uniqueidentifier NULL,
+                        LastModifiedDateTime datetime NULL,
+                        tstamp timestamp NOT NULL,
+                        CONSTRAINT PK_UsrContainerDocument PRIMARY KEY (CompanyID, DocumentID)
+                    ");
+
+                    EnsureTable(conn, "UsrCustomsBroker", @"
+                        CompanyID int NOT NULL DEFAULT 0,
+                        BrokerID int IDENTITY(1,1) NOT NULL,
+                        BrokerCD nvarchar(15) NOT NULL DEFAULT '',
+                        Description nvarchar(100) NOT NULL DEFAULT '',
+                        ContactName nvarchar(100) NULL,
+                        Email nvarchar(100) NULL,
+                        Phone nvarchar(30) NULL,
+                        FilerCode nvarchar(3) NULL,
+                        Active bit NOT NULL DEFAULT 1,
+                        Notes nvarchar(255) NULL,
+                        NoteID uniqueidentifier NULL,
+                        CreatedByID uniqueidentifier NULL,
+                        CreatedByScreenID char(8) NULL,
+                        CreatedDateTime datetime NULL,
+                        LastModifiedByID uniqueidentifier NULL,
+                        LastModifiedByScreenID char(8) NULL,
+                        LastModifiedDateTime datetime NULL,
+                        tstamp timestamp NOT NULL,
+                        CONSTRAINT PK_UsrCustomsBroker PRIMARY KEY (CompanyID, BrokerID)
+                    ");
+
                     // Indexes
                     EnsureIndex(conn, "UsrContainer", "IX_UsrContainer_ContainerCD", "CompanyID, ContainerCD");
                     EnsureIndex(conn, "UsrContainer", "IX_UsrContainer_Status", "CompanyID, Status");
@@ -126,6 +204,9 @@ namespace StudioB.Containers
                     EnsureIndex(conn, "UsrContainerPOLink", "IX_UsrContainerPOLink_ContainerID", "CompanyID, ContainerID");
                     EnsureIndex(conn, "UsrContainerPOLink", "IX_UsrContainerPOLink_PO", "CompanyID, OrderType, OrderNbr");
                     EnsureIndex(conn, "UsrContainerCost", "IX_UsrContainerCost_ContainerID", "CompanyID, ContainerID");
+                    EnsureIndex(conn, "UsrContainerETAHistory", "IX_UsrContainerETAHistory_ContainerID", "CompanyID, ContainerID, RecordedDate DESC");
+                    EnsureIndex(conn, "UsrContainerDocument", "IX_UsrContainerDocument_ContainerID", "CompanyID, ContainerID");
+                    EnsureIndex(conn, "UsrCustomsBroker", "IX_UsrCustomsBroker_BrokerCD", "CompanyID, BrokerCD");
 
                     // SOShipment container fields
                     EnsureColumn(conn, "SOShipment", "UsrIncludeInContainer", "bit NULL DEFAULT 0");
@@ -229,6 +310,16 @@ namespace StudioB.Containers
                         tstamp timestamp NOT NULL,
                         CONSTRAINT PK_UsrContainerPrefs PRIMARY KEY (CompanyID, PrefsID)
                     ");
+                    // Backfill LC code mapping columns added in commit 00eba6d (2026-04-06).
+                    // The DAC has these fields but EnsureTable skipped creating them because
+                    // IF NOT EXISTS only creates the table, not new columns on existing tables.
+                    // Surfaced by sandbox UI test failure on 2026-04-08 when SB302030 and
+                    // SB501000 both redirected to ERROR with "Invalid column name 'LCCode*'".
+                    EnsureColumn(conn, "UsrContainerPrefs", "LCCodeShipping",  "nvarchar(15) NULL");
+                    EnsureColumn(conn, "UsrContainerPrefs", "LCCodeDuty",      "nvarchar(15) NULL");
+                    EnsureColumn(conn, "UsrContainerPrefs", "LCCodeTariff",    "nvarchar(15) NULL");
+                    EnsureColumn(conn, "UsrContainerPrefs", "LCCodeBrokerage", "nvarchar(15) NULL");
+                    EnsureColumn(conn, "UsrContainerPrefs", "LCCodeOther",     "nvarchar(15) NULL");
                     // ── IGCM → UsrContainer Data Migration ──────────────────
                     // Idempotent (NOT EXISTS guards). Safe to run on every publish.
                     // Migrates IIG container data to AesthetikContainers tables.
