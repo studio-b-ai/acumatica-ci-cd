@@ -643,8 +643,7 @@ namespace StudioB.Containers
         private void EnsureItemUomConsistency(SqlConnection conn, int companyId)
         {
             // ⚠ Flip to false for the LIVE deploy on the second CI run.
-            const bool DRY_RUN = true; // CANARY_MARKER_UOM_2026_04_09
-            WriteLog("CANARY_MARKER_UOM_2026_04_09");
+            const bool DRY_RUN = false;
 
             // Scope guard — only target Heritage Fabrics (2) and Heritage Test (3).
             if (companyId != 2 && companyId != 3)
