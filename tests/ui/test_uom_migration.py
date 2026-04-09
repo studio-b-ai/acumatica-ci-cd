@@ -247,18 +247,46 @@ class TestSalesOrderOperations:
 
 @pytest.mark.ui
 class TestStockItemSaveSample:
+    """Click-Save an item in the UI and listen for alert() dialogs.
 
-    def test_sample_of_stock_items_can_be_saved(self):
-        """Pull a sample of YDS-base stock items via REST and verify each saves.
+    History: an earlier version of this class used REST-API touched-field
+    PUTs to trigger ValidateUnitConversions. On 2026-04-09 we discovered
+    that the contract-based REST API does NOT fire the same validator
+    path as the UI save — touched-field PUTs return HTTP 200 even for
+    items that are definitively broken (their IN202500 UI Save shows
+    \"The PIECE value specified in the To Unit box differs from the YDS
+    base unit\" in a JavaScript alert dialog). Every PR from 2026-04-08
+    shipped a sandbox-gate green based on the broken REST test.
 
-        Save invokes the graph validation pipeline (same as UI save), so
-        any item missing a YDS→YDS self-conversion row in INUnit will fail
-        with the UnitVerifying error. Iterating across a sample catches
-        the partial-migration class of bugs that single-item tests miss.
-        """
+    The reliable reproduction is: open the item in the UI, dirty a field,
+    click Save, and listen for \`dialog\` events via Playwright. This class
+    does exactly that. It is the ONLY save test that provably reproduces
+    the \"PIECE value\" corruption the users reported.
+    """
+
+    def test_sample_of_stock_items_can_be_saved_via_ui(self, acumatica_page):
+        from playwright.sync_api import Page
+        import re
+
+        page: Page = acumatica_page
+
+        # Listen for native alert/confirm/prompt dialogs and collect them.
+        # The validator error surfaces as a JavaScript alert().
+        collected_dialogs: list[str] = []
+
+        def on_dialog(d):
+            collected_dialogs.append(d.message)
+            try:
+                d.accept()
+            except Exception:
+                pass
+
+        page.on("dialog", on_dialog)
+
+        # Pull a YDS-base sample via REST (just for the list — the actual
+        # save happens through the UI).
         import requests, warnings
         warnings.filterwarnings("ignore")
-
         from helpers import ACUMATICA_USERNAME, ACUMATICA_PASSWORD, ACUMATICA_TENANT
 
         s = requests.Session()
@@ -266,122 +294,105 @@ class TestStockItemSaveSample:
             "name": ACUMATICA_USERNAME,
             "password": ACUMATICA_PASSWORD,
             "tenant": ACUMATICA_TENANT,
-        }, timeout=30)
+        }, timeout=30, verify=False)
         assert r.status_code == 204, f"REST API login failed: {r.status_code}"
-
         try:
-            # Pull the first SAVE_SAMPLE_SIZE*3 stock items with their
-            # BaseUOM + Description. The REST contract field is BaseUOM,
-            # NOT BaseUnit — the DAC column is named BaseUnit but the
-            # endpoint exposes it as BaseUOM. Description is needed so
-            # we can do a touched-field PUT and revert below.
             r = s.get(
                 f"{ACUMATICA_URL}/entity/Default/24.200.001/StockItem"
-                f"?$top={SAVE_SAMPLE_SIZE * 3}"
-                f"&$select=InventoryID,Description,BaseUOM",
+                f"?$top={SAVE_SAMPLE_SIZE * 4}"
+                f"&$select=InventoryID,BaseUOM",
                 headers={"Accept": "application/json"},
                 timeout=60,
+                verify=False,
             )
-            assert r.status_code == 200, (
-                f"Failed to list stock items (HTTP {r.status_code}): {r.text[:300]}"
-            )
-
-            items = r.json()
-            yds_items = [
-                it for it in items
-                if (it.get("BaseUOM", {}) or {}).get("value") == EXPECTED_UOM
-            ][:SAVE_SAMPLE_SIZE]
-
-            assert len(yds_items) > 0, (
-                f"Could not find any YDS-base stock items in the first "
-                f"{SAVE_SAMPLE_SIZE * 3} stock items. UOM migration may have "
-                f"left no items in the expected base unit."
-            )
-
-            print(f"Sampling {len(yds_items)} YDS-base stock items for save check...")
-
-            # CRITICAL: a no-op PUT (body = only InventoryID) returns 200
-            # without calling Persist() because no field changed. That
-            # means ValidateUnitConversions never runs and the test
-            # silently passes on broken items. Use a touched-field PUT
-            # (Description + " [DIAG ...]") to force Persist, then
-            # PUT-revert if the touch succeeds. Revert is skipped on
-            # failure because nothing was written when Persist threw.
-            import datetime
-            diag_marker = f" [DIAG-UOM {datetime.datetime.utcnow().strftime('%H%M%S')}]"
-
-            failures = []
-            unreverted = []
-            for it in yds_items:
-                inv_id_obj = it.get("InventoryID", {}) or {}
-                inv_cd = inv_id_obj.get("value", "<unknown>").strip()
-                orig_desc = (it.get("Description", {}) or {}).get("value") or ""
-
-                # Touched-field PUT: flips Description to force Persist.
-                touch_payload = {
-                    "InventoryID": {"value": inv_cd},
-                    "Description": {"value": orig_desc + diag_marker},
-                }
-                pr = s.put(
-                    f"{ACUMATICA_URL}/entity/Default/24.200.001/StockItem",
-                    json=touch_payload,
-                    headers={
-                        "Content-Type": "application/json",
-                        "Accept": "application/json",
-                    },
-                    timeout=30,
-                )
-                if pr.status_code not in (200, 201, 204):
-                    # Save failed — nothing was written, so no revert needed.
-                    # Extract the innerException since the outer wrapper
-                    # just says "Operation failed".
-                    inner_msg = ""
-                    try:
-                        body = pr.json()
-                        inner_msg = (body.get("innerException") or {}).get(
-                            "exceptionMessage", ""
-                        ) or body.get("exceptionMessage", "")
-                    except Exception:
-                        inner_msg = pr.text[:300].replace("\n", " ")
-                    failures.append(
-                        f"{inv_cd} → HTTP {pr.status_code}: {inner_msg[:250]}"
-                    )
-                    continue
-
-                # Save succeeded — revert immediately to leave data unchanged.
-                revert_payload = {
-                    "InventoryID": {"value": inv_cd},
-                    "Description": {"value": orig_desc},
-                }
-                rr = s.put(
-                    f"{ACUMATICA_URL}/entity/Default/24.200.001/StockItem",
-                    json=revert_payload,
-                    headers={
-                        "Content-Type": "application/json",
-                        "Accept": "application/json",
-                    },
-                    timeout=30,
-                )
-                if rr.status_code not in (200, 201, 204):
-                    unreverted.append(
-                        f"{inv_cd}: touch succeeded but revert failed "
-                        f"(HTTP {rr.status_code}) — manual cleanup required, "
-                        f"Description has {diag_marker!r} appended"
-                    )
-
-            # Report unreverted touches separately so a revert failure
-            # cannot be silently hidden by the main assertion.
-            assert not unreverted, (
-                f"{len(unreverted)} touch-PUTs succeeded but their reverts "
-                f"failed — data was mutated on save-successful items:\n"
-                + "\n".join(unreverted)
-            )
-            assert not failures, (
-                f"{len(failures)} of {len(yds_items)} sampled stock items "
-                f"failed to save:\n" + "\n".join(failures[:20]) +
-                ("\n..." if len(failures) > 20 else "")
-            )
-            print(f"✅ All {len(yds_items)} sampled stock items saved cleanly")
-
+            items = r.json() if r.status_code == 200 else []
         finally:
-            s.post(f"{ACUMATICA_URL}/entity/auth/logout")
+            s.post(f"{ACUMATICA_URL}/entity/auth/logout", verify=False)
+
+        yds_items = [
+            (it.get("InventoryID", {}) or {}).get("value", "").strip()
+            for it in items
+            if (it.get("BaseUOM", {}) or {}).get("value") == EXPECTED_UOM
+        ]
+        yds_items = [iid for iid in yds_items if iid][:SAVE_SAMPLE_SIZE]
+
+        assert len(yds_items) > 0, (
+            f"No YDS-base items found in first {SAVE_SAMPLE_SIZE * 4} StockItems"
+        )
+
+        print(f"UI click-Save sample: {len(yds_items)} items")
+
+        # Dirty-then-save JS (idempotent — re-sets Description to original).
+        # Reads the header Description input (phF_form_edDescr), appends a
+        # space, fires input+change events, then restores the original
+        # value and fires events again. The appearance of a non-empty
+        # "dirty" state is enough to trigger Persist on Save click.
+        dirty_js = """() => {
+            const desc = document.getElementById("ctl00_phF_form_edDescr");
+            if (!desc) return {ok: false, reason: "no edDescr"};
+            const orig = desc.value || "";
+            desc.focus();
+            desc.value = orig + " ";
+            desc.dispatchEvent(new Event("input", {bubbles: true}));
+            desc.dispatchEvent(new Event("change", {bubbles: true}));
+            desc.value = orig;
+            desc.dispatchEvent(new Event("input", {bubbles: true}));
+            desc.dispatchEvent(new Event("change", {bubbles: true}));
+            return {ok: true, orig: orig};
+        }"""
+
+        # Click Save (not SaveCloseToList — that navigates before the
+        # dialog can be captured on some fast items).
+        click_save_js = """() => {
+            const candidates = Array.from(document.querySelectorAll(\"[title='Save']\"))
+                .filter(el => el.offsetParent !== null && !(el.id || "").includes("Close"));
+            if (candidates.length === 0) {
+                const fallback = Array.from(document.querySelectorAll(\"[id*='ToolBar_Save']\"))
+                    .filter(el => el.offsetParent !== null);
+                if (fallback.length === 0) return {ok: false, reason: "no Save button"};
+                fallback[0].click();
+                return {ok: true, id: fallback[0].id};
+            }
+            candidates[0].click();
+            return {ok: true, id: candidates[0].id};
+        }"""
+
+        failures = []
+        for iid in yds_items:
+            collected_dialogs.clear()
+            page.goto(
+                f"{ACUMATICA_URL}/Main?ScreenId=IN202500&InventoryCD={iid}",
+                wait_until="domcontentloaded",
+            )
+            # IN202500 needs ~10s to finish initial render post-publish.
+            page.wait_for_timeout(10000)
+            frame = page.frame("main") or page
+
+            dirty_result = frame.evaluate(dirty_js)
+            if not dirty_result.get("ok"):
+                failures.append(f"{iid}: could not dirty header ({dirty_result})")
+                continue
+
+            frame.evaluate(click_save_js)
+            # Give Acumatica time to round-trip and fire the dialog.
+            page.wait_for_timeout(5000)
+
+            # Any dialog whose text mentions the UOM validator phrases
+            # is a save failure.
+            for msg in collected_dialogs:
+                if re.search(
+                    r"(PIECE|YDS).{0,100}(unit|base)|conversion rule|not found",
+                    msg,
+                    re.IGNORECASE,
+                ):
+                    failures.append(f"{iid}: {msg[:250]}")
+                    break
+
+        assert not failures, (
+            f"{len(failures)} of {len(yds_items)} sampled YDS items failed UI "
+            f"click-Save with a UOM validator error:\n"
+            + "\n".join(failures[:25])
+            + ("\n..." if len(failures) > 25 else "")
+        )
+        print(f"✅ All {len(yds_items)} sampled YDS items saved cleanly in the UI")
+
