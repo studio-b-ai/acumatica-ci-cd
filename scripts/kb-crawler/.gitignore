@@ -1,0 +1,4 @@
+# Cached page content — derived state, ~50MB+ when fully populated
+pages/
+# Tree enumeration + logs — derived state
+state/
