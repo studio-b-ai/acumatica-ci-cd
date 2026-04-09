@@ -5,17 +5,88 @@
  * the appropriate function after creating HubSpot properties, pipelines, or
  * Acumatica custom fields.
  *
- * Requires: GH_PAT_DISPATCH env var (GitHub PAT with `repo` scope)
- * Target: studio-b-ai/heritage-wms → update-test-configs.yml workflow
+ * Auth: acuops-agent GitHub App (App ID 3316941, Installation ID 122409174).
+ * Requires env vars:
+ *   - ACUOPS_AGENT_APP_ID
+ *   - ACUOPS_AGENT_INSTALLATION_ID
+ *   - ACUOPS_AGENT_PRIVATE_KEY (RSA PEM)
+ *
+ * The acuops-agent identity replaces GH_PAT_DISPATCH (Kevin's PAT) so audit
+ * logs show acuops-agent[bot] instead of a human user. See plan doc:
+ * docs/plans/2026-04-08-acuops-agent-github-app-setup.md
+ *
+ * Target: studio-b-ai/ui-test-suite → update-test-configs.yml workflow
  */
+
+import { createSign } from 'node:crypto';
 
 const GITHUB_API = 'https://api.github.com';
 const TARGET_REPO = 'studio-b-ai/ui-test-suite';
 
+// Cached installation token (re-minted per process; tokens are valid ~1h)
+let cachedToken: { token: string; expiresAt: number } | null = null;
+
+/**
+ * Mint or return a cached acuops-agent installation token.
+ * Returns null if any required env var is missing.
+ */
+async function getAcuopsAgentToken(): Promise<string | null> {
+  // Return cached token if it's still valid (5-minute safety buffer)
+  if (cachedToken && cachedToken.expiresAt - 5 * 60 * 1000 > Date.now()) {
+    return cachedToken.token;
+  }
+
+  const appId = process.env.ACUOPS_AGENT_APP_ID;
+  const installationId = process.env.ACUOPS_AGENT_INSTALLATION_ID;
+  const privateKey = process.env.ACUOPS_AGENT_PRIVATE_KEY;
+
+  if (!appId || !installationId || !privateKey) {
+    return null;
+  }
+
+  // Build JWT (RS256, max lifetime per GitHub: 10 minutes)
+  const now = Math.floor(Date.now() / 1000);
+  const header = Buffer.from(JSON.stringify({ alg: 'RS256', typ: 'JWT' })).toString('base64url');
+  const payload = Buffer.from(
+    JSON.stringify({ iat: now - 60, exp: now + 9 * 60, iss: appId }),
+  ).toString('base64url');
+  const signingInput = `${header}.${payload}`;
+  const signer = createSign('RSA-SHA256');
+  signer.update(signingInput);
+  const signature = signer.sign(privateKey).toString('base64url');
+  const jwt = `${signingInput}.${signature}`;
+
+  // Exchange JWT for an installation access token
+  const tokenRes = await fetch(
+    `${GITHUB_API}/app/installations/${installationId}/access_tokens`,
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${jwt}`,
+        Accept: 'application/vnd.github+json',
+        'X-GitHub-Api-Version': '2022-11-28',
+      },
+    },
+  );
+
+  if (!tokenRes.ok) {
+    console.error(
+      `[dispatch-test-config] acuops-agent token mint failed: HTTP ${tokenRes.status} ${await tokenRes.text()}`,
+    );
+    return null;
+  }
+
+  const data = (await tokenRes.json()) as { token: string; expires_at: string };
+  cachedToken = { token: data.token, expiresAt: new Date(data.expires_at).getTime() };
+  return data.token;
+}
+
 async function dispatch(command: string, args: string): Promise<boolean> {
-  const token = process.env.GH_PAT_DISPATCH;
+  const token = await getAcuopsAgentToken();
   if (!token) {
-    console.warn('[dispatch-test-config] GH_PAT_DISPATCH not set — skipping test config dispatch');
+    console.warn(
+      '[dispatch-test-config] acuops-agent env vars not set (ACUOPS_AGENT_APP_ID / ACUOPS_AGENT_INSTALLATION_ID / ACUOPS_AGENT_PRIVATE_KEY) — skipping test config dispatch',
+    );
     return false;
   }
 

@@ -98,6 +98,18 @@ jobs:
           }
           claude --version
 
+      # Mint a per-run installation token from the acuops-agent GitHub App.
+      # Replaces GH_PAT_DISPATCH (Kevin's PAT) with a non-human identity:
+      # audit logs show acuops-agent[bot] instead of kbibelhausen.
+      # See docs/plans/2026-04-08-acuops-agent-github-app-setup.md.
+      - name: Mint acuops-agent installation token
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ vars.ACUOPS_AGENT_APP_ID }}
+          private-key: ${{ secrets.ACUOPS_AGENT_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+
       # Use the locally-installed Claude Code CLI on the VM (not the
       # claude-code-action GH Action wrapper). The Action is designed for
       # Linux runners and uses bash/find/chmod internally — fails on
@@ -110,7 +122,7 @@ jobs:
         shell: pwsh
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          GH_TOKEN: ${{ secrets.GH_PAT_DISPATCH }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
           ACUMATICA_PROD_URL: ${{ secrets.ACUMATICA_PROD_URL }}
           ACUMATICA_PROD_USERNAME: ${{ secrets.ACUMATICA_PROD_USERNAME }}
