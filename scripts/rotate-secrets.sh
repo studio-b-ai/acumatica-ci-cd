@@ -5,7 +5,8 @@
 # Usage: rotate-secrets.sh <category> [--dry-run] [--verify-only]
 #
 # Categories: acumatica | gateway | anthropic | hubspot | azure | slack |
-#             voyage | github | ci | npm | railway | all | verify
+#             voyage | github | ci | npm | railway | webhook-router |
+#             all | verify
 #
 # Reads scripts/secrets-map.env (relative to this script's directory).
 # Stop-on-first-failure: exits immediately if any push fails.
