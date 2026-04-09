@@ -25,6 +25,22 @@
                         <Prop Key="DataField" Value="UsrActArrivalDate" />
                     </PXDateTimeEdit>
                 </AddItem>
+                <AddItem>
+                    <PXDateTimeEdit TypeFullName="PX.Web.UI.PXDateTimeEdit">
+                        <Prop Key="Virtual:ApplyStylesheetSkin" />
+                        <Prop Key="ID" Value="edUsrAcknowledgedDate" />
+                        <Prop Key="DataField" Value="UsrAcknowledgedDate" />
+                        <Prop Key="CommitChanges" Value="True" />
+                    </PXDateTimeEdit>
+                </AddItem>
+                <AddItem>
+                    <PXDateTimeEdit TypeFullName="PX.Web.UI.PXDateTimeEdit">
+                        <Prop Key="Virtual:ApplyStylesheetSkin" />
+                        <Prop Key="ID" Value="edUsrFactoryReadyDate" />
+                        <Prop Key="DataField" Value="UsrFactoryReadyDate" />
+                        <Prop Key="CommitChanges" Value="True" />
+                    </PXDateTimeEdit>
+                </AddItem>
             </Children>
         </PXFormView>
         <PXGridLevel DataMember="Transactions" ParentId="phG_tab_Items#0_grid_Levels#0" TypeFullName="PX.Web.UI.PXGridLevel">
