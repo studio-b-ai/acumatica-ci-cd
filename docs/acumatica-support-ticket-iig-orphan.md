@@ -1,7 +1,7 @@
-# Email to VAR — IIG Orphan Metadata Cleanup Request
+# Email to VAR — Orphan Customization Metadata Cleanup Request
 
 **To:** [VAR contact]
-**Subject:** Heritage Fabrics — need Acumatica support to clean orphan publish metadata from IIG package removal
+**Subject:** Heritage Fabrics — need Acumatica support to clean orphan publish metadata from removed customization projects
 
 ---
 
@@ -19,12 +19,15 @@ No actionable detail. The publish does not complete. This happens whether I trig
 
 ## What I'm pretty sure is causing it
 
-We removed two IIG Container Management packages from the tenant back in March 2026:
+We removed three customization projects from the tenant in March and April 2026:
 
-- `IIGCONTAINERMGMT[24.204.0004][R19]1`
-- `IIGHFContainerMods[24.204.0004][R04]`
+- `IIGCONTAINERMGMT[24.204.0004][R19]1` (IIG ISV, removed March 2026)
+- `IIGHFContainerMods[24.204.0004][R04]` (IIG ISV, removed March 2026)
+- `AesthetikContainerGIs` (our own package, determined to be a duplicate of GIs already shipped inside `AesthetikContainers` and deleted on 2026-04-09)
 
 They're gone from the Customization Projects screen (SM204505), but something in the publish state still references them. When Acumatica tries to merge any new publish with "existing published packages," it runs into these ghost entries and crashes.
+
+The `AesthetikContainerGIs` entry is particularly useful for diagnosis — we can confirm it has been gone from our source repo and co-publish lists since 2026-04-09, the project content was never anything unique (every GI in it was a verbatim duplicate of GIs already shipping in `AesthetikContainers`), and yet the orphan row persists and still blocks `merge=true`. This rules out any theory that the orphan state is being recreated by our pipeline.
 
 ## Current workaround (and why it's now biting us)
 
@@ -74,8 +77,9 @@ Database-level cleanup of orphaned publish metadata referencing:
 
 - `IIGCONTAINERMGMT[24.204.0004][R19]1`
 - `IIGHFContainerMods[24.204.0004][R04]`
+- `AesthetikContainerGIs`
 
-I suspect the relevant tables are `CustomizationProject`, `CustomizationHistoryLog`, and possibly others in the publish/compile pipeline — but I'd rather Acumatica engineering do the cleanup properly than guess at the SQL.
+I suspect the relevant tables are `CustProject`, `CustomizationHistoryLog`, and possibly others in the publish/compile pipeline — but I'd rather Acumatica engineering do the cleanup properly than guess at the SQL.
 
 Once the cleanup is done, `publishBegin` with `isMergeWithExistingPackages: true` should work normally again, and I can drop the `--no-merge` workaround in our CI/CD.
 

@@ -963,7 +963,12 @@ jobs:
 
           # Sandbox uses only managed code — no ISV packages.
           # Read sandbox co-publish list from acuops.yaml (same as old test tenant list).
-          # --no-merge: sandbox may have orphaned ISV publish metadata.
+          # --no-merge: sandbox AND prod have orphaned CustProject rows for
+          # IIGCONTAINERMGMT[24.204.0004][R19]1, IIGHFContainerMods[24.204.0004][R04],
+          # and AesthetikContainerGIs. merge=true triggers "An error has occurred"
+          # on publishBegin. VAR support ticket pending at
+          # docs/acumatica-support-ticket-iig-orphan.md — drop --no-merge once
+          # Acumatica engineering cleans the three ghost rows.
           SANDBOX_ALSO=$(python3 -c "
           import yaml
           with open('acuops.yaml') as f:
