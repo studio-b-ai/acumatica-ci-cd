@@ -226,6 +226,15 @@ namespace StudioB.Containers
                     EnsureColumn(conn, "POReceiptLine", "UsrActualFreightAmt", "decimal(25,4) NULL");
                     EnsureColumn(conn, "POReceiptLine", "UsrBrokerageAmt", "decimal(25,4) NULL");
 
+                    // ── POOrder DRP Phase 0 lead-time tracking fields ──────────
+                    // UsrAcknowledgedDate / UsrFactoryReadyDate populated by
+                    // vendor acknowledgment email watcher (webhook-router)
+                    // and by Vendor Planning Hub manual entry. Consumed by
+                    // drp_lead_time_samples → vendor lead-time learning.
+                    // See docs/plans/2026-04-09-drp-implementation-design.md §4.2.
+                    EnsureColumn(conn, "POOrder", "UsrAcknowledgedDate", "datetime NULL");
+                    EnsureColumn(conn, "POOrder", "UsrFactoryReadyDate", "datetime NULL");
+
                     // ── Freight Forwarders Table ──────────────────────────────
                     EnsureTable(conn, "UsrFreightForwarder", @"
                         CompanyID int NOT NULL DEFAULT 0,

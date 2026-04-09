@@ -26,5 +26,17 @@ namespace StudioB.Containers
         [PXUIField(DisplayName = "Container / BOL Ref")]
         public string UsrContainerRef { get; set; }
         #endregion
+        #region UsrAcknowledgedDate
+        public abstract class usrAcknowledgedDate : BqlDateTime.Field<usrAcknowledgedDate> { }
+        [PXDBDate]
+        [PXUIField(DisplayName = "Vendor Acknowledged Date")]
+        public DateTime? UsrAcknowledgedDate { get; set; }
+        #endregion
+        #region UsrFactoryReadyDate
+        public abstract class usrFactoryReadyDate : BqlDateTime.Field<usrFactoryReadyDate> { }
+        [PXDBDate]
+        [PXUIField(DisplayName = "Factory Ready Date")]
+        public DateTime? UsrFactoryReadyDate { get; set; }
+        #endregion
     }
 }
