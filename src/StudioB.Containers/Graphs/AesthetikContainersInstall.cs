@@ -573,96 +573,61 @@ namespace StudioB.Containers
         }
 
         // ── EnsureItemUomConsistency ────────────────────────────────────────
-        // Third (and hopefully last) attempt at closing the Heritage Fabrics
-        // stock-item-save incident. PR #292 and PR #299 both used raw SQL
-        // INSERT INTO INUnit with a hardcoded CompanyMask = 1. Per KB entry
-        // "INUnit Self-Conversion Records — Why They Are Mandatory", raw SQL
-        // INSERT with a manually-constructed CompanyMask creates rows that
-        // exist in the database but are INVISIBLE to Acumatica's ORM (the
-        // ORM uses CompanyMask as a multi-tenant visibility bitmap). The
-        // validator (UnitsOfMeasure.ValidateUnitConversions) iterates only
-        // visible rows, so the "inserted" (YDS, YDS) rows were never found.
+        // Fifth attempt at closing the Heritage Fabrics stock-item-save incident.
         //
-        // Sandbox run after PR #299: 25 of 25 YDS items fail with
-        //   "The conversion rule of the YDS unit of measure to the YDS unit
-        //    of measure is not found for the {item} item."
-        // Prod after PR #299: 25 of 25 YDS items fail with
-        //   "The PIECE value specified in the To Unit box differs from the
-        //    YDS base unit specified for the {item} item."
+        // Prior attempts and why each failed:
+        //   PR #292: raw SQL INSERT with hardcoded CompanyMask=1. Rows end up
+        //            INVISIBLE to the Acumatica ORM per KB entry "INUnit
+        //            Self-Conversion Records — Why They Are Mandatory". No
+        //            user-visible change.
+        //   PR #299: same as #292 with a tweaked NOT EXISTS guard. Same result.
+        //   PR #301: raw SQL JOIN against (PIECE, PIECE) source row to copy
+        //            CompanyMask. Worked only for items that had a (PIECE, PIECE)
+        //            history. Sandbox items had no such row. No user-visible
+        //            change on sandbox-gate.
+        //   PR #302: raw SQL JOIN against InventoryItem.CompanyMask. Threw
+        //            "Invalid column name 'CompanyMask'" because InventoryItem
+        //            does not have a CompanyMask column in 24.208. Step 2
+        //            (PXDatabase.Insert) never ran because Step 1 killed the
+        //            whole method.
         //
-        // (The different error phrasing reflects different data shapes —
-        // sandbox has no INUnit rows for these items at all; prod has the
-        // leftover cross-conversion rows from pre-v3 days — but both errors
-        // mean the same underlying thing: the ORM cannot find a visible
-        // YDS→YDS self-conversion.)
+        // This PR drops the raw-SQL UPDATE attempt entirely and uses only
+        // PXDatabase.Insert<INUnit>() via the Acumatica ORM. The ORM handles
+        // CompanyMask automatically based on the current multi-tenant session
+        // context, producing ORM-visible rows without a hardcoded literal.
         //
-        // Fix: a two-step approach.
+        // Strategy:
+        //   For each YDS-base InventoryItem (enumerated via PXDatabase.SelectMulti):
+        //     - Check if a visible (YDS, YDS) self-conversion row already exists
+        //       via PXDatabase.SelectSingle<INUnit>. If yes, skip.
+        //     - Otherwise, call PXDatabase.Insert<INUnit>() with PXDataFieldAssign
+        //       objects for UnitType, ItemClassID, InventoryID, FromUnit='YDS',
+        //       ToUnit='YDS', UnitMultDiv='M', UnitRate=1.0,
+        //       PriceAdjustmentMultiplier=1.0. The ORM populates CompanyMask.
         //
-        //   Step 1 (raw SQL UPDATE) — Fix the CompanyMask on any existing
-        //     invisible (YDS, YDS) rows that PR #292 / PR #299 previously
-        //     inserted with CompanyMask=1. Copy the correct CompanyMask
-        //     from InventoryItem.CompanyMask for the same item. UPDATE is
-        //     not banned by the validate-project.py guard (only raw DELETE
-        //     and raw INSERT are banned). UPDATE in place does not violate
-        //     the unique key on INUnit because no primary-key column
-        //     changes. This makes previously-invisible rows visible to the
-        //     ORM.
+        // Known limitation:
+        //   Items that already have an ORM-INVISIBLE (YDS, YDS) row from PR #292
+        //   or PR #299 will collide on the unique key at the database level when
+        //   this PR's Insert runs. We catch the exception per-item, log the
+        //   InventoryID, and continue. Those items will need a follow-up pass
+        //   (likely via PXDatabase.Update<INUnit>() or a raw SQL UPDATE sourced
+        //   from an INUnit self-JOIN). This PR is scoped to the simpler "no
+        //   preexisting row" case first, so we can verify whether ORM Insert
+        //   alone resolves any items before escalating further.
         //
-        //   Step 2 (PXDatabase.Insert via ORM) — For YDS-base items that
-        //     still do not have a (YDS, YDS) row after Step 1, insert one
-        //     using PXDatabase.Insert<INUnit>() with PXDataFieldAssign
-        //     objects. The Acumatica ORM handles CompanyMask automatically,
-        //     producing ORM-visible rows. This is the KB-endorsed pattern
-        //     ("Use PXDatabase.Insert<INUnit>() instead") and matches the
-        //     2026-03-28 emergency restore plugin UomUnitConversionRestore.cs
-        //     that successfully fixed a similar P0 outage.
-        //
+        // Per-item try/catch ensures one bad item does not abort the loop.
         // Never DELETE INUnit rows — see validate-project.py guard + the
         // 2026-03-29 P0 outage root cause.
         private void EnsureItemUomConsistency(SqlConnection conn, int companyId)
         {
-            // ── Step 1 — UPDATE existing invisible (YDS, YDS) rows ──
-            // Fix the CompanyMask on any (YDS, YDS) rows already in the
-            // database whose CompanyMask differs from InventoryItem.CompanyMask
-            // (the authoritative multi-tenant visibility value for the item).
-            // These are the rows PR #292 / PR #299 inserted with the hardcoded
-            // CompanyMask=1; updating in place makes them ORM-visible without
-            // colliding with the unique key on INUnit.
-            string updateSql = @"
-                UPDATE dst
-                SET dst.CompanyMask = i.CompanyMask,
-                    dst.LastModifiedDateTime = GETUTCDATE()
-                FROM INUnit dst
-                INNER JOIN InventoryItem i
-                    ON i.CompanyID = dst.CompanyID
-                   AND i.InventoryID = dst.InventoryID
-                WHERE dst.CompanyID = @cid
-                  AND dst.UnitType = 1
-                  AND dst.ItemClassID = 0
-                  AND dst.FromUnit = 'YDS'
-                  AND dst.ToUnit = 'YDS'
-                  AND dst.CompanyMask != i.CompanyMask
-                  AND i.BaseUnit = 'YDS';";
-            int updatedRows = 0;
-            using (var cmd = new SqlCommand(updateSql, conn))
-            {
-                cmd.Parameters.AddWithValue("@cid", companyId);
-                updatedRows = cmd.ExecuteNonQuery();
-            }
-
-            // ── Step 2 — INSERT missing (YDS, YDS) rows via ORM ──
-            // For each YDS-base InventoryItem that still does not have a
-            // (YDS, YDS) self-conversion, insert one via PXDatabase.Insert<INUnit>().
-            // Using the ORM guarantees the new row has the correct CompanyMask
-            // and is visible to subsequent PXSelect / validator queries.
-            //
-            // PXDatabase.SelectMulti is the idiomatic pattern for bulk reads
-            // inside a CustomizationPlugin — the plugin does not have a
-            // PXGraph context so standard BQL PXSelect is not available.
-            // UomUnitConversionRestore.cs uses this exact pattern.
             int insertedRows = 0;
-            int skippedUnknown = 0;
+            int skippedExisting = 0;
+            int collisionErrors = 0;
+            int otherErrors = 0;
 
+            // Enumerate all InventoryItems via the ORM. PXDatabase.SelectMulti
+            // returns IEnumerable<PXDataRecord> in 24.208 and respects the current
+            // multi-tenant session context (items for the current company only).
             IEnumerable<PXDataRecord> items = PXDatabase.SelectMulti<InventoryItem>(
                 new PXDataField<InventoryItem.inventoryID>(),
                 new PXDataField<InventoryItem.baseUnit>()
@@ -675,9 +640,11 @@ namespace StudioB.Containers
 
                 if (inventoryID == null || baseUnit != "YDS") continue;
 
-                // Check if (YDS, YDS) self-conversion already exists for this item
-                // via the ORM. If SelectSingle returns a record, the row is already
-                // visible to the ORM (either from Step 1 UPDATE or from prior state).
+                // Existence check via the ORM. If the row is visible, PXDatabase
+                // skips the insert. If the row is INVISIBLE (from PR #292/#299),
+                // this returns null and we attempt Insert — which will collide
+                // on the unique key at the database level. We catch the collision
+                // below and continue.
                 PXDataRecord existing = PXDatabase.SelectSingle<INUnit>(
                     new PXDataField<INUnit.inventoryID>(),
                     new PXDataFieldValue<INUnit.unitType>((short)INUnitType.InventoryItem),
@@ -686,7 +653,11 @@ namespace StudioB.Containers
                     new PXDataFieldValue<INUnit.toUnit>("YDS")
                 );
 
-                if (existing != null) continue;
+                if (existing != null)
+                {
+                    skippedExisting++;
+                    continue;
+                }
 
                 try
                 {
@@ -704,30 +675,38 @@ namespace StudioB.Containers
                 }
                 catch (Exception ex)
                 {
+                    // Classify the error. A duplicate-key violation is the
+                    // expected failure mode for items with a preexisting
+                    // INVISIBLE (YDS, YDS) row from PR #292/#299.
+                    string msg = ex.Message ?? "";
+                    bool isDuplicate =
+                        msg.IndexOf("duplicate", StringComparison.OrdinalIgnoreCase) >= 0
+                        || msg.IndexOf("unique", StringComparison.OrdinalIgnoreCase) >= 0
+                        || msg.IndexOf("2601") >= 0
+                        || msg.IndexOf("2627") >= 0;
+                    if (isDuplicate)
+                    {
+                        collisionErrors++;
+                    }
+                    else
+                    {
+                        otherErrors++;
+                    }
                     WriteLog(string.Format(
                         "[AesthetikContainers] EnsureItemUomConsistency CID={0} " +
                         "InventoryID={1}: PXDatabase.Insert<INUnit> failed — {2}: {3}",
-                        companyId, inventoryID, ex.GetType().Name, ex.Message));
-                    skippedUnknown++;
+                        companyId, inventoryID, ex.GetType().Name,
+                        (msg.Length > 200 ? msg.Substring(0, 200) : msg)));
                 }
             }
 
-            if (updatedRows > 0 || insertedRows > 0 || skippedUnknown > 0)
-            {
-                WriteLog(string.Format(
-                    "[AesthetikContainers] EnsureItemUomConsistency CID={0}: " +
-                    "updated {1} invisible YDS->YDS rows (CompanyMask fix via raw SQL UPDATE), " +
-                    "inserted {2} new YDS->YDS rows via PXDatabase.Insert (ORM-visible path), " +
-                    "skipped {3} items due to errors",
-                    companyId, updatedRows, insertedRows, skippedUnknown));
-            }
-            else
-            {
-                WriteLog(string.Format(
-                    "[AesthetikContainers] EnsureItemUomConsistency CID={0}: " +
-                    "no changes — all YDS-base items already have visible YDS->YDS self-conv rows",
-                    companyId));
-            }
+            WriteLog(string.Format(
+                "[AesthetikContainers] EnsureItemUomConsistency CID={0}: " +
+                "inserted {1} new YDS->YDS rows via PXDatabase.Insert, " +
+                "skipped {2} items with existing visible rows, " +
+                "{3} unique-key collisions (preexisting invisible rows from prior PRs), " +
+                "{4} other errors",
+                companyId, insertedRows, skippedExisting, collisionErrors, otherErrors));
         }
 
         private void SeedContainerTypes(SqlConnection conn, int companyId)
