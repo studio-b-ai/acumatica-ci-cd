@@ -43,7 +43,7 @@ namespace StudioB.Containers
 
         #region Amount
         public abstract class amount : BqlDecimal.Field<amount> { }
-        [PXDBDecimal(2)]
+        [PXDBDecimal(4)]
         [PXDefault(TypeCode.Decimal, "0.00")]
         [PXUIField(DisplayName = "Amount")]
         public decimal? Amount { get; set; }

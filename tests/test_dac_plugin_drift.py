@@ -1,0 +1,781 @@
+"""
+DAC/plugin schema drift detector.
+
+Parses src/StudioB.Containers/DACs/Usr*.cs for [PXDB*] attributes and
+src/StudioB.Containers/Graphs/AesthetikContainersInstall.cs for EnsureTable
+and EnsureColumn calls, then asserts every DAC field has matching plugin
+coverage with exact type match.
+
+Design: docs/plans/2026-04-08-dac-plugin-drift-design.md
+
+NOTE: The original design included a second C# xUnit layer using reflection
+on the compiled StudioB.Containers.dll. It was dropped — every Usr*.cs DAC
+in this project inherits PXBqlTable directly with no custom base classes or
+macro-expanded attributes, so reflection would see the same fields regex
+sees. If a future DAC introduces inheritance or #define expansion, revisit
+reflection-based coverage. The sandbox gate in AcuOps Deploy remains an
+independent second line of defense against publish-time schema errors.
+"""
+
+from __future__ import annotations
+
+import re
+import pytest
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Optional
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+DAC_DIR = REPO_ROOT / "src" / "StudioB.Containers" / "DACs"
+PLUGIN_FILE = REPO_ROOT / "src" / "StudioB.Containers" / "Graphs" / "AesthetikContainersInstall.cs"
+
+# DAC files that are filter/transient and don't need plugin coverage
+_EXCLUDED_DAC_FILES = {
+    "ContainerFilter.cs",
+    "AddPOLineFilter.cs",
+}
+
+
+@dataclass(frozen=True)
+class DacField:
+    """A DAC field with a [PXDB*] attribute that requires plugin coverage."""
+    table: str                # SQL table name (from [PXCacheName] or class name)
+    file_path: str            # Source file path
+    line_number: int          # Line where the field's region starts
+    field_name: str           # SQL column name (e.g., "LCCodeShipping")
+    attribute: str            # e.g., "PXDBString"
+    args: str                 # e.g., "15, IsUnicode = true"
+    is_key: bool
+    has_default: bool
+    default_value: Optional[str]
+    expected_ddl: str         # computed SQL type (e.g., "nvarchar(15) NULL")
+
+
+@dataclass(frozen=True)
+class PluginColumn:
+    """A column known to the install plugin via EnsureTable or EnsureColumn."""
+    table: str
+    column: str
+    ddl: str                  # normalized type fragment
+    source: str               # "EnsureColumn" or "EnsureTable"
+
+
+@dataclass(frozen=True)
+class DriftEntry:
+    dac_field: DacField
+    plugin_column: Optional[PluginColumn]
+    reason: str               # "missing" | "type_mismatch"
+    suggested_fix: str        # ready-to-paste EnsureColumn line
+
+
+def _normalize_ddl(ddl: str) -> str:
+    """Canonicalize DDL for drift comparison.
+
+    - Lowercase + collapse whitespace
+    - Tighten spaces around punctuation
+    - Strip DEFAULT clauses (everything from 'default' keyword to end of string)
+    - Normalize decimal(N,M) to decimal(*,M) — comparison is scale-only because
+      [PXDBDecimal(N)] in Acumatica DACs specifies scale, not total precision.
+    """
+    s = re.sub(r'\s+', ' ', ddl.strip().lower())
+    s = re.sub(r'\s*([(),])\s*', r'\1', s)
+    # Strip DEFAULT clause (comes after NULL/NOT NULL, runs to end of string)
+    s = re.sub(r'\s+default\s+.+$', '', s)
+    # Normalize decimal precision: decimal(19,4) → decimal(*,4)
+    s = re.sub(r'decimal\(\d+,(\d+)\)', r'decimal(*,\1)', s)
+    return s
+
+
+def find_drift(dac_fields: list[DacField],
+               plugin_coverage: dict[str, dict[str, PluginColumn]]) -> list[DriftEntry]:
+    """Compare DAC fields against plugin coverage. Returns drift entries."""
+    drift: list[DriftEntry] = []
+    for field in dac_fields:
+        table_cols = plugin_coverage.get(field.table, {})
+        plugin_col = table_cols.get(field.field_name)
+
+        if plugin_col is None:
+            drift.append(DriftEntry(
+                dac_field=field,
+                plugin_column=None,
+                reason="missing",
+                suggested_fix=f'EnsureColumn(conn, "{field.table}", "{field.field_name}", "{field.expected_ddl}");',
+            ))
+            continue
+
+        if _normalize_ddl(plugin_col.ddl) != _normalize_ddl(field.expected_ddl):
+            drift.append(DriftEntry(
+                dac_field=field,
+                plugin_column=plugin_col,
+                reason="type_mismatch",
+                suggested_fix=f'EnsureColumn(conn, "{field.table}", "{field.field_name}", "{field.expected_ddl}");',
+            ))
+
+    return drift
+
+
+def format_remediation(drift_entries: list[DriftEntry]) -> str:
+    """Format drift entries as a copy-pasteable auto-remediation block."""
+    if not drift_entries:
+        return "No drift detected."
+
+    # Group by table
+    by_table: dict[str, list[DriftEntry]] = {}
+    for entry in drift_entries:
+        by_table.setdefault(entry.dac_field.table, []).append(entry)
+
+    out: list[str] = []
+    out.append("")
+    out.append("DAC drift detected in StudioB.Containers:")
+    out.append("")
+
+    for table, entries in by_table.items():
+        missing = [e for e in entries if e.reason == "missing"]
+        mismatched = [e for e in entries if e.reason == "type_mismatch"]
+        file_path = entries[0].dac_field.file_path
+
+        out.append(f"Table: {table} (DAC: {file_path})")
+
+        if missing:
+            out.append(f"  Missing plugin coverage for {len(missing)} field(s).")
+            out.append("  Paste the following into AesthetikContainersInstall.cs:")
+            out.append("")
+            # Compute column width for alignment
+            max_field_len = max(len(e.dac_field.field_name) for e in missing)
+            for e in missing:
+                padded_name = f'"{e.dac_field.field_name}",'.ljust(max_field_len + 3)
+                out.append(
+                    f'      EnsureColumn(conn, "{table}", {padded_name} '
+                    f'"{e.dac_field.expected_ddl}");'
+                )
+            out.append("")
+
+        if mismatched:
+            out.append(f"  Type mismatch on {len(mismatched)} field(s):")
+            for e in mismatched:
+                out.append(
+                    f"      {e.dac_field.field_name}: "
+                    f"DAC expects '{e.dac_field.expected_ddl}' but plugin has '{e.plugin_column.ddl}'"
+                )
+            out.append("  Update the existing EnsureColumn/EnsureTable DDL to match the DAC.")
+            out.append("")
+
+    return "\n".join(out)
+
+
+# ─── DAC file parser ─────────────────────────────────────────────────────
+
+# Attribute names we care about. Others (PXDefault, PXUIField, etc.) are handled as modifiers.
+_DB_BOUND_ATTRIBUTES = {
+    "PXDBString", "PXDBInt", "PXDBBool", "PXDBDecimal",
+    "PXDBDate", "PXDBGuid", "PXDBIdentity", "PXDBText",
+    "PXRSACryptString",
+}
+
+# Attributes that indicate audit fields — always excluded from drift check.
+_AUDIT_ATTRIBUTES = {
+    "PXDBCreatedByID", "PXDBCreatedByScreenID", "PXDBCreatedDateTime",
+    "PXDBLastModifiedByID", "PXDBLastModifiedByScreenID", "PXDBLastModifiedDateTime",
+    "PXDBTimestamp", "PXNote",
+}
+
+_CACHE_NAME_RE = re.compile(r'\[PXCacheName\s*\(\s*"([^"]+)"\s*\)\]')
+_CLASS_RE = re.compile(r'public\s+class\s+(\w+)\s*:\s*PXBqlTable')
+_REGION_RE = re.compile(r'#region\s+(\w+)\s*$', re.MULTILINE)
+
+# One region's content: everything from #region Name to #endregion
+# Captures the property name via `public ... PropName { get; set; }`
+_PROP_RE = re.compile(r'public\s+[^\s]+\??\s+(\w+)\s*\{\s*get;\s*set;\s*\}')
+
+# Attribute parser: captures attribute name + args inside []
+_ATTR_RE = re.compile(r'\[(\w+)(?:\(([^\]]*)\))?\]')
+
+
+def _find_regions(source: str) -> list[tuple[str, str, int]]:
+    """Return list of (region_name, region_body, line_number) tuples."""
+    regions = []
+    lines = source.split("\n")
+    i = 0
+    while i < len(lines):
+        m = _REGION_RE.search(lines[i])
+        if m:
+            name = m.group(1)
+            start_line = i + 1
+            body_lines = []
+            i += 1
+            while i < len(lines) and "#endregion" not in lines[i]:
+                body_lines.append(lines[i])
+                i += 1
+            regions.append((name, "\n".join(body_lines), start_line))
+        i += 1
+    return regions
+
+
+def _compute_expected_ddl(attribute: str,
+                          args: str,
+                          has_default: bool,
+                          default_value: Optional[str],
+                          is_key: bool,
+                          has_pxdb_default: bool = False) -> str:
+    """Canonical DAC attribute → SQL type fragment mapping.
+
+    Returns the SQL type + nullability only. DEFAULT clauses are intentionally
+    omitted — the drift detector treats DEFAULT as a runtime/Acumatica concern
+    and strips them from comparison. Decimal precision is emitted as '*'
+    because [PXDBDecimal(N)] specifies only scale; plugin authors may choose
+    any precision that accommodates the data range.
+
+    Examples:
+      [PXDBString(15, IsUnicode = true)]       -> "nvarchar(15) NULL"
+      [PXDBString(15, IsKey = true, ...)]      -> "nvarchar(15) NOT NULL"
+      [PXDBDecimal(2)]                         -> "decimal(*,2) NULL"
+      [PXDBInt] + [PXDBDefault(typeof(X))]     -> "int NOT NULL"
+      [PXDBBool]                               -> "bit NOT NULL"
+      [PXDBIdentity]                           -> "int IDENTITY(1,1) NOT NULL"
+    """
+    # Parse the arg string (e.g. "15, IsUnicode = true, IsFixed = true, IsKey = true")
+    size = None
+    is_unicode = False
+    is_fixed = False
+    if args:
+        first = args.split(",")[0].strip()
+        if first.isdigit():
+            size = int(first)
+        if "IsUnicode = true" in args:
+            is_unicode = True
+        if "IsFixed = true" in args:
+            is_fixed = True
+        if "IsKey = true" in args:
+            is_key = True
+
+    # Compute SQL type
+    if attribute == "PXDBString":
+        char_type = "nchar" if is_fixed else ("nvarchar" if is_unicode else "varchar")
+        sql_type = f"{char_type}({size})" if size else char_type
+    elif attribute == "PXDBText":
+        sql_type = "nvarchar(MAX)"
+    elif attribute == "PXDBInt":
+        sql_type = "int"
+    elif attribute == "PXDBIdentity":
+        return "int IDENTITY(1,1) NOT NULL"
+    elif attribute == "PXDBBool":
+        sql_type = "bit"
+    elif attribute == "PXDBDecimal":
+        # [PXDBDecimal(N)] specifies scale only. Precision is Acumatica's
+        # runtime default (typically 28); plugin authors may use any
+        # precision that fits the data. Compare on scale only via '*'.
+        scale = int(args.strip()) if args and args.strip().isdigit() else 2
+        sql_type = f"decimal(*,{scale})"
+    elif attribute == "PXDBDate":
+        sql_type = "datetime"
+    elif attribute == "PXDBGuid":
+        sql_type = "uniqueidentifier"
+    elif attribute == "PXRSACryptString":
+        sql_type = f"nvarchar({size})" if size else "nvarchar"
+    else:
+        raise ValueError(f"unrecognized DAC attribute: {attribute}")
+
+    # Nullability. Any of these imply NOT NULL:
+    #   - IsKey=true on the attribute
+    #   - [PXDefault] (presence of the attribute, with or without args)
+    #   - [PXDBDefault(typeof(X))] for parent-ID propagation
+    is_not_null = is_key or has_default or has_pxdb_default
+    return f"{sql_type} {'NOT NULL' if is_not_null else 'NULL'}"
+
+
+def parse_dac_file(source: str, file_path: str) -> list[DacField]:
+    """Extract DAC fields with [PXDB*] attributes that need plugin coverage."""
+    # Table name: prefer [PXCacheName("X")], fall back to class name stripped of Usr prefix
+    cache_match = _CACHE_NAME_RE.search(source)
+    class_match = _CLASS_RE.search(source)
+    if class_match is None:
+        return []
+    table_name = class_match.group(1)  # e.g., "UsrContainerPrefs"
+
+    fields: list[DacField] = []
+    for region_name, region_body, line_num in _find_regions(source):
+        # Find attributes in this region
+        attrs = _ATTR_RE.findall(region_body)
+        if not attrs:
+            continue
+
+        # Skip if region is an audit/boilerplate field
+        attr_names = {a[0] for a in attrs}
+        if attr_names & _AUDIT_ATTRIBUTES:
+            continue
+
+        # Find the PXDB* attribute (there should be exactly one)
+        pxdb_attr = None
+        pxdb_args = ""
+        has_default = False
+        default_value = None
+        has_pxdb_default = False
+        for attr_name, attr_args in attrs:
+            if attr_name in _DB_BOUND_ATTRIBUTES:
+                pxdb_attr = attr_name
+                pxdb_args = attr_args
+            elif attr_name == "PXDefault":
+                has_default = True
+                # Extract the first positional arg as default value
+                if attr_args:
+                    first_arg = attr_args.split(",")[0].strip()
+                    default_value = first_arg
+            elif attr_name == "PXDBDefault":
+                # [PXDBDefault(typeof(Parent.id))] is Acumatica's parent-ID
+                # propagation — implies NOT NULL at runtime.
+                has_pxdb_default = True
+
+        if pxdb_attr is None:
+            # Unbound field — skip
+            continue
+
+        # Get the C# property name (region_name is the capitalized name matching the property)
+        # Verify via _PROP_RE
+        prop_match = _PROP_RE.search(region_body)
+        if prop_match is None:
+            continue
+        prop_name = prop_match.group(1)
+
+        # SQL column name = property name (Acumatica convention)
+        field_name = prop_name
+
+        is_key = "IsKey = true" in pxdb_args
+
+        expected_ddl = _compute_expected_ddl(
+            pxdb_attr, pxdb_args, has_default, default_value, is_key,
+            has_pxdb_default=has_pxdb_default,
+        )
+
+        fields.append(DacField(
+            table=table_name,
+            file_path=file_path,
+            line_number=line_num,
+            field_name=field_name,
+            attribute=pxdb_attr,
+            args=pxdb_args,
+            is_key=is_key,
+            has_default=has_default,
+            default_value=default_value,
+            expected_ddl=expected_ddl,
+        ))
+    return fields
+
+
+# ─── Plugin file parser ──────────────────────────────────────────────────
+
+# EnsureColumn(conn, "TableName", "ColumnName", "type DDL");
+_ENSURE_COLUMN_RE = re.compile(
+    r'EnsureColumn\s*\(\s*conn\s*,\s*'
+    r'"(\w+)"\s*,\s*'           # table
+    r'"(\w+)"\s*,\s*'           # column
+    r'"([^"]+)"\s*\)\s*;',      # type DDL
+    re.MULTILINE,
+)
+
+# EnsureTable(conn, "TableName", @"...column DDL...");
+_ENSURE_TABLE_RE = re.compile(
+    r'EnsureTable\s*\(\s*conn\s*,\s*'
+    r'"(\w+)"\s*,\s*'           # table
+    r'@"([^"]*)"\s*\)\s*;',     # DDL body (verbatim string)
+    re.DOTALL,
+)
+
+
+def _split_top_level_commas(body: str) -> list[str]:
+    """Split a DDL body on commas that are not inside parentheses."""
+    parts: list[str] = []
+    depth = 0
+    current: list[str] = []
+    for ch in body:
+        if ch == "(":
+            depth += 1
+            current.append(ch)
+        elif ch == ")":
+            depth -= 1
+            current.append(ch)
+        elif ch == "," and depth == 0:
+            parts.append("".join(current))
+            current = []
+        else:
+            current.append(ch)
+    if current:
+        parts.append("".join(current))
+    return parts
+
+
+def _parse_ensure_table_body(body: str) -> dict[str, str]:
+    """Parse the DDL body of an EnsureTable call into {column: ddl_fragment}."""
+    columns: dict[str, str] = {}
+    for raw_line in _split_top_level_commas(body):
+        line = raw_line.strip()
+        if not line or line.startswith("CONSTRAINT"):
+            continue
+        # Split on first whitespace: "ColumnName type..."
+        parts = line.split(None, 1)
+        if len(parts) != 2:
+            continue
+        col_name, col_ddl = parts
+        if col_name == "CompanyID":
+            continue  # Boilerplate
+        columns[col_name] = col_ddl.strip()
+    return columns
+
+
+def parse_plugin_file(source: str) -> dict[str, dict[str, PluginColumn]]:
+    """Extract EnsureTable + EnsureColumn coverage from install plugin source."""
+    coverage: dict[str, dict[str, PluginColumn]] = {}
+
+    # EnsureTable blocks
+    for match in _ENSURE_TABLE_RE.finditer(source):
+        table_name = match.group(1)
+        ddl_body = match.group(2)
+        cols = _parse_ensure_table_body(ddl_body)
+        coverage.setdefault(table_name, {})
+        for col_name, col_ddl in cols.items():
+            coverage[table_name][col_name] = PluginColumn(
+                table=table_name,
+                column=col_name,
+                ddl=col_ddl,
+                source="EnsureTable",
+            )
+
+    # EnsureColumn calls
+    for match in _ENSURE_COLUMN_RE.finditer(source):
+        table_name = match.group(1)
+        col_name = match.group(2)
+        col_ddl = match.group(3).strip()
+        coverage.setdefault(table_name, {})
+        coverage[table_name][col_name] = PluginColumn(
+            table=table_name,
+            column=col_name,
+            ddl=col_ddl,
+            source="EnsureColumn",
+        )
+
+    return coverage
+
+
+# ─── Meta-tests ──────────────────────────────────────────────────────────
+
+def test_detector_catches_missing_column():
+    """DAC field exists but plugin has no EnsureColumn/EnsureTable coverage."""
+    dac_field = DacField(
+        table="UsrTestTable",
+        file_path="fake.cs",
+        line_number=10,
+        field_name="TestField",
+        attribute="PXDBString",
+        args="20, IsUnicode = true",
+        is_key=False,
+        has_default=False,
+        default_value=None,
+        expected_ddl="nvarchar(20) NULL",
+    )
+    plugin_coverage: dict[str, dict[str, PluginColumn]] = {}
+    drift = find_drift([dac_field], plugin_coverage)
+    assert len(drift) == 1
+    assert drift[0].reason == "missing"
+    assert drift[0].dac_field.field_name == "TestField"
+    assert 'EnsureColumn(conn, "UsrTestTable", "TestField", "nvarchar(20) NULL");' in drift[0].suggested_fix
+
+
+def test_parse_dac_file_extracts_pxdb_fields():
+    """parse_dac_file pulls out fields decorated with [PXDB*]."""
+    source = """
+using PX.Data;
+namespace StudioB.Containers {
+    [PXCacheName("Test")]
+    public class UsrTest : PXBqlTable, IBqlTable {
+        #region TestField
+        public abstract class testField : BqlString.Field<testField> { }
+        [PXDBString(20, IsUnicode = true)]
+        [PXUIField(DisplayName = "Test")]
+        public string TestField { get; set; }
+        #endregion
+    }
+}
+"""
+    fields = parse_dac_file(source, "fake.cs")
+    assert len(fields) == 1
+    assert fields[0].field_name == "TestField"
+    assert fields[0].attribute == "PXDBString"
+    assert fields[0].expected_ddl == "nvarchar(20) NULL"
+    assert fields[0].table == "UsrTest"
+    assert fields[0].is_key == False
+    assert fields[0].has_default == False
+
+
+def test_parse_dac_file_skips_unbound_fields():
+    """Fields with [PXString] (no DB prefix) are unbound — excluded."""
+    source = """
+public class UsrTest : PXBqlTable, IBqlTable {
+    #region RiskLevel
+    public abstract class riskLevel : BqlString.Field<riskLevel> { }
+    [PXString(1)]
+    [PXUIField(DisplayName = "Risk")]
+    public string RiskLevel { get; set; }
+    #endregion
+}
+"""
+    fields = parse_dac_file(source, "fake.cs")
+    assert len(fields) == 0
+
+
+def test_parse_dac_file_skips_audit_fields():
+    """Audit field regions (CreatedByID, Tstamp, etc.) are excluded."""
+    source = """
+public class UsrTest : PXBqlTable, IBqlTable {
+    #region CreatedByID
+    public abstract class createdByID : BqlGuid.Field<createdByID> { }
+    [PXDBCreatedByID]
+    public Guid? CreatedByID { get; set; }
+    #endregion
+    #region Tstamp
+    public abstract class tstamp : BqlByteArray.Field<tstamp> { }
+    [PXDBTimestamp]
+    public byte[] Tstamp { get; set; }
+    #endregion
+}
+"""
+    fields = parse_dac_file(source, "fake.cs")
+    assert len(fields) == 0
+
+
+def test_parse_dac_file_audit_skip_is_selective():
+    """When a DAC has both audit and real fields, only real fields are returned."""
+    source = """
+public class UsrTest : PXBqlTable, IBqlTable {
+    #region TestName
+    public abstract class testName : BqlString.Field<testName> { }
+    [PXDBString(50, IsUnicode = true)]
+    [PXUIField(DisplayName = "Name")]
+    public string TestName { get; set; }
+    #endregion
+    #region CreatedByID
+    public abstract class createdByID : BqlGuid.Field<createdByID> { }
+    [PXDBCreatedByID]
+    public Guid? CreatedByID { get; set; }
+    #endregion
+    #region Tstamp
+    public abstract class tstamp : BqlByteArray.Field<tstamp> { }
+    [PXDBTimestamp]
+    public byte[] Tstamp { get; set; }
+    #endregion
+}
+"""
+    fields = parse_dac_file(source, "fake.cs")
+    assert len(fields) == 1
+    assert fields[0].field_name == "TestName"
+    assert fields[0].expected_ddl == "nvarchar(50) NULL"
+
+
+def test_parse_dac_file_returns_empty_for_filter_dac():
+    """Filter DACs use non-persistent attributes like [PXInt] — their fields are excluded."""
+    source = """
+[Serializable]
+[PXCacheName("Filter")]
+public class AddPOLineFilter : PXBqlTable, IBqlTable {
+    #region VendorID
+    public abstract class vendorID : BqlInt.Field<vendorID> { }
+    [PXInt]
+    [PXUIField(DisplayName = "Vendor")]
+    public int? VendorID { get; set; }
+    #endregion
+}
+"""
+    # Filter DACs have [PXInt] (not PXDBInt) — non-persistent fields.
+    # parse_dac_file should return an empty list (the field is unbound).
+    fields = parse_dac_file(source, "fake.cs")
+    assert len(fields) == 0
+
+
+def test_parse_plugin_file_extracts_ensure_column():
+    """EnsureColumn calls are captured with correct table/col/ddl."""
+    source = '''
+        EnsureColumn(conn, "UsrContainerPrefs", "LCCodeShipping", "nvarchar(15) NULL");
+        EnsureColumn(conn, "UsrContainerPrefs", "LCCodeDuty", "nvarchar(15) NULL");
+    '''
+    coverage = parse_plugin_file(source)
+    assert "UsrContainerPrefs" in coverage
+    assert "LCCodeShipping" in coverage["UsrContainerPrefs"]
+    assert coverage["UsrContainerPrefs"]["LCCodeShipping"].ddl == "nvarchar(15) NULL"
+    assert coverage["UsrContainerPrefs"]["LCCodeShipping"].source == "EnsureColumn"
+
+
+def test_parse_plugin_file_extracts_ensure_table():
+    """EnsureTable body columns are captured, CompanyID and CONSTRAINT lines skipped."""
+    source = '''
+        EnsureTable(conn, "UsrTest", @"
+            CompanyID int NOT NULL DEFAULT 0,
+            TestID int IDENTITY(1,1) NOT NULL,
+            TestName nvarchar(50) NULL,
+            CONSTRAINT PK_UsrTest PRIMARY KEY (CompanyID, TestID)
+        ");
+    '''
+    coverage = parse_plugin_file(source)
+    assert "UsrTest" in coverage
+    assert "CompanyID" not in coverage["UsrTest"]
+    assert coverage["UsrTest"]["TestID"].ddl == "int IDENTITY(1,1) NOT NULL"
+    assert coverage["UsrTest"]["TestName"].ddl == "nvarchar(50) NULL"
+
+
+def test_detector_catches_length_mismatch():
+    """DAC says nvarchar(50), plugin says nvarchar(20) → type_mismatch."""
+    field = DacField(
+        table="UsrTest", file_path="fake.cs", line_number=1,
+        field_name="Name", attribute="PXDBString", args="50, IsUnicode = true",
+        is_key=False, has_default=False, default_value=None,
+        expected_ddl="nvarchar(50) NULL",
+    )
+    coverage = {"UsrTest": {"Name": PluginColumn(
+        table="UsrTest", column="Name", ddl="nvarchar(20) NULL", source="EnsureColumn"
+    )}}
+    drift = find_drift([field], coverage)
+    assert len(drift) == 1
+    assert drift[0].reason == "type_mismatch"
+    assert "nvarchar(50) NULL" in drift[0].suggested_fix
+
+
+def test_detector_catches_decimal_precision_mismatch():
+    """DAC says PXDBDecimal(2), plugin says decimal(19,4) → type_mismatch."""
+    field = DacField(
+        table="UsrTest", file_path="fake.cs", line_number=1,
+        field_name="Rate", attribute="PXDBDecimal", args="2",
+        is_key=False, has_default=False, default_value=None,
+        expected_ddl="decimal(*,2) NULL",  # CHANGED: was "decimal(19,2) NULL"
+    )
+    coverage = {"UsrTest": {"Rate": PluginColumn(
+        table="UsrTest", column="Rate", ddl="decimal(19,4) NULL", source="EnsureColumn"
+    )}}
+    drift = find_drift([field], coverage)
+    assert len(drift) == 1
+    assert drift[0].reason == "type_mismatch"
+
+
+def test_detector_passes_when_all_covered():
+    """Happy path: DAC field matches plugin exactly → no drift."""
+    field = DacField(
+        table="UsrTest", file_path="fake.cs", line_number=1,
+        field_name="Name", attribute="PXDBString", args="50, IsUnicode = true",
+        is_key=False, has_default=False, default_value=None,
+        expected_ddl="nvarchar(50) NULL",
+    )
+    coverage = {"UsrTest": {"Name": PluginColumn(
+        table="UsrTest", column="Name", ddl="nvarchar(50) NULL", source="EnsureColumn"
+    )}}
+    drift = find_drift([field], coverage)
+    assert drift == []
+
+
+def test_format_remediation_produces_pasteable_output():
+    """format_remediation includes the full EnsureColumn line with correct quoting."""
+    field = DacField(
+        table="UsrContainerPrefs", file_path="src/StudioB.Containers/DACs/UsrContainerPrefs.cs",
+        line_number=55, field_name="LCCodeShipping",
+        attribute="PXDBString", args="15, IsUnicode = true",
+        is_key=False, has_default=False, default_value=None,
+        expected_ddl="nvarchar(15) NULL",
+    )
+    drift = [DriftEntry(
+        dac_field=field,
+        plugin_column=None,
+        reason="missing",
+        suggested_fix='EnsureColumn(conn, "UsrContainerPrefs", "LCCodeShipping", "nvarchar(15) NULL");',
+    )]
+    output = format_remediation(drift)
+    assert 'EnsureColumn(conn, "UsrContainerPrefs"' in output
+    assert 'nvarchar(15) NULL' in output
+    assert 'UsrContainerPrefs.cs' in output
+
+
+def test_normalize_ddl_collapses_whitespace_around_punctuation():
+    """_normalize_ddl should treat 'decimal(19, 2)' and 'decimal(19,2)' as equal."""
+    assert _normalize_ddl("decimal(19, 2) NULL") == _normalize_ddl("decimal(19,2) NULL")
+    assert _normalize_ddl("nvarchar (15) NULL") == _normalize_ddl("nvarchar(15) NULL")
+    assert _normalize_ddl("NVARCHAR(15) NULL") == _normalize_ddl("nvarchar(15) null")
+    # And the inequality cases still hold
+    assert _normalize_ddl("nvarchar(15)") != _normalize_ddl("nvarchar(15) NULL")
+    assert _normalize_ddl("decimal(19,2) NULL") != _normalize_ddl("decimal(19,4) NULL")
+
+
+def test_parse_dac_file_pxdb_default_implies_not_null():
+    """[PXDBDefault(typeof(X))] is Acumatica's parent-ID propagation — NOT NULL."""
+    source = """
+public class UsrChild : PXBqlTable, IBqlTable {
+    #region ParentID
+    public abstract class parentID : BqlInt.Field<parentID> { }
+    [PXDBInt]
+    [PXDBDefault(typeof(UsrParent.parentID))]
+    [PXParent(typeof(Select<UsrParent>))]
+    public int? ParentID { get; set; }
+    #endregion
+}
+"""
+    fields = parse_dac_file(source, "fake.cs")
+    assert len(fields) == 1
+    assert fields[0].field_name == "ParentID"
+    assert fields[0].expected_ddl == "int NOT NULL"
+
+
+def test_normalize_ddl_strips_default_clause():
+    """DEFAULT clauses are runtime Acumatica concern — ignored in comparison."""
+    assert _normalize_ddl("int NOT NULL DEFAULT 0") == _normalize_ddl("int NOT NULL")
+    assert _normalize_ddl("nvarchar(20) NOT NULL DEFAULT ''") == _normalize_ddl("nvarchar(20) NOT NULL")
+    assert _normalize_ddl("datetime NOT NULL DEFAULT GETUTCDATE()") == _normalize_ddl("datetime NOT NULL")
+    assert _normalize_ddl("decimal(19,2) NOT NULL DEFAULT 0") == _normalize_ddl("decimal(*,2) NOT NULL")
+
+
+def test_normalize_ddl_strips_decimal_precision():
+    """decimal(N,M) comparison is scale-only; precision is plugin author's choice."""
+    assert _normalize_ddl("decimal(19,2) NULL") == _normalize_ddl("decimal(6,2) NULL")
+    assert _normalize_ddl("decimal(28,1) NULL") == _normalize_ddl("decimal(6,1) NULL")
+    # But different scales still differ
+    assert _normalize_ddl("decimal(19,2) NULL") != _normalize_ddl("decimal(19,4) NULL")
+
+
+def test_compute_expected_ddl_omits_default_clause():
+    """_compute_expected_ddl must not emit DEFAULT clauses."""
+    # Bare [PXDBString(20, IsUnicode=true)] with [PXDefault] — NOT NULL, no DEFAULT
+    ddl = _compute_expected_ddl("PXDBString", "20, IsUnicode = true",
+                                 has_default=True, default_value=None,
+                                 is_key=False)
+    assert ddl == "nvarchar(20) NOT NULL"
+    assert "DEFAULT" not in ddl
+
+    # [PXDBBool] + [PXDefault(true)] — NOT NULL, no DEFAULT 1
+    ddl = _compute_expected_ddl("PXDBBool", "",
+                                 has_default=True, default_value="true",
+                                 is_key=False)
+    assert ddl == "bit NOT NULL"
+    assert "DEFAULT" not in ddl
+
+    # [PXDBDecimal(2)] alone — scale-only decimal, NULL
+    ddl = _compute_expected_ddl("PXDBDecimal", "2",
+                                 has_default=False, default_value=None,
+                                 is_key=False)
+    assert ddl == "decimal(*,2) NULL"
+
+
+# ─── Real test ────────────────────────────────────────────────────────────
+
+def test_studiob_containers_dac_matches_plugin():
+    """Every DAC field in src/StudioB.Containers/DACs/ must have plugin coverage."""
+    assert DAC_DIR.exists(), f"DAC dir not found: {DAC_DIR}"
+    assert PLUGIN_FILE.exists(), f"Plugin file not found: {PLUGIN_FILE}"
+
+    # Parse all DAC files
+    all_fields: list[DacField] = []
+    for cs_file in sorted(DAC_DIR.glob("Usr*.cs")):
+        if cs_file.name in _EXCLUDED_DAC_FILES:
+            continue
+        source = cs_file.read_text(encoding="utf-8")
+        all_fields.extend(parse_dac_file(source, str(cs_file.relative_to(REPO_ROOT))))
+
+    # Parse the plugin
+    plugin_source = PLUGIN_FILE.read_text(encoding="utf-8")
+    coverage = parse_plugin_file(plugin_source)
+
+    # Find drift
+    drift = find_drift(all_fields, coverage)
+
+    assert not drift, format_remediation(drift)
