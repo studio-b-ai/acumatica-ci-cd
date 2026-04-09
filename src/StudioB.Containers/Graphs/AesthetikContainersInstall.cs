@@ -573,160 +573,273 @@ namespace StudioB.Containers
         }
 
         // ── EnsureItemUomConsistency ────────────────────────────────────────
-        // Third (and hopefully last) attempt at closing the Heritage Fabrics
-        // stock-item-save incident. PR #292 and PR #299 both used raw SQL
-        // INSERT INTO INUnit with a hardcoded CompanyMask = 1. Per KB entry
-        // "INUnit Self-Conversion Records — Why They Are Mandatory", raw SQL
-        // INSERT with a manually-constructed CompanyMask creates rows that
-        // exist in the database but are INVISIBLE to Acumatica's ORM (the
-        // ORM uses CompanyMask as a multi-tenant visibility bitmap). The
-        // validator (UnitsOfMeasure.ValidateUnitConversions) iterates only
-        // visible rows, so the "inserted" (YDS, YDS) rows were never found.
+        // 2026-04-09 rewrite (supersedes PR #292/#299/#301/#302, closes PR #304).
         //
-        // Sandbox run after PR #299: 25 of 25 YDS items fail with
-        //   "The conversion rule of the YDS unit of measure to the YDS unit
-        //    of measure is not found for the {item} item."
-        // Prod after PR #299: 25 of 25 YDS items fail with
-        //   "The PIECE value specified in the To Unit box differs from the
-        //    YDS base unit specified for the {item} item."
+        // Targets Class B corruption: stale INUnit rows on YDS-base items
+        // where FromUnit or ToUnit is still 'PIECE' from pre-migration days.
+        // These rows are INVISIBLE to both REST StockItem.UOMConversions and
+        // the IN202500 UI grid (filtered out before reaching the client), but
+        // INUnitAttribute.UnitVerifying sees them on Save and throws:
         //
-        // (The different error phrasing reflects different data shapes —
-        // sandbox has no INUnit rows for these items at all; prod has the
-        // leftover cross-conversion rows from pre-v3 days — but both errors
-        // mean the same underlying thing: the ORM cannot find a visible
-        // YDS→YDS self-conversion.)
+        //     "The PIECE value specified in the To Unit box differs from
+        //      the YDS base unit specified for the <item> item."
         //
-        // Fix: a two-step approach.
+        // Reproduced 2026-04-09 on prod item 00006 via Playwright UI click-
+        // Save with a dialog listener (REST PUT does NOT trigger the
+        // validator — which is why every previous gate was false-green).
+        // Heritage Test tenant (CompanyID=3) reproduces identically.
         //
-        //   Step 1 (raw SQL UPDATE) — Fix the CompanyMask on any existing
-        //     invisible (YDS, YDS) rows that PR #292 / PR #299 previously
-        //     inserted with CompanyMask=1. Copy the correct CompanyMask
-        //     from InventoryItem.CompanyMask for the same item. UPDATE is
-        //     not banned by the validate-project.py guard (only raw DELETE
-        //     and raw INSERT are banned). UPDATE in place does not violate
-        //     the unique key on INUnit because no primary-key column
-        //     changes. This makes previously-invisible rows visible to the
-        //     ORM.
+        // Why prior PRs all missed this:
+        //   PR #292/#299 — INSERT INTO INUnit with hardcoded CompanyMask=1
+        //     (invisible rows). Added rows alongside the stale ones. The
+        //     validator errors on the first bad row it finds, so adding a
+        //     good row doesn't suppress the error.
+        //   PR #301 — Source CompanyMask from (PIECE,PIECE) seed row.
+        //     Failed on items without that seed row.
+        //   PR #302 — Source CompanyMask from InventoryItem.CompanyMask.
+        //     InventoryItem has no CompanyMask column in 24.208 → Step 1
+        //     throws "Invalid column name", Step 2 never runs.
+        //   PR #304 — PXDatabase.Insert only. Still just adding new rows
+        //     alongside the stale ones. Does not touch the validator's
+        //     actual target.
         //
-        //   Step 2 (PXDatabase.Insert via ORM) — For YDS-base items that
-        //     still do not have a (YDS, YDS) row after Step 1, insert one
-        //     using PXDatabase.Insert<INUnit>() with PXDataFieldAssign
-        //     objects. The Acumatica ORM handles CompanyMask automatically,
-        //     producing ORM-visible rows. This is the KB-endorsed pattern
-        //     ("Use PXDatabase.Insert<INUnit>() instead") and matches the
-        //     2026-03-28 emergency restore plugin UomUnitConversionRestore.cs
-        //     that successfully fixed a similar P0 outage.
+        // The fix — three phases:
         //
-        // Never DELETE INUnit rows — see validate-project.py guard + the
-        // 2026-03-29 P0 outage root cause.
+        //   Phase A (always runs) — Pre-scan and log row counts per company.
+        //                            Pure read. Four counters split by shape.
+        //   Phase B (always runs) — Enumerate each affected (InventoryID,
+        //                            FromUnit, ToUnit) triple and log it.
+        //                            Capped at 500 rows per company to keep
+        //                            the publish log bounded.
+        //   Phase C (LIVE mode only) —
+        //     C1: UPDATE ToUnit='PIECE' → 'YDS' where no unique-key collision
+        //         (NOT EXISTS guard on the target key). Renames YDS→PIECE
+        //         to YDS→YDS (the canonical self-conversion).
+        //     C2: UPDATE FromUnit='PIECE' → 'YDS' similarly.
+        //     C3: DELETE any remaining (FromUnit='PIECE' OR ToUnit='PIECE')
+        //         rows on YDS-base items. These are rows that could not be
+        //         renamed because of a collision, plus (PIECE,PIECE) self-
+        //         convs that don't fit either update. Provably junk: the
+        //         owning item is YDS-base, the row references PIECE, no
+        //         valid save path needs such a row.
+        //
+        // Scope guard:
+        //   Only CompanyID ∈ {2, 3} — Heritage Fabrics prod + Heritage Test.
+        //   Any other company is skipped with a log line.
+        //
+        // DRY_RUN compile-time const:
+        //   true  → Phase A+B only. No writes. Use this for the first deploy
+        //           to get the exact row counts without touching data.
+        //   false → Phase A+B+C. Use this for the second deploy after the
+        //           dry-run counts have been manually verified.
+        //
+        // Phase C3 DELETE requires the "-- REVIEWED: inunit-sql-safe" marker
+        // to bypass validate-project.py's INUnit guard (banned by default
+        // because of the 2026-03-29 P0 outage). This specific delete is
+        // authorized for this incident (Kevin, 2026-04-09).
+        //
+        // Exceptions per company are caught by the outer try/catch in the
+        // DiscoverCompanies loop, so one bad CompanyID doesn't abort others.
         private void EnsureItemUomConsistency(SqlConnection conn, int companyId)
         {
-            // ── Step 1 — UPDATE existing invisible (YDS, YDS) rows ──
-            // Fix the CompanyMask on any (YDS, YDS) rows already in the
-            // database whose CompanyMask differs from InventoryItem.CompanyMask
-            // (the authoritative multi-tenant visibility value for the item).
-            // These are the rows PR #292 / PR #299 inserted with the hardcoded
-            // CompanyMask=1; updating in place makes them ORM-visible without
-            // colliding with the unique key on INUnit.
-            string updateSql = @"
-                UPDATE dst
-                SET dst.CompanyMask = i.CompanyMask,
-                    dst.LastModifiedDateTime = GETUTCDATE()
-                FROM INUnit dst
+            // ⚠ Flip to false for the LIVE deploy on the second CI run.
+            const bool DRY_RUN = true; // CANARY_MARKER_UOM_2026_04_09
+            WriteLog("CANARY_MARKER_UOM_2026_04_09");
+
+            // Scope guard — only target Heritage Fabrics (2) and Heritage Test (3).
+            if (companyId != 2 && companyId != 3)
+            {
+                WriteLog(string.Format(
+                    "[AesthetikContainers] EnsureItemUomConsistency CID={0} SKIP — out of scope (only 2/3)",
+                    companyId));
+                return;
+            }
+
+            WriteLog(string.Format(
+                "[AesthetikContainers] EnsureItemUomConsistency CID={0} START mode={1}",
+                companyId, DRY_RUN ? "DRY_RUN" : "LIVE"));
+
+            // ── Phase A — Pre-scan counts ──
+            string scanSql = @"
+                SELECT
+                    SUM(CASE WHEN u.ToUnit = 'PIECE' AND u.FromUnit <> 'PIECE' THEN 1 ELSE 0 END),
+                    SUM(CASE WHEN u.FromUnit = 'PIECE' AND u.ToUnit <> 'PIECE' THEN 1 ELSE 0 END),
+                    SUM(CASE WHEN u.FromUnit = 'PIECE' AND u.ToUnit = 'PIECE' THEN 1 ELSE 0 END),
+                    COUNT(*)
+                FROM INUnit u
                 INNER JOIN InventoryItem i
-                    ON i.CompanyID = dst.CompanyID
-                   AND i.InventoryID = dst.InventoryID
-                WHERE dst.CompanyID = @cid
-                  AND dst.UnitType = 1
-                  AND dst.ItemClassID = 0
-                  AND dst.FromUnit = 'YDS'
-                  AND dst.ToUnit = 'YDS'
-                  AND dst.CompanyMask != i.CompanyMask
-                  AND i.BaseUnit = 'YDS';";
-            int updatedRows = 0;
-            using (var cmd = new SqlCommand(updateSql, conn))
+                    ON i.CompanyID = u.CompanyID
+                   AND i.InventoryID = u.InventoryID
+                WHERE u.CompanyID = @cid
+                  AND u.UnitType = 1
+                  AND u.ItemClassID = 0
+                  AND i.BaseUnit = 'YDS'
+                  AND (u.FromUnit = 'PIECE' OR u.ToUnit = 'PIECE');";
+
+            int cntToPiece = 0, cntFromPiece = 0, cntBothPiece = 0, cntTotal = 0;
+            using (var cmd = new SqlCommand(scanSql, conn))
             {
                 cmd.Parameters.AddWithValue("@cid", companyId);
-                updatedRows = cmd.ExecuteNonQuery();
-            }
-
-            // ── Step 2 — INSERT missing (YDS, YDS) rows via ORM ──
-            // For each YDS-base InventoryItem that still does not have a
-            // (YDS, YDS) self-conversion, insert one via PXDatabase.Insert<INUnit>().
-            // Using the ORM guarantees the new row has the correct CompanyMask
-            // and is visible to subsequent PXSelect / validator queries.
-            //
-            // PXDatabase.SelectMulti is the idiomatic pattern for bulk reads
-            // inside a CustomizationPlugin — the plugin does not have a
-            // PXGraph context so standard BQL PXSelect is not available.
-            // UomUnitConversionRestore.cs uses this exact pattern.
-            int insertedRows = 0;
-            int skippedUnknown = 0;
-
-            IEnumerable<PXDataRecord> items = PXDatabase.SelectMulti<InventoryItem>(
-                new PXDataField<InventoryItem.inventoryID>(),
-                new PXDataField<InventoryItem.baseUnit>()
-            );
-
-            foreach (PXDataRecord item in items)
-            {
-                int? inventoryID = item.GetInt32(0);
-                string baseUnit = item.GetString(1);
-
-                if (inventoryID == null || baseUnit != "YDS") continue;
-
-                // Check if (YDS, YDS) self-conversion already exists for this item
-                // via the ORM. If SelectSingle returns a record, the row is already
-                // visible to the ORM (either from Step 1 UPDATE or from prior state).
-                PXDataRecord existing = PXDatabase.SelectSingle<INUnit>(
-                    new PXDataField<INUnit.inventoryID>(),
-                    new PXDataFieldValue<INUnit.unitType>((short)INUnitType.InventoryItem),
-                    new PXDataFieldValue<INUnit.inventoryID>(inventoryID),
-                    new PXDataFieldValue<INUnit.fromUnit>("YDS"),
-                    new PXDataFieldValue<INUnit.toUnit>("YDS")
-                );
-
-                if (existing != null) continue;
-
-                try
+                using (var rdr = cmd.ExecuteReader())
                 {
-                    PXDatabase.Insert<INUnit>(
-                        new PXDataFieldAssign<INUnit.unitType>((short)INUnitType.InventoryItem),
-                        new PXDataFieldAssign<INUnit.itemClassID>(0),
-                        new PXDataFieldAssign<INUnit.inventoryID>(inventoryID),
-                        new PXDataFieldAssign<INUnit.fromUnit>("YDS"),
-                        new PXDataFieldAssign<INUnit.toUnit>("YDS"),
-                        new PXDataFieldAssign<INUnit.unitMultDiv>("M"),
-                        new PXDataFieldAssign<INUnit.unitRate>(1.0m),
-                        new PXDataFieldAssign<INUnit.priceAdjustmentMultiplier>(1.0m)
-                    );
-                    insertedRows++;
-                }
-                catch (Exception ex)
-                {
-                    WriteLog(string.Format(
-                        "[AesthetikContainers] EnsureItemUomConsistency CID={0} " +
-                        "InventoryID={1}: PXDatabase.Insert<INUnit> failed — {2}: {3}",
-                        companyId, inventoryID, ex.GetType().Name, ex.Message));
-                    skippedUnknown++;
+                    if (rdr.Read())
+                    {
+                        cntToPiece   = rdr.IsDBNull(0) ? 0 : rdr.GetInt32(0);
+                        cntFromPiece = rdr.IsDBNull(1) ? 0 : rdr.GetInt32(1);
+                        cntBothPiece = rdr.IsDBNull(2) ? 0 : rdr.GetInt32(2);
+                        cntTotal     = rdr.IsDBNull(3) ? 0 : rdr.GetInt32(3);
+                    }
                 }
             }
 
-            if (updatedRows > 0 || insertedRows > 0 || skippedUnknown > 0)
+            WriteLog(string.Format(
+                "[AesthetikContainers] EnsureItemUomConsistency CID={0} SCAN: " +
+                "total_piece_rows_on_yds_items={1}, " +
+                "ToUnit='PIECE' only={2}, FromUnit='PIECE' only={3}, both='PIECE'={4}",
+                companyId, cntTotal, cntToPiece, cntFromPiece, cntBothPiece));
+
+            if (cntTotal == 0)
             {
                 WriteLog(string.Format(
-                    "[AesthetikContainers] EnsureItemUomConsistency CID={0}: " +
-                    "updated {1} invisible YDS->YDS rows (CompanyMask fix via raw SQL UPDATE), " +
-                    "inserted {2} new YDS->YDS rows via PXDatabase.Insert (ORM-visible path), " +
-                    "skipped {3} items due to errors",
-                    companyId, updatedRows, insertedRows, skippedUnknown));
-            }
-            else
-            {
-                WriteLog(string.Format(
-                    "[AesthetikContainers] EnsureItemUomConsistency CID={0}: " +
-                    "no changes — all YDS-base items already have visible YDS->YDS self-conv rows",
+                    "[AesthetikContainers] EnsureItemUomConsistency CID={0} CLEAN — nothing to fix",
                     companyId));
+                return;
+            }
+
+            // ── Phase B — List each affected row (bounded at 500) ──
+            string listSql = @"
+                SELECT TOP 500
+                    u.InventoryID, u.FromUnit, u.ToUnit, u.UnitRate
+                FROM INUnit u
+                INNER JOIN InventoryItem i
+                    ON i.CompanyID = u.CompanyID
+                   AND i.InventoryID = u.InventoryID
+                WHERE u.CompanyID = @cid
+                  AND u.UnitType = 1
+                  AND u.ItemClassID = 0
+                  AND i.BaseUnit = 'YDS'
+                  AND (u.FromUnit = 'PIECE' OR u.ToUnit = 'PIECE')
+                ORDER BY u.InventoryID;";
+
+            using (var cmd = new SqlCommand(listSql, conn))
+            {
+                cmd.Parameters.AddWithValue("@cid", companyId);
+                using (var rdr = cmd.ExecuteReader())
+                {
+                    while (rdr.Read())
+                    {
+                        WriteLog(string.Format(
+                            "[AesthetikContainers] CID={0} stale row: InventoryID={1} FromUnit={2} ToUnit={3} UnitRate={4}",
+                            companyId,
+                            rdr.GetInt32(0),
+                            rdr.GetString(1),
+                            rdr.GetString(2),
+                            rdr.GetDecimal(3)));
+                    }
+                }
+            }
+
+            if (DRY_RUN)
+            {
+                WriteLog(string.Format(
+                    "[AesthetikContainers] EnsureItemUomConsistency CID={0} DRY_RUN=true — Phase C skipped. " +
+                    "Flip DRY_RUN to false and re-deploy to apply the fix.",
+                    companyId));
+                return;
+            }
+
+            // ── Phase C — Fix rows (LIVE mode only) ──
+
+            const string systemUserId = "B5344897-037E-4D58-B5C3-1BDFD0F47BF4";
+            const string customizationScreenId = "SM208000";
+
+            // C1) Rename YDS→PIECE to YDS→YDS where no collision exists.
+            string updateToSql = @"
+                UPDATE u
+                SET u.ToUnit = 'YDS',
+                    u.LastModifiedByID = @user,
+                    u.LastModifiedByScreenID = @screen,
+                    u.LastModifiedDateTime = GETUTCDATE()
+                FROM INUnit u
+                INNER JOIN InventoryItem i
+                    ON i.CompanyID = u.CompanyID
+                   AND i.InventoryID = u.InventoryID
+                WHERE u.CompanyID = @cid
+                  AND u.UnitType = 1
+                  AND u.ItemClassID = 0
+                  AND u.ToUnit = 'PIECE'
+                  AND u.FromUnit <> 'PIECE'
+                  AND i.BaseUnit = 'YDS'
+                  AND NOT EXISTS (
+                      SELECT 1 FROM INUnit dst
+                      WHERE dst.CompanyID  = u.CompanyID
+                        AND dst.UnitType   = 1
+                        AND dst.ItemClassID= 0
+                        AND dst.InventoryID= u.InventoryID
+                        AND dst.FromUnit   = u.FromUnit
+                        AND dst.ToUnit     = 'YDS'
+                  );";
+            int updatedTo = ExecInUnitWrite(conn, updateToSql, companyId, systemUserId, customizationScreenId);
+
+            // C2) Rename PIECE→YDS to YDS→YDS where no collision exists.
+            string updateFromSql = @"
+                UPDATE u
+                SET u.FromUnit = 'YDS',
+                    u.LastModifiedByID = @user,
+                    u.LastModifiedByScreenID = @screen,
+                    u.LastModifiedDateTime = GETUTCDATE()
+                FROM INUnit u
+                INNER JOIN InventoryItem i
+                    ON i.CompanyID = u.CompanyID
+                   AND i.InventoryID = u.InventoryID
+                WHERE u.CompanyID = @cid
+                  AND u.UnitType = 1
+                  AND u.ItemClassID = 0
+                  AND u.FromUnit = 'PIECE'
+                  AND u.ToUnit <> 'PIECE'
+                  AND i.BaseUnit = 'YDS'
+                  AND NOT EXISTS (
+                      SELECT 1 FROM INUnit dst
+                      WHERE dst.CompanyID  = u.CompanyID
+                        AND dst.UnitType   = 1
+                        AND dst.ItemClassID= 0
+                        AND dst.InventoryID= u.InventoryID
+                        AND dst.FromUnit   = 'YDS'
+                        AND dst.ToUnit     = u.ToUnit
+                  );";
+            int updatedFrom = ExecInUnitWrite(conn, updateFromSql, companyId, systemUserId, customizationScreenId);
+
+            // C3) DELETE residuals — provably junk. Marker required by guard.
+            string deleteResidualSql = @"
+                -- REVIEWED: inunit-sql-safe
+                DELETE u
+                FROM INUnit u
+                INNER JOIN InventoryItem i
+                    ON i.CompanyID = u.CompanyID
+                   AND i.InventoryID = u.InventoryID
+                WHERE u.CompanyID = @cid
+                  AND u.UnitType = 1
+                  AND u.ItemClassID = 0
+                  AND (u.FromUnit = 'PIECE' OR u.ToUnit = 'PIECE')
+                  AND i.BaseUnit = 'YDS';";
+            int deleted = ExecInUnitWrite(conn, deleteResidualSql, companyId, systemUserId, customizationScreenId);
+
+            WriteLog(string.Format(
+                "[AesthetikContainers] EnsureItemUomConsistency CID={0} LIVE done: " +
+                "updated ToUnit→YDS={1} (scan saw {2}), " +
+                "updated FromUnit→YDS={3} (scan saw {4}), " +
+                "deleted residuals={5}",
+                companyId, updatedTo, cntToPiece, updatedFrom, cntFromPiece, deleted));
+        }
+
+        private int ExecInUnitWrite(SqlConnection conn, string sql, int cid, string userGuid, string screen)
+        {
+            using (var cmd = new SqlCommand(sql, conn))
+            {
+                cmd.Parameters.AddWithValue("@cid",    cid);
+                cmd.Parameters.AddWithValue("@user",   new Guid(userGuid));
+                cmd.Parameters.AddWithValue("@screen", screen);
+                return cmd.ExecuteNonQuery();
             }
         }
 
