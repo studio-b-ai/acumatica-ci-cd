@@ -570,22 +570,64 @@ namespace StudioB.Containers
         }
 
         // ── EnsureItemUomConsistency ────────────────────────────────────────
-        // Closes the gap left by UOM Migration v3 Section 1 (commit cf514c0,
-        // 2026-04-04). That section only inserted YDS→YDS self-conversions
-        // for items that already had a PIECE→PIECE self-conversion to seed
-        // from. Items WITHOUT a pre-existing PIECE→PIECE row got their
-        // BaseUnit flipped to YDS by Section 2 but never received a
-        // matching INUnit self-conversion. Result: save fails on those
-        // items because INUnitAttribute.UnitVerifying(unit=null) fires.
+        // Closes the gap left by UOM Migration v3 Section 1 (2026-04-04) AND
+        // fixes the ORM-invisibility bug introduced by PR #292 and PR #299
+        // (both 2026-04-08).
         //
-        // Confirmed in production 2026-04-08: item 00006 hits
-        //   "The PIECE value specified in the To Unit box differs from the
-        //    YDS base unit specified for the 00006 item."
-        // on save.
+        // Root cause (final, third attempt):
         //
-        // INSERT-only, idempotent. Never DELETE INUnit rows — see
-        // KB doc "INSERT not rename INUnit records" + the failed prior
-        // migrations that hit unique-key collisions on UPDATE/DELETE.
+        //   PR #292 and PR #299 both tried to INSERT a (YDS, YDS) self-conversion
+        //   row with a HARDCODED CompanyMask = 1. Per studiob-knowledge KB entry
+        //   "INUnit Self-Conversion Records — Why They Are Mandatory":
+        //
+        //     "When inserting self-conversion records via SQL, you MUST copy
+        //      CompanyMask from existing visible records. Raw SQL INSERT with
+        //      a manually constructed CompanyMask (e.g., all zeros) creates
+        //      records that exist in the database but are INVISIBLE to the
+        //      Acumatica ORM. The ORM uses CompanyMask for multi-tenant row
+        //      visibility."
+        //
+        //   Every (YDS, YDS) row PR #292 and PR #299 inserted has
+        //   CompanyMask=1. Those rows exist in INUnit but the ORM cannot see
+        //   them, so Acumatica's validator (UnitsOfMeasure.ValidateUnitConversions
+        //   during InventoryItemMaint.Persist) iterates only the VISIBLE rows,
+        //   finds only the legacy (PIECE, PIECE) self-conversion row from
+        //   pre-v3 days, and fires:
+        //
+        //     "IN Error: The PIECE value specified in the To Unit box differs
+        //      from the YDS base unit specified for the {item} item."
+        //
+        //   25 of 25 sampled YDS-base items were still broken after the
+        //   PR #299 deploy on 2026-04-08 evening, verified via touched-field
+        //   REST PUT and confirmed by Kevin via UI Save on item 00010.
+        //
+        // Fix:
+        //
+        //   Two SQL statements, both copy CompanyMask from the existing
+        //   visible (PIECE, PIECE) row for the same item. The legacy
+        //   (PIECE, PIECE) rows are NOT deleted — per KB "INSERT not rename
+        //   INUnit records" they become harmless orphans once the new
+        //   YDS→YDS row is visible to the ORM.
+        //
+        //   1. UPDATE: fix the CompanyMask on any existing (YDS, YDS) rows
+        //      that PR #292 / PR #299 already inserted with CompanyMask=1.
+        //      This makes the previously-invisible rows visible to the ORM
+        //      without violating the unique key on INUnit.
+        //
+        //   2. INSERT: for items that have NO (YDS, YDS) row at all, insert
+        //      a fresh row with the CORRECT CompanyMask copied from the
+        //      item's (PIECE, PIECE) row.
+        //
+        //   Both statements JOIN INUnit src filtered to
+        //   (UnitType=1, ItemClassID=0, FromUnit='PIECE', ToUnit='PIECE')
+        //   to get the source CompanyMask. Items that do NOT have a legacy
+        //   (PIECE, PIECE) row are skipped by both statements — those items
+        //   were never in the PIECE→YDS migration path and already have
+        //   correctly-visible self-conversion rows from normal creation.
+        //
+        // Never DELETE INUnit rows — see KB doc "INSERT not rename INUnit
+        // records" + validate-project.py ban + the 2026-03-29 P0 outage
+        // caused by deleting self-conversion records.
         private void EnsureItemUomConsistency(SqlConnection conn, int companyId)
         {
             // System user GUID + customization screen ID for audit columns —
@@ -593,24 +635,50 @@ namespace StudioB.Containers
             const string systemUserId = "B5344897-037E-4D58-B5C3-1BDFD0F47BF4";
             const string customizationScreenId = "SM208000";
 
-            // INUnit unique key is (CompanyID, UnitType, ItemClassID, InventoryID, FromUnit, ToUnit).
-            // For UnitType=1 (per-item) the ItemClassID is 0 and InventoryID is the item ID.
-            //
-            // CRITICAL: the NOT EXISTS guard must check BOTH FromUnit AND ToUnit.
-            // Checking FromUnit alone (the prior bug) misses the case where an item
-            // has a legacy cross-conversion row like (FromUnit='YDS', ToUnit='PIECE',
-            // rate=36) left behind from its pre-v3 days when PIECE was the base.
-            // Every YDS-base item in Heritage Fabrics prod has that legacy row
-            // because v3 is INSERT-only and preserved existing rows by design.
-            // Without the ToUnit='YDS' check, NOT EXISTS returned true for every
-            // affected item and the plugin inserted zero rows — the Wednesday
-            // 2026-04-08 incident (15/15 sampled YDS items still broken after
-            // PR #292 deployed because the guard was under-specified).
-            //
-            // With both clauses: the guard only matches a true self-conversion
-            // row, so items that have (YDS→PIECE) but no (YDS→YDS) correctly
-            // receive the missing self-conversion.
-            string sql = @"
+            // Step 1: UPDATE existing invisible (YDS, YDS) rows to use the
+            // correct CompanyMask copied from the item's (PIECE, PIECE) row.
+            // Only touches rows whose CompanyMask differs from the source
+            // (i.e., ORM-invisible rows from PR #292 / PR #299). The UPDATE
+            // does not change FromUnit, ToUnit, InventoryID, or any other
+            // unique-key field, so it is safe against the unique key.
+            string updateSql = @"
+                UPDATE dst
+                SET dst.CompanyMask = src.CompanyMask,
+                    dst.LastModifiedByID = @user,
+                    dst.LastModifiedByScreenID = @screen,
+                    dst.LastModifiedDateTime = GETUTCDATE()
+                FROM INUnit dst
+                INNER JOIN INUnit src
+                    ON src.CompanyID = dst.CompanyID
+                   AND src.UnitType = 1
+                   AND src.ItemClassID = 0
+                   AND src.InventoryID = dst.InventoryID
+                   AND src.FromUnit = 'PIECE'
+                   AND src.ToUnit = 'PIECE'
+                INNER JOIN InventoryItem i
+                    ON i.CompanyID = dst.CompanyID
+                   AND i.InventoryID = dst.InventoryID
+                WHERE dst.CompanyID = @cid
+                  AND dst.UnitType = 1
+                  AND dst.ItemClassID = 0
+                  AND dst.FromUnit = 'YDS'
+                  AND dst.ToUnit = 'YDS'
+                  AND dst.CompanyMask != src.CompanyMask
+                  AND i.BaseUnit = 'YDS';";
+            int updatedRows = 0;
+            using (var cmd = new SqlCommand(updateSql, conn))
+            {
+                cmd.Parameters.AddWithValue("@cid", companyId);
+                cmd.Parameters.AddWithValue("@user", new Guid(systemUserId));
+                cmd.Parameters.AddWithValue("@screen", customizationScreenId);
+                updatedRows = cmd.ExecuteNonQuery();
+            }
+
+            // Step 2: INSERT (YDS, YDS) for YDS-base items that still do not
+            // have one, copying CompanyMask from the item's existing visible
+            // (PIECE, PIECE) row. Items without a (PIECE, PIECE) source row
+            // are not in scope and already have correct self-conversion rows.
+            string insertSql = @"
                 INSERT INTO INUnit (
                     CompanyID, UnitType, ItemClassID, InventoryID,
                     FromUnit, ToUnit, UnitRate, UnitMultDiv,
@@ -619,37 +687,53 @@ namespace StudioB.Containers
                     LastModifiedByID, LastModifiedByScreenID, LastModifiedDateTime
                 )
                 SELECT
-                    i.CompanyID, 1, 0, i.InventoryID,
+                    src.CompanyID, 1, 0, src.InventoryID,
                     'YDS', 'YDS', 1.0, 'M',
-                    1.0, 1,
+                    1.0, src.CompanyMask,
                     @user, @screen, GETUTCDATE(),
                     @user, @screen, GETUTCDATE()
-                FROM InventoryItem i
-                WHERE i.CompanyID = @cid
+                FROM INUnit src
+                INNER JOIN InventoryItem i
+                    ON i.CompanyID = src.CompanyID
+                   AND i.InventoryID = src.InventoryID
+                WHERE src.CompanyID = @cid
+                  AND src.UnitType = 1
+                  AND src.ItemClassID = 0
+                  AND src.FromUnit = 'PIECE'
+                  AND src.ToUnit = 'PIECE'
                   AND i.BaseUnit = 'YDS'
                   AND NOT EXISTS (
-                      SELECT 1 FROM INUnit u
-                      WHERE u.CompanyID = i.CompanyID
-                        AND u.UnitType = 1
-                        AND u.ItemClassID = 0
-                        AND u.InventoryID = i.InventoryID
-                        AND u.FromUnit = 'YDS'
-                        AND u.ToUnit = 'YDS'
+                      SELECT 1 FROM INUnit dst
+                      WHERE dst.CompanyID = src.CompanyID
+                        AND dst.UnitType = 1
+                        AND dst.ItemClassID = 0
+                        AND dst.InventoryID = src.InventoryID
+                        AND dst.FromUnit = 'YDS'
+                        AND dst.ToUnit = 'YDS'
                   );";
-            using (var cmd = new SqlCommand(sql, conn))
+            int insertedRows = 0;
+            using (var cmd = new SqlCommand(insertSql, conn))
             {
                 cmd.Parameters.AddWithValue("@cid", companyId);
                 cmd.Parameters.AddWithValue("@user", new Guid(systemUserId));
                 cmd.Parameters.AddWithValue("@screen", customizationScreenId);
-                int rows = cmd.ExecuteNonQuery();
-                if (rows > 0)
-                    WriteLog(string.Format(
-                        "[AesthetikContainers] Inserted {0} missing YDS→YDS self-conversions for CompanyID={1} (closing UOM v3 Section 1 gap)",
-                        rows, companyId));
-                else
-                    WriteLog(string.Format(
-                        "[AesthetikContainers] EnsureItemUomConsistency CID={0} — no missing rows, all items have YDS→YDS self-conv",
-                        companyId));
+                insertedRows = cmd.ExecuteNonQuery();
+            }
+
+            if (updatedRows > 0 || insertedRows > 0)
+            {
+                WriteLog(string.Format(
+                    "[AesthetikContainers] EnsureItemUomConsistency CID={0}: " +
+                    "updated {1} invisible YDS->YDS rows (CompanyMask fix), " +
+                    "inserted {2} new YDS->YDS rows (CompanyMask copied from PIECE->PIECE source)",
+                    companyId, updatedRows, insertedRows));
+            }
+            else
+            {
+                WriteLog(string.Format(
+                    "[AesthetikContainers] EnsureItemUomConsistency CID={0}: " +
+                    "no changes — all YDS-base items already have visible YDS->YDS self-conv rows",
+                    companyId));
             }
         }
 
