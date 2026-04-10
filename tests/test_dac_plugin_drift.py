@@ -27,6 +27,7 @@ from typing import Optional
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DAC_DIR = REPO_ROOT / "src" / "StudioB.Containers" / "DACs"
+EXT_DIR = REPO_ROOT / "src" / "StudioB.Containers" / "Extensions"
 PLUGIN_FILE = REPO_ROOT / "src" / "StudioB.Containers" / "Graphs" / "AesthetikContainersInstall.cs"
 
 # DAC files that are filter/transient and don't need plugin coverage
@@ -181,6 +182,7 @@ _AUDIT_ATTRIBUTES = {
 
 _CACHE_NAME_RE = re.compile(r'\[PXCacheName\s*\(\s*"([^"]+)"\s*\)\]')
 _CLASS_RE = re.compile(r'public\s+class\s+(\w+)\s*:\s*PXBqlTable')
+_EXT_CLASS_RE = re.compile(r'public\s+sealed\s+class\s+(\w+)\s*:\s*PXCacheExtension<(\w+)>')
 _REGION_RE = re.compile(r'#region\s+(\w+)\s*$', re.MULTILINE)
 
 # One region's content: everything from #region Name to #endregion
@@ -284,13 +286,23 @@ def _compute_expected_ddl(attribute: str,
 
 
 def parse_dac_file(source: str, file_path: str) -> list[DacField]:
-    """Extract DAC fields with [PXDB*] attributes that need plugin coverage."""
-    # Table name: prefer [PXCacheName("X")], fall back to class name stripped of Usr prefix
+    """Extract DAC fields with [PXDB*] attributes that need plugin coverage.
+
+    Handles both standalone DACs (class Foo : PXBqlTable) and DAC extensions
+    (class FooExt : PXCacheExtension<Bar>). For extensions, the SQL table name
+    is the generic type argument (e.g., PXCacheExtension<POLine> → "POLine").
+    """
+    # Table name: prefer [PXCacheName("X")], fall back to class name
     cache_match = _CACHE_NAME_RE.search(source)
     class_match = _CLASS_RE.search(source)
-    if class_match is None:
+    ext_match = _EXT_CLASS_RE.search(source)
+    if class_match is None and ext_match is None:
         return []
-    table_name = class_match.group(1)  # e.g., "UsrContainerPrefs"
+    if ext_match is not None:
+        # PXCacheExtension<T> — table name is T (the base DAC's table)
+        table_name = ext_match.group(2)
+    else:
+        table_name = class_match.group(1)  # e.g., "UsrContainerPrefs"
 
     fields: list[DacField] = []
     for region_name, region_body, line_num in _find_regions(source):
@@ -315,7 +327,10 @@ def parse_dac_file(source: str, file_path: str) -> list[DacField]:
                 pxdb_attr = attr_name
                 pxdb_args = attr_args
             elif attr_name == "PXDefault":
-                has_default = True
+                # PersistingCheck = PXPersistingCheck.Nothing means Acumatica
+                # won't enforce NOT NULL at save time — treat as nullable.
+                if "PersistingCheck.Nothing" not in attr_args:
+                    has_default = True
                 # Extract the first positional arg as default value
                 if attr_args:
                     first_arg = attr_args.split(",")[0].strip()
@@ -756,18 +771,103 @@ def test_compute_expected_ddl_omits_default_clause():
     assert ddl == "decimal(*,2) NULL"
 
 
+def test_parse_dac_extension_extracts_fields():
+    """PXCacheExtension<T> files use T as the SQL table name."""
+    source = """
+using PX.Data;
+using PX.Objects.PO;
+namespace StudioB.Containers {
+    public sealed class POLineExt : PXCacheExtension<POLine> {
+        public static bool IsActive() => true;
+        #region UsrExpArrivalDate
+        public abstract class usrExpArrivalDate : BqlDateTime.Field<usrExpArrivalDate> { }
+        [PXDBDate]
+        [PXUIField(DisplayName = "Exp. Arrival Date")]
+        public DateTime? UsrExpArrivalDate { get; set; }
+        #endregion
+    }
+}
+"""
+    fields = parse_dac_file(source, "Extensions/POLineExt.cs")
+    assert len(fields) == 1
+    assert fields[0].table == "POLine"
+    assert fields[0].field_name == "UsrExpArrivalDate"
+    assert fields[0].expected_ddl == "datetime NULL"
+
+
+def test_parse_dac_extension_multiple_fields():
+    """Extension with multiple DB-bound fields + one non-persisted field."""
+    source = """
+using PX.Data;
+using PX.Objects.PO;
+namespace StudioB.Containers {
+    public sealed class POOrderExt : PXCacheExtension<POOrder> {
+        public static bool IsActive() => true;
+        #region UsrExpArrivalDate
+        public abstract class usrExpArrivalDate : BqlDateTime.Field<usrExpArrivalDate> { }
+        [PXDBDate]
+        public DateTime? UsrExpArrivalDate { get; set; }
+        #endregion
+        #region UsrContainerRef
+        public abstract class usrContainerRef : BqlString.Field<usrContainerRef> { }
+        [PXDBString(50, IsUnicode = true)]
+        public string UsrContainerRef { get; set; }
+        #endregion
+        #region UsrNonPersisted
+        public abstract class usrNonPersisted : BqlDecimal.Field<usrNonPersisted> { }
+        [PXDecimal(4)]
+        public decimal? UsrNonPersisted { get; set; }
+        #endregion
+    }
+}
+"""
+    fields = parse_dac_file(source, "Extensions/POOrderExt.cs")
+    assert len(fields) == 2
+    assert fields[0].table == "POOrder"
+    assert fields[0].field_name == "UsrExpArrivalDate"
+    assert fields[1].field_name == "UsrContainerRef"
+    assert fields[1].expected_ddl == "nvarchar(50) NULL"
+
+
+def test_parse_dac_extension_skips_non_db_fields():
+    """Non-DB fields ([PXDate], [PXDecimal]) in extensions are skipped."""
+    source = """
+using PX.Data;
+using PX.Objects.IN;
+namespace StudioB.Containers {
+    public sealed class AllocExt : PXCacheExtension<InventoryAllocDetEnqResult> {
+        public static bool IsActive() => true;
+        #region UsrExpArrivalDate
+        public abstract class usrExpArrivalDate : BqlDateTime.Field<usrExpArrivalDate> { }
+        [PXDate]
+        [PXUIField(DisplayName = "Exp. Arrival Date")]
+        public DateTime? UsrExpArrivalDate { get; set; }
+        #endregion
+    }
+}
+"""
+    fields = parse_dac_file(source, "Extensions/AllocExt.cs")
+    assert len(fields) == 0
+
+
 # ─── Real test ────────────────────────────────────────────────────────────
 
 def test_studiob_containers_dac_matches_plugin():
-    """Every DAC field in src/StudioB.Containers/DACs/ must have plugin coverage."""
+    """Every DAC field in DACs/ and Extensions/ must have plugin coverage."""
     assert DAC_DIR.exists(), f"DAC dir not found: {DAC_DIR}"
+    assert EXT_DIR.exists(), f"Extensions dir not found: {EXT_DIR}"
     assert PLUGIN_FILE.exists(), f"Plugin file not found: {PLUGIN_FILE}"
 
-    # Parse all DAC files
+    # Parse all standalone DAC files
     all_fields: list[DacField] = []
     for cs_file in sorted(DAC_DIR.glob("Usr*.cs")):
         if cs_file.name in _EXCLUDED_DAC_FILES:
             continue
+        source = cs_file.read_text(encoding="utf-8")
+        all_fields.extend(parse_dac_file(source, str(cs_file.relative_to(REPO_ROOT))))
+
+    # Parse all DAC extension files
+    for cs_file in sorted(EXT_DIR.glob("*Ext.cs")):
         source = cs_file.read_text(encoding="utf-8")
         all_fields.extend(parse_dac_file(source, str(cs_file.relative_to(REPO_ROOT))))
 
