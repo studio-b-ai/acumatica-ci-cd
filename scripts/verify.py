@@ -137,10 +137,15 @@ class AcumaticaSession:
         req = urllib.request.Request(url, data=body, headers=hdrs, method=method)
         try:
             with urllib.request.urlopen(req, context=self._ssl_ctx) as resp:
-                # Capture Set-Cookie headers
-                set_cookie = resp.getheader("Set-Cookie")
-                if set_cookie:
-                    self._cookies = set_cookie
+                # Capture ALL Set-Cookie headers (getheader only returns the first;
+                # Acumatica sets both ASP.NET_SessionId and .ASPXAUTH on login,
+                # and missing either causes 401 on subsequent requests).
+                set_cookies = resp.headers.get_all("Set-Cookie")
+                if set_cookies:
+                    # Extract only the name=value part from each cookie directive
+                    # (strip path, domain, HttpOnly, SameSite, etc.)
+                    cookie_parts = [c.split(";")[0].strip() for c in set_cookies]
+                    self._cookies = "; ".join(cookie_parts)
                 return (resp.status, resp.read())
         except urllib.error.HTTPError as e:
             return (e.code, e.read())
