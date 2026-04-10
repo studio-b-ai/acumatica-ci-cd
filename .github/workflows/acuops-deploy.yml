@@ -1689,6 +1689,7 @@ jobs:
           ACUDEV_API_KEY: ${{ secrets.ACUDEV_API_KEY }}
         run: |
           ERROR_DETAIL="Verification failed"
+          ERROR_SIGNATURE="verify:unknown"
           if [ -f verify-result.json ]; then
             ERROR_DETAIL=$(python3 -c "
           import sys, json
@@ -1696,6 +1697,24 @@ jobs:
           fails = [c for c in d.get('checks', []) if c['status'] == 'fail']
           print('; '.join(f\"{c['name']}: {c['detail']}\" for c in fails[:5]))
           " 2>/dev/null || echo "Verification failed — see logs")
+            # Derive canonical error signature (see docs/architecture/error-signatures.md)
+            ERROR_SIGNATURE=$(python3 -c "
+          import json
+          d = json.load(open('verify-result.json'))
+          fails = [c for c in d.get('checks', []) if c['status'] == 'fail']
+          if not fails: print('verify:unknown')
+          else:
+              c = fails[0]
+              name = c['name'].lower().replace(' ', '-')
+              detail = c.get('detail', '')
+              suffix = ''
+              if '401' in detail: suffix = '-401'
+              elif '404' in detail: suffix = '-404'
+              elif '500' in detail: suffix = '-500'
+              elif 'timeout' in detail.lower(): suffix = '-timeout'
+              elif 'mismatch' in detail.lower(): suffix = '-mismatch'
+              print(f'verify:{name}{suffix}')
+          " 2>/dev/null || echo "verify:unknown")
           fi
           curl -sf -X POST "${ACUDEV_URL}/ingest/incident" \
             -H "Content-Type: application/json" \
@@ -1706,6 +1725,7 @@ jobs:
               \"environment\": \"${{ steps.env.outputs.target }}\",
               \"commit\": \"${GITHUB_SHA::8}\",
               \"error_detail\": $(echo "$ERROR_DETAIL" | python3 -c 'import sys,json; print(json.dumps(sys.stdin.read().strip()))'),
+              \"error_signature\": \"${ERROR_SIGNATURE}\",
               \"run_url\": \"${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\",
               \"timestamp\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"
             }" || echo "[WARN] Auto-ingestion failed — non-blocking"
