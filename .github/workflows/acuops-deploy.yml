@@ -2135,16 +2135,33 @@ jobs:
             5. If you can fix it (code change, config change, missing DB column, test update):
                - Create a branch named `fix/larry-<short-description>`
                - Commit the fix, push, and create a PR with `gh pr create`
-               - DM Kevin on Slack:
-                 ```bash
-                 curl -sf -X POST https://slack.com/api/chat.postMessage \
-                   -H "Authorization: Bearer $SLACK_BOT_TOKEN" \
-                   -H "Content-Type: application/json" \
-                   -d '{"channel":"U0ALNRQ4KF0","text":"Sandbox failed: [diagnosis]. Fix PR: [link]. Merge to re-deploy."}'
-                 ```
+               - DM Kevin + post to #ops (see Slack section below)
             6. If you can't fix it (infrastructure issue, Acumatica bug, permissions):
-               - DM Kevin with full diagnosis and recommendation using the curl pattern above
+               - DM Kevin with full diagnosis and recommendation
                - Include what you tried, what the KB said, and what you recommend
+
+            ## Slack communication (REQUIRED — always DM Kevin with your diagnosis)
+
+            To DM Kevin, first open a DM channel, then post:
+            ```bash
+            DM_CHANNEL=$(curl -sf -X POST "https://slack.com/api/conversations.open" \
+              -H "Authorization: Bearer $SLACK_BOT_TOKEN" \
+              -H "Content-Type: application/json" \
+              -d '{"users":"U0ALNRQ4KF0"}' \
+              | python3 -c "import sys,json; print(json.load(sys.stdin).get('channel',{}).get('id',''))")
+            curl -sf -X POST "https://slack.com/api/chat.postMessage" \
+              -H "Authorization: Bearer $SLACK_BOT_TOKEN" \
+              -H "Content-Type: application/json" \
+              -d "{\"channel\":\"${DM_CHANNEL}\",\"text\":\"YOUR MESSAGE HERE\"}"
+            ```
+
+            To post to #ops channel:
+            ```bash
+            curl -sf -X POST "https://slack.com/api/chat.postMessage" \
+              -H "Authorization: Bearer $SLACK_BOT_TOKEN" \
+              -H "Content-Type: application/json" \
+              -d '{"channel":"C0AR2UW2S66","text":"YOUR MESSAGE HERE"}'
+            ```
 
             ## Rules
             - Max 3 fix attempts per run. If your first fix doesn't work, try twice more, then escalate.
@@ -2152,6 +2169,7 @@ jobs:
             - Never deploy to production. Your job is to fix and PR — the pipeline handles the rest.
             - Read agents/deploy-agent.md for Slack/Qdrant patterns if you need more context.
             - ALWAYS DM Kevin on Slack with your diagnosis, whether you fixed it or not.
+            - ALWAYS post to #ops with a one-line status update.
 
             ## Environment variables available
             - QDRANT_URL — Qdrant vector DB endpoint (studiob-knowledge collection)

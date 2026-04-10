@@ -7,8 +7,8 @@
     },
     "SalesOrder": {
       "screen": "SO301000",
-      "custom_fields": ["custom.Document.UsrDryRunTest"],
-      "_note": "TEMP: UsrDryRunTest is intentionally non-existent — dry-run test for invoke-agent. Remove after dry-run succeeds."
+      "custom_fields": [],
+      "_note": "UsrHubSpotDealId not exposed via $adHocSchema — validated via e2e_probes instead"
     },
     "Customer": {
       "screen": "AR303000",
