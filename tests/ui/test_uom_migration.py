@@ -21,7 +21,8 @@ AesthetikContainersInstall.cs which idempotently INSERTs the missing
 self-conversions on every publish.
 """
 import pytest
-from helpers import ACUMATICA_URL, navigate_and_wait
+from helpers import ACUMATICA_URL
+from acumatica_screen import AcumaticaScreen
 
 
 # ── Test Data ──────────────────────────────────────────────────────────────
@@ -43,27 +44,21 @@ SAVE_SAMPLE_SIZE = 10
 @pytest.mark.ui
 class TestBaseUom:
 
-    @pytest.mark.xfail(
-        reason="Pre-existing Playwright iframe-read flake as of 2026-04-08: "
-               "frame.evaluate() returns empty string for edBaseUnit_text despite "
-               "the field being visually populated in the screenshot. PR #289 "
-               "addressed some iframe navigation issues but this specific DOM read "
-               "is still intermittently broken. Unrelated to the UOM plugin fix in "
-               "this PR. Tracked as follow-up #3 in the UOM incident session.",
-        strict=False,
-    )
-    def test_stock_item_base_uom_is_yds(self, acumatica_page):
-        """Open item 00004 and verify BaseUnit = YDS."""
-        frame = navigate_and_wait(acumatica_page, "IN202500", f"InventoryCD={ITEM_CD}")
+    def test_stock_item_base_uom_is_yds(self, acumatica_screen):
+        """Open item 00004 and verify BaseUnit = YDS.
 
-        frame.wait_for_selector("[id*='edBaseUnit_text']", state="attached", timeout=30_000)
+        Uses AcumaticaScreen.get_field() which retries on the known
+        iframe-read flake (frame.evaluate() returning empty string).
+        Previously xfailed since 2026-04-08.
+        """
+        screen = acumatica_screen("IN202500", params=f"InventoryCD={ITEM_CD}")
 
-        base_unit = frame.evaluate('''() => {
-            var el = document.querySelector('[id*="edBaseUnit_text"]');
-            return el ? el.value : null;
-        }''')
+        base_unit = screen.get_field("edBaseUnit_text")
 
-        assert base_unit is not None, "Could not find BaseUnit field on IN202500"
+        assert base_unit is not None and base_unit != "", (
+            "Could not read BaseUnit field on IN202500 — "
+            "evaluate() returned empty after retries"
+        )
         assert base_unit.strip() == EXPECTED_UOM, (
             f"BaseUnit should be '{EXPECTED_UOM}' but got '{base_unit.strip()}'"
         )
@@ -74,24 +69,13 @@ class TestBaseUom:
 @pytest.mark.ui
 class TestInUnitConversions:
 
-    def test_inunit_conversions_on_stock_item(self, acumatica_page, dialog_messages):
-        """Open a stock item — if it loads without UOM errors, conversions work.
+    def test_inunit_conversions_on_stock_item(self, acumatica_screen, dialog_messages):
+        """Open a stock item — if it loads without UOM errors, conversions work."""
+        screen = acumatica_screen("IN202500", params=f"InventoryCD={ITEM_CD}")
 
-        Self-conversions are NOT displayed in the UI grid (they're internal).
-        The real test is: does the screen load without UOM conversion errors?
-        """
-        frame = navigate_and_wait(acumatica_page, "IN202500", f"InventoryCD={ITEM_CD}")
-
-        frame.wait_for_selector("[id*='edBaseUnit_text']", state="attached", timeout=30_000)
-
-        # Verify item loaded correctly
-        base_unit = frame.evaluate('''() => {
-            var el = document.querySelector('[id*="edBaseUnit_text"]');
-            return el ? el.value : null;
-        }''')
+        base_unit = screen.get_field("edBaseUnit_text")
         assert base_unit is not None, "Stock item screen did not load"
 
-        # CRITICAL: Check for UOM conversion error dialogs
         uom_errors = [
             d for d in dialog_messages
             if "conversion" in d["message"].lower()
@@ -102,16 +86,10 @@ class TestInUnitConversions:
             "INUnit self-conversion records may be missing"
         )
 
-    def test_inunit_conversions_screen(self, acumatica_page, dialog_messages):
+    def test_inunit_conversions_screen(self, acumatica_screen, dialog_messages):
         """Navigate to IN209000 and verify it loads without errors."""
-        frame = navigate_and_wait(acumatica_page, "IN209000")
-
-        # IN209000 may not exist or may load differently
         try:
-            frame.wait_for_selector(
-                "[id*='form'], [id*='grid'], [id*='UnitType']",
-                state="attached", timeout=15_000,
-            )
+            screen = acumatica_screen("IN209000")
         except Exception:
             pytest.skip("IN209000 did not load — screen may not exist in this version")
 
@@ -130,11 +108,10 @@ class TestInUnitConversions:
 @pytest.mark.ui
 class TestUnallocatedPieceGoodsGI:
 
-    def test_unallocated_piece_goods_gi_loads(self, acumatica_page, dialog_messages):
+    def test_unallocated_piece_goods_gi_loads(self, acumatica_screen, dialog_messages):
         """Navigate to the UnallocatedPieceGoods GI and verify it loads."""
-        frame = navigate_and_wait(acumatica_page, "GI000000", "Name=UnallocatedPieceGoods")
+        screen = acumatica_screen("GI000000", params="Name=UnallocatedPieceGoods")
 
-        # GI may have results or be empty — either is OK
         gi_errors = [
             d for d in dialog_messages
             if "error" in d["message"].lower()
@@ -151,19 +128,10 @@ class TestUnallocatedPieceGoodsGI:
 @pytest.mark.ui
 class TestSalesOrderOperations:
 
-    def test_existing_sales_order_loads_with_details(self, acumatica_page, dialog_messages):
+    def test_existing_sales_order_loads_with_details(self, acumatica_screen, dialog_messages):
         """Open the Sales Orders screen — if it loads without UOM errors, conversions work."""
-        frame = navigate_and_wait(acumatica_page, "SO301000")
+        screen = acumatica_screen("SO301000")
 
-        try:
-            frame.wait_for_selector(
-                "[id*='edOrderType'], [id*='form'], [id*='grid']",
-                state="attached", timeout=30_000,
-            )
-        except Exception:
-            pytest.skip("SO301000 did not load")
-
-        # Check for UOM errors
         load_errors = [
             d for d in dialog_messages
             if "conversion" in d["message"].lower()

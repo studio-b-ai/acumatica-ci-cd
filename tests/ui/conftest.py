@@ -7,6 +7,7 @@ import sys
 import os
 sys.path.insert(0, os.path.dirname(__file__))
 
+from acumatica_screen import AcumaticaScreen  # noqa: E402
 from helpers import (  # noqa: E402
     ACUMATICA_URL,
     ACUMATICA_USERNAME,
@@ -135,3 +136,17 @@ def screen_page(acumatica_page):
     returns the authenticated page for the test to navigate wherever needed.
     """
     return acumatica_page
+
+
+@pytest.fixture
+def acumatica_screen(acumatica_page):
+    """Factory fixture — call with screen_id to get an AcumaticaScreen.
+
+    Usage:
+        def test_something(acumatica_screen):
+            screen = acumatica_screen("IN202500", params="InventoryCD=00004")
+            value = screen.get_field("edBaseUnit_text")
+    """
+    def _navigate(screen_id: str, **kwargs) -> AcumaticaScreen:
+        return AcumaticaScreen.navigate(acumatica_page, screen_id, **kwargs)
+    return _navigate
