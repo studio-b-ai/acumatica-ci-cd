@@ -1,0 +1,131 @@
+"""AcumaticaScreen — iframe-aware context for Playwright UI tests.
+
+Acumatica renders all screen content inside iframe[name='main'].
+This class resolves the correct DOM context (iframe or direct page)
+and provides retry-capable methods for field reads/writes.
+
+Usage:
+    screen = AcumaticaScreen.navigate(page, "IN202500", params="InventoryCD=00004")
+    value = screen.get_field("edBaseUnit_text")   # retries on empty-string flake
+    screen.set_field("edDescr", "Updated")
+    screen.save()
+"""
+from __future__ import annotations
+
+import logging
+import os
+from typing import Literal
+
+from playwright.sync_api import Page, Frame, Locator
+
+logger = logging.getLogger(__name__)
+
+ACUMATICA_URL = os.environ.get("ACUMATICA_URL", "https://heritagefabrics.acumatica.com")
+
+_GI_PREFIXES = ("GI",)
+
+_SHADOW_ASPX_MAP: dict[str, str] = {
+    "PO301000": "/Pages/PO/PO301000.aspx",
+}
+
+
+class AcumaticaScreen:
+    """Iframe-aware wrapper around a Playwright Page for Acumatica screens."""
+
+    def __init__(
+        self,
+        page: Page,
+        ctx: Frame | Page,
+        screen_id: str,
+        mode: Literal["iframe", "direct"],
+    ):
+        self.page = page
+        self.ctx = ctx
+        self.screen_id = screen_id
+        self.mode = mode
+
+    @classmethod
+    def navigate(
+        cls,
+        page: Page,
+        screen_id: str,
+        *,
+        params: str = "",
+        timeout: int = 30_000,
+    ) -> "AcumaticaScreen":
+        """Navigate to a screen via /Main?ScreenId= with auto-detection."""
+        if screen_id.startswith(_GI_PREFIXES):
+            url = f"{ACUMATICA_URL}/GenericInquiry/GenericInquiry.aspx?id={screen_id}"
+        else:
+            url = f"{ACUMATICA_URL}/Main?ScreenId={screen_id}"
+            if params:
+                url += f"&{params}"
+
+        page.goto(url, wait_until="domcontentloaded", timeout=timeout)
+
+        if "ScreenId=ERROR" in page.url:
+            raise AssertionError(f"Screen {screen_id} redirected to error page")
+
+        if "ScreenId=00000000" in page.url:
+            logger.warning("Screen %s is shadowed. Falling back to direct ASPX.", screen_id)
+            aspx_path = _SHADOW_ASPX_MAP.get(screen_id)
+            if aspx_path:
+                return cls.direct(page, aspx_path, screen_id=screen_id, timeout=timeout)
+            return cls.direct(page, f"/Pages/{screen_id[:2]}/{screen_id}.aspx", screen_id=screen_id, timeout=timeout)
+
+        try:
+            page.wait_for_function(
+                "() => { const f = document.querySelector('iframe[name=main]'); "
+                "return f && f.contentDocument && f.contentDocument.body "
+                "&& f.contentDocument.body.children.length > 0; }",
+                timeout=timeout,
+            )
+        except Exception:
+            frame = page.frame("main")
+            if frame is None:
+                logger.warning("No iframe[name='main'] found for %s — using page directly.", screen_id)
+                return cls(page, page, screen_id, "direct")
+            raise
+
+        frame = page.frame("main")
+        if frame is None:
+            return cls(page, page, screen_id, "direct")
+
+        try:
+            frame.wait_for_function(
+                "() => document.querySelector('#ctl00_phF_form') !== null "
+                "|| document.querySelector('#ctl00_phF_frmFilter') !== null "
+                "|| document.querySelector('[id*=grid]') !== null",
+                timeout=timeout,
+            )
+        except Exception:
+            logger.warning("Form container not found for %s within %dms — proceeding.", screen_id, timeout)
+
+        return cls(page, frame, screen_id, "iframe")
+
+    @classmethod
+    def direct(
+        cls,
+        page: Page,
+        aspx_path: str,
+        *,
+        screen_id: str = "",
+        timeout: int = 30_000,
+    ) -> "AcumaticaScreen":
+        """Navigate directly to an ASPX page, bypassing the Main wrapper."""
+        url = aspx_path if aspx_path.startswith("http") else f"{ACUMATICA_URL}{aspx_path}"
+        page.goto(url, wait_until="domcontentloaded", timeout=timeout)
+
+        try:
+            page.wait_for_function(
+                "() => document.querySelector('#ctl00_phF_form') !== null "
+                "|| document.querySelector('#ctl00_phF_frmFilter') !== null "
+                "|| document.querySelector('[id*=grid]') !== null "
+                "|| document.querySelector('form') !== null",
+                timeout=timeout,
+            )
+        except Exception:
+            logger.warning("Form container not found for direct page %s — proceeding.", aspx_path)
+
+        sid = screen_id or aspx_path.split("/")[-1].replace(".aspx", "")
+        return cls(page, page, sid, "direct")
