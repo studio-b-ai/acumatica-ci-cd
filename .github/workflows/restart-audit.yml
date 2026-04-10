@@ -16,5 +16,5 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           SLACK_BOT_TOKEN: ${{ secrets.STUDIOB_SLACK_BOT_TOKEN }}
-          SLACK_KEVIN_USER_ID: ${{ secrets.SLACK_KEVIN_USER_ID }}
+          SLACK_CHANNEL_ID: C0AR2UW2S66  # #ops in studiob-ai workspace
         run: python3 scripts/restart-audit.py
