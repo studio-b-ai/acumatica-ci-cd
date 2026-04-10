@@ -170,6 +170,49 @@ class AcumaticaScreen:
         self.ctx.fill(selector, value)
         self.ctx.evaluate("document.activeElement.blur()")
 
+    # ── Toolbar Actions ───────────────────────────────────────────────
+
+    def save(self):
+        """Save via Ctrl+S and wait for form readiness."""
+        self.page.keyboard.press("Control+s")
+        self.page.wait_for_load_state("domcontentloaded")
+        self.wait_ready()
+
+    def wait_ready(self, timeout: int = 15_000):
+        """Wait for the form container to be present."""
+        self.ctx.wait_for_function(
+            "() => document.querySelector('#ctl00_phF_form') !== null "
+            "|| document.querySelector('#ctl00_phF_frmFilter') !== null "
+            "|| document.querySelector('[id*=grid]') !== null",
+            timeout=timeout,
+        )
+
+    def click_toolbar(self, action: str):
+        """Click a toolbar button by action name.
+
+        Supported actions: save, add_new, delete
+        """
+        selectors = {
+            "save": "[id*='ToolBar_Save']",
+            "add_new": "[id*='ToolBar_Insert'], [id*='btnInsert']",
+            "delete": "[id*='ToolBar_Delete'], [id*='btnDelete']",
+        }
+        selector = selectors.get(action)
+        if not selector:
+            raise ValueError(f"Unknown toolbar action: {action}. Use: {list(selectors)}")
+
+        btn = self.ctx.locator(selector).first
+        btn.click()
+
+        if action == "delete":
+            confirm = self.ctx.locator("button:has-text('Yes'), button:has-text('OK')")
+            if confirm.count() > 0 and confirm.first.is_visible(timeout=2000):
+                confirm.first.click()
+
+        if action in ("save", "add_new"):
+            self.page.wait_for_load_state("domcontentloaded")
+            self.wait_ready()
+
     def find_fields(self, field_names: list[str]) -> dict[str, bool]:
         """Check which fields are present in the DOM."""
         results = {}

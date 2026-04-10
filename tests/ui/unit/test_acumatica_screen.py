@@ -146,3 +146,58 @@ class TestAcumaticaScreenDomMethods:
         screen.ctx.locator.return_value = locator_mock
         result = screen.find_fields(["UsrHubSpotDealId"])
         assert result == {"UsrHubSpotDealId": True}
+
+
+class TestAcumaticaScreenToolbar:
+    """Test save, click_toolbar actions."""
+
+    def _make_screen(self):
+        from acumatica_screen import AcumaticaScreen
+        page = MagicMock()
+        ctx = MagicMock()
+        ctx.wait_for_function.return_value = None
+        return AcumaticaScreen(page, ctx, "TEST00000", "iframe")
+
+    def test_save_presses_ctrl_s(self):
+        screen = self._make_screen()
+        screen.save()
+        screen.page.keyboard.press.assert_called_with("Control+s")
+
+    def test_click_toolbar_save(self):
+        screen = self._make_screen()
+        btn = MagicMock()
+        btn.is_visible.return_value = True
+        screen.ctx.locator.return_value = MagicMock()
+        screen.ctx.locator.return_value.first = btn
+        screen.click_toolbar("save")
+        btn.click.assert_called_once()
+
+    def test_click_toolbar_add_new(self):
+        screen = self._make_screen()
+        btn = MagicMock()
+        btn.is_visible.return_value = True
+        screen.ctx.locator.return_value = MagicMock()
+        screen.ctx.locator.return_value.first = btn
+        screen.click_toolbar("add_new")
+        btn.click.assert_called_once()
+
+    def test_click_toolbar_delete_confirms_dialog(self):
+        screen = self._make_screen()
+        del_btn = MagicMock()
+        del_btn.is_visible.return_value = True
+        confirm_btn = MagicMock()
+        confirm_btn.count.return_value = 1
+        confirm_btn.first = MagicMock()
+        confirm_btn.first.is_visible.return_value = True
+        screen.ctx.locator.side_effect = [
+            MagicMock(first=del_btn),
+            confirm_btn,
+        ]
+        screen.click_toolbar("delete")
+        del_btn.click.assert_called_once()
+        confirm_btn.first.click.assert_called_once()
+
+    def test_wait_ready_polls_for_form(self):
+        screen = self._make_screen()
+        screen.wait_ready()
+        screen.ctx.wait_for_function.assert_called_once()
