@@ -17,12 +17,6 @@ import os
 
 import pytest
 
-from helpers import (
-    navigate_to_screen,
-    assert_screen_loaded,
-    find_custom_fields,
-)
-
 
 # ── Fixture Loading ──────────────────────────────────────────────────────────
 
@@ -61,12 +55,12 @@ class TestScreenSmoke:
     """Smoke tests: navigate to each audit-observed screen and verify it loads."""
 
     @pytest.mark.parametrize("fixture", _FIXTURES, ids=_screen_ids())
-    def test_screen_loads(self, fixture, screen_page, dialog_messages):
+    def test_screen_loads(self, fixture, acumatica_screen, dialog_messages):
         """Screen navigates and loads without errors."""
         screen_id = fixture["screen_id"]
 
-        navigate_to_screen(screen_page, screen_id)
-        assert_screen_loaded(screen_page, screen_id)
+        screen = acumatica_screen(screen_id)
+        screen.assert_no_errors()
 
         # Check no error dialogs fired during navigation
         error_dialogs = [
@@ -83,15 +77,15 @@ class TestScreenSmoke:
         [f for f in _FIXTURES if f.get("custom_fields")],
         ids=[f["screen_id"] for f in _FIXTURES if f.get("custom_fields")],
     )
-    def test_custom_fields_visible(self, fixture, screen_page):
+    def test_custom_fields_visible(self, fixture, acumatica_screen):
         """Custom fields observed in audit data are present in screen DOM."""
         screen_id = fixture["screen_id"]
         custom_fields = fixture["custom_fields"]
 
-        navigate_to_screen(screen_page, screen_id)
-        assert_screen_loaded(screen_page, screen_id)
+        screen = acumatica_screen(screen_id)
+        screen.assert_no_errors()
 
-        results = find_custom_fields(screen_page, custom_fields)
+        results = screen.find_fields(custom_fields)
         missing = [f for f, found in results.items() if not found]
 
         assert not missing, (

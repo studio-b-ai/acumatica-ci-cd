@@ -18,23 +18,19 @@ sys.path.insert(0, os.path.dirname(__file__))
 
 import time
 
+from acumatica_screen import AcumaticaScreen
 from helpers import (
     ACUMATICA_URL,
     ACUMATICA_USERNAME,
-    find_custom_fields,
     navigate_to_screen_safe,
-    navigate_to_gi_screen,
     wait_for_screen,
     assert_no_screen_errors,
     assert_grid_visible,
     assert_grid_has_columns,
-    assert_field_has_selector_data,
     save_record,
     click_add_new,
     click_delete,
     set_field_value,
-    get_field_value,
-    get_main_frame,
 )
 
 
@@ -81,86 +77,70 @@ IGCM_SCREENS = [
 class TestSB501000:
     """Verify Container Maintenance screen (SB501000) works end-to-end."""
 
-    def test_screen_loads(self, acumatica_page):
+    def test_screen_loads(self, acumatica_screen):
         """SB501000 should load without error."""
-        navigate_to_screen_safe(acumatica_page, "SB501000")
-        wait_for_screen(acumatica_page, "SB501000")
+        screen = acumatica_screen("SB501000")
+        screen.assert_no_errors()
 
-        # Should not be on error page
-        assert "ScreenId=ERROR" not in acumatica_page.url, \
-            "SB501000 redirected to error page"
-
-    def test_navigate_to_record(self, acumatica_page):
+    def test_navigate_to_record(self, acumatica_screen):
         """Should be able to navigate to the last record."""
-        navigate_to_screen_safe(acumatica_page, "SB501000")
-        wait_for_screen(acumatica_page, "SB501000")
+        screen = acumatica_screen("SB501000")
 
         # Click "Last Record" button to load a record
-        last_btn = acumatica_page.locator("div[icon='Last'], [id*='btnLast']").first
+        last_btn = screen.locator("div[icon='Last'], [id*='btnLast']").first
         if last_btn.is_visible(timeout=3000):
             last_btn.click()
-            acumatica_page.wait_for_load_state("domcontentloaded")
-            acumatica_page.wait_for_timeout(2000)
+            screen.page.wait_for_load_state("domcontentloaded")
+            screen.page.wait_for_timeout(2000)
 
-        # Should still be on SB501000, not error page
-        assert "ScreenId=ERROR" not in acumatica_page.url, \
-            "SB501000 errored when navigating to a record"
+        screen.assert_no_errors()
 
-    def test_events_tab_loads(self, acumatica_page):
+    def test_events_tab_loads(self, acumatica_screen):
         """Events tab should load without error."""
-        navigate_to_screen_safe(acumatica_page, "SB501000")
-        wait_for_screen(acumatica_page, "SB501000")
+        screen = acumatica_screen("SB501000")
 
         # Navigate to a record first
-        last_btn = acumatica_page.locator("div[icon='Last'], [id*='btnLast']").first
+        last_btn = screen.locator("div[icon='Last'], [id*='btnLast']").first
         if last_btn.is_visible(timeout=3000):
             last_btn.click()
-            acumatica_page.wait_for_load_state("domcontentloaded")
-            acumatica_page.wait_for_timeout(2000)
+            screen.page.wait_for_load_state("domcontentloaded")
+            screen.page.wait_for_timeout(2000)
 
         # Click Events tab
-        events_tab = acumatica_page.locator("span:has-text('Events')").first
+        events_tab = screen.locator("span:has-text('Events')").first
         if events_tab.is_visible(timeout=3000):
             events_tab.click()
-            acumatica_page.wait_for_timeout(1000)
+            screen.page.wait_for_timeout(1000)
 
-        assert "ScreenId=ERROR" not in acumatica_page.url, \
-            "Events tab caused an error"
+        screen.assert_no_errors()
 
-    def test_po_links_tab_loads(self, acumatica_page):
+    def test_po_links_tab_loads(self, acumatica_screen):
         """PO Links tab should load without IGCM.DAC type-not-found error."""
-        navigate_to_screen_safe(acumatica_page, "SB501000")
-        wait_for_screen(acumatica_page, "SB501000")
+        screen = acumatica_screen("SB501000")
 
         # Navigate to last record
-        last_btn = acumatica_page.locator("div[icon='Last'], [id*='btnLast']").first
+        last_btn = screen.locator("div[icon='Last'], [id*='btnLast']").first
         if last_btn.is_visible(timeout=3000):
             last_btn.click()
-            acumatica_page.wait_for_load_state("domcontentloaded")
-            acumatica_page.wait_for_timeout(2000)
+            screen.page.wait_for_load_state("domcontentloaded")
+            screen.page.wait_for_timeout(2000)
 
         # Click PO Links tab — this was the original crash point
-        po_links_tab = acumatica_page.locator("span:has-text('PO Links')").first
+        po_links_tab = screen.locator("span:has-text('PO Links')").first
         if po_links_tab.is_visible(timeout=3000):
             po_links_tab.click()
-            acumatica_page.wait_for_timeout(2000)
+            screen.page.wait_for_timeout(2000)
 
-        assert "ScreenId=ERROR" not in acumatica_page.url, \
-            "PO Links tab caused IGCM.DAC type-not-found error"
+        screen.assert_no_errors()
 
 
 class TestPO301000ContainerFields:
     """Verify container fields on Purchase Orders screen."""
 
-    def test_po_screen_loads_without_error(self, acumatica_page):
+    def test_po_screen_loads_without_error(self, acumatica_screen):
         """PO301000 should load without IGCM type-not-found errors."""
-        navigate_to_screen_safe(acumatica_page, "PO301000")
-        wait_for_screen(acumatica_page, "PO301000")
-
-        # The critical check: no error page, no IGCM.DAC crashes
-        page_text = acumatica_page.locator("body").text_content() or ""
-        assert "IGCM.DAC" not in page_text, \
-            "PO301000 has IGCM.DAC reference — type-not-found error"
+        screen = acumatica_screen("PO301000")
+        screen.assert_no_errors()
 
     def test_container_tracking_button_exists(self, acumatica_page):
         """CONTAINER TRACKING toolbar button should be present.
@@ -168,43 +148,29 @@ class TestPO301000ContainerFields:
         The button is rendered by POOrderEntry_Extension.viewContainer
         (PXAction with DisplayName='Container Tracking') on the PO form.
 
-        Two reasons we navigate via direct aspx URL instead of
-        navigate_to_screen_safe(page, "PO301000"):
-        1. AesthetikWMS overrode the SiteMap entry for PO301000 with
-           ScreenID="PO3010PL" (same Url=~/Pages/PO/PO301000.aspx). The
-           ScreenId=PO301000 menu route therefore no longer resolves and
-           /Main?ScreenId=PO301000 redirects to home (Frames/Default.aspx).
-        2. The framed Main wrapper renders the form inside iframe[name='main'],
-           and page.locator("text=...") does not pierce iframes — the
-           original assertion was a vacuous pass that broke once the
-           sandbox gate started taking it seriously.
-        Loading the aspx directly avoids both issues; the button is on the
-        form regardless of menu route.
+        Uses direct ASPX URL because AesthetikWMS overrode the SiteMap
+        entry for PO301000 with ScreenID="PO3010PL", so /Main?ScreenId=PO301000
+        redirects to home. AcumaticaScreen.navigate handles this via
+        shadow detection + direct fallback.
         """
-        acumatica_page.goto(
-            f"{ACUMATICA_URL}/Pages/PO/PO301000.aspx",
-            wait_until="domcontentloaded",
-        )
-        acumatica_page.wait_for_timeout(3000)
+        screen = AcumaticaScreen.direct(acumatica_page, "/Pages/PO/PO301000.aspx")
 
-        btn = acumatica_page.locator("text=CONTAINER TRACKING")
+        btn = screen.locator("text=CONTAINER TRACKING")
         assert btn.count() > 0, "CONTAINER TRACKING button not found on PO301000"
 
-    def test_container_tracking_navigates_to_sb501000(self, acumatica_page):
+    def test_container_tracking_navigates_to_sb501000(self, acumatica_screen):
         """Clicking CONTAINER TRACKING should navigate to SB501000 without error."""
-        navigate_to_screen_safe(acumatica_page, "PO301000")
-        wait_for_screen(acumatica_page, "PO301000")
+        screen = acumatica_screen("PO301000")
 
-        btn = acumatica_page.locator("text=CONTAINER TRACKING").first
+        btn = screen.locator("text=CONTAINER TRACKING").first
         if btn.is_visible(timeout=3000):
             btn.click()
-            acumatica_page.wait_for_load_state("domcontentloaded")
-            acumatica_page.wait_for_timeout(3000)
+            screen.page.wait_for_load_state("domcontentloaded")
+            screen.page.wait_for_timeout(3000)
 
         # Should land on SB501000 or stay on PO301000, NOT error page
-        current_url = acumatica_page.url
-        assert "ScreenId=ERROR" not in current_url, \
-            f"CONTAINER TRACKING button caused error. URL: {current_url}"
+        assert "ScreenId=ERROR" not in screen.page.url, \
+            f"CONTAINER TRACKING button caused error. URL: {screen.page.url}"
 
 
 class TestIGCMScreensRemoved:
@@ -225,11 +191,6 @@ class TestIGCMScreensRemoved:
 
         current_url = acumatica_page.url
 
-        # Acceptable outcomes:
-        # 1. Redirected to home/welcome page (screen removed from SiteMap)
-        # 2. Shows error page (screen registered but graph/aspx missing)
-        # NOT acceptable: the screen actually loads with IGCM content
-
         # Check that no IGCM.DAC error dialogs fired
         igcm_errors = [
             m for m in dialog_messages
@@ -238,10 +199,8 @@ class TestIGCMScreensRemoved:
         assert len(igcm_errors) == 0, \
             f"IGCM.DAC error dialog on {screen_id}: {igcm_errors}"
 
-        # If we landed on an error page, that's acceptable (screen is dead)
-        # If we landed on the screen, that's a problem (should have been cleaned up)
+        # If we landed on the screen, check it's not showing IGCM content
         if f"ScreenId={screen_id}" in current_url:
-            # Screen is still registered — check it's not showing IGCM content
             page_text = acumatica_page.locator("body").text_content() or ""
             assert "IGCM" not in page_text, \
                 f"Screen {screen_id} still shows IGCM content"
@@ -264,25 +223,23 @@ class TestContainerTrackingWorkspace:
         "workspace is tracked separately — requires inserting a "
         "MUIWorkspace row in AesthetikContainersInstall.cs."
     )
-    def test_workspace_link_exists(self, acumatica_page):
+    def test_workspace_link_exists(self, acumatica_screen):
         """Container Tracking should appear in the sidebar."""
-        navigate_to_screen_safe(acumatica_page, "SB501000")
-        acumatica_page.wait_for_timeout(2000)
+        screen = acumatica_screen("SB501000")
 
-        sidebar = acumatica_page.locator("text=Container Tracking")
+        sidebar = screen.page.locator("text=Container Tracking")
         assert sidebar.count() > 0, "Container Tracking workspace not found in sidebar"
 
-    def test_workspace_click_no_error(self, acumatica_page):
+    def test_workspace_click_no_error(self, acumatica_screen):
         """Clicking Container Tracking workspace should not error."""
-        navigate_to_screen_safe(acumatica_page, "SB501000")
-        acumatica_page.wait_for_timeout(2000)
+        screen = acumatica_screen("SB501000")
 
-        workspace_link = acumatica_page.locator("text=Container Tracking").first
+        workspace_link = screen.page.locator("text=Container Tracking").first
         if workspace_link.is_visible(timeout=3000):
             workspace_link.click()
-            acumatica_page.wait_for_timeout(3000)
+            screen.page.wait_for_timeout(3000)
 
-        assert "ScreenId=ERROR" not in acumatica_page.url, \
+        assert "ScreenId=ERROR" not in screen.page.url, \
             "Container Tracking workspace click caused error"
 
 
@@ -308,49 +265,36 @@ class TestContainerTrackingGIs:
         ("SB401020", "Container Events"),
         ("SB401030", "Custom Classification"),
     ])
-    def test_gi_screen_loads(self, acumatica_page, screen_id, name):
-        """GI screen should load without error.
-
-        Note: Acumatica's frameset always shows ScreenId=00000000 in the
-        top-frame URL — screens load inside the 'main' iframe via JS.
-        Check for ERROR redirect and verify body content renders.
-        """
-        navigate_to_screen_safe(acumatica_page, screen_id)
-        wait_for_screen(acumatica_page, screen_id)
-
-        assert "ScreenId=ERROR" not in acumatica_page.url, \
-            f"{name} ({screen_id}) redirected to error page"
+    def test_gi_screen_loads(self, acumatica_screen, screen_id, name):
+        """GI screen should load without error."""
+        screen = acumatica_screen(screen_id)
+        screen.assert_no_errors()
 
 
 class TestFreightForwarders:
     """Verify Freight Forwarders maintenance screen (SB302000)."""
 
-    def test_screen_loads(self, acumatica_page):
+    def test_screen_loads(self, acumatica_screen):
         """SB302000 should load without error."""
-        navigate_to_screen_safe(acumatica_page, "SB302000")
-        wait_for_screen(acumatica_page, "SB302000")
+        screen = acumatica_screen("SB302000")
+        screen.assert_no_errors()
 
-        assert "ScreenId=ERROR" not in acumatica_page.url, \
-            "SB302000 Freight Forwarders redirected to error page"
-
-    def test_new_record_button(self, acumatica_page):
+    def test_new_record_button(self, acumatica_screen):
         """Should be able to click Add New Record."""
-        navigate_to_screen_safe(acumatica_page, "SB302000")
-        wait_for_screen(acumatica_page, "SB302000")
+        screen = acumatica_screen("SB302000")
 
-        add_btn = acumatica_page.locator("div[icon='AddNew'], [id*='btnInsert']").first
+        add_btn = screen.locator("div[icon='AddNew'], [id*='btnInsert']").first
         if add_btn.is_visible(timeout=3000):
             add_btn.click()
-            acumatica_page.wait_for_timeout(2000)
+            screen.page.wait_for_timeout(2000)
 
-        assert "ScreenId=ERROR" not in acumatica_page.url, \
-            "Add New Record on Freight Forwarders caused error"
+        screen.assert_no_errors()
 
 
 class TestContainerTrackingWorkspaceComplete:
     """Verify all container tracking screens appear in the workspace."""
 
-    def test_new_screens_no_errors(self, acumatica_page):
+    def test_new_screens_no_errors(self, acumatica_screen):
         """All 5 new screens should not produce error pages."""
         new_screens = [
             ("SB401000", "PO Containers"),
@@ -361,9 +305,8 @@ class TestContainerTrackingWorkspaceComplete:
         ]
 
         for screen_id, name in new_screens:
-            navigate_to_screen_safe(acumatica_page, screen_id)
-            assert "ScreenId=ERROR" not in acumatica_page.url, \
-                f"{name} ({screen_id}) — redirected to error page"
+            screen = acumatica_screen(screen_id)
+            screen.assert_no_errors()
 
 
 # ════════════════════════════════════════════════════════════════════════
@@ -373,81 +316,65 @@ class TestContainerTrackingWorkspaceComplete:
 class TestPOContainerLinesGI:
     """Verify PO Container Lines GI (SB401040) loads."""
 
-    def test_gi_screen_loads(self, acumatica_page):
+    def test_gi_screen_loads(self, acumatica_screen):
         """SB401040 should load without error."""
-        navigate_to_screen_safe(acumatica_page, "SB401040")
-        wait_for_screen(acumatica_page, "SB401040")
-
-        assert "ScreenId=ERROR" not in acumatica_page.url, \
-            "SB401040 PO Container Lines redirected to error page"
+        screen = acumatica_screen("SB401040")
+        screen.assert_no_errors()
 
 
 class TestContainerTypes:
     """Verify Container Types maintenance screen (SB302010)."""
 
-    def test_screen_loads(self, acumatica_page):
+    def test_screen_loads(self, acumatica_screen):
         """SB302010 should load without error."""
-        navigate_to_screen_safe(acumatica_page, "SB302010")
-        wait_for_screen(acumatica_page, "SB302010")
+        screen = acumatica_screen("SB302010")
+        screen.assert_no_errors()
 
-        assert "ScreenId=ERROR" not in acumatica_page.url, \
-            "SB302010 Container Types redirected to error page"
-
-    def test_new_record_button(self, acumatica_page):
+    def test_new_record_button(self, acumatica_screen):
         """Should be able to click Add New Record."""
-        navigate_to_screen_safe(acumatica_page, "SB302010")
-        wait_for_screen(acumatica_page, "SB302010")
+        screen = acumatica_screen("SB302010")
 
-        add_btn = acumatica_page.locator("div[icon='AddNew'], [id*='btnInsert']").first
+        add_btn = screen.locator("div[icon='AddNew'], [id*='btnInsert']").first
         if add_btn.is_visible(timeout=3000):
             add_btn.click()
-            acumatica_page.wait_for_timeout(2000)
+            screen.page.wait_for_timeout(2000)
 
-        assert "ScreenId=ERROR" not in acumatica_page.url, \
-            "Add New Record on Container Types caused error"
+        screen.assert_no_errors()
 
 
 class TestDestinationsPorts:
     """Verify Destinations/Ports maintenance screen (SB302020)."""
 
-    def test_screen_loads(self, acumatica_page):
+    def test_screen_loads(self, acumatica_screen):
         """SB302020 should load without error."""
-        navigate_to_screen_safe(acumatica_page, "SB302020")
-        wait_for_screen(acumatica_page, "SB302020")
+        screen = acumatica_screen("SB302020")
+        screen.assert_no_errors()
 
-        assert "ScreenId=ERROR" not in acumatica_page.url, \
-            "SB302020 Destinations/Ports redirected to error page"
-
-    def test_new_record_button(self, acumatica_page):
+    def test_new_record_button(self, acumatica_screen):
         """Should be able to click Add New Record."""
-        navigate_to_screen_safe(acumatica_page, "SB302020")
-        wait_for_screen(acumatica_page, "SB302020")
+        screen = acumatica_screen("SB302020")
 
-        add_btn = acumatica_page.locator("div[icon='AddNew'], [id*='btnInsert']").first
+        add_btn = screen.locator("div[icon='AddNew'], [id*='btnInsert']").first
         if add_btn.is_visible(timeout=3000):
             add_btn.click()
-            acumatica_page.wait_for_timeout(2000)
+            screen.page.wait_for_timeout(2000)
 
-        assert "ScreenId=ERROR" not in acumatica_page.url, \
-            "Add New Record on Destinations/Ports caused error"
+        screen.assert_no_errors()
 
 
 class TestContainerPreferences:
     """Verify Container Preferences screen (SB302030)."""
 
-    def test_screen_loads(self, acumatica_page):
+    def test_screen_loads(self, acumatica_screen):
         """SB302030 should load without error."""
-        navigate_to_screen_safe(acumatica_page, "SB302030")
-        wait_for_screen(acumatica_page, "SB302030")
-
-        assert "ScreenId=ERROR" not in acumatica_page.url, \
-            "SB302030 Container Preferences redirected to error page"
+        screen = acumatica_screen("SB302030")
+        screen.assert_no_errors()
 
 
 class TestPhase3WorkspaceComplete:
     """Verify all Phase 1 + Phase 2-3 screens load without error."""
 
-    def test_all_screens_no_errors(self, acumatica_page):
+    def test_all_screens_no_errors(self, acumatica_screen):
         """All 9 container tracking screens should not produce error pages."""
         all_screens = [
             ("SB501000", "Container Maintenance"),
@@ -463,9 +390,8 @@ class TestPhase3WorkspaceComplete:
         ]
 
         for screen_id, name in all_screens:
-            navigate_to_screen_safe(acumatica_page, screen_id)
-            assert "ScreenId=ERROR" not in acumatica_page.url, \
-                f"{name} ({screen_id}) — redirected to error page"
+            screen = acumatica_screen(screen_id)
+            screen.assert_no_errors()
 
 
 # ════════════════════════════════════════════════════════════════════════
@@ -481,12 +407,7 @@ EXPECTED_WORKSPACE_SCREENS = {
 
 
 class TestWorkspaceIntegrity:
-    """Every link in the Container Tracking workspace must load without error.
-
-    Navigates to each of our expected screens AND checks that no unexpected
-    (old IIG) screens exist in the workspace. Uses comprehensive error
-    detection — not just HTTP 200, but actual page content verification.
-    """
+    """Every link in the Container Tracking workspace must load without error."""
 
     @pytest.mark.parametrize("screen_id,name", [
         ("SB501000", "Container Maintenance"),
@@ -500,11 +421,10 @@ class TestWorkspaceIntegrity:
         ("SB302020", "Destinations/Ports"),
         ("SB302030", "Container Preferences"),
     ])
-    def test_screen_loads_without_errors(self, acumatica_page, screen_id, name):
+    def test_screen_loads_without_errors(self, acumatica_screen, screen_id, name):
         """Each workspace screen must load without type-not-found or IGCM errors."""
-        navigate_to_screen_safe(acumatica_page, screen_id)
-        wait_for_screen(acumatica_page, screen_id)
-        assert_no_screen_errors(acumatica_page, f"{name} ({screen_id})")
+        screen = acumatica_screen(screen_id)
+        screen.assert_no_errors()
 
 
 # ════════════════════════════════════════════════════════════════════════
@@ -519,49 +439,48 @@ _xfail_gi = pytest.mark.xfail(
 
 @_xfail_gi
 class TestGIColumns:
-    """Verify GI screens render with expected data source columns."""
+    """Verify GI screens render with expected data source columns.
 
-    def test_po_containers_gi_columns(self, acumatica_page):
+    Note: These tests still use navigate_to_gi_screen + helpers for grid
+    assertion since AcumaticaScreen doesn't wrap the grid assertion helpers.
+    """
+
+    def test_po_containers_gi_columns(self, acumatica_screen):
         """SB401000 should show PO container columns."""
-        navigate_to_gi_screen(acumatica_page, "SB401000")
-        wait_for_screen(acumatica_page, "SB401000")
-        assert_grid_visible(acumatica_page, "SB401000")
-        assert_grid_has_columns(acumatica_page, [
+        screen = acumatica_screen("SB401000")
+        assert_grid_visible(screen.page, "SB401000")
+        assert_grid_has_columns(screen.page, [
             "Container", "Status", "Carrier",
         ], "SB401000 PO Containers")
 
-    def test_so_containers_gi_columns(self, acumatica_page):
+    def test_so_containers_gi_columns(self, acumatica_screen):
         """SB401010 should show SO shipment columns."""
-        navigate_to_gi_screen(acumatica_page, "SB401010")
-        wait_for_screen(acumatica_page, "SB401010")
-        assert_grid_visible(acumatica_page, "SB401010")
-        assert_grid_has_columns(acumatica_page, [
+        screen = acumatica_screen("SB401010")
+        assert_grid_visible(screen.page, "SB401010")
+        assert_grid_has_columns(screen.page, [
             "Shipment", "Status",
         ], "SB401010 SO Containers")
 
-    def test_container_events_gi_columns(self, acumatica_page):
+    def test_container_events_gi_columns(self, acumatica_screen):
         """SB401020 should show event tracking columns."""
-        navigate_to_gi_screen(acumatica_page, "SB401020")
-        wait_for_screen(acumatica_page, "SB401020")
-        assert_grid_visible(acumatica_page, "SB401020")
-        assert_grid_has_columns(acumatica_page, [
+        screen = acumatica_screen("SB401020")
+        assert_grid_visible(screen.page, "SB401020")
+        assert_grid_has_columns(screen.page, [
             "Container", "Event",
         ], "SB401020 Container Events")
 
-    def test_custom_classification_gi_columns(self, acumatica_page):
+    def test_custom_classification_gi_columns(self, acumatica_screen):
         """SB401030 should show inventory classification columns."""
-        navigate_to_gi_screen(acumatica_page, "SB401030")
-        wait_for_screen(acumatica_page, "SB401030")
-        assert_grid_visible(acumatica_page, "SB401030")
-        assert_grid_has_columns(acumatica_page, [
+        screen = acumatica_screen("SB401030")
+        assert_grid_visible(screen.page, "SB401030")
+        assert_grid_has_columns(screen.page, [
             "Inventory",
         ], "SB401030 Custom Classification")
 
-    def test_po_container_lines_gi(self, acumatica_page):
+    def test_po_container_lines_gi(self, acumatica_screen):
         """SB401040 should render a grid."""
-        navigate_to_gi_screen(acumatica_page, "SB401040")
-        wait_for_screen(acumatica_page, "SB401040")
-        assert_grid_visible(acumatica_page, "SB401040")
+        screen = acumatica_screen("SB401040")
+        assert_grid_visible(screen.page, "SB401040")
 
 
 # ════════════════════════════════════════════════════════════════════════
@@ -572,87 +491,71 @@ class TestGIColumns:
 class TestContainerMaintenanceCRUD:
     """SB501000 — Create, save, verify tabs, delete a container."""
 
-    def test_create_and_delete_container(self, acumatica_page):
-        """Full lifecycle: add new → set fields → save → verify tabs → delete.
-
-        SB501000 is a Procurement Command Center (FormDetail.master) with:
-        - phF: Filter form with KPI fields
-        - phG: PXSplitContainer with grid (Template1) and detail form (Template2)
-        Detail form fields use phG-based IDs, not phF.
-        """
-        page = acumatica_page
-        navigate_to_screen_safe(page, "SB501000")
-        wait_for_screen(page, "SB501000")
+    def test_create_and_delete_container(self, acumatica_screen):
+        """Full lifecycle: add new -> set fields -> save -> verify tabs -> delete."""
+        screen = acumatica_screen("SB501000")
+        page = screen.page
 
         # Add new record via toolbar
         click_add_new(page)
-        assert_no_screen_errors(page, "SB501000 after Add New")
+        screen.assert_no_errors()
 
         # Set ContainerCD — field is in the detail form inside phG split container.
-        # Use partial ID match since ASP.NET generates full path from control hierarchy.
-        frame = get_main_frame(page)
         test_cd = f"TESTE2E{int(time.time()) % 100000}"
-        cd_input = frame.locator("input[id$='edContainerCD_text']").first
+        cd_input = screen.locator("input[id$='edContainerCD_text']").first
         cd_input.click()
         cd_input.fill(test_cd)
-        frame.evaluate("document.activeElement.blur()")
+        screen.ctx.evaluate("document.activeElement.blur()")
         page.wait_for_timeout(500)
 
         # Save
         save_record(page)
-        assert_no_screen_errors(page, "SB501000 after Save")
+        screen.assert_no_errors()
 
         # Verify Events tab loads
-        events_tab = frame.locator("span:has-text('Events')").first
+        events_tab = screen.locator("span:has-text('Events')").first
         if events_tab.is_visible(timeout=3000):
             events_tab.click()
             page.wait_for_timeout(1000)
-        assert_no_screen_errors(page, "SB501000 Events tab")
+        screen.assert_no_errors()
 
         # Verify PO Links tab loads
-        po_tab = frame.locator("span:has-text('PO Links')").first
+        po_tab = screen.locator("span:has-text('PO Links')").first
         if po_tab.is_visible(timeout=3000):
             po_tab.click()
             page.wait_for_timeout(1000)
-        assert_no_screen_errors(page, "SB501000 PO Links tab")
+        screen.assert_no_errors()
 
         # Verify Costs tab loads
-        costs_tab = frame.locator("span:has-text('Costs')").first
+        costs_tab = screen.locator("span:has-text('Costs')").first
         if costs_tab.is_visible(timeout=3000):
             costs_tab.click()
             page.wait_for_timeout(1000)
-        assert_no_screen_errors(page, "SB501000 Costs tab")
+        screen.assert_no_errors()
 
         # Delete test record
         click_delete(page)
         page.wait_for_timeout(1000)
 
-    def test_form_fields_visible_after_add_new(self, acumatica_page):
-        """Key form fields should be visible in the detail panel after Add New.
-
-        SB501000 uses a split container layout. Detail fields are in phG
-        inside frmDetail, not in phF (which holds the KPI filter form).
-        Use suffix-based selectors to match regardless of full ID path.
-        """
-        page = acumatica_page
-        navigate_to_screen_safe(page, "SB501000")
-        wait_for_screen(page, "SB501000")
+    def test_form_fields_visible_after_add_new(self, acumatica_screen):
+        """Key form fields should be visible in the detail panel after Add New."""
+        screen = acumatica_screen("SB501000")
+        page = screen.page
 
         click_add_new(page)
         page.wait_for_timeout(1000)
 
-        frame = get_main_frame(page)
         # ContainerCD (selector DIV with _text INPUT) — in detail form
-        assert frame.locator("input[id$='edContainerCD_text']").first.is_visible(timeout=5000), \
+        assert screen.locator("input[id$='edContainerCD_text']").first.is_visible(timeout=5000), \
             "ContainerCD field not visible after Add New"
         # CarrierCode — in detail form
-        assert frame.locator("input[id$='edCarrierCode']").first.is_visible(timeout=3000), \
+        assert screen.locator("input[id$='edCarrierCode']").first.is_visible(timeout=3000), \
             "CarrierCode field not visible after Add New"
         # TransportMode — new field in detail form
-        assert frame.locator("[id$='edTransportMode']").first.is_visible(timeout=3000), \
+        assert screen.locator("[id$='edTransportMode']").first.is_visible(timeout=3000), \
             "TransportMode field not visible after Add New"
         # Status — in detail form
-        assert frame.locator("[id$='edStatus']").first.is_visible(timeout=3000), \
+        assert screen.locator("[id$='edStatus']").first.is_visible(timeout=3000), \
             "Status field not visible after Add New"
 
         page.keyboard.press("Escape")
@@ -663,20 +566,19 @@ class TestContainerMaintenanceCRUD:
 class TestFreightForwardersCRUD:
     """SB302000 — Create, save, delete a freight forwarder."""
 
-    def test_create_and_delete_forwarder(self, acumatica_page):
-        page = acumatica_page
-        navigate_to_screen_safe(page, "SB302000")
-        wait_for_screen(page, "SB302000")
+    def test_create_and_delete_forwarder(self, acumatica_screen):
+        screen = acumatica_screen("SB302000")
+        page = screen.page
 
         click_add_new(page)
-        assert_no_screen_errors(page, "SB302000 after Add New")
+        screen.assert_no_errors()
 
         test_cd = f"TST{int(time.time()) % 10000}"
         set_field_value(page, "ctl00_phF_form_edForwarderCD_text", test_cd)
         set_field_value(page, "ctl00_phF_form_edName", "E2E Test Forwarder")
 
         save_record(page)
-        assert_no_screen_errors(page, "SB302000 after Save")
+        screen.assert_no_errors()
 
         click_delete(page)
 
@@ -685,36 +587,31 @@ class TestFreightForwardersCRUD:
 class TestContainerTypesSeedData:
     """SB302010 — Verify seed data and CRUD."""
 
-    def test_seed_data_exists(self, acumatica_page):
+    def test_seed_data_exists(self, acumatica_screen):
         """At least 6 container types should be seeded."""
-        page = acumatica_page
-        navigate_to_screen_safe(page, "SB302010")
-        wait_for_screen(page, "SB302010")
-        assert_no_screen_errors(page, "SB302010")
-
-        frame = get_main_frame(page)
+        screen = acumatica_screen("SB302010")
+        screen.assert_no_errors()
 
         # Navigate to last record to verify data exists
-        last_btn = frame.locator("[id*='ToolBar_Last'], [id*='btnLast']").first
+        last_btn = screen.locator("[id*='ToolBar_Last'], [id*='btnLast']").first
         if last_btn.is_visible(timeout=3000):
             last_btn.click()
-            page.wait_for_timeout(1000)
+            screen.page.wait_for_timeout(1000)
 
         # Verify we have a TypeCD field visible (exclude hidden _state inputs)
-        type_cd = frame.locator("#ctl00_phF_form_edTypeCD")
+        type_cd = screen.locator("#ctl00_phF_form_edTypeCD")
         assert type_cd.is_visible(timeout=5000), "Container Types screen has no TypeCD field"
 
-    def test_create_and_delete_type(self, acumatica_page):
-        page = acumatica_page
-        navigate_to_screen_safe(page, "SB302010")
-        wait_for_screen(page, "SB302010")
+    def test_create_and_delete_type(self, acumatica_screen):
+        screen = acumatica_screen("SB302010")
+        page = screen.page
 
         click_add_new(page)
         set_field_value(page, "ctl00_phF_form_edTypeCD_text", "TSTE2E")
         set_field_value(page, "ctl00_phF_form_edDescription", "E2E Test Type")
 
         save_record(page)
-        assert_no_screen_errors(page, "SB302010 after Save")
+        screen.assert_no_errors()
 
         click_delete(page)
 
@@ -723,35 +620,30 @@ class TestContainerTypesSeedData:
 class TestPortsSeedData:
     """SB302020 — Verify seed data and CRUD."""
 
-    def test_seed_data_exists(self, acumatica_page):
+    def test_seed_data_exists(self, acumatica_screen):
         """At least some ports should be seeded."""
-        page = acumatica_page
-        navigate_to_screen_safe(page, "SB302020")
-        wait_for_screen(page, "SB302020")
-        assert_no_screen_errors(page, "SB302020")
+        screen = acumatica_screen("SB302020")
+        screen.assert_no_errors()
 
-        frame = get_main_frame(page)
-
-        last_btn = frame.locator("[id*='ToolBar_Last'], [id*='btnLast']").first
+        last_btn = screen.locator("[id*='ToolBar_Last'], [id*='btnLast']").first
         if last_btn.is_visible(timeout=3000):
             last_btn.click()
-            page.wait_for_timeout(1000)
+            screen.page.wait_for_timeout(1000)
 
         # Verify we have a PortCode field visible (exclude hidden _state inputs)
-        port_code = frame.locator("#ctl00_phF_form_edPortCode")
+        port_code = screen.locator("#ctl00_phF_form_edPortCode")
         assert port_code.is_visible(timeout=5000), "Ports screen has no PortCode field"
 
-    def test_create_and_delete_port(self, acumatica_page):
-        page = acumatica_page
-        navigate_to_screen_safe(page, "SB302020")
-        wait_for_screen(page, "SB302020")
+    def test_create_and_delete_port(self, acumatica_screen):
+        screen = acumatica_screen("SB302020")
+        page = screen.page
 
         click_add_new(page)
         set_field_value(page, "ctl00_phF_form_edPortCode_text", "TSTE2E")
         set_field_value(page, "ctl00_phF_form_edPortName", "E2E Test Port")
 
         save_record(page)
-        assert_no_screen_errors(page, "SB302020 after Save")
+        screen.assert_no_errors()
 
         click_delete(page)
 
@@ -760,19 +652,15 @@ class TestPortsSeedData:
 class TestContainerPreferencesE2E:
     """SB302030 — Verify default preferences record exists."""
 
-    def test_preferences_screen_loads(self, acumatica_page):
-        page = acumatica_page
-        navigate_to_screen_safe(page, "SB302030")
-        wait_for_screen(page, "SB302030")
-        assert_no_screen_errors(page, "SB302030")
+    def test_preferences_screen_loads(self, acumatica_screen):
+        screen = acumatica_screen("SB302030")
+        screen.assert_no_errors()
 
-    def test_default_fields_visible(self, acumatica_page):
+    def test_default_fields_visible(self, acumatica_screen):
         """Key preference fields should be visible."""
-        page = acumatica_page
-        navigate_to_screen_safe(page, "SB302030")
-        wait_for_screen(page, "SB302030")
+        screen = acumatica_screen("SB302030")
 
-        fields = find_custom_fields(page, [
+        fields = screen.find_fields([
             "AutoLinkPOsByRef",
             "TrackingPollIntervalHours",
         ])
@@ -788,58 +676,43 @@ class TestContainerPreferencesE2E:
 class TestContainerE2EFlow:
     """Full container lifecycle across multiple screens."""
 
-    def test_container_lifecycle(self, acumatica_page):
-        """Create container → verify in GI → delete.
-
-        1. Create a container on SB501000
-        2. Set type from PXSelector dropdown
-        3. Save
-        4. Navigate to SB401000 (PO Containers GI) — screen should load
-        5. Navigate back to SB501000 — find and delete the test container
-        """
-        page = acumatica_page
+    def test_container_lifecycle(self, acumatica_screen):
+        """Create container -> verify in GI -> delete."""
         test_cd = f"E2E{int(time.time()) % 100000}"
 
         # Step 1: Create container
-        navigate_to_screen_safe(page, "SB501000")
-        wait_for_screen(page, "SB501000")
+        screen = acumatica_screen("SB501000")
+        page = screen.page
         click_add_new(page)
-        # ContainerCD is in phG detail form, not phF — use suffix selector
-        frame = get_main_frame(page)
-        cd_input = frame.locator("input[id$='edContainerCD_text']").first
+        cd_input = screen.locator("input[id$='edContainerCD_text']").first
         cd_input.click()
         cd_input.fill(test_cd)
-        frame.evaluate("document.activeElement.blur()")
+        screen.ctx.evaluate("document.activeElement.blur()")
         page.wait_for_timeout(500)
 
         # Step 2: Save
         save_record(page)
-        assert_no_screen_errors(page, "SB501000 lifecycle — save")
+        screen.assert_no_errors()
 
-        # Step 3: Verify PO Containers GI loads (our container may or may not show
-        # depending on GI filters, but the screen must not error)
-        navigate_to_gi_screen(page, "SB401000")
-        wait_for_screen(page, "SB401000")
+        # Step 3: Verify PO Containers GI loads
+        screen = acumatica_screen("SB401000")
         assert_grid_visible(page, "SB401000")
 
         # Step 4: Verify Container Events GI loads
-        navigate_to_gi_screen(page, "SB401020")
-        wait_for_screen(page, "SB401020")
+        screen = acumatica_screen("SB401020")
 
         # Step 5: Navigate back and delete test container
-        navigate_to_screen_safe(page, "SB501000")
-        wait_for_screen(page, "SB501000")
+        screen = acumatica_screen("SB501000")
 
         # Find our test record — navigate to last record
-        last_btn = page.locator("div[icon='Last'], [id*='btnLast']").first
+        last_btn = screen.locator("div[icon='Last'], [id*='btnLast']").first
         if last_btn.is_visible(timeout=3000):
             last_btn.click()
             page.wait_for_load_state("domcontentloaded")
             page.wait_for_timeout(2000)
 
         # Verify we're on our test record — use suffix selector
-        frame = get_main_frame(page)
-        cd_el = frame.locator("input[id$='edContainerCD_text']").first
+        cd_el = screen.locator("input[id$='edContainerCD_text']").first
         current_cd = cd_el.input_value() if cd_el.is_visible(timeout=3000) else ""
         if current_cd == test_cd:
             click_delete(page)
