@@ -1930,8 +1930,7 @@ jobs:
   # every retry recycled the prod app pool. 8 prod restarts in 14 hours.
   # Re-enable only after:
   #   1. ACUMATICA_SANDBOX_URL + ACUMATICA_SANDBOX_TENANT corrected
-  #   2. GH_PAT_DISPATCH replaced with a service-account PAT (so audit
-  #      log shows the agent, not Kevin)
+  #   2. ✅ GH_PAT_DISPATCH retired — acuops-agent App token live (Task 2.3, 2026-04-09)
   #   3. Recovery agent capped at N total dispatches per 24h via an
   #      external counter the agent itself cannot reset
   invoke-agent:
