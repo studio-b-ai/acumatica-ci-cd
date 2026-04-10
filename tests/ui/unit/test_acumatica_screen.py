@@ -201,3 +201,33 @@ class TestAcumaticaScreenToolbar:
         screen = self._make_screen()
         screen.wait_ready()
         screen.ctx.wait_for_function.assert_called_once()
+
+
+class TestAcumaticaScreenErrors:
+    """Test error detection methods."""
+
+    def _make_screen(self):
+        from acumatica_screen import AcumaticaScreen
+        page = MagicMock()
+        ctx = MagicMock()
+        return AcumaticaScreen(page, ctx, "TEST00000", "iframe")
+
+    def test_assert_no_errors_passes_clean_page(self):
+        screen = self._make_screen()
+        screen.ctx.locator.return_value.text_content.return_value = "Normal page content"
+        type(screen.page).url = PropertyMock(return_value="https://example.com/Main?ScreenId=TEST00000")
+        screen.assert_no_errors()
+
+    def test_assert_no_errors_catches_type_not_found(self):
+        screen = self._make_screen()
+        screen.ctx.locator.return_value.text_content.return_value = "Error: type is not found in module"
+        type(screen.page).url = PropertyMock(return_value="https://example.com/Main?ScreenId=TEST00000")
+        with pytest.raises(AssertionError, match="type is not found"):
+            screen.assert_no_errors()
+
+    def test_assert_no_errors_catches_igcm_dac(self):
+        screen = self._make_screen()
+        screen.ctx.locator.return_value.text_content.return_value = "Reference to IGCM.DAC.SomeType"
+        type(screen.page).url = PropertyMock(return_value="https://example.com/Main?ScreenId=TEST00000")
+        with pytest.raises(AssertionError, match="IGCM.DAC"):
+            screen.assert_no_errors()

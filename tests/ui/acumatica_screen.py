@@ -213,6 +213,22 @@ class AcumaticaScreen:
             self.page.wait_for_load_state("domcontentloaded")
             self.wait_ready()
 
+    # ── Error Detection ───────────────────────────────────────────────
+
+    def assert_no_errors(self):
+        """Check page for common Acumatica error states."""
+        url = self.page.url
+        if "ScreenId=ERROR" in url:
+            raise AssertionError(f"{self.screen_id} redirected to error page")
+
+        body = (self.ctx.locator("body").text_content() or "").lower()
+        if "type is not found" in body:
+            raise AssertionError(f"{self.screen_id} has 'type is not found' error")
+        if "type not found" in body:
+            raise AssertionError(f"{self.screen_id} has 'type not found' error")
+        if "igcm.dac" in body:
+            raise AssertionError(f"{self.screen_id} references IGCM.DAC types")
+
     def find_fields(self, field_names: list[str]) -> dict[str, bool]:
         """Check which fields are present in the DOM."""
         results = {}
