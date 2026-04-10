@@ -2012,10 +2012,19 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       # ── Larry Loop safety gates (contract: larry-loop.md) ────────────
+      # GITHUB_TOKEN lacks variables:read/write scope. Mint an acuops-agent
+      # App token which has org-level access including repo variables.
+      - name: Mint acuops-agent token for Larry gates
+        id: larry-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ vars.ACUOPS_AGENT_APP_ID }}
+          private-key: ${{ secrets.ACUOPS_AGENT_PRIVATE_KEY }}
+
       - name: Check Larry kill switch
         id: larry-kill
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ steps.larry-token.outputs.token }}
         run: |
           KILL=$(gh variable get LARRY_KILL_SWITCH --repo ${{ github.repository }} 2>/dev/null || echo "false")
           if [ "$KILL" = "true" ]; then
@@ -2029,7 +2038,7 @@ jobs:
         id: larry-counter
         if: steps.larry-kill.outputs.killed != 'true'
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ steps.larry-token.outputs.token }}
         run: |
           COUNTER_JSON=$(gh variable get LARRY_DISPATCH_COUNT --repo ${{ github.repository }} 2>/dev/null || echo '{"count":0,"window_start":"1970-01-01T00:00:00Z"}')
           COUNT=$(echo "$COUNTER_JSON" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['count'])")
@@ -2062,7 +2071,7 @@ jobs:
       - name: Increment Larry dispatch counter
         if: steps.larry-kill.outputs.killed != 'true' && steps.larry-counter.outputs.blocked != 'true'
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ steps.larry-token.outputs.token }}
         run: |
           gh variable set LARRY_DISPATCH_COUNT \
             --repo ${{ github.repository }} \
