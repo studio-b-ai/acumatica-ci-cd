@@ -123,6 +123,34 @@ class AcumaticaSession:
         self._ssl_ctx.check_hostname = False
         self._ssl_ctx.verify_mode = ssl.CERT_NONE
 
+    def _merge_cookies(self, resp_headers) -> None:
+        """Merge Set-Cookie headers into the cookie jar.
+
+        Acumatica login returns multiple Set-Cookie headers
+        (ASP.NET_SessionId, .ASPXAUTH, UserBranch, etc.).
+        urllib's getheader() only returns the first one, so we
+        must use get_all() and merge them into a single Cookie
+        header string for subsequent requests.
+        """
+        raw_cookies = resp_headers.get_all("Set-Cookie") or []
+        if not raw_cookies:
+            return
+        # Parse existing cookies into a dict
+        existing = {}
+        if self._cookies:
+            for pair in self._cookies.split("; "):
+                if "=" in pair:
+                    k, v = pair.split("=", 1)
+                    existing[k.strip()] = v.strip()
+        # Merge new cookies (each Set-Cookie header has "name=value; attrs...")
+        for sc in raw_cookies:
+            # Take only the name=value part (before first ;)
+            nv = sc.split(";")[0].strip()
+            if "=" in nv:
+                k, v = nv.split("=", 1)
+                existing[k.strip()] = v.strip()
+        self._cookies = "; ".join(f"{k}={v}" for k, v in existing.items())
+
     def _request(
         self, method: str, path: str, body: Optional[bytes] = None,
         headers: Optional[dict] = None
@@ -137,12 +165,10 @@ class AcumaticaSession:
         req = urllib.request.Request(url, data=body, headers=hdrs, method=method)
         try:
             with urllib.request.urlopen(req, context=self._ssl_ctx) as resp:
-                # Capture Set-Cookie headers
-                set_cookie = resp.getheader("Set-Cookie")
-                if set_cookie:
-                    self._cookies = set_cookie
+                self._merge_cookies(resp.headers)
                 return (resp.status, resp.read())
         except urllib.error.HTTPError as e:
+            self._merge_cookies(e.headers)
             return (e.code, e.read())
 
     def login(self):
