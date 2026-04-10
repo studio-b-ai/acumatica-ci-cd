@@ -15,6 +15,6 @@ jobs:
       - name: Run restart audit
         env:
           GH_TOKEN: ${{ github.token }}
-          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+          SLACK_BOT_TOKEN: ${{ secrets.STUDIOB_SLACK_BOT_TOKEN }}
           SLACK_KEVIN_USER_ID: ${{ secrets.SLACK_KEVIN_USER_ID }}
         run: python3 scripts/restart-audit.py
