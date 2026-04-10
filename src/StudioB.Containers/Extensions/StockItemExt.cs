@@ -30,5 +30,11 @@ namespace StudioB.Containers
         [PXUIField(DisplayName = "Freight Class")]
         public string UsrFreightClass { get; set; }
         #endregion
+        #region UsrCbmPerUnit
+        public abstract class usrCbmPerUnit : PX.Data.BQL.BqlDecimal.Field<usrCbmPerUnit> { }
+        [PXDBDecimal(6)]
+        [PXUIField(DisplayName = "CBM Per Unit")]
+        public decimal? UsrCbmPerUnit { get; set; }
+        #endregion
     }
 }
