@@ -2100,6 +2100,7 @@ jobs:
           # git. Without this, claude-code-action denies most tool calls (the
           # first dry-run hit 123 permission denials).
           # --max-turns caps reasoning iterations (replaces deprecated input).
+          show_full_output: true
           claude_args: |
             --allowedTools "Bash,Edit,Read,Write,Glob,Grep"
             --max-turns 30
