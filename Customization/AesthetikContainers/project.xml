@@ -128,6 +128,13 @@
                         <Prop Key="DataField" Value="UsrFreightClass" />
                     </PXTextEdit>
                 </AddItem>
+                <AddItem>
+                    <PXNumberEdit TypeFullName="PX.Web.UI.PXNumberEdit">
+                        <Prop Key="Virtual:ApplyStylesheetSkin" />
+                        <Prop Key="ID" Value="edUsrCbmPerUnit" />
+                        <Prop Key="DataField" Value="UsrCbmPerUnit" />
+                    </PXNumberEdit>
+                </AddItem>
             </Children>
         </PXFormView>
     </Page>
