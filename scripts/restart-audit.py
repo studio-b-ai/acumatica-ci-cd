@@ -167,12 +167,12 @@ def format_slack_message(restarts: list[dict]) -> str:
     return "\n".join(lines)
 
 
-def send_slack_dm(message: str) -> None:
+def post_to_slack(message: str) -> None:
     bot_token = os.environ.get("SLACK_BOT_TOKEN", "")
-    user_id = os.environ.get("SLACK_KEVIN_USER_ID", "")
+    channel_id = os.environ.get("SLACK_CHANNEL_ID", "")
 
-    if not bot_token or not user_id:
-        print("SLACK_BOT_TOKEN or SLACK_KEVIN_USER_ID not set — printing to stdout instead")
+    if not bot_token or not channel_id:
+        print("SLACK_BOT_TOKEN or SLACK_CHANNEL_ID not set — printing to stdout instead")
         print(message)
         return
 
@@ -181,21 +181,6 @@ def send_slack_dm(message: str) -> None:
         "Content-Type": "application/json",
     }
 
-    # Open DM channel
-    req = urllib.request.Request(
-        "https://slack.com/api/conversations.open",
-        data=json.dumps({"users": user_id}).encode(),
-        headers=headers,
-        method="POST",
-    )
-    resp = json.loads(urllib.request.urlopen(req).read())
-    channel_id = resp.get("channel", {}).get("id", "")
-
-    if not channel_id:
-        print(f"Failed to open DM channel: {resp}", file=sys.stderr)
-        sys.exit(1)
-
-    # Post message
     req = urllib.request.Request(
         "https://slack.com/api/chat.postMessage",
         data=json.dumps({"channel": channel_id, "text": message}).encode(),
@@ -204,7 +189,7 @@ def send_slack_dm(message: str) -> None:
     )
     resp = json.loads(urllib.request.urlopen(req).read())
     if resp.get("ok"):
-        print(f"Sent restart audit to DM channel {channel_id}")
+        print(f"Sent restart audit to channel {channel_id}")
     else:
         print(f"Slack error: {resp.get('error')}", file=sys.stderr)
         sys.exit(1)
@@ -220,7 +205,7 @@ def main():
     print(message)
     print("--- End Preview ---\n")
 
-    send_slack_dm(message)
+    post_to_slack(message)
 
 
 if __name__ == "__main__":
