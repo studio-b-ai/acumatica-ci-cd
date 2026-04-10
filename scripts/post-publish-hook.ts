@@ -4,7 +4,7 @@
  * INSTALLATION (in studio-b-ai/acumatica-ci-cd):
  *
  * 1. Copy dispatch-test-config.ts to scripts/dispatch-test-config.ts
- * 2. Add GH_PAT_DISPATCH to GitHub Actions secrets
+ * 2. Add ACUOPS_AGENT_APP_ID + ACUOPS_AGENT_PRIVATE_KEY to GitHub Actions secrets
  * 3. Add a post-publish step to the deploy workflow (see below)
  *
  * This script parses the customization project XML to find new DAC extension

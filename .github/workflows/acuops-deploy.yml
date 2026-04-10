@@ -1689,6 +1689,7 @@ jobs:
           ACUDEV_API_KEY: ${{ secrets.ACUDEV_API_KEY }}
         run: |
           ERROR_DETAIL="Verification failed"
+          ERROR_SIGNATURE="verify:unknown"
           if [ -f verify-result.json ]; then
             ERROR_DETAIL=$(python3 -c "
           import sys, json
@@ -1696,6 +1697,24 @@ jobs:
           fails = [c for c in d.get('checks', []) if c['status'] == 'fail']
           print('; '.join(f\"{c['name']}: {c['detail']}\" for c in fails[:5]))
           " 2>/dev/null || echo "Verification failed — see logs")
+            # Derive canonical error signature (see docs/architecture/error-signatures.md)
+            ERROR_SIGNATURE=$(python3 -c "
+          import json
+          d = json.load(open('verify-result.json'))
+          fails = [c for c in d.get('checks', []) if c['status'] == 'fail']
+          if not fails: print('verify:unknown')
+          else:
+              c = fails[0]
+              name = c['name'].lower().replace(' ', '-')
+              detail = c.get('detail', '')
+              suffix = ''
+              if '401' in detail: suffix = '-401'
+              elif '404' in detail: suffix = '-404'
+              elif '500' in detail: suffix = '-500'
+              elif 'timeout' in detail.lower(): suffix = '-timeout'
+              elif 'mismatch' in detail.lower(): suffix = '-mismatch'
+              print(f'verify:{name}{suffix}')
+          " 2>/dev/null || echo "verify:unknown")
           fi
           curl -sf -X POST "${ACUDEV_URL}/ingest/incident" \
             -H "Content-Type: application/json" \
@@ -1706,6 +1725,7 @@ jobs:
               \"environment\": \"${{ steps.env.outputs.target }}\",
               \"commit\": \"${GITHUB_SHA::8}\",
               \"error_detail\": $(echo "$ERROR_DETAIL" | python3 -c 'import sys,json; print(json.dumps(sys.stdin.read().strip()))'),
+              \"error_signature\": \"${ERROR_SIGNATURE}\",
               \"run_url\": \"${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\",
               \"timestamp\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"
             }" || echo "[WARN] Auto-ingestion failed — non-blocking"
@@ -1929,11 +1949,10 @@ jobs:
   # ACUMATICA_SANDBOX_URL/TENANT secrets pointed at prod / Heritage Test,
   # every retry recycled the prod app pool. 8 prod restarts in 14 hours.
   # Re-enable only after:
-  #   1. ACUMATICA_SANDBOX_URL + ACUMATICA_SANDBOX_TENANT corrected
-  #   2. GH_PAT_DISPATCH replaced with a service-account PAT (so audit
-  #      log shows the agent, not Kevin)
-  #   3. Recovery agent capped at N total dispatches per 24h via an
-  #      external counter the agent itself cannot reset
+  #   1. ✅ ACUMATICA_SANDBOX_URL + ACUMATICA_SANDBOX_TENANT corrected (2026-04-07)
+  #   2. ✅ GH_PAT_DISPATCH retired — acuops-agent App token live (Task 2.3, 2026-04-09)
+  #   3. ✅ Recovery agent capped at 5 dispatches per 24h via LARRY_DISPATCH_COUNT
+  #      GH variable + LARRY_KILL_SWITCH external off switch (2026-04-09)
   invoke-agent:
     name: AI Failure Recovery (DISABLED)
     needs: [build, qualify, sandbox-gate]
@@ -1967,7 +1986,79 @@ jobs:
           # (Safety Package gate #2: agent attribution must not be Kevin).
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      # ── Larry Loop safety gates (contract: larry-loop.md) ────────────
+      - name: Check Larry kill switch
+        id: larry-kill
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          KILL=$(gh variable get LARRY_KILL_SWITCH --repo ${{ github.repository }} 2>/dev/null || echo "false")
+          if [ "$KILL" = "true" ]; then
+            echo "::warning::Larry kill switch is ON — skipping AI recovery"
+            echo "killed=true" >> $GITHUB_OUTPUT
+          else
+            echo "killed=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Check Larry dispatch counter
+        id: larry-counter
+        if: steps.larry-kill.outputs.killed != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          COUNTER_JSON=$(gh variable get LARRY_DISPATCH_COUNT --repo ${{ github.repository }} 2>/dev/null || echo '{"count":0,"window_start":"1970-01-01T00:00:00Z"}')
+          COUNT=$(echo "$COUNTER_JSON" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['count'])")
+          WINDOW=$(echo "$COUNTER_JSON" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['window_start'])")
+
+          # Reset window if expired (>24h)
+          EXPIRED=$(python3 -c "
+          from datetime import datetime, timezone, timedelta
+          window = datetime.fromisoformat('$WINDOW'.replace('Z','+00:00'))
+          now = datetime.now(timezone.utc)
+          print('true' if (now - window) > timedelta(hours=24) else 'false')
+          ")
+
+          if [ "$EXPIRED" = "true" ]; then
+            COUNT=0
+            WINDOW=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          fi
+
+          CAP=5
+          if [ "$COUNT" -ge "$CAP" ]; then
+            echo "::error::Larry dispatch counter at $COUNT/$CAP (window started $WINDOW). Budget exhausted — escalating."
+            echo "blocked=true" >> $GITHUB_OUTPUT
+          else
+            echo "Larry dispatch counter: $COUNT/$CAP (window started $WINDOW)"
+            echo "blocked=false" >> $GITHUB_OUTPUT
+            echo "new_count=$((COUNT + 1))" >> $GITHUB_OUTPUT
+            echo "window_start=$WINDOW" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Increment Larry dispatch counter
+        if: steps.larry-kill.outputs.killed != 'true' && steps.larry-counter.outputs.blocked != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh variable set LARRY_DISPATCH_COUNT \
+            --repo ${{ github.repository }} \
+            --body "{\"count\":${{ steps.larry-counter.outputs.new_count }},\"window_start\":\"${{ steps.larry-counter.outputs.window_start }}\"}"
+
+      - name: Escalate on budget exhaustion
+        if: steps.larry-counter.outputs.blocked == 'true'
+        env:
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+        run: |
+          # DM Kevin (fallback originator) with Larry escalation payload
+          curl -sf -X POST https://slack.com/api/chat.postMessage \
+            -H "Authorization: Bearer ${SLACK_BOT_TOKEN}" \
+            -H "Content-Type: application/json" \
+            -d "{
+              \"channel\": \"U0ALNRQ4KF0\",
+              \"text\": \"⚠️ *Larry dispatch budget exhausted* — AI Failure Recovery hit 5/5 dispatches in 24h.\nProject: ${{ needs.build.outputs.project_name }}\nRun: <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View Logs>\n\nManual triage required. Reset counter: \`gh variable set LARRY_DISPATCH_COUNT --repo ${{ github.repository }} --body '{\\\"count\\\":0,\\\"window_start\\\":\\\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\\\"}'\`\"
+            }" > /dev/null
+
       - name: Run failure recovery agent
+        if: steps.larry-kill.outputs.killed != 'true' && steps.larry-counter.outputs.blocked != 'true'
         uses: anthropics/claude-code-action@v1
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
