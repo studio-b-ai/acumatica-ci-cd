@@ -351,7 +351,7 @@ Transactions                                Configuration
 
 ### 7.2 SB501100 — Vendor Planning Hub (new)
 
-Ranked to-do list of vendors + single-pane detail view. Mirrors heritage-wms `VendorDetail.tsx` layout in native Acumatica ASPX. 7 stacked sections: Open POs / Lead Time Analytics / MOQ Summary (links to Supplier Intake) / Preferred Items / Scorecard / Closures / Activity Log. Reads from `drp_*` tables via studiob-api.
+Ranked to-do list of vendors + single-pane detail view. Complementary to heritage-wms `VendorDetail.tsx` — same data via `drp_*` tables, but rendered in native Acumatica ASPX for users already working in Acumatica. 7 stacked sections: Open POs / Lead Time Analytics / MOQ Summary (links to Supplier Intake) / Preferred Items / Scorecard / Closures / Activity Log. Reads from `drp_*` tables via studiob-api. heritage-wms is vendor-centric and action-oriented (daily DRP review); SB501100 is Acumatica-native and PO-centric (existing workflow integration).
 
 Default sort: working-capital impact of acting on this vendor today.
 
