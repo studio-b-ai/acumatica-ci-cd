@@ -330,20 +330,15 @@ class TestStockItemSaveSample:
         failures = []
         for iid in yds_items:
             collected_dialogs.clear()
-            page.goto(
-                f"{ACUMATICA_URL}/Main?ScreenId=IN202500&InventoryCD={iid}",
-                wait_until="domcontentloaded",
-            )
-            # IN202500 needs ~10s to finish initial render post-publish.
-            page.wait_for_timeout(10000)
-            frame = page.frame("main") or page
 
-            dirty_result = frame.evaluate(dirty_js)
-            if not dirty_result.get("ok"):
+            screen = AcumaticaScreen.navigate(page, "IN202500", params=f"InventoryCD={iid}")
+
+            dirty_result = screen.evaluate(dirty_js, retries=1, delay_ms=0)
+            if not dirty_result or not dirty_result.get("ok"):
                 failures.append(f"{iid}: could not dirty header ({dirty_result})")
                 continue
 
-            frame.evaluate(click_save_js)
+            screen.evaluate(click_save_js, retries=1, delay_ms=0)
             # Give Acumatica time to round-trip and fire the dialog.
             page.wait_for_timeout(5000)
 
