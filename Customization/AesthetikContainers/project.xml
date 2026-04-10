@@ -1,5 +1,29 @@
 <?xml version="1.0" encoding="utf-8"?>
 <Customization level="3" description="AesthetikContainers — PO arrival dates, container tracking, vessel tracking. Replaces IIGCONTAINERMGMT + IIGHFContainerMods." product-version="24.208">
+    <Sql Name="AesthetikContainers_EnsureColumns_v1" Script="#CDATA">
+        <CDATA name="Script"><![CDATA[-- Ensure all Usr* columns exist for DAC extensions in StudioB.Containers.dll.
+-- Required because --no-merge publishes skip Acumatica's schema diff.
+-- See: docs/acumatica-support-ticket-iig-orphan.md
+
+-- InventoryItem (StockItemExt)
+IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('InventoryItem') AND name = 'UsrFiberContent')
+  ALTER TABLE InventoryItem ADD UsrFiberContent nvarchar(100) NULL;
+IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('InventoryItem') AND name = 'UsrDutyRate')
+  ALTER TABLE InventoryItem ADD UsrDutyRate decimal(25, 4) NULL;
+IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('InventoryItem') AND name = 'UsrPreferentialTariff')
+  ALTER TABLE InventoryItem ADD UsrPreferentialTariff bit NULL;
+IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('InventoryItem') AND name = 'UsrFreightClass')
+  ALTER TABLE InventoryItem ADD UsrFreightClass nvarchar(15) NULL;
+IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('InventoryItem') AND name = 'UsrCbmPerUnit')
+  ALTER TABLE InventoryItem ADD UsrCbmPerUnit decimal(25, 6) NULL;
+
+-- POOrder (POOrderExt) — DRP Phase 0 lead-time fields
+IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('POOrder') AND name = 'UsrAcknowledgedDate')
+  ALTER TABLE POOrder ADD UsrAcknowledgedDate datetime NULL;
+IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('POOrder') AND name = 'UsrFactoryReadyDate')
+  ALTER TABLE POOrder ADD UsrFactoryReadyDate datetime NULL;
+]]></CDATA>
+    </Sql>
     <Page path="~/pages/po/po301000.aspx">
         <PXFormView ID="form" ParentId="phF_form" TypeFullName="PX.Web.UI.PXFormView">
             <Children Key="Template">
