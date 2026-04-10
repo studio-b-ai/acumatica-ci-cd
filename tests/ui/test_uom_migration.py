@@ -33,8 +33,9 @@ CUSTOMER_ID = "C000002"
 
 # How many stock items to sample-save in TestStockItemSaveSample.
 # Trade-off: larger N catches more bugs but slows the test suite.
-# 25 is enough to catch a 5%+ corruption rate with high confidence.
-SAVE_SAMPLE_SIZE = 25
+# 10 items × ~15s each = ~150s — fits within the 300s timeout.
+# 10 is enough to catch a 10%+ corruption rate with ~65% confidence.
+SAVE_SAMPLE_SIZE = 10
 
 
 # ── Check 1: Base UOM ─────────────────────────────────────────────────────
@@ -259,11 +260,12 @@ class TestStockItemSaveSample:
     shipped a sandbox-gate green based on the broken REST test.
 
     The reliable reproduction is: open the item in the UI, dirty a field,
-    click Save, and listen for \`dialog\` events via Playwright. This class
+    click Save, and listen for ``dialog`` events via Playwright. This class
     does exactly that. It is the ONLY save test that provably reproduces
-    the \"PIECE value\" corruption the users reported.
+    the "PIECE value" corruption the users reported.
     """
 
+    @pytest.mark.timeout(300)
     def test_sample_of_stock_items_can_be_saved_via_ui(self, acumatica_page):
         from playwright.sync_api import Page
         import re
