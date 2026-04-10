@@ -220,6 +220,7 @@ namespace StudioB.Containers
                     EnsureColumn(conn, "InventoryItem", "UsrFiberContent", "nvarchar(100) NULL");
                     EnsureColumn(conn, "InventoryItem", "UsrPreferentialTariff", "bit NULL");
                     EnsureColumn(conn, "InventoryItem", "UsrFreightClass", "nvarchar(15) NULL");
+                    EnsureColumn(conn, "InventoryItem", "UsrCbmPerUnit", "decimal(25,6) NULL");
 
                     // ── POReceiptLine landed cost fields ───────────────────────
                     EnsureColumn(conn, "POReceiptLine", "UsrActualDutyAmt", "decimal(25,4) NULL");
