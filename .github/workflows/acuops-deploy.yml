@@ -2137,27 +2137,14 @@ jobs:
             5. If you can fix it (code change, config change, missing DB column, test update):
                - Create a branch named `fix/larry-<short-description>`
                - Commit the fix, push, and create a PR with `gh pr create`
-               - DM Kevin + post to #ops (see Slack section below)
+               - Post to #ops (see Slack section below)
             6. If you can't fix it (infrastructure issue, Acumatica bug, permissions):
-               - DM Kevin with full diagnosis and recommendation
+               - Post to #ops with full diagnosis and recommendation
                - Include what you tried, what the KB said, and what you recommend
 
-            ## Slack communication (REQUIRED — always DM Kevin with your diagnosis)
+            ## Slack communication (REQUIRED — always post to #ops)
 
-            To DM Kevin, first open a DM channel, then post:
-            ```bash
-            DM_CHANNEL=$(curl -sf -X POST "https://slack.com/api/conversations.open" \
-              -H "Authorization: Bearer $SLACK_BOT_TOKEN" \
-              -H "Content-Type: application/json" \
-              -d '{"users":"U0ALNRQ4KF0"}' \
-              | python3 -c "import sys,json; print(json.load(sys.stdin).get('channel',{}).get('id',''))")
-            curl -sf -X POST "https://slack.com/api/chat.postMessage" \
-              -H "Authorization: Bearer $SLACK_BOT_TOKEN" \
-              -H "Content-Type: application/json" \
-              -d "{\"channel\":\"${DM_CHANNEL}\",\"text\":\"YOUR MESSAGE HERE\"}"
-            ```
-
-            To post to #ops channel:
+            Post to #ops channel (studiob-ai.slack.com):
             ```bash
             curl -sf -X POST "https://slack.com/api/chat.postMessage" \
               -H "Authorization: Bearer $SLACK_BOT_TOKEN" \
@@ -2170,8 +2157,7 @@ jobs:
             - Never push directly to main. Always create a PR.
             - Never deploy to production. Your job is to fix and PR — the pipeline handles the rest.
             - Read agents/deploy-agent.md for Slack/Qdrant patterns if you need more context.
-            - ALWAYS DM Kevin on Slack with your diagnosis, whether you fixed it or not.
-            - ALWAYS post to #ops with a one-line status update.
+            - ALWAYS post to #ops with your diagnosis, whether you fixed it or not.
 
             ## Environment variables available
             - QDRANT_URL — Qdrant vector DB endpoint (studiob-knowledge collection)
@@ -2179,7 +2165,9 @@ jobs:
             - SLACK_BOT_TOKEN — Slack bot token for DMs and #ops posts
             - GH_TOKEN — GitHub token for git operations and gh CLI
         env:
-          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+          # studiob-ai.slack.com bot token for #ops posts.
+          # The hfabrics SLACK_BOT_TOKEN can't reach #ops or Kevin's studiob user.
+          SLACK_BOT_TOKEN: ${{ secrets.STUDIOB_SLACK_BOT_TOKEN }}
           QDRANT_URL: ${{ secrets.QDRANT_URL }}
           VOYAGE_API_KEY: ${{ secrets.VOYAGE_API_KEY }}
           ACUDEV_URL: ${{ secrets.ACUDEV_URL }}
@@ -2189,46 +2177,31 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       # ── Post-agent Slack notification (always fires if agent ran) ─────
-      # Guarantees Kevin gets a DM even if the agent hits max-turns or errors.
-      # The agent ALSO tries to DM within its prompt, but this is the safety net.
-      - name: Notify Kevin via Slack
+      # Post to #ops on studiob-ai.slack.com so Kevin gets notified.
+      # Bot lacks im:write for DMs — @mention Kevin in #ops instead.
+      # TODO: Add im:write to Studio B Admin app, then restore DMs.
+      - name: Notify via Slack #ops
         if: always() && steps.larry-agent.outcome != 'skipped'
         continue-on-error: true
         env:
-          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+          SLACK_BOT_TOKEN: ${{ secrets.STUDIOB_SLACK_BOT_TOKEN }}
         run: |
           PROJECT="${{ needs.build.outputs.project_name }}"
           RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
           AGENT_OUTCOME="${{ steps.larry-agent.outcome }}"
 
           if [ "$AGENT_OUTCOME" = "success" ]; then
-            MSG="Larry agent completed for *${PROJECT}*. Check <${RUN_URL}|run logs> for diagnosis + fix PR."
+            MSG=":robot_face: Larry agent completed for *${PROJECT}*. <${RUN_URL}|View diagnosis + fix PR>"
           else
-            MSG="Larry agent failed/timed out for *${PROJECT}* (outcome: ${AGENT_OUTCOME}). Manual triage needed. <${RUN_URL}|View Logs>"
+            MSG=":warning: Larry agent failed/timed out for *${PROJECT}* (outcome: ${AGENT_OUTCOME}). Manual triage needed. <${RUN_URL}|View Logs>"
           fi
 
-          # Open DM channel then post
-          DM_CHANNEL=$(curl -sf -X POST "https://slack.com/api/conversations.open" \
-            -H "Authorization: Bearer ${SLACK_BOT_TOKEN}" \
-            -H "Content-Type: application/json" \
-            -d '{"users":"U0ALNRQ4KF0"}' \
-            | python3 -c "import sys,json; print(json.load(sys.stdin).get('channel',{}).get('id',''))" 2>/dev/null)
-
-          if [ -n "${DM_CHANNEL}" ]; then
-            curl -sf -X POST "https://slack.com/api/chat.postMessage" \
-              -H "Authorization: Bearer ${SLACK_BOT_TOKEN}" \
-              -H "Content-Type: application/json" \
-              -d "{\"channel\":\"${DM_CHANNEL}\",\"text\":\"${MSG}\"}" > /dev/null
-            echo "DM sent to Kevin"
-          else
-            echo "::warning::Could not open DM channel — bot may lack im:write scope"
-          fi
-
-          # Also post to #ops
           curl -sf -X POST "https://slack.com/api/chat.postMessage" \
             -H "Authorization: Bearer ${SLACK_BOT_TOKEN}" \
             -H "Content-Type: application/json" \
-            -d "{\"channel\":\"C0AR2UW2S66\",\"text\":\"${MSG}\"}" > /dev/null || echo "::warning::#ops post failed"
+            -d "{\"channel\":\"C0AR2UW2S66\",\"text\":\"${MSG}\"}" > /dev/null \
+            && echo "Posted to #ops" \
+            || echo "::warning::#ops post failed"
 
   # ──────────────────────────────────────────────
   # Job 4: Validate — PR check (no publish)
