@@ -1,0 +1,20 @@
+name: Restart Audit
+
+on:
+  schedule:
+    # 12:00 UTC = 8:00am ET (EDT)
+    - cron: '0 12 * * *'
+  workflow_dispatch:
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run restart audit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+          SLACK_KEVIN_USER_ID: ${{ secrets.SLACK_KEVIN_USER_ID }}
+        run: python3 scripts/restart-audit.py
