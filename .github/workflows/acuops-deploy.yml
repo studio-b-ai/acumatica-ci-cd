@@ -2096,6 +2096,15 @@ jobs:
         uses: anthropics/claude-code-action@v1
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          # --allowedTools grants the agent autonomy over bash, file ops, and
+          # git. Without this, claude-code-action denies most tool calls (the
+          # first dry-run hit 123 permission denials).
+          # --max-turns caps reasoning iterations (replaces deprecated input).
+          claude_args: |
+            --allowedTools "Bash,Edit,Read,Write,Glob,Grep"
+            --max-turns 30
+          additional_permissions: |
+            actions: read
           prompt: |
             The sandbox-gate job FAILED for this deploy. Your job is to diagnose the failure, fix it, and get the pipeline passing.
 
@@ -2109,36 +2118,53 @@ jobs:
 
             1. Read sandbox-gate-logs.txt to understand what failed (test failures, publish errors, timeouts)
             2. Read verify-results/verify-result.json if it exists
-            3. Search studiob-knowledge (Qdrant) for matching failure patterns — embed the error with Voyage AI and search
+            3. Search studiob-knowledge (Qdrant) for matching failure patterns:
+               ```bash
+               # Embed the error and search Qdrant
+               VECTOR=$(curl -s https://api.voyageai.com/v1/embeddings \
+                 -H "Authorization: Bearer $VOYAGE_API_KEY" \
+                 -H "Content-Type: application/json" \
+                 -d "{\"input\": [\"YOUR_ERROR_HERE\"], \"model\": \"voyage-3\", \"input_type\": \"query\"}" \
+                 | python3 -c "import sys,json; print(json.dumps(json.load(sys.stdin)['data'][0]['embedding']))")
+               curl -s "$QDRANT_URL/collections/studiob-knowledge/points/search" \
+                 -H "Content-Type: application/json" \
+                 -d "{\"vector\": $VECTOR, \"limit\": 5, \"with_payload\": true, \"filter\": {\"must\": [{\"key\": \"source_type\", \"match\": {\"any\": [\"incident\", \"runbook\"]}}]}}"
+               ```
             4. Diagnose the root cause
             5. If you can fix it (code change, config change, missing DB column, test update):
-               - Create a branch, commit the fix, push, and create a PR
-               - Post to Slack #ops (channel C0AR2UW2S66): "Sandbox failed: [diagnosis]. Fix PR: [link]"
-               - DM Kevin (user U0ALNRQ4KF0): "[diagnosis]. I created PR [link]. Merge to re-deploy."
+               - Create a branch named `fix/larry-<short-description>`
+               - Commit the fix, push, and create a PR with `gh pr create`
+               - DM Kevin on Slack:
+                 ```bash
+                 curl -sf -X POST https://slack.com/api/chat.postMessage \
+                   -H "Authorization: Bearer $SLACK_BOT_TOKEN" \
+                   -H "Content-Type: application/json" \
+                   -d '{"channel":"U0ALNRQ4KF0","text":"Sandbox failed: [diagnosis]. Fix PR: [link]. Merge to re-deploy."}'
+                 ```
             6. If you can't fix it (infrastructure issue, Acumatica bug, permissions):
-               - DM Kevin with full diagnosis and recommendation
-               - Post to Slack #ops: "Sandbox failed: [diagnosis]. Escalating to Kevin."
+               - DM Kevin with full diagnosis and recommendation using the curl pattern above
+               - Include what you tried, what the KB said, and what you recommend
 
             ## Rules
             - Max 3 fix attempts per run. If your first fix doesn't work, try twice more, then escalate.
             - Never push directly to main. Always create a PR.
             - Never deploy to production. Your job is to fix and PR — the pipeline handles the rest.
-            - Read agents/deploy-agent.md for Slack/Qdrant patterns (API calls, channel IDs, etc.)
+            - Read agents/deploy-agent.md for Slack/Qdrant patterns if you need more context.
+            - ALWAYS DM Kevin on Slack with your diagnosis, whether you fixed it or not.
 
-            ## Environment
-            - QDRANT_URL and VOYAGE_API_KEY are available as GitHub secrets (use gh CLI to access if needed)
-            - SLACK_BOT_TOKEN is available for Slack communication
-            - GH_TOKEN is available for GitHub operations
-          max_turns: 30
-          timeout_minutes: 20
+            ## Environment variables available
+            - QDRANT_URL — Qdrant vector DB endpoint (studiob-knowledge collection)
+            - VOYAGE_API_KEY — Voyage AI embedding API key
+            - SLACK_BOT_TOKEN — Slack bot token for DMs and #ops posts
+            - GH_TOKEN — GitHub token for git operations and gh CLI
         env:
           SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
           QDRANT_URL: ${{ secrets.QDRANT_URL }}
           VOYAGE_API_KEY: ${{ secrets.VOYAGE_API_KEY }}
-          # AI Failure Recovery agent only operates in this repo: creates a
-          # branch, commits a fix, opens a PR. Built-in GITHUB_TOKEN is
-          # sufficient — Slack uses SLACK_BOT_TOKEN, not gh.
-          # Audit log will show github-actions[bot] (Safety Package gate #2).
+          ACUDEV_URL: ${{ secrets.ACUDEV_URL }}
+          ACUDEV_API_KEY: ${{ secrets.ACUDEV_API_KEY }}
+          # Built-in GITHUB_TOKEN for git operations. Audit log shows
+          # github-actions[bot] (Safety Package gate #2).
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   # ──────────────────────────────────────────────
