@@ -281,14 +281,45 @@ class TestCustomFields:
 
 class TestE2EProbe:
     def test_probe_success(self):
+        """200 response with custom field present in record → PASS."""
         session = MagicMock()
-        session.get.return_value = (200, b'[{"VendorID": "V001"}]')
+        session.get.return_value = (200, b'[{"VendorID": "V001", "UsrDefaultInTransitSiteID": null}]')
         session.base_url = "https://example.com"
         probe = {"entity": "Vendor", "select_fields": ["VendorID", "UsrDefaultInTransitSiteID"]}
         result = run_e2e_probe(session, probe, "24.200.001")
         assert result.status == CheckStatus.PASS
         assert result.name == "e2e:Vendor"
         assert result.http_code == 200
+
+    def test_probe_custom_field_missing_from_response(self):
+        """200 response but custom field absent from record → FAIL."""
+        session = MagicMock()
+        session.get.return_value = (200, b'[{"VendorID": "V001"}]')
+        session.base_url = "https://example.com"
+        probe = {"entity": "Vendor", "select_fields": ["VendorID", "UsrDefaultInTransitSiteID"]}
+        result = run_e2e_probe(session, probe, "24.200.001")
+        assert result.status == CheckStatus.FAIL
+        assert result.http_code == 200
+        assert "UsrDefaultInTransitSiteID" in result.detail
+
+    def test_probe_empty_records_is_pass(self):
+        """200 with empty list → PASS (no records to validate against)."""
+        session = MagicMock()
+        session.get.return_value = (200, b'[]')
+        session.base_url = "https://example.com"
+        probe = {"entity": "Vendor", "select_fields": ["VendorID", "UsrDefaultInTransitSiteID"]}
+        result = run_e2e_probe(session, probe, "24.200.001")
+        assert result.status == CheckStatus.PASS
+        assert result.http_code == 200
+
+    def test_probe_no_select_fields(self):
+        """Probe with no select_fields — just checks entity is reachable."""
+        session = MagicMock()
+        session.get.return_value = (200, b'[{"OrderNbr": "PO-00001"}]')
+        session.base_url = "https://example.com"
+        probe = {"entity": "PurchaseOrder", "select_fields": []}
+        result = run_e2e_probe(session, probe, "24.200.001")
+        assert result.status == CheckStatus.PASS
 
     def test_probe_500_fail(self):
         session = MagicMock()
@@ -307,6 +338,16 @@ class TestE2EProbe:
         probe = {"entity": "Vendor", "select_fields": ["VendorID"]}
         result = run_e2e_probe(session, probe, "24.200.001")
         assert result.status == CheckStatus.WARN
+
+    def test_probe_does_not_use_select_in_url(self):
+        """Verify the URL does NOT include $select — that causes KeyNotFoundException."""
+        session = MagicMock()
+        session.get.return_value = (200, b'[]')
+        session.base_url = "https://example.com"
+        probe = {"entity": "SalesOrder", "select_fields": ["OrderNbr", "UsrHubSpotDealId"]}
+        run_e2e_probe(session, probe, "24.200.001")
+        call_url = session.get.call_args[0][0]
+        assert "$select" not in call_url
 
 
 # ---------------------------------------------------------------------------
