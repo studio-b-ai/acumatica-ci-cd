@@ -2092,7 +2092,9 @@ jobs:
             }" > /dev/null
 
       - name: Run failure recovery agent
+        id: larry-agent
         if: steps.larry-kill.outputs.killed != 'true' && steps.larry-counter.outputs.blocked != 'true'
+        continue-on-error: true
         uses: anthropics/claude-code-action@v1
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
@@ -2103,7 +2105,7 @@ jobs:
           show_full_output: true
           claude_args: |
             --allowedTools "Bash,Edit,Read,Write,Glob,Grep"
-            --max-turns 30
+            --max-turns 50
           additional_permissions: |
             actions: read
           prompt: |
@@ -2185,6 +2187,48 @@ jobs:
           # Built-in GITHUB_TOKEN for git operations. Audit log shows
           # github-actions[bot] (Safety Package gate #2).
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # ── Post-agent Slack notification (always fires if agent ran) ─────
+      # Guarantees Kevin gets a DM even if the agent hits max-turns or errors.
+      # The agent ALSO tries to DM within its prompt, but this is the safety net.
+      - name: Notify Kevin via Slack
+        if: always() && steps.larry-agent.outcome != 'skipped'
+        continue-on-error: true
+        env:
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+        run: |
+          PROJECT="${{ needs.build.outputs.project_name }}"
+          RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          AGENT_OUTCOME="${{ steps.larry-agent.outcome }}"
+
+          if [ "$AGENT_OUTCOME" = "success" ]; then
+            MSG="Larry agent completed for *${PROJECT}*. Check <${RUN_URL}|run logs> for diagnosis + fix PR."
+          else
+            MSG="Larry agent failed/timed out for *${PROJECT}* (outcome: ${AGENT_OUTCOME}). Manual triage needed. <${RUN_URL}|View Logs>"
+          fi
+
+          # Open DM channel then post
+          DM_CHANNEL=$(curl -sf -X POST "https://slack.com/api/conversations.open" \
+            -H "Authorization: Bearer ${SLACK_BOT_TOKEN}" \
+            -H "Content-Type: application/json" \
+            -d '{"users":"U0ALNRQ4KF0"}' \
+            | python3 -c "import sys,json; print(json.load(sys.stdin).get('channel',{}).get('id',''))" 2>/dev/null)
+
+          if [ -n "${DM_CHANNEL}" ]; then
+            curl -sf -X POST "https://slack.com/api/chat.postMessage" \
+              -H "Authorization: Bearer ${SLACK_BOT_TOKEN}" \
+              -H "Content-Type: application/json" \
+              -d "{\"channel\":\"${DM_CHANNEL}\",\"text\":\"${MSG}\"}" > /dev/null
+            echo "DM sent to Kevin"
+          else
+            echo "::warning::Could not open DM channel — bot may lack im:write scope"
+          fi
+
+          # Also post to #ops
+          curl -sf -X POST "https://slack.com/api/chat.postMessage" \
+            -H "Authorization: Bearer ${SLACK_BOT_TOKEN}" \
+            -H "Content-Type: application/json" \
+            -d "{\"channel\":\"C0AR2UW2S66\",\"text\":\"${MSG}\"}" > /dev/null || echo "::warning::#ops post failed"
 
   # ──────────────────────────────────────────────
   # Job 4: Validate — PR check (no publish)
