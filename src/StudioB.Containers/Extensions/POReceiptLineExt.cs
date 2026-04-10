@@ -8,21 +8,21 @@ namespace StudioB.Containers
         public static bool IsActive() => true;
         #region UsrActualDutyAmt
         public abstract class usrActualDutyAmt : PX.Data.BQL.BqlDecimal.Field<usrActualDutyAmt> { }
-        [PXDBDecimal(2)]
+        [PXDBDecimal(4)]
         [PXDefault(System.TypeCode.Decimal, "0.00", PersistingCheck = PXPersistingCheck.Nothing)]
         [PXUIField(DisplayName = "Actual Duty", Visibility = PXUIVisibility.SelectorVisible)]
         public decimal? UsrActualDutyAmt { get; set; }
         #endregion
         #region UsrActualFreightAmt
         public abstract class usrActualFreightAmt : PX.Data.BQL.BqlDecimal.Field<usrActualFreightAmt> { }
-        [PXDBDecimal(2)]
+        [PXDBDecimal(4)]
         [PXDefault(System.TypeCode.Decimal, "0.00", PersistingCheck = PXPersistingCheck.Nothing)]
         [PXUIField(DisplayName = "Freight Allocated", Visibility = PXUIVisibility.SelectorVisible)]
         public decimal? UsrActualFreightAmt { get; set; }
         #endregion
         #region UsrBrokerageAmt
         public abstract class usrBrokerageAmt : PX.Data.BQL.BqlDecimal.Field<usrBrokerageAmt> { }
-        [PXDBDecimal(2)]
+        [PXDBDecimal(4)]
         [PXDefault(System.TypeCode.Decimal, "0.00", PersistingCheck = PXPersistingCheck.Nothing)]
         [PXUIField(DisplayName = "Brokerage", Visibility = PXUIVisibility.SelectorVisible)]
         public decimal? UsrBrokerageAmt { get; set; }

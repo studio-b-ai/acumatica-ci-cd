@@ -233,8 +233,19 @@ namespace StudioB.Containers
                     // and by Vendor Planning Hub manual entry. Consumed by
                     // drp_lead_time_samples → vendor lead-time learning.
                     // See docs/plans/2026-04-09-drp-implementation-design.md §4.2.
+                    // POLine / POOrder arrival date + container ref fields — pre-existing
+                    // columns from IIG migration. EnsureColumn is idempotent (IF NOT EXISTS).
+                    EnsureColumn(conn, "POLine",  "UsrExpArrivalDate", "datetime NULL");
+                    EnsureColumn(conn, "POLine",  "UsrActArrivalDate", "datetime NULL");
+                    EnsureColumn(conn, "POOrder", "UsrExpArrivalDate", "datetime NULL");
+                    EnsureColumn(conn, "POOrder", "UsrActArrivalDate", "datetime NULL");
+                    EnsureColumn(conn, "POOrder", "UsrContainerRef",   "nvarchar(50) NULL");
                     EnsureColumn(conn, "POOrder", "UsrAcknowledgedDate", "datetime NULL");
                     EnsureColumn(conn, "POOrder", "UsrFactoryReadyDate", "datetime NULL");
+
+                    // ── BAccount vendor defaults ─────────────────────────────
+                    EnsureColumn(conn, "BAccount", "UsrDefaultInTransitSiteID", "int NULL");
+                    EnsureColumn(conn, "BAccount", "UsrDefaultCarrierCode",     "nvarchar(20) NULL");
 
                     // ── Freight Forwarders Table ──────────────────────────────
                     EnsureTable(conn, "UsrFreightForwarder", @"
