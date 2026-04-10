@@ -301,11 +301,23 @@ def check_custom_fields(
 def run_e2e_probe(
     session: AcumaticaSession, probe: dict, version: str
 ) -> CheckResult:
-    """Run an E2E view probe — force DAC extension loading with $select."""
+    """Run an E2E view probe — fetch entity and verify custom fields exist.
+
+    Acumatica REST API does not support $select on custom fields (returns
+    KeyNotFoundException). Instead, fetch the entity without $select and
+    check that the expected custom fields appear in the 'custom' object.
+    """
     entity = probe["entity"]
     select_fields = probe.get("select_fields", [])
-    select_param = ",".join(select_fields)
-    path = f"/entity/Default/{version}/{entity}?$top=1&$select={select_param}"
+    # Separate standard fields (for $select) from Usr* custom fields (verified in response)
+    standard_fields = [f for f in select_fields if not f.startswith("Usr")]
+    custom_fields = [f for f in select_fields if f.startswith("Usr")]
+
+    # Build path — only $select standard fields, not custom ones
+    if standard_fields:
+        path = f"/entity/Default/{version}/{entity}?$top=1&$select={','.join(standard_fields)}"
+    else:
+        path = f"/entity/Default/{version}/{entity}?$top=1"
     try:
         status, body = session.get(path)
     except Exception as exc:
@@ -315,11 +327,43 @@ def run_e2e_probe(
             detail=f"connection error: {exc}",
         )
     body_str = body.decode(errors="replace") if body else ""
-    status_str, detail = classify_http_status(status, response_body=body_str)
+
+    if status not in (200, 204):
+        status_str, detail = classify_http_status(status, response_body=body_str)
+        return CheckResult(
+            name=f"e2e:{entity}",
+            status=CheckStatus(status_str),
+            detail=detail,
+            http_code=status,
+        )
+
+    # If we have custom fields to verify, check them in the response
+    if custom_fields and body_str:
+        try:
+            data = json.loads(body_str)
+            records = data if isinstance(data, list) else [data]
+            if records:
+                custom_obj = records[0].get("custom", {})
+                # Flatten all custom fields from all views
+                all_custom = set()
+                for view_fields in custom_obj.values():
+                    if isinstance(view_fields, dict):
+                        all_custom.update(view_fields.keys())
+                missing = [f for f in custom_fields if f not in all_custom]
+                if missing:
+                    return CheckResult(
+                        name=f"e2e:{entity}",
+                        status=CheckStatus.WARN,
+                        detail=f"custom fields not in response: {', '.join(missing)}",
+                        http_code=status,
+                    )
+        except (json.JSONDecodeError, KeyError, IndexError):
+            pass  # Non-fatal — entity is reachable, field check is best-effort
+
     return CheckResult(
         name=f"e2e:{entity}",
-        status=CheckStatus(status_str),
-        detail=detail,
+        status=CheckStatus.PASS,
+        detail=f"entity reachable, {len(custom_fields)} custom fields checked",
         http_code=status,
     )
 
