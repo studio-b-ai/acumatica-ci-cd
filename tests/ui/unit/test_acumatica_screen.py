@@ -82,3 +82,67 @@ class TestAcumaticaScreenConstruction:
         screen = AcumaticaScreen.direct(page, "/Pages/PO/PO301000.aspx")
         assert screen.mode == "direct"
         assert screen.ctx is page
+
+
+class TestAcumaticaScreenDomMethods:
+    """Test locator, evaluate, get_field, set_field."""
+
+    def _make_screen(self):
+        from acumatica_screen import AcumaticaScreen
+        page = MagicMock()
+        ctx = MagicMock()
+        return AcumaticaScreen(page, ctx, "TEST00000", "iframe")
+
+    def test_locator_delegates_to_ctx(self):
+        screen = self._make_screen()
+        screen.locator("#foo")
+        screen.ctx.locator.assert_called_once_with("#foo")
+
+    def test_evaluate_returns_value_on_first_try(self):
+        screen = self._make_screen()
+        screen.ctx.evaluate.return_value = "YDS"
+        result = screen.evaluate("() => 'YDS'")
+        assert result == "YDS"
+        assert screen.ctx.evaluate.call_count == 1
+
+    def test_evaluate_retries_on_empty_string(self):
+        screen = self._make_screen()
+        screen.ctx.evaluate.side_effect = ["", "", "YDS"]
+        result = screen.evaluate("() => el.value", retries=3, delay_ms=0)
+        assert result == "YDS"
+        assert screen.ctx.evaluate.call_count == 3
+
+    def test_evaluate_retries_on_none(self):
+        screen = self._make_screen()
+        screen.ctx.evaluate.side_effect = [None, "BOLTID"]
+        result = screen.evaluate("() => el.value", retries=3, delay_ms=0)
+        assert result == "BOLTID"
+        assert screen.ctx.evaluate.call_count == 2
+
+    def test_evaluate_returns_last_attempt_if_all_empty(self):
+        screen = self._make_screen()
+        screen.ctx.evaluate.return_value = ""
+        result = screen.evaluate("() => ''", retries=3, delay_ms=0)
+        assert result == ""
+        assert screen.ctx.evaluate.call_count == 3
+
+    def test_get_field_uses_evaluate_with_retry(self):
+        screen = self._make_screen()
+        screen.ctx.evaluate.side_effect = ["", "YDS"]
+        result = screen.get_field("edBaseUnit_text")
+        assert result == "YDS"
+
+    def test_set_field_clicks_clears_fills_blurs(self):
+        screen = self._make_screen()
+        screen.set_field("edDescr", "Test Value")
+        screen.ctx.click.assert_called_once_with("#edDescr")
+        assert screen.ctx.fill.call_count == 2
+        screen.ctx.evaluate.assert_called_once_with("document.activeElement.blur()")
+
+    def test_find_fields_returns_dict(self):
+        screen = self._make_screen()
+        locator_mock = MagicMock()
+        locator_mock.count.return_value = 1
+        screen.ctx.locator.return_value = locator_mock
+        result = screen.find_fields(["UsrHubSpotDealId"])
+        assert result == {"UsrHubSpotDealId": True}

@@ -129,3 +129,51 @@ class AcumaticaScreen:
 
         sid = screen_id or aspx_path.split("/")[-1].replace(".aspx", "")
         return cls(page, page, sid, "direct")
+
+    # ── DOM Access ────────────────────────────────────────────────────
+
+    def locator(self, selector: str) -> Locator:
+        """Return a Locator scoped to the resolved context (iframe or page)."""
+        return self.ctx.locator(selector)
+
+    def evaluate(self, js: str, *, retries: int = 3, delay_ms: int = 500):
+        """Evaluate JS in the resolved context with retry on empty results.
+
+        The retry addresses the known Playwright iframe-read flake where
+        frame.evaluate() returns empty string despite the field being
+        visually populated (xfailed since 2026-04-08).
+        """
+        result = None
+        for attempt in range(retries):
+            result = self.ctx.evaluate(js)
+            if result not in (None, ""):
+                return result
+            if attempt < retries - 1:
+                self.page.wait_for_timeout(delay_ms)
+        return result
+
+    def get_field(self, field_id: str) -> str:
+        """Read a form field value with retry on empty-string flake."""
+        js = f"""() => {{
+            var el = document.querySelector('[id*="{field_id}"]');
+            if (!el) return null;
+            return el.value !== undefined ? el.value : el.textContent;
+        }}"""
+        result = self.evaluate(js)
+        return (result or "").strip()
+
+    def set_field(self, field_id: str, value: str):
+        """Set a form field value using click -> clear -> fill -> blur."""
+        selector = f"#{field_id}"
+        self.ctx.click(selector)
+        self.ctx.fill(selector, "")
+        self.ctx.fill(selector, value)
+        self.ctx.evaluate("document.activeElement.blur()")
+
+    def find_fields(self, field_names: list[str]) -> dict[str, bool]:
+        """Check which fields are present in the DOM."""
+        results = {}
+        for name in field_names:
+            locator = self.ctx.locator(f"[id*='{name}']")
+            results[name] = locator.count() > 0
+        return results
