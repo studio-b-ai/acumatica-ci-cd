@@ -1007,6 +1007,32 @@ jobs:
           path: verify-result.json
           if-no-files-found: ignore
 
+      - name: Gate on verification failures
+        if: always() && steps.verify.outcome != 'skipped'
+        run: |
+          if [ ! -f verify-result.json ]; then
+            echo "::warning::verify-result.json not found — skipping gate"
+            exit 0
+          fi
+          FAIL_COUNT=$(python3 -c "
+          import json
+          d = json.load(open('verify-result.json'))
+          fails = [c for c in d.get('checks', []) if c['status'] == 'fail']
+          print(len(fails))
+          " 2>/dev/null || echo "0")
+          if [ "$FAIL_COUNT" -gt 0 ]; then
+            echo "::error::Verification found $FAIL_COUNT failing checks — blocking sandbox gate"
+            python3 -c "
+          import json
+          d = json.load(open('verify-result.json'))
+          for c in d.get('checks', []):
+              if c['status'] == 'fail':
+                  print(f\"  FAIL: {c['name']}: {c['detail']}\")
+          " 2>/dev/null || true
+            exit 1
+          fi
+          echo "All verification checks passed"
+
       - name: Post-publish smoke test
         id: smoke
         env:
