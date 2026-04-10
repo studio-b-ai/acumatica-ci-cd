@@ -41,6 +41,13 @@ EXPECTED_GIS = {
         {"InventoryID", "OrderType", "OrderNbr", "LineNbr", "OrderQty", "ShippedQty",
          "OpenQty", "RequestedDate", "CustomerID", "SiteID", "UOM"},
     ),
+    "SB401100": (
+        "DRP_OpenPOLines",
+        "Line",
+        {"OrderType", "OrderNbr", "LineNbr", "InventoryID", "VendorID", "OrderQty",
+         "ReceivedQty", "OpenQty", "PromisedDate",
+         "UsrAcknowledgedDate", "UsrFactoryReadyDate", "ContainerCD"},
+    ),
     "SB401110": (
         "DRP_InventoryBySite",
         "InventoryItem",

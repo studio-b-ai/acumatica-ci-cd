@@ -14,6 +14,7 @@ PROBE_GIS = [
     # DRP Phase 0 Stream A (2026-04-09) — inline GIs in AesthetikContainers
     "DRP_VelocityHistory",     # SB401080 — SOShipLine × SOShipment × SOLine
     "DRP_OpenSOCommitments",   # SB401090 — SOLine × SOOrder
+    "DRP_OpenPOLines",         # SB401100 — POLine × POOrder × UsrContainerPOLink × UsrContainer
     "DRP_InventoryBySite",     # SB401110 — InventoryItem × INSiteStatus
 ]
 
