@@ -1954,11 +1954,10 @@ jobs:
   #   3. ✅ Recovery agent capped at 5 dispatches per 24h via LARRY_DISPATCH_COUNT
   #      GH variable + LARRY_KILL_SWITCH external off switch (2026-04-09)
   invoke-agent:
-    name: AI Failure Recovery (DISABLED)
+    name: AI Failure Recovery
     needs: [build, qualify, sandbox-gate]
     continue-on-error: true
     if: >-
-      false &&
       always() &&
       needs.build.result == 'success' &&
       needs.build.outputs.customization_changes == 'true' &&
