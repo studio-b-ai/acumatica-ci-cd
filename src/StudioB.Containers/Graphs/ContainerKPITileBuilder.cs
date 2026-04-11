@@ -28,9 +28,22 @@ namespace StudioB.Containers
             public decimal ExposureOther;
         }
 
-        public static string Build(KPIData data)
+        /// <summary>
+        /// Portfolio health metrics for the second KPI row.
+        /// Plain ops language only (CLAUDE.md rule 12).
+        /// </summary>
+        public struct MetricsData
         {
-            var sb = new StringBuilder(2048);
+            public decimal Position;         // Total open PO value
+            public decimal CrossDockRate;    // % of containers with SO commitment
+            public decimal Speculation;      // PO value without SO coverage
+            public int ActiveContainerCount;
+            public int ContainersWithSO;
+        }
+
+        public static string Build(KPIData data, MetricsData metrics = default)
+        {
+            var sb = new StringBuilder(3072);
 
             // Outer container — ensures stylesheet is embedded even if external CSS fails
             // to load, keeping the screen functional in Acumatica SaaS where custom CSS
@@ -123,10 +136,48 @@ namespace StudioB.Containers
 
             sb.Append("</div>"); // cmd-tile-row
 
+            // ----- Metrics row (portfolio health) -----
+            sb.Append(BuildMetricsRow(metrics));
+
             // Inline script for click handlers — uses Acumatica's px_alls dispatcher.
             // On click, sets the Filter.ViewMode field and triggers a refresh.
             sb.Append(ClickHandlerScript);
 
+            return sb.ToString();
+        }
+
+        /// <summary>
+        /// Builds the second KPI row: OPEN PO VALUE / CROSS-DOCK RATE / UNCOVERED VALUE.
+        /// Informational only (no colored left borders, muted styling).
+        /// </summary>
+        public static string BuildMetricsRow(MetricsData m)
+        {
+            var sb = new StringBuilder(512);
+            sb.Append("<div class='cmd-metrics-row'>");
+
+            // Metric 1: OPEN PO VALUE (was "Position" internally)
+            sb.Append("<div class='cmd-metric'>");
+            sb.Append("<div class='cmd-metric-label'>OPEN PO VALUE</div>");
+            sb.AppendFormat("<div class='cmd-metric-value'>{0}</div>", FormatMoney(m.Position));
+            sb.Append("<div class='cmd-metric-sublabel'>ACROSS ACTIVE CONTAINERS</div>");
+            sb.Append("</div>");
+
+            // Metric 2: CROSS-DOCK RATE
+            sb.Append("<div class='cmd-metric'>");
+            sb.Append("<div class='cmd-metric-label'>CROSS-DOCK RATE</div>");
+            sb.AppendFormat("<div class='cmd-metric-value'>{0:0}%</div>", m.CrossDockRate);
+            sb.AppendFormat("<div class='cmd-metric-sublabel'>{0} OF {1} CONTAINERS WITH SO</div>",
+                m.ContainersWithSO, m.ActiveContainerCount);
+            sb.Append("</div>");
+
+            // Metric 3: UNCOVERED VALUE (was "Speculation" internally)
+            sb.Append("<div class='cmd-metric'>");
+            sb.Append("<div class='cmd-metric-label'>UNCOVERED VALUE</div>");
+            sb.AppendFormat("<div class='cmd-metric-value'>{0}</div>", FormatMoney(m.Speculation));
+            sb.Append("<div class='cmd-metric-sublabel'>PO VALUE WITHOUT SO COVERAGE</div>");
+            sb.Append("</div>");
+
+            sb.Append("</div>"); // cmd-metrics-row
             return sb.ToString();
         }
 
@@ -215,6 +266,44 @@ namespace StudioB.Containers
 #gridContainers tr.risk-r td[aria-label='Risk Level']:after { color: #d64045; }
 #gridContainers tr.risk-a td[aria-label='Risk Level']:after { color: #e8a33d; }
 #gridContainers tr:not(.risk-r):not(.risk-a) td[aria-label='Risk Level']:after { color: #2d8a5f; }
+
+/* --- Metrics row (portfolio health, second row below filter tiles) --- */
+.cmd-metrics-row {
+  display: flex;
+  gap: 20px;
+  padding: 0 4px 10px 4px;
+  font-family: 'Segoe UI', system-ui, sans-serif;
+}
+.cmd-metric {
+  flex: 1 1 0;
+  min-width: 0;
+  padding: 10px 14px;
+  background: #f8f9fa;
+  border-left: none;
+  box-sizing: border-box;
+}
+.cmd-metric-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-weight: 600;
+  color: #718096;
+  margin-bottom: 2px;
+}
+.cmd-metric-value {
+  font-size: 28px;
+  font-weight: 300;
+  line-height: 1.2;
+  font-variant-numeric: tabular-nums;
+  color: #2d3748;
+  margin-bottom: 2px;
+}
+.cmd-metric-sublabel {
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #a0aec0;
+}
 ";
 
         private const string ClickHandlerScript = @"
