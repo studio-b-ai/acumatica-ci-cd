@@ -187,7 +187,7 @@ class TestIGCMScreensRemoved:
     def test_igcm_screen_does_not_load(self, acumatica_page, dialog_messages, screen_id):
         """IGCM screen should not load — must be gone from SiteMap."""
         navigate_to_screen_safe(acumatica_page, screen_id)
-        acumatica_page.wait_for_timeout(3000)
+        # navigate_to_screen_safe already waits 3 s internally; no extra wait needed
 
         current_url = acumatica_page.url
 
