@@ -213,4 +213,83 @@ VALUES
         ]]></CDATA>
     </Sql>
 
+    <Sql Name="InstallQBGLBalancesGI" Script="#CDATA">
+        <CDATA name="Script"><![CDATA[-- REVIEWED: gi-sql-safe
+-- QBGLBalances GI installer — GL period balances for Quarterbook board decks.
+-- Joins GLHistory → Account (description/type) → Ledger (actual only).
+-- Upsert pattern: delete existing, insert fresh.
+
+DECLARE @CompanyID int = 2;
+DECLARE @DesignID uniqueidentifier;
+DECLARE @Now datetime = GETUTCDATE();
+
+-- Discover CompanyID from a known GI
+SELECT TOP 1 @CompanyID = CompanyID FROM GIDesign WHERE Name = 'InventoryAllocationDetail';
+
+-- Clean up existing QBGLBalances GI (for re-deploy idempotency)
+SELECT @DesignID = DesignID FROM GIDesign WHERE Name = 'QBGLBalances' AND CompanyID = @CompanyID;
+IF @DesignID IS NOT NULL
+BEGIN
+    DELETE FROM GIFilter   WHERE DesignID = @DesignID AND CompanyID = @CompanyID;
+    DELETE FROM GISort     WHERE DesignID = @DesignID AND CompanyID = @CompanyID;
+    DELETE FROM GIResult   WHERE DesignID = @DesignID AND CompanyID = @CompanyID;
+    DELETE FROM GIGroupBy  WHERE DesignID = @DesignID AND CompanyID = @CompanyID;
+    DELETE FROM GIOn       WHERE DesignID = @DesignID AND CompanyID = @CompanyID;
+    DELETE FROM GIRelation WHERE DesignID = @DesignID AND CompanyID = @CompanyID;
+    DELETE FROM GIWhere    WHERE DesignID = @DesignID AND CompanyID = @CompanyID;
+    DELETE FROM GITable    WHERE DesignID = @DesignID AND CompanyID = @CompanyID;
+    DELETE FROM GIDesign   WHERE DesignID = @DesignID AND CompanyID = @CompanyID;
+END
+
+-- Generate new DesignID
+SET @DesignID = NEWID();
+
+-- GI header (ExposeViaOData=1 for REST API access)
+INSERT INTO GIDesign (CompanyID, DesignID, Name, Description, ExposeViaOData, CreatedDateTime, LastModifiedDateTime)
+VALUES (@CompanyID, @DesignID, 'QBGLBalances', 'Quarterbook GL Period Balances — account, period turnover, YTD balance for board decks', 1, @Now, @Now);
+
+-- Tables: GLHistory (primary), Account (join), Ledger (join + filter)
+INSERT INTO GITable (CompanyID, DesignID, Alias, Name, IsActive)
+VALUES
+    (@CompanyID, @DesignID, 'H', 'PX.Objects.GL.GLHistory', 1),
+    (@CompanyID, @DesignID, 'A', 'PX.Objects.GL.Account', 1),
+    (@CompanyID, @DesignID, 'L', 'PX.Objects.GL.Ledger', 1);
+
+-- Relation 1: H → A on AccountID (inner join)
+INSERT INTO GIRelation (CompanyID, DesignID, LineNbr, ParentTable, ChildTable, IsActive, JoinType)
+VALUES (@CompanyID, @DesignID, 1, 'H', 'A', 1, 'I');
+
+INSERT INTO GIOn (CompanyID, DesignID, RelationNbr, LineNbr, ParentField, ChildField, Condition, Operation)
+VALUES (@CompanyID, @DesignID, 1, 1, 'AccountID', 'AccountID', 'E ', 'A');
+
+-- Relation 2: H → L on LedgerID (inner join — filters to actual ledger)
+INSERT INTO GIRelation (CompanyID, DesignID, LineNbr, ParentTable, ChildTable, IsActive, JoinType)
+VALUES (@CompanyID, @DesignID, 2, 'H', 'L', 1, 'I');
+
+INSERT INTO GIOn (CompanyID, DesignID, RelationNbr, LineNbr, ParentField, ChildField, Condition, Operation)
+VALUES (@CompanyID, @DesignID, 2, 1, 'LedgerID', 'LedgerID', 'E ', 'A');
+
+-- Result columns (7 — matching Quarterbook GLBudgetActualRow interface)
+INSERT INTO GIResult (CompanyID, DesignID, LineNbr, ObjectName, Field, IsVisible, SortOrder, Caption)
+VALUES
+    (@CompanyID, @DesignID, 1, 'A', 'AccountCD',    1, 1, 'Account'),
+    (@CompanyID, @DesignID, 2, 'A', 'Description',  1, 2, 'Description'),
+    (@CompanyID, @DesignID, 3, 'A', 'Type',         1, 3, 'Type'),
+    (@CompanyID, @DesignID, 4, 'H', 'FinPtdDebit',  1, 4, 'FinPtdDebit'),
+    (@CompanyID, @DesignID, 5, 'H', 'FinPtdCredit', 1, 5, 'FinPtdCredit'),
+    (@CompanyID, @DesignID, 6, 'H', 'FinYtdBalance', 1, 6, 'FinYtdBalance'),
+    (@CompanyID, @DesignID, 7, 'H', 'FinPeriodID',  1, 7, 'FinancialPeriod');
+
+-- Where: Actual ledger only (BalanceType = 'A', excludes Budget/Statistical/Reporting)
+INSERT INTO GIWhere (CompanyID, DesignID, LineNbr, IsActive, DataFieldName, Condition, IsExpression, Value1, Operation)
+VALUES (@CompanyID, @DesignID, 1, 1, 'L.BalanceType', 'E ', 0, 'A', 'A');
+
+-- Sort: FinPeriodID ascending, then Account ascending
+INSERT INTO GISort (CompanyID, DesignID, LineNbr, DataFieldName, IsDescending)
+VALUES
+    (@CompanyID, @DesignID, 1, 'H.FinPeriodID', 0),
+    (@CompanyID, @DesignID, 2, 'A.AccountCD', 0);
+        ]]></CDATA>
+    </Sql>
+
 </Customization>
