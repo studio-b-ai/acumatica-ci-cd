@@ -731,7 +731,11 @@ def main():
             summary=summary,
         )
         print_stderr(all_checks, overall, summary)
-        print(json.dumps(result.to_dict(), indent=2))
+        json_output = json.dumps(result.to_dict(), indent=2)
+        print(json_output)
+        if args.json_output:
+            with open(args.json_output, "w") as f:
+                f.write(json_output)
         sys.exit(1)
 
     try:
