@@ -2701,6 +2701,168 @@ public partial class Page_SB_SB302040 : PXPage
     </data>
   </data-set>
 </GenericInquiryScreen>
+    <GenericInquiryScreen>
+  <data-set>
+                <relations format-version="3" relations-version="20240201" main-table="GIDesign" stable-sharing="True" file-name="(Name)">
+    <link from="GIFilter (DesignID)" to="GIDesign (DesignID)" />
+    <link from="GIGroupBy (DesignID)" to="GIDesign (DesignID)" />
+    <link from="GIMassAction (DesignID)" to="GIDesign (DesignID)" />
+    <link from="GIMassUpdateField (DesignID)" to="GIDesign (DesignID)" />
+    <link from="GINavigationScreen (DesignID)" to="GIDesign (DesignID)" />
+    <link from="GINavigationParameter (DesignID, NavigationScreenLineNbr)" to="GINavigationScreen (DesignID, LineNbr)" />
+    <link from="GINavigationCondition (DesignID, NavigationScreenLineNbr)" to="GINavigationScreen (DesignID, LineNbr)" />
+    <link from="GIOn (DesignID, RelationNbr)" to="GIRelation (DesignID, LineNbr)" />
+    <link from="GIRecordDefault (DesignID)" to="GIDesign (DesignID)" />
+    <link from="GIRelation (DesignID, ParentTable)" to="GITable (DesignID, Alias)" />
+    <link from="GIRelation (DesignID, ChildTable)" to="GITable (DesignID, Alias)" />
+    <link from="GIResult (Alias, DesignID)" to="GITable (Alias, DesignID)" />
+    <link from="GITable (DesignID)" to="GIDesign (DesignID)" />
+    <link from="GIWhere (DesignID)" to="GIDesign (DesignID)" />
+    <link from="GISort (DesignID)" to="GIDesign (DesignID)" />
+    <link from="MUIScreen (NodeID)" to="SiteMap (NodeID)" />
+    <link from="MUIPinnedScreen (NodeID, WorkspaceID)" to="MUIScreen (NodeID, WorkspaceID)" />
+    <link from="MUITile (ScreenID)" to="SiteMap (ScreenID)" />
+    <link from="ListEntryPoint (ListScreenID)" to="SiteMap (ScreenID)" />
+    <link from="FilterHeader (ScreenID)" to="SiteMap (ScreenID)" />
+    <link from="FilterRow (FilterID)" to="FilterHeader (FilterID)" />
+    <link from="PivotTable (ScreenID, NoteID)" to="FilterHeader (ScreenID, NoteID)" />
+    <link from="PivotField (ScreenID, PivotTableID)" to="PivotTable (ScreenID, PivotTableID)" />
+    <link from="MUIFavoriteWorkspace (WorkspaceID)" to="MUIWorkspace (WorkspaceID)" />
+    <link from="GIDesign (NoteID)" to="Note (NoteID)" type="Note" />
+    <link from="GIFilter (NoteID)" to="Note (NoteID)" type="Note" />
+    <link from="GIFilter (NoteID)" to="GIFilterKvExt (RecordID)" type="RowKvExt" />
+    <link from="GIGroupBy (NoteID)" to="Note (NoteID)" type="Note" />
+    <link from="GIOn (NoteID)" to="Note (NoteID)" type="Note" />
+    <link from="GIRelation (NoteID)" to="Note (NoteID)" type="Note" />
+    <link from="GIResult (NoteID)" to="Note (NoteID)" type="Note" />
+    <link from="GIResult (NoteID)" to="GIResultKvExt (RecordID)" type="RowKvExt" />
+    <link from="GISort (NoteID)" to="Note (NoteID)" type="Note" />
+    <link from="GITable (NoteID)" to="Note (NoteID)" type="Note" />
+    <link from="GIWhere (NoteID)" to="Note (NoteID)" type="Note" />
+    <link from="FilterHeader (NoteID)" to="Note (NoteID)" type="Note" />
+    <link from="FilterHeader (NoteID)" to="FilterHeaderKvExt (RecordID)" type="RowKvExt" />
+</relations>
+            <layout>
+    <table name="GIDesign">
+        <table name="GIFilter" uplink="(DesignID) = (DesignID)">
+            <table name="Note" uplink="(NoteID) = (NoteID)" />
+            <table name="GIFilterKvExt" uplink="(NoteID) = (RecordID)" />
+        </table>
+        <table name="GIGroupBy" uplink="(DesignID) = (DesignID)">
+            <table name="Note" uplink="(NoteID) = (NoteID)" />
+        </table>
+        <table name="GIMassAction" uplink="(DesignID) = (DesignID)" />
+        <table name="GIMassUpdateField" uplink="(DesignID) = (DesignID)" />
+        <table name="GINavigationScreen" uplink="(DesignID) = (DesignID)">
+            <table name="GINavigationParameter" uplink="(DesignID, LineNbr) = (DesignID, NavigationScreenLineNbr)" />
+            <table name="GINavigationCondition" uplink="(DesignID, LineNbr) = (DesignID, NavigationScreenLineNbr)" />
+        </table>
+        <table name="GIRecordDefault" uplink="(DesignID) = (DesignID)" />
+        <table name="GISort" uplink="(DesignID) = (DesignID)">
+            <table name="Note" uplink="(NoteID) = (NoteID)" />
+        </table>
+        <table name="GITable" uplink="(DesignID) = (DesignID)">
+            <table name="GIRelation" uplink="(DesignID, Alias) = (DesignID, ParentTable)">
+                <table name="GIOn" uplink="(DesignID, LineNbr) = (DesignID, RelationNbr)">
+                    <table name="Note" uplink="(NoteID) = (NoteID)" />
+                </table>
+                <table name="Note" uplink="(NoteID) = (NoteID)" />
+            </table>
+            <table name="GIResult" uplink="(Alias, DesignID) = (ObjectName, DesignID)">
+                <table name="Note" uplink="(NoteID) = (NoteID)" />
+                <table name="GIResultKvExt" uplink="(NoteID) = (RecordID)" />
+            </table>
+            <table name="Note" uplink="(NoteID) = (NoteID)" />
+        </table>
+        <table name="GIWhere" uplink="(DesignID) = (DesignID)">
+            <table name="Note" uplink="(NoteID) = (NoteID)" />
+        </table>
+        <table name="SiteMap" uplink="(DesignID) = (Url)" linkname="toDesignById">
+            <table name="ListEntryPoint" uplink="(ScreenID) = (ListScreenID)" />
+            <table name="FilterHeader" uplink="(ScreenID) = (ScreenID)">
+                <table name="FilterRow" uplink="(FilterID) = (FilterID)" />
+                <table name="PivotTable" uplink="(RefNoteID) = (NoteID)">
+                    <table name="PivotField" uplink="(ScreenID, PivotTableID) = (ScreenID, PivotTableID)" />
+                </table>
+                <table name="Note" uplink="(NoteID) = (NoteID)" />
+                <table name="FilterHeaderKvExt" uplink="(NoteID) = (RecordID)" />
+            </table>
+            <table name="MUIScreen" uplink="(NodeID) = (NodeID)">
+                <table name="MUIPinnedScreen" uplink="(NodeID, WorkspaceID) = (NodeID, WorkspaceID)" />
+            </table>
+            <table name="MUITile" uplink="(ScreenID) = (ScreenID)" />
+        </table>
+        <table name="SiteMap" uplink="(Name) = (Url)" linkname="toDesignByName">
+            <table name="ListEntryPoint" uplink="(ScreenID) = (ListScreenID)" />
+            <table name="FilterHeader" uplink="(ScreenID) = (ScreenID)">
+                <table name="FilterRow" uplink="(FilterID) = (FilterID)" />
+                <table name="PivotTable" uplink="(RefNoteID) = (NoteID)">
+                    <table name="PivotField" uplink="(ScreenID, PivotTableID) = (ScreenID, PivotTableID)" />
+                </table>
+                <table name="Note" uplink="(NoteID) = (NoteID)" />
+                <table name="FilterHeaderKvExt" uplink="(NoteID) = (RecordID)" />
+            </table>
+            <table name="MUIScreen" uplink="(NodeID) = (NodeID)">
+                <table name="MUIPinnedScreen" uplink="(NodeID, WorkspaceID) = (NodeID, WorkspaceID)" />
+            </table>
+            <table name="MUITile" uplink="(ScreenID) = (ScreenID)" />
+        </table>
+        <table name="SiteMap" uplink="(PrimaryScreenIDNew) = (ScreenID)" linkname="to1Screen">
+            <table name="ListEntryPoint" uplink="(ScreenID) = (ListScreenID)" />
+            <table name="FilterHeader" uplink="(ScreenID) = (ScreenID)">
+                <table name="FilterRow" uplink="(FilterID) = (FilterID)" />
+                <table name="PivotTable" uplink="(RefNoteID) = (NoteID)">
+                    <table name="PivotField" uplink="(ScreenID, PivotTableID) = (ScreenID, PivotTableID)" />
+                </table>
+                <table name="Note" uplink="(NoteID) = (NoteID)" />
+                <table name="FilterHeaderKvExt" uplink="(NoteID) = (RecordID)" />
+            </table>
+            <table name="MUIScreen" uplink="(NodeID) = (NodeID)">
+                <table name="MUIPinnedScreen" uplink="(NodeID, WorkspaceID) = (NodeID, WorkspaceID)" />
+            </table>
+            <table name="MUITile" uplink="(ScreenID) = (ScreenID)" />
+        </table>
+        <table name="Note" uplink="(NoteID) = (NoteID)" />
+    </table>
+</layout>
+    <data>
+      <GIDesign>
+        <row DesignID="b7c3d4e5-f6a7-4890-b123-456789abcdef" Name="DRP_ItemWarehouseSnapshot" ScreenID="SB401120" FilterColCount="3" PageSize="0" ExportTop="0" NewRecordCreationEnabled="0" MassDeleteEnabled="0" AutoConfirmDelete="0" MassRecordsUpdateEnabled="0" MassActionsOnRecordsEnabled="0" ExposeViaOData="1" ExposeViaMobile="0">
+          <GITable Alias="INItemSite" Name="PX.Objects.IN.INItemSite">
+            <GIRelation LineNbr="1" ChildTable="InventoryItem" IsActive="1" JoinType="I">
+              <GIOn LineNbr="1" ParentField="InventoryID" Condition="E " ChildField="InventoryID" Operation="A" />
+            </GIRelation>
+            <GIResult LineNbr="1" SortOrder="1" IsActive="1" Field="InventoryID" Width="60" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Inventory ID (int)" RowID="b9775b22-f7d7-5db7-a912-4d21bb199090" />
+            <GIResult LineNbr="2" SortOrder="2" IsActive="1" Field="SiteID" Width="60" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Site" RowID="158b742d-2537-5cfd-8f66-f8e5d15846b5" />
+            <GIResult LineNbr="5" SortOrder="5" IsActive="1" Field="ReplenishmentSource" Width="100" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Replenishment Source" RowID="f5455633-246c-550c-945c-8d1cf39c7b88" />
+            <GIResult LineNbr="6" SortOrder="6" IsActive="1" Field="ReplenishmentClassID" Width="100" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Replenishment Method" RowID="b249be43-c99f-5862-89a1-e85974141345" />
+            <GIResult LineNbr="7" SortOrder="7" IsActive="1" Field="SafetyStock" Width="80" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Safety Stock" RowID="b01a091b-f607-506e-b7ea-f9be1100845c" />
+            <GIResult LineNbr="8" SortOrder="8" IsActive="1" Field="MinQty" Width="80" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Reorder Point" RowID="0f4457d7-80b4-5ea2-8781-bc223fc3caa1" />
+            <GIResult LineNbr="9" SortOrder="9" IsActive="1" Field="MaxQty" Width="80" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Max Qty" RowID="b4760218-e097-58b1-b709-874e3630830b" />
+            <GIResult LineNbr="10" SortOrder="10" IsActive="1" Field="LeadTime" Width="60" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Lead Time (Days)" RowID="dde32169-b050-5d65-b7a5-73fa745f3feb" />
+          </GITable>
+          <GITable Alias="InventoryItem" Name="PX.Objects.IN.InventoryItem">
+            <GIResult LineNbr="3" SortOrder="3" IsActive="1" Field="InventoryCD" Width="120" IsVisible="1" DefaultNav="1" QuickFilter="0" FastFilter="1" Caption="Inventory ID" RowID="a5d97095-1e26-56ed-8c3f-c806aa5b3cc1" />
+            <GIResult LineNbr="4" SortOrder="4" IsActive="1" Field="Descr" Width="220" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Description" RowID="fba7cbd8-38a9-50ad-b7d9-fbfda6483a65" />
+            <GIResult LineNbr="11" SortOrder="11" IsActive="1" Field="ItemStatus" Width="80" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Status" RowID="4da16660-1ba6-50a0-9eeb-6e45ae88efe4" />
+            <GIResult LineNbr="12" SortOrder="12" IsActive="1" Field="ItemClassID" Width="100" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Item Class" RowID="756c3cf3-baec-5583-a0af-7e7c161fe9de" />
+          </GITable>
+          <GIWhere LineNbr="1" IsActive="1" DataFieldName="InventoryItem.StkItem" Condition="E " IsExpression="0" Value1="True" Operation="A" />
+          <GIWhere LineNbr="2" OpenBrackets="1" IsActive="1" DataFieldName="InventoryItem.ItemStatus" Condition="E " IsExpression="0" Value1="AC" Operation="A" />
+          <GIWhere LineNbr="3" CloseBrackets="1" IsActive="1" DataFieldName="InventoryItem.ItemStatus" Condition="E " IsExpression="0" Value1="NS" Operation="O" />
+          <GISort LineNbr="1" IsActive="1" DataFieldName="InventoryItem.InventoryCD" SortOrder="A" />
+          <GISort LineNbr="2" IsActive="1" DataFieldName="INItemSite.SiteID" SortOrder="A" />
+          <SiteMap linkname="toDesignById">
+            <row Position="1200" Title="DRP Item Warehouse Snapshot" Url="~/GenericInquiry/GenericInquiry.aspx?id=b7c3d4e5-f6a7-4890-b123-456789abcdef" Expanded="0" IsFolder="0" ScreenID="SB401120" NodeID="c8d4e5f6-a7b8-4901-c234-567890abcdef" ParentID="9c89e3db-7c47-43c0-8554-5d2c9f2c0e87">
+              <MUIScreen IsPortal="0" WorkspaceID="95191203-a0b8-4fc0-8b20-4efe831708e9" Order="2100" SubcategoryID="acf1bb34-2055-411e-88be-d840efcc7424" />
+            </row>
+          </SiteMap>
+
+        </row>
+      </GIDesign>
+    </data>
+  </data-set>
+</GenericInquiryScreen>
     <ScreenWithRights AccessRightsMergeRule="ApplyAndKeep">
         <data-set>
             <relations format-version="3" relations-version="20240201" main-table="SiteMap">
@@ -2790,6 +2952,10 @@ public partial class Page_SB_SB302040 : PXPage
                         <RolesInGraph Rolename="*" ApplicationName="/" Accessrights="4" />
                     </row>
                     <row Position="0" Title="DRP Inventory By Site" Url="~/GenericInquiry/GenericInquiry.aspx?id=a5337a02-6d79-42e9-b400-d7178ac3fd24" ScreenID="SB401110" NodeID="a5337a02-6d79-42e9-b400-d7178ac3fd24" ParentID="9c89e3db-7c47-43c0-8554-5d2c9f2c0e87" SelectedUI="E">
+                        <RolesInGraph Rolename="Administrator" ApplicationName="/" Accessrights="4" />
+                        <RolesInGraph Rolename="*" ApplicationName="/" Accessrights="4" />
+                    </row>
+                    <row Position="0" Title="DRP Item Warehouse Snapshot" Url="~/GenericInquiry/GenericInquiry.aspx?id=b7c3d4e5-f6a7-4890-b123-456789abcdef" ScreenID="SB401120" NodeID="b7c3d4e5-f6a7-4890-b123-456789abcdef" ParentID="9c89e3db-7c47-43c0-8554-5d2c9f2c0e87" SelectedUI="E">
                         <RolesInGraph Rolename="Administrator" ApplicationName="/" Accessrights="4" />
                         <RolesInGraph Rolename="*" ApplicationName="/" Accessrights="4" />
                     </row>
