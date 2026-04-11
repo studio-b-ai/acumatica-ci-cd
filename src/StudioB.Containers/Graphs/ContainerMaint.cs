@@ -34,7 +34,7 @@ namespace StudioB.Containers
             {
                 current = SelectFrom<UsrContainer>
                     .OrderBy<UsrContainer.eta.Asc>
-                    .View.SelectSingle(this);
+                    .View.SelectSingleBound(this, null);
             }
             if (current != null)
                 yield return current;
