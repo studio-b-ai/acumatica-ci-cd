@@ -2,9 +2,9 @@
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
-**Goal:** Build the data foundation (signals, custom fields, MOQ intake, lead-time learning, ABC baseline, stockout logger, email watcher) that the DRP agent needs before it can compute a single recommendation.
+**Goal:** Build the data foundation (signals, custom fields, MOQ intake, lead-time learning, ABC baseline, stockout logger, email watcher) that the DRP agent needs to write better inputs into native Acumatica DRP. Under Approach C (design doc Section 20), native Acumatica handles all planning and PO generation; the agent enhances inputs and selectively overrides parameters where backtest proves it beats native.
 
-**Architecture:** Parallelizable streams across 5 repos. No stream depends on another stream's completion; they can land in any order. Phase 1 (advisor / paper-trading) can start the moment any two signals are live — it does not block on Phase 0 finishing.
+**Architecture:** Parallelizable streams across 5 repos. No stream depends on another stream's completion; they can land in any order. Phase 1 (`input_only`) can start the moment any two signals are live — it does not block on Phase 0 finishing.
 
 **Tech Stack:** Acumatica 24.x (SM208030 GIs, `AesthetikContainers` customization package), heritage-wms (React + Express + Postgres), webhook-router (TypeScript Express + Microsoft Graph + Claude SDK), studiob-api (Python FastAPI), cs-order-entry (Node.js).
 
@@ -55,6 +55,17 @@ All 6 heritage-wms migrations verified against a local Postgres 16 DB before PR:
 11. **Stream H (P0-H.1) DEFERRED.** The DataLifecycleManager in webhook-router is a snapshot system that captures data into a single `data_snapshots` table + GCS, with policies describing snapshot frequency and retention tiers — it's NOT a per-table retention manager for drp_* tables in another database. The 5 policy keys in the original plan describe tables that live in heritage-wms Postgres, not webhook-router's. Cross-DB capture isn't in the existing DLM architecture. Adding the policy entries as scaffolding now would be dead code. Deferred until Phase 1 resolves whether DRP snapshots belong in heritage-wms (local DLM fork) or whether webhook-router grows a cross-DB reader.
 12. **Stream I promoted from optional to Wave-1 required.** The original plan flagged I.1/I.2 as "optional in Phase 0, enables Phase 1 start." That framing was backwards: Phase 1 advisor mode cannot start without `drp_agent_runs` (no place to persist run metadata) or `drp_phase_config` (no place to read kill-switches + tuning knobs). Both are small migrations and their absence would block the whole Phase 1 launch. Promoted to Wave 1, shipped 2026-04-09.
 13. **P0-C.4 write-back target.** Design doc Section 4.3 says "approved MOQs sync to Acumatica `StockItem.VendorDetails.MinOrderQty`" — but the correct Acumatica entity for per-(vendor, item) MOQ is `POVendorInventory.MinOrderQty`, not `StockItem.VendorDetails`. `StockItem.VendorDetails` is a POVendorInventory rendering on the StockItem screen; the underlying PUT path is against POVendorInventory. Corrected in P0-C.4 below.
+
+### 2026-04-11 Revision — Architectural pivot (Approach C)
+
+Session 6 applied the Approach C architectural pivot (design doc Section 20: agent supplements native DRP, never replaces it). Impact on this plan:
+
+- **No Phase 0 tasks killed.** All Phase 0 work is input-enhancement (GIs, lead times, MOQs, ABC, stockout logger, email watcher) — these survive unchanged.
+- **P0-I.1 phase CHECK:** `drp_agent_runs.phase` CHECK includes `'draft_po'` and `'autopilot'` — these phases are now dead. The shipped migration still works (the values are allowed but will never be used). A future migration can narrow to `('input_only','selective_override')` per revised Section 8, but this is cosmetic and non-blocking.
+- **P0-I.2 seed row:** `phase='advisor'` seed is fine — maps to `input_only` in the revised architecture. The `write_enabled=FALSE` invariant remains correct. A future migration can rename `advisor` → `input_only` for consistency.
+- **Post-Phase-0 verification item 5:** ABC write-back to `StockItem.ABCCode` is still correct — this is an input enhancement, not an override.
+- **Open question #9 (advisor loop scaffold):** Reframed — the nightly agent is simpler under Approach C (no PO generation, no allocation tracking). It reads signals, computes shadow parameters, writes improved inputs, posts daily brief.
+- **Vendor lead times:** 22/25 PRODUCT vendors set in production on 2026-04-11 (4 Turkey @60d, 5 India @75d, 11 domestic finishers @10d, 2 domestic distributors @7d). 3 remaining are reclassify candidates (not inventory vendors). 37/40 PRODUCT vendors now have `LeadTimedays > 0`.
 
 ### Open questions resolved in this session (see bottom of file for unresolved)
 
@@ -957,7 +968,7 @@ Tracked in the Wasala/project memory as a Phase 1 diligence item.
 - `drp_phase_config` — singleton enforced by `PRIMARY KEY id=1` + `CHECK(id=1)`. All tuning knobs the nightly DRP agent reads: `forecast_quantile_by_class` JSONB (`{"A":0.9,"B":0.75,"C":0.5}` default), `max_vendor_share_per_run` (0.25), `max_country_share_per_run` (0.50), `max_collection_overhang_x` (4.00), `daily_cost_of_capital` (0.000330 ≈ 12%/year pretax), `soft_cash_cap_usd`, `max_daily_po_value_usd` (500000.00), `rail_r3_rop_change_pct` (0.200), `significant_vendor_po_usd` (50000.00), `autopilot_abc_classes` (`{C}`), `manual_override_ttl_days` (180), `manual_override_optout_ttl_days` (365), `exception_routes` JSONB, `commitment_horizon_days` (45).
 - `drp_phase_config_transitions` — audit log for every promote/revert with `CHECK(from_phase <> to_phase)` blocking self-loops
 
-**Seed row:** `phase='advisor', write_enabled=FALSE` — the Phase 0 safety invariant. Nothing writes to Acumatica until a human promotes to `draft_po`.
+**Seed row:** `phase='advisor', write_enabled=FALSE` — the Phase 0 safety invariant. Nothing writes to Acumatica until a human promotes to `input_only` (Approach C). The `draft_po` and `autopilot` phases in the CHECK constraint are dead per Section 20 pivot but harmless — a future migration can narrow them.
 
 **Verified before merge:**
 - Singleton enforcement: INSERT with `id=2` rejected by CHECK
@@ -1015,4 +1026,4 @@ All four questions resolved. **Stream A is unblocked and can start the next off-
 | 6 | **DLM cross-DB capture architecture** — local fork in heritage-wms OR cross-DB reader in webhook-router? | Phase 1, not Phase 0 |
 | 7 | **cs-order-entry HTTP client + config pattern** — does the app already have an HTTP client module with retry + logging, or does P0-F.1.c need to add one? | Start of P0-F.1.c |
 | 8 | **Microsoft Graph subscription coverage for `imports@heritagefabrics.com`** — the existing webhook-router Graph subscription may already cover this address or may need extension via a subscription update | Start of P0-G.2 |
-| 9 | **Advisor loop scaffold (P0-I.3?)** — not explicitly in the original plan. Where does the nightly agent live? Railway service `drp-agent` in studiob-platform per §14.1, but the scaffold code + Railway provisioning is an unnumbered task. | Start of Phase 1 advisor mode |
+| 9 | **Input-only loop scaffold (P0-I.3?)** — not explicitly in the original plan. Under Approach C, the nightly agent is simpler: read signals, compute shadow parameters, write improved inputs (lead times, MOQs, ABC), post daily brief comparing shadow vs native. No PO generation or allocation tracking. Railway service `drp-agent` in studiob-platform per §14.1 (revised). | Start of Phase 1 `input_only` mode |
