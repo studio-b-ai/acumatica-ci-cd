@@ -10,8 +10,8 @@ acuops:
 
 # ─── Project Settings ───────────────────────────────────────────────────────
 project:
-  name: "AesthetikWMS"
-  description: "Heritage Fabrics WMS + ERP customizations"
+  name: "AesthetikContainers"
+  description: "Heritage Fabrics container tracking + WMS + ERP customizations"
   level: 0
 
 # ─── Environment Mapping ────────────────────────────────────────────────────
@@ -24,7 +24,7 @@ environments:
 # ─── Publish Settings ───────────────────────────────────────────────────────
 publish:
   co_publish:
-    - "AesthetikContainers"
+    - "AesthetikWMS"
     - "AsthetikTheme"
     - "StudioBAcuOps"
     - "PXLotSertialNbrAttributeExtPkg"
@@ -68,18 +68,17 @@ pipeline:
     # compile-ordering concern that turned out to not be real. The orphan
     # CustProject row on both sandbox and production still needs cleanup via
     # the Acumatica support ticket (docs/acumatica-support-ticket-iig-orphan.md).
-    - "AesthetikContainers"
+    - "AesthetikWMS"
     - "StudioBAcuOps"
   test_tenant_enabled: true
 
 # ─── --no-merge Expected Failures ──────────────────────────────────────────
 # ASPX mismatches caused by --no-merge (isMergeWithExistingPackages=false).
 # --no-merge only extracts ASPX for the primary project; co-published
-# projects' ASPX files are silently skipped. These are downgraded to WARN
-# in verify.py until the IIG orphan rows are cleaned (September 2026 DB access).
-no_merge_expected:
-  - "aspx:Pages/SB/SB501000.aspx"
-  - "aspx:Pages/SB/SB501200.aspx"
+# projects' ASPX files are silently skipped.
+# As of PR #367, AesthetikContainers is the primary project (it owns all
+# ASPX files), so no ASPX mismatches are expected.
+no_merge_expected: []
 
 # ─── Qualification (Pre-Deploy Gates) ──────────────────────────────────────
 qualification:
