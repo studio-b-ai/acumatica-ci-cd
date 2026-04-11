@@ -2331,11 +2331,14 @@ public partial class Page_SB_SB302040 : PXPage
     <data>
       <GIDesign>
         <row DesignID="f918a504-7620-461c-aad8-f1b3395d1e79" Name="DRP_OpenSOCommitments" ScreenID="SB401090" FilterColCount="3" PageSize="0" ExportTop="0" NewRecordCreationEnabled="0" MassDeleteEnabled="0" AutoConfirmDelete="0" MassRecordsUpdateEnabled="0" MassActionsOnRecordsEnabled="0" ExposeViaOData="1" ExposeViaMobile="0">
-          <GITable Alias="SOLine" Name="PX.Objects.SO.SOLine">
-            <GIRelation LineNbr="1" ChildTable="SOOrder" IsActive="1" JoinType="L">
+          <GITable Alias="SOOrder" Name="PX.Objects.SO.SOOrder">
+            <GIRelation LineNbr="1" ChildTable="SOLine" IsActive="1" JoinType="I">
               <GIOn LineNbr="1" ParentField="OrderType" Condition="E " ChildField="OrderType" Operation="A" />
               <GIOn LineNbr="2" ParentField="OrderNbr" Condition="E " ChildField="OrderNbr" Operation="A" />
             </GIRelation>
+            <GIResult LineNbr="9" SortOrder="9" IsActive="1" Field="CustomerID" Width="100" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Customer" RowID="3ec70280-a871-419e-9525-6a117a502b6f" />
+          </GITable>
+          <GITable Alias="SOLine" Name="PX.Objects.SO.SOLine">
             <GIResult LineNbr="1" SortOrder="1" IsActive="1" Field="InventoryID" Width="120" IsVisible="1" DefaultNav="1" QuickFilter="0" FastFilter="1" Caption="Inventory ID" RowID="2d95b7be-2bb2-406f-bddd-2bc9fe95f567" />
             <GIResult LineNbr="2" SortOrder="2" IsActive="1" Field="OrderType" Width="60" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="SO Type" RowID="d120b57e-74b5-4ca2-8567-024fcbafa79e" />
             <GIResult LineNbr="3" SortOrder="3" IsActive="1" Field="OrderNbr" Width="100" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="SO Nbr" RowID="640b01fe-d1a2-4b7d-99a4-5db8f2348195" />
@@ -2346,9 +2349,6 @@ public partial class Page_SB_SB302040 : PXPage
             <GIResult LineNbr="8" SortOrder="8" IsActive="1" Field="RequestDate" Width="100" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Req Ship Date" RowID="8f870880-3313-497e-9846-41f3286ecad0" />
             <GIResult LineNbr="10" SortOrder="10" IsActive="1" Field="SiteID" Width="60" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Site" RowID="7501a3a2-2147-4369-96f6-f44490f8440a" />
             <GIResult LineNbr="11" SortOrder="11" IsActive="1" Field="UOM" Width="60" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="UOM" RowID="812a72b9-c8bc-47b8-a738-e839a814a529" />
-          </GITable>
-          <GITable Alias="SOOrder" Name="PX.Objects.SO.SOOrder">
-            <GIResult LineNbr="9" SortOrder="9" IsActive="1" Field="CustomerID" Width="100" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Customer" RowID="3ec70280-a871-419e-9525-6a117a502b6f" />
           </GITable>
           <GIWhere LineNbr="1" IsActive="1" DataFieldName="SOLine.LineType" Condition="E " IsExpression="0" Value1="GoodsForInventory" Operation="A" />
           <GIWhere LineNbr="2" IsActive="1" DataFieldName="SOLine.OpenQty" Condition="G " IsExpression="0" Value1="0" Operation="A" />
@@ -2502,21 +2502,21 @@ public partial class Page_SB_SB302040 : PXPage
     <data>
       <GIDesign>
         <row DesignID="a5337a02-6d79-42e9-b400-d7178ac3fd24" Name="DRP_InventoryBySite" ScreenID="SB401110" FilterColCount="3" PageSize="0" ExportTop="0" NewRecordCreationEnabled="0" MassDeleteEnabled="0" AutoConfirmDelete="0" MassRecordsUpdateEnabled="0" MassActionsOnRecordsEnabled="0" ExposeViaOData="1" ExposeViaMobile="0">
-          <GITable Alias="InventoryItem" Name="PX.Objects.IN.InventoryItem">
-            <GIRelation LineNbr="1" ChildTable="INSiteStatus" IsActive="1" JoinType="L">
+          <GITable Alias="INSiteStatus" Name="PX.Objects.IN.INSiteStatus">
+            <GIRelation LineNbr="1" ChildTable="InventoryItem" IsActive="1" JoinType="I">
               <GIOn LineNbr="1" ParentField="InventoryID" Condition="E " ChildField="InventoryID" Operation="A" />
             </GIRelation>
-            <GIResult LineNbr="1" SortOrder="1" IsActive="1" Field="InventoryCD" Width="120" IsVisible="1" DefaultNav="1" QuickFilter="0" FastFilter="1" Caption="Inventory ID" RowID="79173e70-3a85-4d70-a5a4-cd71ae7ae80e" />
-            <GIResult LineNbr="2" SortOrder="2" IsActive="1" Field="Descr" Width="220" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Description" RowID="872a8b14-9db6-4978-8214-32c8f5670646" />
-            <GIResult LineNbr="3" SortOrder="3" IsActive="1" Field="ItemStatus" Width="80" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Status" RowID="e24ba55f-863f-45be-a4f9-7ed06db4b49b" />
-            <GIResult LineNbr="4" SortOrder="4" IsActive="1" Field="ItemClassID" Width="100" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Item Class" RowID="6b15d7cd-e2f1-4166-a7b4-b2b7c6fd1eed" />
-          </GITable>
-          <GITable Alias="INSiteStatus" Name="PX.Objects.IN.INSiteStatus">
             <GIResult LineNbr="5" SortOrder="5" IsActive="1" Field="SiteID" Width="60" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Site" RowID="45834d20-dc12-430f-a291-9c8b3576f12a" />
             <GIResult LineNbr="6" SortOrder="6" IsActive="1" Field="QtyOnHand" Width="100" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Qty On Hand" RowID="169233bb-3c3e-4657-8dcd-cba20887a558" />
             <GIResult LineNbr="7" SortOrder="7" IsActive="1" Field="QtyAvail" Width="100" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Qty Available" RowID="8ce9d3cb-34ed-4983-85e3-00b844b380eb" />
             <GIResult LineNbr="8" SortOrder="8" IsActive="1" Field="QtyHardAvail" Width="100" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Qty Hard Avail" RowID="d1cb550a-2817-4469-ab21-742e368f2ee5" />
             <GIResult LineNbr="9" SortOrder="9" IsActive="1" Field="QtyAllocated" Width="100" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Qty Allocated" RowID="78f5dc04-3821-493e-822d-984b1805f2d5" />
+          </GITable>
+          <GITable Alias="InventoryItem" Name="PX.Objects.IN.InventoryItem">
+            <GIResult LineNbr="1" SortOrder="1" IsActive="1" Field="InventoryCD" Width="120" IsVisible="1" DefaultNav="1" QuickFilter="0" FastFilter="1" Caption="Inventory ID" RowID="79173e70-3a85-4d70-a5a4-cd71ae7ae80e" />
+            <GIResult LineNbr="2" SortOrder="2" IsActive="1" Field="Descr" Width="220" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Description" RowID="872a8b14-9db6-4978-8214-32c8f5670646" />
+            <GIResult LineNbr="3" SortOrder="3" IsActive="1" Field="ItemStatus" Width="80" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Status" RowID="e24ba55f-863f-45be-a4f9-7ed06db4b49b" />
+            <GIResult LineNbr="4" SortOrder="4" IsActive="1" Field="ItemClassID" Width="100" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Item Class" RowID="6b15d7cd-e2f1-4166-a7b4-b2b7c6fd1eed" />
           </GITable>
           <GIWhere LineNbr="1" IsActive="1" DataFieldName="InventoryItem.StkItem" Condition="E " IsExpression="0" Value1="True" Operation="A" />
           <GIWhere LineNbr="2" OpenBrackets="1" IsActive="1" DataFieldName="InventoryItem.ItemStatus" Condition="E " IsExpression="0" Value1="AC" Operation="A" />
@@ -2669,11 +2669,15 @@ public partial class Page_SB_SB302040 : PXPage
     <data>
       <GIDesign>
         <row DesignID="89912975-c6ed-41ad-b514-a0f775a89362" Name="DRP_OpenPOLines" ScreenID="SB401100" FilterColCount="3" PageSize="0" ExportTop="0" NewRecordCreationEnabled="0" MassDeleteEnabled="0" AutoConfirmDelete="0" MassRecordsUpdateEnabled="0" MassActionsOnRecordsEnabled="0" ExposeViaOData="1" ExposeViaMobile="0">
-          <GITable Alias="Line" Name="PX.Objects.PO.POLine">
-            <GIRelation LineNbr="1" ChildTable="POOrder" IsActive="1" JoinType="L">
+          <GITable Alias="POOrder" Name="PX.Objects.PO.POOrder">
+            <GIRelation LineNbr="1" ChildTable="Line" IsActive="1" JoinType="I">
               <GIOn LineNbr="1" ParentField="OrderType" Condition="E " ChildField="OrderType" Operation="A" />
               <GIOn LineNbr="2" ParentField="OrderNbr" Condition="E " ChildField="OrderNbr" Operation="A" />
             </GIRelation>
+            <GIResult LineNbr="10" SortOrder="10" IsActive="1" Field="UsrAcknowledgedDate" Width="110" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Vendor Ack'd" RowID="ccc39a8e-89cf-435f-8e39-c35ecd032bc6" />
+            <GIResult LineNbr="11" SortOrder="11" IsActive="1" Field="UsrFactoryReadyDate" Width="110" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Factory Ready" RowID="db94eb69-50b0-468b-ac76-81f3515ce171" />
+          </GITable>
+          <GITable Alias="Line" Name="PX.Objects.PO.POLine">
             <GIRelation LineNbr="2" ChildTable="ContainerLink" IsActive="1" JoinType="L">
               <GIOn LineNbr="1" ParentField="OrderType" Condition="E " ChildField="OrderType" Operation="A" />
               <GIOn LineNbr="2" ParentField="OrderNbr" Condition="E " ChildField="OrderNbr" Operation="A" />
@@ -2688,10 +2692,6 @@ public partial class Page_SB_SB302040 : PXPage
             <GIResult LineNbr="7" SortOrder="7" IsActive="1" Field="ReceivedQty" Width="80" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Received" RowID="d1e7376f-f209-4d68-924e-5e6bff3d4d79" />
             <GIResult LineNbr="8" SortOrder="8" IsActive="1" Field="OpenQty" Width="80" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Open Qty" RowID="a7b6ebc5-24a5-4827-89fd-f3d1f1b70eec" />
             <GIResult LineNbr="9" SortOrder="9" IsActive="1" Field="PromisedDate" Width="100" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Promised Date" RowID="202a8b2e-87d7-4407-ae00-80a992b5686b" />
-          </GITable>
-          <GITable Alias="POOrder" Name="PX.Objects.PO.POOrder">
-            <GIResult LineNbr="10" SortOrder="10" IsActive="1" Field="UsrAcknowledgedDate" Width="110" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Vendor Ack'd" RowID="ccc39a8e-89cf-435f-8e39-c35ecd032bc6" />
-            <GIResult LineNbr="11" SortOrder="11" IsActive="1" Field="UsrFactoryReadyDate" Width="110" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Factory Ready" RowID="db94eb69-50b0-468b-ac76-81f3515ce171" />
           </GITable>
           <GITable Alias="ContainerLink" Name="StudioB.Containers.UsrContainerPOLink">
             <GIRelation LineNbr="3" ChildTable="Container" IsActive="1" JoinType="L">

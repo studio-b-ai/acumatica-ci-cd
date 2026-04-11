@@ -39,7 +39,7 @@ EXPECTED_GIS = {
         "DRP_OpenSOCommitments",
         "SOLine",
         {"InventoryID", "OrderType", "OrderNbr", "LineNbr", "OrderQty", "ShippedQty",
-         "OpenQty", "RequestedDate", "CustomerID", "SiteID", "UOM"},
+         "OpenQty", "RequestDate", "CustomerID", "SiteID", "UOM"},
     ),
     "SB401100": (
         "DRP_OpenPOLines",
