@@ -24,6 +24,18 @@ ACUMATICA_URL = os.environ.get("ACUMATICA_URL", "https://heritagefabrics.acumati
 
 _GI_PREFIXES = ("GI",)
 
+# Container-tracking GI screens are SB-prefixed (not GI-prefixed) but must
+# be navigated via GenericInquiry.aspx to avoid a 30-second iframe wait.
+# Main?ScreenId=SB4010xx renders the GI inside an iframe but the form
+# container (#ctl00_phF_form) never appears — AcumaticaScreen.navigate()
+# would burn its full 30-second timeout per navigation. With ~24 navigations
+# across the container-tracking test file that's 12 minutes of dead time,
+# which blows the 15-minute GitHub Actions step budget. Loading via
+# GenericInquiry.aspx renders the page directly (no iframe wrapper) in ~5s.
+_GI_SCREEN_IDS: frozenset[str] = frozenset({
+    "SB401000", "SB401010", "SB401020", "SB401030", "SB401040",
+})
+
 _SHADOW_ASPX_MAP: dict[str, str] = {
     "PO301000": "/Pages/PO/PO301000.aspx",
 }
@@ -54,12 +66,19 @@ class AcumaticaScreen:
         timeout: int = 30_000,
     ) -> "AcumaticaScreen":
         """Navigate to a screen via /Main?ScreenId= with auto-detection."""
-        if screen_id.startswith(_GI_PREFIXES):
+        # GI screens — either classic GI-prefix or known SB-prefixed GI IDs.
+        # Both must use GenericInquiry.aspx which renders without an iframe
+        # wrapper. Skip the 30-second iframe wait and return after a short
+        # settle; the page context is the top-level document (mode="direct").
+        if screen_id.startswith(_GI_PREFIXES) or screen_id in _GI_SCREEN_IDS:
             url = f"{ACUMATICA_URL}/GenericInquiry/GenericInquiry.aspx?id={screen_id}"
-        else:
-            url = f"{ACUMATICA_URL}/Main?ScreenId={screen_id}"
-            if params:
-                url += f"&{params}"
+            page.goto(url, wait_until="domcontentloaded", timeout=timeout)
+            page.wait_for_timeout(5_000)
+            return cls(page, page, screen_id, "direct")
+
+        url = f"{ACUMATICA_URL}/Main?ScreenId={screen_id}"
+        if params:
+            url += f"&{params}"
 
         page.goto(url, wait_until="domcontentloaded", timeout=timeout)
 
