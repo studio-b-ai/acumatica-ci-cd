@@ -416,7 +416,7 @@ IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('INItemXRef
                 <SiteMap>
                     <row Position="0" Title="Purchase Orders" Url="~/Pages/PO/PO301000.aspx" ScreenID="PO3010PL" NodeID="5FC65FCB-7860-40B1-A897-8526F240D9E0" ParentID="12167736-AE7E-46AB-8A8C-DD4B86217519" SelectedUI="E">
                         <RolesInGraph Rolename="Administrator" ApplicationName="/" Accessrights="4" />
-                        <RolesInGraph Rolename="*" ApplicationName="/" Accessrights="0" />
+                        <RolesInGraph Rolename="*" ApplicationName="/" Accessrights="4" />
                     </row>
                 </SiteMap>
                 <Roles>
