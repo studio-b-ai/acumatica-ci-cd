@@ -86,6 +86,20 @@ namespace StudioB.Containers
                     EnsureColumn(conn, "UsrContainer", "ISFFiledDate",        "datetime NULL");
                     EnsureColumn(conn, "UsrContainer", "ISFFilingNbr",        "nvarchar(20) NULL");
 
+                    // 2026-04-12: IIG parity date fields (PR #366)
+                    EnsureColumn(conn, "UsrContainer", "DrayageAppointmentDate", "datetime NULL");
+                    EnsureColumn(conn, "UsrContainer", "ShipmentWindowStart",    "datetime NULL");
+                    EnsureColumn(conn, "UsrContainer", "ShipmentWindowEnd",      "datetime NULL");
+                    EnsureColumn(conn, "UsrContainer", "DeliveryOrderNbr",       "nvarchar(30) NULL");
+                    EnsureColumn(conn, "UsrContainer", "DeliveryOrderDate",      "datetime NULL");
+                    EnsureColumn(conn, "UsrContainer", "OnBoardDate",            "datetime NULL");
+                    EnsureColumn(conn, "UsrContainer", "FactoryPickupDate",      "datetime NULL");
+                    EnsureColumn(conn, "UsrContainer", "CargoReadyDate",         "datetime NULL");
+                    EnsureColumn(conn, "UsrContainer", "PaymentDueDate",         "datetime NULL");
+                    EnsureColumn(conn, "UsrContainer", "BrokerInvoiceNbr",       "nvarchar(30) NULL");
+                    EnsureColumn(conn, "UsrContainer", "SCACNumber",             "nvarchar(10) NULL");
+                    EnsureColumn(conn, "UsrContainer", "EstimatedFreight",       "decimal(19,4) NULL");
+
                     EnsureTable(conn, "UsrContainerEvent", @"
                         CompanyID int NOT NULL DEFAULT 0,
                         EventID int IDENTITY(1,1) NOT NULL,
