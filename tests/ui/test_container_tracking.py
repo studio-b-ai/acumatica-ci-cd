@@ -148,14 +148,25 @@ class TestPO301000ContainerFields:
         The button is rendered by POOrderEntry_Extension.viewContainer
         (PXAction with DisplayName='Container Tracking') on the PO form.
 
-        Uses direct ASPX URL because AesthetikWMS overrode the SiteMap
-        entry for PO301000 with ScreenID="PO3010PL", so /Main?ScreenId=PO301000
-        redirects to home. AcumaticaScreen.navigate handles this via
-        shadow detection + direct fallback.
+        Uses Pattern B (direct-aspx + 3 s wait) from KB article
+        acumatica-iframe-screenshadow-test-patterns.md:
+        - PO301000 is shadowed in SiteMap (ScreenID="PO3010PL"), so
+          /Main?ScreenId=PO301000 redirects to home and the iframe never
+          loads the PO form.
+        - AcumaticaScreen.direct() waits for the form container but NOT
+          for toolbar render; PXAction buttons are injected by JS after
+          domcontentloaded. The 3 s wait allows the toolbar to render.
+        - page.locator() operates on the top-level document only and does
+          NOT pierce iframes, so direct-aspx (no iframe wrapper) is correct
+          here. btn.count() is immediate — must wait before calling it.
         """
-        screen = AcumaticaScreen.direct(acumatica_page, "/Pages/PO/PO301000.aspx")
+        acumatica_page.goto(
+            f"{ACUMATICA_URL}/Pages/PO/PO301000.aspx",
+            wait_until="domcontentloaded",
+        )
+        acumatica_page.wait_for_timeout(3_000)
 
-        btn = screen.locator("text=CONTAINER TRACKING")
+        btn = acumatica_page.locator("text=CONTAINER TRACKING")
         assert btn.count() > 0, "CONTAINER TRACKING button not found on PO301000"
 
     def test_container_tracking_navigates_to_sb501000(self, acumatica_screen):
@@ -294,6 +305,7 @@ class TestFreightForwarders:
 class TestContainerTrackingWorkspaceComplete:
     """Verify all container tracking screens appear in the workspace."""
 
+    @pytest.mark.timeout(240)
     def test_new_screens_no_errors(self, acumatica_screen):
         """All 5 new screens should not produce error pages."""
         new_screens = [
@@ -374,6 +386,7 @@ class TestContainerPreferences:
 class TestPhase3WorkspaceComplete:
     """Verify all Phase 1 + Phase 2-3 screens load without error."""
 
+    @pytest.mark.timeout(400)
     def test_all_screens_no_errors(self, acumatica_screen):
         """All 9 container tracking screens should not produce error pages."""
         all_screens = [
