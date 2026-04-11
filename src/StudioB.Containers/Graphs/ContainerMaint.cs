@@ -814,12 +814,40 @@ namespace StudioB.Containers
                     }
                 }
 
-                // --- Risk level (inline, without doc/history joins for perf) ---
+                // --- Risk level (with doc/ETA counts for accurate KPI tiles) ---
                 int holdDays = ContainerRiskCalculator.CustomsHoldDays(today, status, c.LastSyncDate);
+
+                // Doc counts per container — N+1 is acceptable at 5-10 active containers
+                int cDocsReq = 0, cDocsRcv = 0;
+                if (c.ContainerID.HasValue)
+                {
+                    foreach (UsrContainerDocument d in SelectFrom<UsrContainerDocument>
+                        .Where<UsrContainerDocument.containerID.IsEqual<@P.AsInt>>
+                        .View.Select(this, c.ContainerID))
+                    {
+                        if (d.Required == true) cDocsReq++;
+                        if (d.Status == "RECEIVED" || d.Status == "VERIFIED") cDocsRcv++;
+                    }
+                }
+
+                // ETA change count (last 7 days)
+                int cEtaChanges = 0;
+                if (c.ContainerID.HasValue)
+                {
+                    DateTime sevenDaysAgo = today.AddDays(-7);
+                    foreach (UsrContainerETAHistory h in SelectFrom<UsrContainerETAHistory>
+                        .Where<UsrContainerETAHistory.containerID.IsEqual<@P.AsInt>
+                            .And<UsrContainerETAHistory.recordedDate.IsGreaterEqual<@P.AsDateTime>>>
+                        .View.Select(this, c.ContainerID, sevenDaysAgo))
+                    {
+                        cEtaChanges++;
+                    }
+                }
+
                 string rl = ContainerRiskCalculator.ComputeRiskLevel(
                     today, status, c.LastFreeDay, c.ETA, c.ISFFiledDate, c.DepartedDate,
-                    docsRequired: 0, docsReceived: 0, etaChangesLast7Days: 0,
-                    customsHoldDays: holdDays);
+                    docsRequired: cDocsReq, docsReceived: cDocsRcv,
+                    etaChangesLast7Days: cEtaChanges, customsHoldDays: holdDays);
 
                 // --- Tile 1 breakdown ---
                 if (rl == ContainerRiskCalculator.RiskCritical)
@@ -890,6 +918,11 @@ namespace StudioB.Containers
         {
             if (e.Row == null) return;
             var row = e.Row;
+
+            // Sync Container.Current to match grid selection (frmTimeline/frmDetail
+            // now bind to "Containers" DataMember, but keep this for backend callers)
+            if (Container.Current?.ContainerID != row.ContainerID)
+                Container.Current = row;
 
             bool isActive = row.Status != ContainerStatus.Delivered && row.Status != ContainerStatus.Cancelled;
             PXUIFieldAttribute.SetEnabled<UsrContainer.containerCD>(e.Cache, row, string.IsNullOrEmpty(row.ContainerCD));

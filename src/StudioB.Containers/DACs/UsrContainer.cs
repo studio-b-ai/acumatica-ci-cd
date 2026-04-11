@@ -439,6 +439,92 @@ namespace StudioB.Containers
         #endregion
         // --- end 2026-04-08 additions ---
 
+        // --- 2026-04-12: IIG parity date fields ---
+        #region DrayageAppointmentDate
+        public abstract class drayageAppointmentDate : BqlDateTime.Field<drayageAppointmentDate> { }
+        [PXDBDate(PreserveTime = true)]
+        [PXUIField(DisplayName = "Drayage Appt")]
+        public DateTime? DrayageAppointmentDate { get; set; }
+        #endregion
+
+        #region ShipmentWindowStart
+        public abstract class shipmentWindowStart : BqlDateTime.Field<shipmentWindowStart> { }
+        [PXDBDate]
+        [PXUIField(DisplayName = "Ship Window Start")]
+        public DateTime? ShipmentWindowStart { get; set; }
+        #endregion
+
+        #region ShipmentWindowEnd
+        public abstract class shipmentWindowEnd : BqlDateTime.Field<shipmentWindowEnd> { }
+        [PXDBDate]
+        [PXUIField(DisplayName = "Ship Window End")]
+        public DateTime? ShipmentWindowEnd { get; set; }
+        #endregion
+
+        #region DeliveryOrderNbr
+        public abstract class deliveryOrderNbr : BqlString.Field<deliveryOrderNbr> { }
+        [PXDBString(30, IsUnicode = true)]
+        [PXUIField(DisplayName = "Delivery Order #")]
+        public string DeliveryOrderNbr { get; set; }
+        #endregion
+
+        #region DeliveryOrderDate
+        public abstract class deliveryOrderDate : BqlDateTime.Field<deliveryOrderDate> { }
+        [PXDBDate(PreserveTime = true)]
+        [PXUIField(DisplayName = "Delivery Order Date")]
+        public DateTime? DeliveryOrderDate { get; set; }
+        #endregion
+
+        #region OnBoardDate
+        public abstract class onBoardDate : BqlDateTime.Field<onBoardDate> { }
+        [PXDBDate(PreserveTime = true)]
+        [PXUIField(DisplayName = "On Board")]
+        public DateTime? OnBoardDate { get; set; }
+        #endregion
+
+        #region FactoryPickupDate
+        public abstract class factoryPickupDate : BqlDateTime.Field<factoryPickupDate> { }
+        [PXDBDate]
+        [PXUIField(DisplayName = "Factory Pickup")]
+        public DateTime? FactoryPickupDate { get; set; }
+        #endregion
+
+        #region CargoReadyDate
+        public abstract class cargoReadyDate : BqlDateTime.Field<cargoReadyDate> { }
+        [PXDBDate]
+        [PXUIField(DisplayName = "Cargo Ready")]
+        public DateTime? CargoReadyDate { get; set; }
+        #endregion
+
+        #region PaymentDueDate
+        public abstract class paymentDueDate : BqlDateTime.Field<paymentDueDate> { }
+        [PXDBDate]
+        [PXUIField(DisplayName = "Payment Due")]
+        public DateTime? PaymentDueDate { get; set; }
+        #endregion
+
+        #region BrokerInvoiceNbr
+        public abstract class brokerInvoiceNbr : BqlString.Field<brokerInvoiceNbr> { }
+        [PXDBString(30, IsUnicode = true)]
+        [PXUIField(DisplayName = "Broker Invoice #")]
+        public string BrokerInvoiceNbr { get; set; }
+        #endregion
+
+        #region SCACNumber
+        public abstract class sCACNumber : BqlString.Field<sCACNumber> { }
+        [PXDBString(10, IsUnicode = true)]
+        [PXUIField(DisplayName = "SCAC")]
+        public string SCACNumber { get; set; }
+        #endregion
+
+        #region EstimatedFreight
+        public abstract class estimatedFreight : BqlDecimal.Field<estimatedFreight> { }
+        [PXDBDecimal(4)]
+        [PXUIField(DisplayName = "Est. Freight")]
+        public decimal? EstimatedFreight { get; set; }
+        #endregion
+        // --- end 2026-04-12 additions ---
+
         #region NoteID
         public abstract class noteID : BqlGuid.Field<noteID> { }
         [PXNote]
