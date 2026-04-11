@@ -1,0 +1,54 @@
+# VM Auto-Start — ensure acumatica-test is running before business hours
+#
+# The acumatica-test GCE VM goes offline (auto-shutdown or preemption)
+# and blocks the build-validate job which runs on self-hosted Windows.
+# This workflow starts it at 8:00 AM ET (12:00 UTC) on weekdays.
+
+name: VM Auto-Start
+
+on:
+  schedule:
+    # 12:00 UTC = 8:00 AM ET (EDT), 7:00 AM ET (EST)
+    # Weekdays only
+    - cron: '0 12 * * 1-5'
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  id-token: write   # Required for Workload Identity Federation
+
+jobs:
+  start-vm:
+    name: Start acumatica-test VM
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Authenticate to GCP
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - name: Setup gcloud
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Start VM if stopped
+        run: |
+          STATUS=$(gcloud compute instances describe acumatica-test \
+            --zone=us-central1-a \
+            --format='get(status)' 2>/dev/null || echo "UNKNOWN")
+
+          echo "Current VM status: $STATUS"
+
+          if [ "$STATUS" = "TERMINATED" ] || [ "$STATUS" = "STOPPED" ]; then
+            echo "Starting acumatica-test..."
+            gcloud compute instances start acumatica-test --zone=us-central1-a
+            echo "VM start command issued. Waiting for RUNNING state..."
+            gcloud compute instances tail-serial-port-output acumatica-test \
+              --zone=us-central1-a --timeout=60 2>/dev/null || true
+            echo "::notice::acumatica-test VM started successfully"
+          elif [ "$STATUS" = "RUNNING" ]; then
+            echo "::notice::acumatica-test is already running"
+          else
+            echo "::warning::acumatica-test is in unexpected state: $STATUS"
+          fi
