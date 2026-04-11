@@ -2276,7 +2276,7 @@ public partial class Page_SB_SB302040 : PXPage
             <GIResult LineNbr="5" SortOrder="5" IsActive="1" Field="OrderQty" Width="80" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Order Qty" RowID="8e257121-86d8-46ff-944c-4a0f8dd8459e" />
             <GIResult LineNbr="6" SortOrder="6" IsActive="1" Field="ShippedQty" Width="80" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Shipped Qty" RowID="ea7b4ec5-17d0-40b4-ba57-32ad3f1cb0e7" />
             <GIResult LineNbr="7" SortOrder="7" IsActive="1" Field="OpenQty" Width="80" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Open Qty" RowID="b820f682-e2a8-401c-8d9e-5c5004b8d6ea" />
-            <GIResult LineNbr="8" SortOrder="8" IsActive="1" Field="RequestedDate" Width="100" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Req Ship Date" RowID="8f870880-3313-497e-9846-41f3286ecad0" />
+            <GIResult LineNbr="8" SortOrder="8" IsActive="1" Field="RequestDate" Width="100" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Req Ship Date" RowID="8f870880-3313-497e-9846-41f3286ecad0" />
             <GIResult LineNbr="10" SortOrder="10" IsActive="1" Field="SiteID" Width="60" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Site" RowID="7501a3a2-2147-4369-96f6-f44490f8440a" />
             <GIResult LineNbr="11" SortOrder="11" IsActive="1" Field="UOM" Width="60" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="UOM" RowID="812a72b9-c8bc-47b8-a738-e839a814a529" />
           </GITable>
@@ -2288,7 +2288,7 @@ public partial class Page_SB_SB302040 : PXPage
           <GIWhere LineNbr="3" OpenBrackets="1" IsActive="1" DataFieldName="SOLine.OrderType" Condition="E " IsExpression="0" Value1="CO" Operation="A" />
           <GIWhere LineNbr="4" IsActive="1" DataFieldName="SOLine.OrderType" Condition="E " IsExpression="0" Value1="SO" Operation="O" />
           <GIWhere LineNbr="5" CloseBrackets="1" IsActive="1" DataFieldName="SOLine.OrderType" Condition="E " IsExpression="0" Value1="PC" Operation="O" />
-          <GISort LineNbr="1" IsActive="1" DataFieldName="SOLine.RequestedDate" SortOrder="A" />
+          <GISort LineNbr="1" IsActive="1" DataFieldName="SOLine.RequestDate" SortOrder="A" />
           <SiteMap linkname="toDesignById">
             <row Position="1170" Title="DRP Open SO Commitments" Url="~/GenericInquiry/GenericInquiry.aspx?id=f918a504-7620-461c-aad8-f1b3395d1e79" Expanded="0" IsFolder="0" ScreenID="SB401090" NodeID="af758f49-f888-4d32-b162-838a5fa34c52" ParentID="9c89e3db-7c47-43c0-8554-5d2c9f2c0e87">
               <MUIScreen IsPortal="0" WorkspaceID="95191203-a0b8-4fc0-8b20-4efe831708e9" Order="2080" SubcategoryID="acf1bb34-2055-411e-88be-d840efcc7424" />
