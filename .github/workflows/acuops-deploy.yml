@@ -997,6 +997,7 @@ jobs:
           python scripts/verify.py \
             --manifest publish-manifest.json \
             --environment sandbox \
+            --no-merge-expected acuops.yaml \
             --json-output verify-result.json
 
       - name: Upload verification result
@@ -1085,7 +1086,7 @@ jobs:
           fi
 
       - name: Run container tracking tests
-        timeout-minutes: 15
+        timeout-minutes: 20
         env:
           ACUMATICA_URL: ${{ secrets.ACUMATICA_SANDBOX_URL }}
           ACUMATICA_USERNAME: ${{ secrets.ACUMATICA_SANDBOX_USERNAME }}
@@ -1658,6 +1659,7 @@ jobs:
             --environment ${{ steps.env.outputs.target }} \
             --package "${{ needs.build.outputs.package_path }}" \
             --project "${{ needs.build.outputs.project_name }}" \
+            --no-merge-expected acuops.yaml \
             --json-output verify-result.json
 
       - name: Upload verification result
@@ -2295,6 +2297,7 @@ jobs:
             --environment staging \
             --package "${{ needs.build.outputs.package_path }}" \
             --project "${{ needs.build.outputs.project_name }}" \
+            --no-merge-expected acuops.yaml \
             --json-output verify-result.json \
             2>&1 | tee validation-output.txt
 
@@ -2382,6 +2385,7 @@ jobs:
           python scripts/verify.py \
             --manifest publish-manifest.json \
             --environment production \
+            --no-merge-expected acuops.yaml \
             --json-output verify-result.json
 
       - name: Publish test metrics

@@ -72,6 +72,14 @@ pipeline:
     - "StudioBAcuOps"
   test_tenant_enabled: true
 
+# ─── --no-merge Expected Failures ──────────────────────────────────────────
+# ASPX mismatches caused by --no-merge (isMergeWithExistingPackages=false).
+# --no-merge only extracts ASPX for the primary project; co-published
+# projects' ASPX files are silently skipped. These are downgraded to WARN
+# in verify.py until the IIG orphan rows are cleaned (September 2026 DB access).
+no_merge_expected:
+  - "aspx:Pages/SB/SB501000.aspx"
+
 # ─── Qualification (Pre-Deploy Gates) ──────────────────────────────────────
 qualification:
   deploy_cooldown: 15

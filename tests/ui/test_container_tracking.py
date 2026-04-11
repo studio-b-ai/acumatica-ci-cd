@@ -142,55 +142,27 @@ class TestPO301000ContainerFields:
         screen = acumatica_screen("PO301000")
         screen.assert_no_errors()
 
-    def test_container_tracking_button_exists(self, acumatica_page):
-        """CONTAINER TRACKING toolbar button should be present.
+    def test_container_tracking_button_exists(self, acumatica_screen):
+        """CONTAINER TRACKING toolbar button should be present on PO301000."""
+        screen = acumatica_screen("PO301000")
+        screen.page.wait_for_timeout(3_000)
 
-        The button is rendered by POOrderEntry_Extension.viewContainer
-        (PXAction with DisplayName='Container Tracking') on the PO form.
-
-        Uses Pattern B (direct-aspx + 3 s wait) from KB article
-        acumatica-iframe-screenshadow-test-patterns.md:
-        - PO301000 is shadowed in SiteMap (ScreenID="PO3010PL"), so
-          /Main?ScreenId=PO301000 redirects to home and the iframe never
-          loads the PO form.
-        - AcumaticaScreen.direct() waits for the form container but NOT
-          for toolbar render; PXAction buttons are injected by JS after
-          domcontentloaded. The 3 s wait allows the toolbar to render.
-        - page.locator() operates on the top-level document only and does
-          NOT pierce iframes, so direct-aspx (no iframe wrapper) is correct
-          here. btn.count() is immediate — must wait before calling it.
-        """
-        acumatica_page.goto(
-            f"{ACUMATICA_URL}/Pages/PO/PO301000.aspx",
-            wait_until="domcontentloaded",
-        )
-        acumatica_page.wait_for_timeout(3_000)
-
-        btn = acumatica_page.locator("text=CONTAINER TRACKING")
+        btn = screen.page.locator("text=CONTAINER TRACKING")
         assert btn.count() > 0, "CONTAINER TRACKING button not found on PO301000"
 
-    def test_container_tracking_navigates_to_sb501000(self, acumatica_page):
-        """Clicking CONTAINER TRACKING should navigate to SB501000 without error.
+    def test_container_tracking_navigates_to_sb501000(self, acumatica_screen):
+        """Clicking CONTAINER TRACKING should navigate to SB501000 without error."""
+        screen = acumatica_screen("PO301000")
+        screen.page.wait_for_timeout(3_000)
 
-        Uses direct ASPX URL (same as test_container_tracking_button_exists)
-        because PO301000 is shadowed in SiteMap (ScreenID="PO3010PL") and
-        acumatica_screen("PO301000") redirects to home via Main?ScreenId=.
-        """
-        acumatica_page.goto(
-            f"{ACUMATICA_URL}/Pages/PO/PO301000.aspx",
-            wait_until="domcontentloaded",
-        )
-        acumatica_page.wait_for_timeout(3_000)
-
-        btn = acumatica_page.locator("text=CONTAINER TRACKING").first
+        btn = screen.page.locator("text=CONTAINER TRACKING").first
         if btn.is_visible(timeout=3000):
             btn.click()
-            acumatica_page.wait_for_load_state("domcontentloaded")
-            acumatica_page.wait_for_timeout(3000)
+            screen.page.wait_for_load_state("domcontentloaded")
+            screen.page.wait_for_timeout(3000)
 
-        # Should land on SB501000 or stay on PO301000, NOT error page
-        assert "ScreenId=ERROR" not in acumatica_page.url, \
-            f"CONTAINER TRACKING button caused error. URL: {acumatica_page.url}"
+        assert "ScreenId=ERROR" not in screen.page.url, \
+            f"CONTAINER TRACKING button caused error. URL: {screen.page.url}"
 
 
 class TestIGCMScreensRemoved:

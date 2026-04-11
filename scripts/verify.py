@@ -686,7 +686,20 @@ def main():
         default=os.environ.get("ACUMATICA_PROJECT", ""),
         help="Customization project name for ASPX verification (env: ACUMATICA_PROJECT)",
     )
+    parser.add_argument(
+        "--no-merge-expected",
+        default=None,
+        help="Path to YAML file with no_merge_expected list of ASPX check names to downgrade FAIL→WARN",
+    )
     args = parser.parse_args()
+
+    # Load --no-merge expected ASPX failures
+    no_merge_expected = set()
+    if args.no_merge_expected:
+        import yaml
+        with open(args.no_merge_expected) as f:
+            config = yaml.safe_load(f)
+        no_merge_expected = set(config.get("no_merge_expected", []))
 
     # Validate required fields
     for field_name in ("url", "username", "password", "tenant"):
@@ -746,6 +759,15 @@ def main():
         ))
     finally:
         session.logout()
+
+    # Downgrade known --no-merge ASPX failures to WARN
+    if no_merge_expected:
+        for check in all_checks:
+            if (check.status == CheckStatus.FAIL
+                    and check.name in no_merge_expected
+                    and "not overwritten by import" in check.detail):
+                check.status = CheckStatus.WARN
+                check.detail += " [expected: --no-merge]"
 
     overall = compute_overall(all_checks)
     summary = build_summary(all_checks)

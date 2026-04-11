@@ -30,6 +30,7 @@ Environment variables (all required):
   SLACK_WEBHOOK_URL      — Incoming webhook for summary notification (optional)
 """
 
+import argparse
 import json
 import os
 import sys
@@ -89,6 +90,20 @@ ENTITY_CONFIG = [
         "expand": None,
         "select": "OrderNbr,OrderType,Status,OrderTotal",
         "write": False,  # Read-only — count comparison
+    },
+    {
+        "name": "PurchaseOrder",
+        "key_field": "OrderNbr",
+        "expand": None,
+        "select": None,
+        "write": True,
+    },
+    {
+        "name": "Shipment",
+        "key_field": "ShipmentNbr",
+        "expand": None,
+        "select": None,
+        "write": True,
     },
 ]
 
@@ -308,13 +323,14 @@ class SyncResult:
 # Slack notification
 # ---------------------------------------------------------------------------
 
-def post_slack_summary(webhook_url: str, results: list[SyncResult]) -> None:
+def post_slack_summary(webhook_url: str, results: list[SyncResult], target: str = "test") -> None:
     """Post a summary to Slack via incoming webhook."""
     total_errors = sum(len(r.errors) for r in results)
     icon = ":white_check_mark:" if total_errors == 0 else ":warning:"
     ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    target_label = "Sandbox" if target == "sandbox" else "Test"
 
-    lines = [f"{icon} *Entity Sync: Prod → Test* ({ts})", ""]
+    lines = [f"{icon} *Entity Sync: Prod → {target_label}* ({ts})", ""]
     for r in results:
         lines.append(f"  {r.summary_line()}")
 
@@ -342,27 +358,53 @@ def post_slack_summary(webhook_url: str, results: list[SyncResult]) -> None:
 # ---------------------------------------------------------------------------
 
 def main() -> int:
-    _log("=== Acumatica Entity Sync: Production → Test ===", style="bold")
+    parser = argparse.ArgumentParser(description="Sync entities from prod to target instance")
+    parser.add_argument(
+        "--target", choices=["test", "sandbox"], default="test",
+        help="Target instance: 'test' (Heritage Test tenant on prod) or 'sandbox' (separate sandbox instance)",
+    )
+    args = parser.parse_args()
+
+    target_label = "Sandbox" if args.target == "sandbox" else "Test"
+    _log(f"=== Acumatica Entity Sync: Production → {target_label} ===", style="bold")
 
     # Read config from environment
     url = os.environ.get("ACUMATICA_URL", "").rstrip("/")
     username = os.environ.get("ACUMATICA_USERNAME", "")
     password = os.environ.get("ACUMATICA_PASSWORD", "")
     prod_tenant = os.environ.get("PROD_TENANT", "Heritage Fabrics")
-    test_tenant = os.environ.get("TEST_TENANT", "Heritage Test")
     slack_webhook = os.environ.get("SLACK_WEBHOOK_URL", "")
 
     if not all([url, username, password]):
         _log("Missing required env vars: ACUMATICA_URL, ACUMATICA_USERNAME, ACUMATICA_PASSWORD", style="err")
         return 1
 
-    _log(f"Instance: {url}")
+    # Target config: test uses same instance, sandbox uses separate instance
+    if args.target == "sandbox":
+        target_url = os.environ.get("SANDBOX_URL", "").rstrip("/")
+        target_username = os.environ.get("SANDBOX_USERNAME", "")
+        target_password = os.environ.get("SANDBOX_PASSWORD", "")
+        target_tenant = os.environ.get("SANDBOX_TENANT", "")
+        if not all([target_url, target_username, target_password]):
+            _log(
+                "Missing required env vars for sandbox target: "
+                "SANDBOX_URL, SANDBOX_USERNAME, SANDBOX_PASSWORD",
+                style="err",
+            )
+            return 1
+    else:
+        target_url = url
+        target_username = username
+        target_password = password
+        target_tenant = os.environ.get("TEST_TENANT", "Heritage Test")
+
+    _log(f"Source instance: {url}")
     _log(f"Production tenant: {prod_tenant}")
-    _log(f"Test tenant: {test_tenant}")
+    _log(f"Target ({args.target}): {target_url} / {target_tenant or '(default)'}")
 
     # Create clients
     prod = AcumaticaEntityClient(url, username, password, prod_tenant)
-    test = AcumaticaEntityClient(url, username, password, test_tenant)
+    test = AcumaticaEntityClient(target_url, target_username, target_password, target_tenant)
 
     results: list[SyncResult] = []
 
@@ -388,9 +430,9 @@ def main() -> int:
     finally:
         prod.logout()
 
-    # Phase 2: Write to test (separate session — avoids session gate conflict)
+    # Phase 2: Write to target (separate session — avoids session gate conflict)
     _log("")
-    _log("=== Phase 2: Writing to test ===", style="bold")
+    _log(f"=== Phase 2: Writing to {target_label} ===", style="bold")
     try:
         test.login()
         for config in ENTITY_CONFIG:
@@ -486,7 +528,7 @@ def main() -> int:
 
     # Slack notification
     if slack_webhook:
-        post_slack_summary(slack_webhook, results)
+        post_slack_summary(slack_webhook, results, target=args.target)
     else:
         _log("No SLACK_WEBHOOK_URL set — skipping notification", style="warn")
 
