@@ -25,9 +25,17 @@ namespace StudioB.Containers
 
         // Delegate: return only the grid-selected container so frmDetail/frmTimeline
         // don't re-execute the full containers() delegate and reset Current.
+        // On initial load, Containers.Current may be null if the grid hasn't
+        // populated yet — fall back to querying the first container directly.
         protected virtual IEnumerable container()
         {
             UsrContainer current = Containers.Current;
+            if (current == null)
+            {
+                current = SelectFrom<UsrContainer>
+                    .OrderBy<UsrContainer.eta.Asc>
+                    .View.SelectSingle(this);
+            }
             if (current != null)
                 yield return current;
         }

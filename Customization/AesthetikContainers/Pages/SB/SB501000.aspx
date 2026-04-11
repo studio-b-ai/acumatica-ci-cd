@@ -76,7 +76,7 @@
                     </px:PXGridLevel>
                 </Levels>
                 <AutoSize Enabled="True" MinHeight="200" />
-                <AutoCallBack Target="frmDetail" ActiveBehavior="True">
+                <AutoCallBack Command="Refresh" Target="frmDetail" ActiveBehavior="True">
                     <Behavior RepaintControlsIDs="frmTimeline,frmDetail,tabDetail" CommitChanges="True" />
                 </AutoCallBack>
             </px:PXGrid>
