@@ -1,7 +1,7 @@
 # Heritage Fabrics DRP Implementation — Design Doc
 
-**Date:** 2026-04-09
-**Status:** LOCKED — design complete, ready for Phase 0 implementation
+**Date:** 2026-04-09 (revised 2026-04-11)
+**Status:** LOCKED — revised 2026-04-11 per Section 20 architectural pivot
 **Author:** Claude (procurement-manager lens) + Kevin
 **Supersedes:** `docs/plans/2026-04-09-drp-current-state-and-approaches.md`
 
@@ -94,19 +94,23 @@ Class names already encode the long-cycle reality. This intelligence isn't yet w
 
 ## 2. Design Decisions Locked
 
+> **2026-04-11 REVISION:** Approach changed from B to C (hybrid). See Section 20 for rationale. Struck-through decisions are superseded; replacements follow.
+
 | Decision | Value | Notes |
 |---|---|---|
-| **Approach** | B — External forecasting agent writes to Acumatica | Agent is the brain; Acumatica is the system of record |
+| ~~**Approach**~~ | ~~B — External forecasting agent writes to Acumatica~~ | ~~Agent is the brain; Acumatica is the system of record~~ |
+| **Approach (revised)** | **C — Hybrid: agent enhances native DRP inputs, native engine does the planning** | Agent writes better lead times, MOQs, ABC codes. Native IN508500 → AM510000 → PO503000 handles planning + PO generation. Agent overrides ROP/SS/Max only where backtest proves it beats native. |
 | **Objective function** | Minimize inventory dollar-days, subject to committed fill-rate floor | Not service-level maximization |
 | **Primary metric** | Cross-dock hit rate (% of receipts shipped within 7d) | Plus turns/year, dead inventory $, days of cover |
 | **Service level floor** | 98% committed / 90% speculative | Floor, not target |
 | **ABC service tiers** | A=98%, B=95%, C=90% | Tiered by revenue rank |
 | **ABC scheme** | Pluggable scheme registry; v1 = `revenue_weighted_90` (last 90 days weighted 2x) | Evolvable via `drp_abc_schemes` + shadow mode + backtest machinery |
-| **MOQ model** | Per-item MOQ from `StockItem.VendorDetails.MinOrderQty` | Agent respects as hard floor |
+| **MOQ model** | Per-item MOQ from `StockItem.VendorDetails.MinOrderQty` | Agent writes from parsed vendor price lists; native DRP respects as hard floor |
 | **Commitment horizon** | 30-60 days default (B2B textile); measure empirically in Phase 0 | Per-customer-class override if data warrants |
 | **Speculation floor** | 14 days A / 7 days B / 0 days C | Floor below which agent shouldn't recommend zero inventory |
-| **Legacy ROP fate** | Reinterpret as speculation floors (no migration) | Agent challenges them over time; daily brief flags disagreements >30% |
-| **Agent autonomy** | Phase-gated: paper trading (mo 1-2) → draft-PO (mo 3-4) → C-item autopilot (mo 5+) | Every phase has kill-switch via `drp_phase_config.write_enabled` |
+| **Legacy ROP fate** | Native IN508500 recomputes from improved inputs | Agent brief flags items where its forecast disagrees with native-computed ROP by >30% |
+| ~~**Agent autonomy**~~ | ~~Phase-gated: paper trading (mo 1-2) → draft-PO (mo 3-4) → C-item autopilot (mo 5+)~~ | ~~Every phase has kill-switch~~ |
+| **Agent autonomy (revised)** | **Phase-gated: input-only (mo 1-2) → selective override (mo 3+)** | Agent writes lead times/MOQs/ABC always. Overrides ROP/SS/Max only where backtest earns it. Never creates POs — native DRP does that. |
 | **Cash constraint** | Soft cap — working capital alert if projected $ exceeds threshold | No hard optimization |
 | **UI language** | Plain operations vocabulary | Internal math uses trader thinking, staff never sees commodities jargon |
 | **Custom field package** | `AesthetikContainers` | `HeritageFabricsPOv5` and `StudioBPORelations` are gone; `AesthetikContainers` holds POOrder extensions |
@@ -115,40 +119,55 @@ Class names already encode the long-cycle reality. This intelligence isn't yet w
 | **Data archive** | Reuse `DataLifecycleManager` policies for all `drp_*` tables | No new archival code |
 | **Human override TTL** | 180 days ROP/SS/Max, 365 days full opt-out | Agent re-evaluates on expiry; silent takeback if delta <10%, else enqueue for review |
 | **Factory closures** | `drp_vendor_calendar` + `drp_country_calendar` with seeded priors (CNY, Diwali, Bayram, etc.) + agent-learned patterns | Impact added to lead time at runtime when order window crosses closure |
+| **Native DRP is default (NEW)** | Agent never rebuilds what Acumatica already does | No draft PO creation, no allocation tracking, no PO approval workflows. Native AM400000 action messages → PO503000 → PO301000 is the PO pipeline. |
 
 ---
 
 ## 3. Architecture
 
+> **2026-04-11 REVISION:** Diagram revised for hybrid model. Agent feeds better inputs; native DRP engine does the planning. Agent never creates POs or tracks allocations.
+
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                    DRP AGENT (Railway service)                   │
-│                  nightly @ 02:00 ET, cron driven                 │
-│                                                                   │
-│  Pulls signals → forecasts → writes parameters → posts report   │
-└────────────┬────────────────────────────────────────────────────┘
+┌───────────────────────────────────────────────────────────────────┐
+│                    DRP AGENT (Railway service)                     │
+│                  nightly @ 02:00 ET, cron driven                   │
+│                                                                     │
+│  Pulls signals → learns lead times → computes forecasts            │
+│  → writes INPUTS to Acumatica → posts comparison brief             │
+└────────────┬──────────────────────────────────────────────────────┘
              │
    ┌─────────┴──────────┬──────────────────────┬──────────────┐
    ↓                    ↓                      ↓              ↓
 ┌─────────────┐  ┌──────────────┐    ┌─────────────────┐  ┌──────────┐
 │ studiob-api │  │ heritage-wms │    │ Acumatica       │  │ Slack    │
-│ (gateway)   │  │ Postgres     │    │ (system of      │  │ (briefs  │
-│             │  │ (drp_* +     │    │  record)        │  │  + alerts│
-│ READ:       │  │  parser DB)  │    │ WRITE:          │  │          │
-│ • sales     │  │              │    │ • ItemWhse.ROP  │  │ Phase 1: │
-│ • PO lines  │  │ • forecasts  │    │ • ItemWhse.SS   │  │  advisor │
-│ • containers│  │ • recs       │    │ • ItemWhse.Max  │  │  (paper) │
-│ • vendors   │  │ • allocations│    │ • StockItem.ABC │  │ Phase 2: │
-│ • items     │  │ • LT samples │    │ • PO drafts     │  │  drafts  │
-│             │  │ • overrides  │    │   (phase 2+)    │  │ Phase 3: │
-│             │  │ • MOQ intake │    │                 │  │  autop.  │
-└─────────────┘  └──────────────┘    └─────────────────┘  └──────────┘
+│ (gateway)   │  │ Postgres     │    │                 │  │ (briefs  │
+│             │  │ (drp_* +     │    │ AGENT WRITES:   │  │  + alerts│
+│ READ:       │  │  parser DB)  │    │ • Vendor.Lead   │  │          │
+│ • sales     │  │              │    │   Timedays      │  │ • daily  │
+│ • PO lines  │  │ • forecasts  │    │ • VendorDetail  │  │   brief  │
+│ • containers│  │ • recs       │    │   .MinOrderQty  │  │ • agent  │
+│ • vendors   │  │ • LT samples │    │ • StockItem.ABC │  │   vs     │
+│ • items     │  │ • overrides  │    │ • ItemWhse.ROP* │  │   native │
+│             │  │ • MOQ intake │    │ • ItemWhse.SS*  │  │   diffs  │
+│             │  │              │    │ • ItemWhse.Max* │  │ • except-│
+└─────────────┘  └──────────────┘    │  *Phase 2 only, │  │   ions   │
+                                     │  backtest-earned│  └──────────┘
+                                     │                 │
+                                     │ NATIVE DRP:     │
+                                     │ • IN508500 calc │
+                                     │ • AM510000 regen│
+                                     │ • AM400000 view │
+                                     │ • PO503000 POs  │
+                                     │ • PO301000 aprv │
+                                     └─────────────────┘
 ```
 
 **Three-store principle:**
-- Acumatica = system of record. Anything a human reads in an Acumatica screen and expects to be authoritative lives here.
-- heritage-wms Postgres = agent working memory. Recommendations, forecast state, override tracking, MOQ intake audit.
+- Acumatica = system of record AND planning engine. Native DRP handles action messages → POs → approvals. Agent improves inputs, never replaces the engine.
+- heritage-wms Postgres = agent working memory. Forecasts, lead-time samples, MOQ intake, comparison metrics.
 - Qdrant `studiob-knowledge` = unstructured corpus. Help docs for the agent to consult; no agent output.
+
+**Boundary rule:** If Acumatica has a native screen for it, the agent doesn't rebuild it. The agent's job is to make native DRP smarter, not to replace it.
 
 ---
 
@@ -245,23 +264,25 @@ public class POOrderExt : PXCacheExtension<POOrder> {
 
 ### 5.2 heritage-wms Postgres tables (all prefixed `drp_`)
 
-| Table | Purpose |
-|---|---|
-| `drp_agent_runs` | One row per nightly execution, full metadata + config snapshot |
-| `drp_recommendations` | The delta-report artifact: per-item recommendations with before/after/rationale/status |
-| `drp_forecast_state` | Persistent per-item forecast model state (ES/Holt-Winters coefficients) |
-| `drp_class_seasonality` / `drp_sku_seasonality` | Seasonal indices, pooled class-level and per-SKU when history allows |
-| `drp_lead_time_samples` | Raw 4-stage PO lifecycle observations |
-| `drp_vendor_lead_time_stats` | Materialized view, rolling aggregates |
-| `drp_po_allocations` | PO-line ↔ SO-line allocation tracking (committed/hedged/speculative + cross_dock_status) |
-| `drp_cross_dock_matches` | Specific PO-to-SO cross-dock match proposals and execution tracking |
-| `drp_vendor_moq_profiles` / `drp_vendor_moqs` / `drp_vendor_moq_extractions` | MOQ intake + parser learning |
-| `drp_manual_overrides` | Human override tracking with TTL + silent-takeback resolution |
-| `drp_vendor_calendar` / `drp_country_calendar` | Factory closures (declared + seeded priors + learned patterns) |
-| `drp_abc_schemes` / `drp_abc_classification_runs` / `drp_abc_classifications` / `drp_abc_backtest_results` | Pluggable ABC classification + backtest framework |
-| `drp_phase_config` | Singleton config with kill-switches, service levels, thresholds, TTLs |
-| `drp_lost_demand_events` | cs-order-entry stockout events (real demand signal) |
-| `drp_signal_*` (velocity, open_po_cache, open_so_cache, inventory_snapshot, containers, email_raw, email_parsed, fx_rates, etc.) | Landing tables for raw pulled signals |
+> **2026-04-11 REVISION:** `drp_po_allocations` and `drp_cross_dock_matches` KILLED — agent does not track PO-to-SO allocations. Native DRP handles demand matching.
+
+| Table | Purpose | Status |
+|---|---|---|
+| `drp_agent_runs` | One row per nightly execution, full metadata + config snapshot | **Shipped** |
+| `drp_recommendations` | Shadow parameters: per-item agent-computed ROP/SS/Max vs native, with rationale + override eligibility | **Shipped** (schema simplified — no allocation_type or cross_dock_status columns) |
+| `drp_forecast_state` | Persistent per-item forecast model state (ES/Holt-Winters coefficients) | Planned |
+| `drp_class_seasonality` / `drp_sku_seasonality` | Seasonal indices, pooled class-level and per-SKU when history allows | Planned |
+| `drp_lead_time_samples` | Raw 4-stage PO lifecycle observations | **Shipped** |
+| `drp_vendor_lead_time_stats` | Materialized view, rolling aggregates | **Shipped** |
+| ~~`drp_po_allocations`~~ | ~~PO-line ↔ SO-line allocation tracking~~ | **KILLED** — native DRP handles this |
+| ~~`drp_cross_dock_matches`~~ | ~~Cross-dock match proposals~~ | **KILLED** — agent flags feasibility in brief, doesn't track matches |
+| `drp_vendor_moq_profiles` / `drp_vendor_moqs` / `drp_vendor_moq_extractions` | MOQ intake + parser learning | **Shipped** |
+| `drp_manual_overrides` | Human override tracking with TTL + silent-takeback resolution | Planned |
+| `drp_vendor_calendar` / `drp_country_calendar` | Factory closures (declared + seeded priors + learned patterns) | Planned |
+| `drp_abc_schemes` / `drp_abc_classification_runs` / `drp_abc_classifications` / `drp_abc_backtest_results` | Pluggable ABC classification + backtest framework | **Shipped** |
+| `drp_phase_config` | Singleton config with kill-switches, service levels, thresholds, TTLs | **Shipped** |
+| `drp_lost_demand_events` | cs-order-entry stockout events (real demand signal) | **Shipped** |
+| `drp_signal_*` (velocity, open_po_cache, open_so_cache, inventory_snapshot, containers, email_raw, email_parsed) | Landing tables for raw pulled signals | Partial |
 
 ### 5.3 Retention via DataLifecycleManager
 
@@ -363,19 +384,34 @@ Thin Acumatica shell that externally links to `https://wms.asthetik.com/moq-inta
 
 ## 8. Phase-Gated Rollout
 
-| Phase | Months | Agent does | Human does | Kill-switch state |
-|---|---|---|---|---|
-| **1 — Paper Trading** | 1-2 | Computes recommendations, writes to `drp_recommendations`, posts daily brief to Slack. Does NOT write to Acumatica. | Reviews brief, manually updates ItemWarehouse for picks they agree with. Tracks agreement rate. | `phase=advisor`, `write_enabled=false` |
-| **2 — Draft POs + Parameter Autopilot** | 3-4 | Writes ROP/SS/Max to ItemWarehouse nightly (debounced). Creates draft POs in Acumatica. | Reviews draft POs in Acumatica, clicks Approve. | `phase=draft_po`, `write_enabled=true` |
-| **3 — C-Item Autopilot** | 5+ | Auto-releases C-item POs. Still drafts A/B POs for review. Exception alerts. | Reviews A/B drafts; monitors exception log. | `phase=autopilot`, `autopilot_abc_classes=['C']` |
+> **2026-04-11 REVISION:** Phases rewritten for hybrid model. Agent never creates POs — native DRP handles that. Phases are about what inputs the agent writes, not what outputs it generates.
+
+| Phase | Months | Agent writes to Acumatica | Native DRP does | Human does | Kill-switch |
+|---|---|---|---|---|---|
+| **0.5 — Canary** | Now | Nothing | Native DRP on FERNCREST-MEDLINE (78 items) with manually-set lead times | Runs IN508500, reviews AM400000, approves POs | N/A |
+| **1 — Input Enhancement** | 1-2 | `Vendor.LeadTimedays` (learned), `VendorDetails.MinOrderQty` (parsed), `StockItem.ABCCode` (classified) | Plans all 2,242 items with agent-improved inputs | Runs native DRP weekly, reviews brief comparing agent-recommended ROP vs native-computed ROP | `phase=input_only`, `write_enabled=true` (inputs only) |
+| **2 — Selective Override** | 3+ | All Phase 1 inputs PLUS `ItemWarehouse.ROP/SS/Max` on items where backtest proves agent beats native | Plans remaining items with native-computed parameters | Reviews agent override list, monitors disagreement rate | `phase=selective_override`, `override_enabled=true` |
+
+**How an item earns agent override (Phase 2):**
+- Agent has been computing shadow ROP/SS/Max for the item since Phase 1
+- 60+ days of shadow vs native comparison data exists
+- Agent's shadow parameters would have produced fewer stockouts AND lower dollar-days than native
+- Item is flagged as `override_eligible` in `drp_recommendations`
+- Kevin approves the initial batch; subsequent items auto-qualify if they meet the same thresholds
 
 **Safety rails:**
-- `drp_phase_config.write_enabled = false` → agent read-only in seconds
-- Single-run ROP change >20% → review flag, no write
-- Aggregate run-level $ change > `max_daily_po_value_usd` → pause + approval required
-- Acumatica write failure → rollback + alert
+- `drp_phase_config.write_enabled = false` → agent stops all Acumatica writes in seconds
+- `drp_phase_config.override_enabled = false` → agent writes inputs only, no ROP/SS/Max overrides
+- Single-item ROP change >20% from agent override → review flag, no write
 - `ItemWarehouse.OverrideReplenishmentSettings = true` → hard opt-out, agent never touches
 - Active `drp_manual_overrides` row → recommendation computed but not written, status = `blocked_by_override`
+- Acumatica write failure → rollback + alert
+
+**What the agent NEVER does (any phase):**
+- Creates purchase orders (native PO503000 does this)
+- Releases or approves purchase orders (humans do this via PO301000)
+- Tracks PO-to-SO allocations (not needed — native DRP handles demand matching)
+- Auto-pilots any PO workflow
 
 ---
 
@@ -414,55 +450,30 @@ Phase 1 IS a paper-trading exercise. Every night the agent publishes recommendat
 
 ---
 
-## 10. Cross-Dock-First Logic
+## 10. Cross-Dock Strategy
 
-### 10.1 Allocation taxonomy
+> **2026-04-11 REVISION:** Simplified from allocation-tracking system to cross-dock flagging. Native DRP handles demand matching and PO generation. The agent provides visibility, not control.
 
-Every open PO line is tagged one of three ways:
+### 10.1 Cross-dock visibility (not allocation management)
 
-| Tag | Meaning | Treatment |
+The agent does NOT track PO-to-SO allocations. Native Acumatica DRP matches demand to supply via action messages. The agent's role is to provide cross-dock *visibility* in the daily brief:
+
+- **Flag incoming POs** where receipt date is within 7 days of an open SO ship date (cross-dock feasible)
+- **Flag items** where `ReplenishmentSource = Purchase` but cross-dock rate >60% (should flip to Purchase-to-Order)
+- **Track cross-dock hit rate** as a KPI: % of receipts that shipped within 7 days of arrival (measured from actual data, not planned)
+
+~~The agent ordering logic, committed/hedged/speculative taxonomy, and `drp_po_allocations` table are removed. Native DRP's action messages handle order recommendations.~~ **KILLED per Section 20.**
+
+### 10.2 ReplenishmentSource recommendation
+
+The agent's daily brief includes a "ReplenishmentSource audit" section that flags items where the data suggests a different setting:
+
+| Current Setting | Agent Recommendation Trigger | Suggested Action |
 |---|---|---|
-| **Committed** | Tied to a specific open SO line | Cross-dock target; zero warehouse dwell |
-| **Hedged** | Tied to aggregate forecasted demand within commitment horizon (30-60d) | Must turn within horizon; limited dwell |
-| **Speculative** | No demand backing | Tightest scrutiny; appears in speculation exposure KPI |
+| Purchase (stock) | Cross-dock rate >60% for 90 days | Flip to Purchase-to-Order |
+| Purchase-to-Order | Fill rate <90% for 60 days | Flip to Purchase (need safety stock) |
 
-### 10.2 Agent ordering logic (rewritten from ROP-based to commitment-based)
-
-```python
-def recommend_order(item, warehouse):
-    open_sos = get_open_so_lines(item, horizon_days=commitment_horizon)
-    committed_qty = sum(line.open_qty for line in open_sos)
-    allocated_on_order = sum_allocated_pos(item)
-    uncommitted_demand = committed_qty - allocated_on_order
-
-    # Primary: committed ordering
-    if uncommitted_demand > 0:
-        target_so = earliest_unallocated_so(open_sos)
-        lead_time = effective_lead_time(item.preferred_vendor, today)
-        slack = (target_so.ship_date - (today + lead_time)).days
-        if slack >= 0:
-            return Recommendation(
-                qty=max(uncommitted_demand, item.moq),
-                allocation_type='committed',
-                so_nbr=target_so.nbr,
-                cross_dock_status='feasible' if 0 <= slack <= 14 else 'will_sit',
-                rationale=f"SO {target_so.nbr} ships {target_so.ship_date}, "
-                         f"PO arrives {today + lead_time}, slack {slack}d"
-            )
-        else:
-            return Recommendation(qty=0, rationale=f"Cannot cross-dock — lead time exceeds ship window by {-slack}d")
-
-    # Fallback: speculation floor
-    min_spec = max(speculation_days[abc_tier] * avg_daily_burn[item], item.moq)
-    if current_position < min_spec:
-        return Recommendation(
-            qty=min_spec - current_position,
-            allocation_type='speculative',
-            rationale=f"Below speculation floor ({speculation_days[abc_tier]}d cover)"
-        )
-
-    return Recommendation(qty=0, rationale="Position balanced")
-```
+These are recommendations in the brief, not automatic changes. Procurement makes the call.
 
 ### 10.3 Primary KPIs
 
@@ -658,157 +669,87 @@ Weekly (Sunday 03:30 ET), for every vendor with `n_samples >= 10` on the `total_
 
 ---
 
-## 13. DRP Math (Detailed)
+## 13. Agent Recommendation Logic (Detailed)
 
-### 13.1 Cross-dock-first recommendation logic (expanded)
+> **2026-04-11 REVISION:** Simplified from PO-generation engine to parameter-recommendation engine. The agent computes what ROP/SS/Max *should* be and compares against what native IN508500 computed. It does not generate POs, track allocations, or shape order quantities. Sections 13.1-13.5 (old) are replaced.
 
-Section 10.2 sketched the shape. The full logic handles MOQ, EOQ, container fill, concentration, NPV, and cash cap:
+### 13.1 What the agent computes (shadow parameters)
+
+Every nightly run, for each active item × warehouse:
 
 ```python
-def recommend_order(item, warehouse, today, run_config):
-    # 1. Pull all demand signals inside the commitment horizon
-    horizon = run_config.commitment_horizon_days
-    open_sos = get_open_so_lines(item, warehouse,
-                                 ship_by=today + horizon,
-                                 so_types=run_config.cross_dock_so_types)
-    committed_qty = sum(so.open_qty for so in open_sos)
-    allocated_on_order = sum_allocated_pos(item, warehouse)
-
-    # 2. Pull forecast quantile for this ABC tier
-    f = get_forecast(item, horizon)
+def compute_shadow_parameters(item, warehouse, today, run_config):
+    # 1. Get agent's forecast (Section 11 cascade)
+    f = get_forecast(item, warehouse, horizon_days=run_config.commitment_horizon_days)
     q = f.p90 if item.abc == 'A' else f.p75 if item.abc == 'B' else f.p50
 
-    # 3. Compute effective lead time with closures and bias
+    # 2. Get effective lead time (Section 12, with closures + bias)
     vendor = preferred_vendor(item)
-    L = effective_lead_time(vendor, today) + vendor.bias_days
+    L = effective_lead_time(vendor, today)
 
-    # 4. Branch: committed first, then hedged, then speculative
-    uncommitted_demand = max(0, committed_qty - allocated_on_order)
+    # 3. Compute recommended ROP/SS/Max
+    daily_demand = q / run_config.commitment_horizon_days
+    safety_stock = compute_safety_stock(item, f, L, run_config)
+    reorder_point = (daily_demand * L) + safety_stock
+    max_qty = reorder_point + (daily_demand * run_config.order_cycle_days.get(item.abc, 30))
 
-    if uncommitted_demand > 0:
-        target_so = earliest_unallocated_so(open_sos)
-        slack = (target_so.ship_date - (today + L)).days
-        if slack >= 0:
-            rec = build_committed_rec(item, uncommitted_demand, target_so,
-                                       slack, L, vendor)
-        else:
-            return mark_cannot_serve(item, target_so, slack)
-    else:
-        # No open SO — speculation-floor branch
-        daily_burn = q / horizon
-        floor_days = run_config.speculation_floor_days[item.abc]
-        current_position = on_hand_qty(item, warehouse) + allocated_on_order
-        target_position = floor_days * daily_burn
-        if current_position >= target_position:
-            return no_action(item, "Position balanced")
-        rec = build_speculative_rec(item, target_position - current_position,
-                                     L, vendor)
-
-    # 5. Quantity shaping — MOQ, EOQ, container-fill
-    rec.qty = shape_quantity(rec.qty, item, vendor, rec.allocation_type,
-                              run_config)
-
-    # 6. Guardrails — concentration, NPV, cash cap
-    rec = apply_concentration_limits(rec, run_config)
-    rec = apply_npv_check(rec, run_config)
-    rec = apply_cash_cap_warning(rec, run_config)
-
-    return rec
+    return ShadowParameters(
+        inventory_id=item.id,
+        warehouse_id=warehouse.id,
+        agent_rop=round(reorder_point),
+        agent_ss=round(safety_stock),
+        agent_max=round(max_qty),
+        native_rop=item.current_rop,       # what IN508500 computed
+        native_ss=item.current_ss,
+        native_max=item.current_max,
+        rop_delta_pct=pct_diff(reorder_point, item.current_rop),
+        forecast_tier=f.tier,
+        lead_time_source='learned' if vendor.lt_samples >= 10 else 'manual',
+    )
 ```
 
-Each helper is specified below.
+### 13.2 What the agent writes (phase-gated)
 
-### 13.2 Order quantity shaping
+**Phase 1 (input enhancement):** Agent writes improved inputs only. Native IN508500 uses them.
 
-Three pressures on the raw demand-driven quantity:
-
-**MOQ floor.** `qty_after_moq = max(raw_qty, item.vendor_moq)`. MOQ is a hard floor — if raw demand is 40 yds and MOQ is 100 yds, the rec goes to 100 and the extra 60 is tagged `allocation_type='speculative'` even inside an otherwise-committed rec (a "committed + MOQ spillover" pattern, stored as a second row in `drp_po_allocations` linked to the same rec).
-
-**EOQ awareness.** Classical Wilson EOQ is computed but used as a *ceiling on freight-consolidation savings*, not a target. The agent prefers smaller, more frequent orders to minimize inventory dollar-days — EOQ just caps how hard to push in the freight-consolidation direction.
-
-**Container-fill economics.** For India/Turkey sourcing where freight is container-based, hitting 85%+ of container capacity (cbm or kgs, whichever binds first) is materially cheaper per yard than 50% fill. The agent computes:
-
-```
-rec_cbm = rec.qty * item.cbm_per_unit
-vendor_pending_cbm = sum(other_recs_for_same_vendor_this_run)
-total_cbm = rec_cbm + vendor_pending_cbm
-fill_pct = total_cbm / container_capacity_cbm
-
-if fill_pct < 0.60:
-    # Flag for freight consolidation — see NPV check in 13.5
-    rec.freight_consolidation_flag = True
-elif fill_pct >= 0.85:
-    rec.freight_consolidation_flag = False  # already efficient
-```
-
-This relies on `StockItem.UsrCbmPerUnit` being populated. Phase 0 diligence: audit coverage — Phase 1 paper trading flags all items missing cbm data so procurement can fill them in against the top 200 by revenue first.
-
-### 13.3 Concentration guardrails
-
-Three limits enforced after order shaping:
-
-| Guardrail | Default | Stored in |
+| Field | Cadence | Condition |
 |---|---|---|
-| **Per-vendor nightly cap** | 25% of any single nightly-run total $ may go to one vendor | `drp_phase_config.max_vendor_share_per_run` |
-| **Per-country nightly cap** | 50% of nightly-run total $ may go to one COO | `drp_phase_config.max_country_share_per_run` |
-| **Per-collection committed-qty cap** | Total open POs for any `StockItem.ItemClass` ≤ 4× trailing 90-day velocity | `drp_phase_config.max_collection_overhang_x` |
+| `Vendor.LeadTimedays` | Weekly (Sun 03:30 ET) | `n_samples >= 10` AND distribution stable (Section 12.8) |
+| `POVendorInventory.MinOrderQty` | On MOQ intake approval | Approved by human in MOQ intake UI |
+| `StockItem.ABCCode` | Monthly | Auto-classified per scheme registry |
 
-If a run would breach any cap, the agent sorts candidate recs by `committed_$ desc, speculative_$ asc` and trims the tail speculative recs until the cap holds. Trimmed recs are logged to `drp_recommendations` with `status='trimmed_by_concentration'` so the weekly review can see what was held back.
+**Phase 2 (selective override):** Agent writes ROP/SS/Max for backtest-qualified items.
 
-### 13.4 NPV-aware freight consolidation
+| Field | Cadence | Condition |
+|---|---|---|
+| `ItemWarehouse.ReorderPoint` | Nightly | Item is `override_eligible` (60d shadow history, agent beats native) |
+| `ItemWarehouse.SafetyStock` | Nightly | Same |
+| `ItemWarehouse.MaxQty` | Nightly | Same |
 
-Partial-container vs. full-container trade-off:
+Single-item ROP change >20% → `status='review_required'`, no write until human clears.
 
-```
-partial_cost = rec_cbm * partial_container_rate_per_cbm
-full_cost    = container_flat_rate
-savings_if_filled = partial_cost - (full_cost * fill_pct)
-holding_cost_of_pulling_forward = sum(
-    future_rec.qty * item.unit_cost * daily_cost_of_capital *
-    (target_receive_date - (today + L_vendor))
-    for future_rec in future_recs_for_same_vendor_within_45d
-)
+### 13.3 Daily brief: agent vs native comparison
 
-consolidate = savings_if_filled > holding_cost_of_pulling_forward
-```
+The core output of the agent in Phase 1 is the **comparison table** in the Slack brief:
 
-If `consolidate=True`, the agent pulls forward the near-future speculative recs for the same vendor into this run, tags them `allocation_type='speculative'` + `consolidation_reason='freight_npv'`, and logs the savings + holding cost numbers on the recommendation so the weekly review can verify the agent's math is working.
+- Top 10 items where agent ROP differs from native ROP by >30% (with rationale)
+- Items where agent forecast suggests native parameters will cause stockout within lead time
+- Items where native parameters are over-stocked relative to agent forecast (dead inventory risk)
+- Cross-dock feasibility flags (incoming POs within 7d of open SO ship dates)
+- ReplenishmentSource audit (Section 10.2)
 
-`daily_cost_of_capital` is a config knob (default 0.00033/day ≈ 12%/year pretax). It lives in `drp_phase_config.daily_cost_of_capital` and is the lever procurement tunes as HF's actual financing cost shifts.
+This comparison is how the agent earns trust and how items qualify for Phase 2 override.
 
-### 13.5 Allocated-vs-speculative tagging on every PO line
-
-When a draft PO is written (Phase 2+), each line gets tagged via `drp_po_allocations`:
+### 13.4 Soft cash cap (warning only, unchanged)
 
 ```
-po_nbr, po_line_nbr, inventory_id, qty,
-allocation_type,          -- 'committed' | 'hedged' | 'speculative'
-so_nbr, so_line_nbr,      -- null for hedged/speculative
-cross_dock_status,        -- 'feasible' | 'will_sit' | 'n/a' for spec
-consolidation_reason,     -- 'freight_npv' | 'moq_spillover' | null
-rationale_text,           -- human-readable line used in approval UI
-```
-
-This is the source of truth for the cross-dock hit rate metric. When the container arrives and the line receives, a post-receipt worker checks `(receipt_date - ship_date_for_linked_so) ≤ 7 days` and writes `cross_dock_hit=true|false` back to the same row. The composite cross-dock hit rate reported in the daily brief rolls up from this table.
-
-### 13.6 Soft cash cap (warning, not refusal)
-
-```
-projected_working_capital_$ = (
-    current_open_po_$ +
-    sum(rec.qty * item.unit_cost for rec in tonights_recs)
-)
+projected_working_capital_$ = current_open_po_$ + current_on_hand_$
 
 if projected_working_capital_$ > drp_phase_config.soft_cash_cap_usd:
-    brief.warnings.append({
-        "kind": "cash_cap_breach",
-        "projected_$": projected_working_capital_$,
-        "cap_$": drp_phase_config.soft_cash_cap_usd,
-        "suggestion": "Review and trim speculative recs in tonight's brief",
-    })
+    brief.warnings.append("Cash cap warning: ${projected} vs ${cap}")
 ```
 
-The run still completes and still writes (phase-gated). The warning lives in the Slack brief and in the Vendor Planning Hub until procurement dismisses it. A *hard* cash cap is explicitly not in the design — finance is not Acumatica's job and the agent should never refuse a committed-demand purchase for cash reasons without a human in the loop.
+Warning only — the agent doesn't control PO creation, so it can't enforce a hard cap. It flags the condition in the brief for procurement to act on.
 
 ---
 
@@ -848,33 +789,30 @@ Primary signals: 1 (velocity), 2 (open SOs), 3 (open POs), 4 (on-hand), 6 (ItemW
 
 ### 14.3 Phase-gated write paths
 
-Section 8 defined the three phases. The write path in phase 14.1 step `03:00 writes` dispatches on `drp_phase_config.phase`:
+> **2026-04-11 REVISION:** Simplified. No PO creation, no autopilot. Agent writes inputs and (Phase 2) selective parameter overrides.
 
 ```python
 def execute_writes(run_id, recs, phase_config):
     if not phase_config.write_enabled:
         mark_recs_paper_only(recs); return
 
-    if phase_config.phase == 'advisor':
-        mark_recs_paper_only(recs); return
+    # Always: write improved inputs
+    write_vendor_lead_times(phase_config)          # weekly only, 12.8
+    write_abc_codes(recs, phase_config)            # monthly only
 
-    if phase_config.phase == 'draft_po':
-        write_itemwhse_parameters(recs, phase_config)  # ROP/SS/Max + ABC
-        write_vendor_lead_times(phase_config)          # weekly only, 12.8
-        create_draft_pos(recs, phase_config)           # status='draft' in Acu
-        return
+    if phase_config.phase == 'input_only':
+        # Phase 1: inputs written, shadow parameters saved but not applied
+        save_shadow_parameters(recs); return
 
-    if phase_config.phase == 'autopilot':
-        write_itemwhse_parameters(recs, phase_config)
-        write_vendor_lead_times(phase_config)
-        draft = [r for r in recs if r.item.abc not in phase_config.autopilot_abc_classes]
-        release = [r for r in recs if r.item.abc in phase_config.autopilot_abc_classes]
-        create_draft_pos(draft, phase_config)
-        create_and_release_pos(release, phase_config)
+    if phase_config.phase == 'selective_override':
+        # Phase 2: write ROP/SS/Max for backtest-qualified items only
+        override_eligible = [r for r in recs if r.override_eligible]
+        save_shadow_parameters(recs)
+        write_itemwhse_parameters(override_eligible, phase_config)
         return
 ```
 
-Every write is wrapped in a try/except that rolls the run into `partial_write_failure` status if any Acumatica write returns non-2xx. The rolled-back run is re-runnable via a replay command (14.7).
+Every write is wrapped in a try/except that rolls the run into `partial_write_failure` status if any Acumatica write returns non-2xx.
 
 ### 14.4 Daily brief generation
 
@@ -898,15 +836,20 @@ Two artifacts per run:
 
 Brief rendering reuses the Slack canvas primitives already in webhook-router.
 
-### 14.5 Approval workflows (phase 2)
+### 14.5 PO workflow (entirely native)
 
-Draft POs created by the agent land in Acumatica as `POOrder.Status='H'` (On Hold / Draft). Human approval happens inside Acumatica — procurement opens the PO, reviews, and clicks Release. The agent is not in the approval loop, by design: approval is an Acumatica-native operation and the agent only supplies the draft.
+> **2026-04-11 REVISION:** Agent does not create POs. The entire PO lifecycle is native Acumatica DRP.
 
-Two enhancements:
+Native DRP workflow (no agent involvement):
+1. IN508500 computes replenishment parameters (using agent-improved inputs)
+2. AM510000 regenerates action messages
+3. Staff reviews action messages on AM400000
+4. PO503000 converts approved action messages to draft POs
+5. Staff reviews and releases POs on PO301000
 
-1. **`drp_recommendations.reviewed_at` backfill.** A nightly tail job queries Acumatica for all draft POs that transitioned from Hold to Open since yesterday and fills in `reviewed_at` + `reviewed_by` on the linked recommendation. This gives the agent the override-agreement rate data it needs to promote / demote phases.
+The agent's contribution is upstream: better lead times, MOQs, ABC codes, and (Phase 2) selective ROP/SS/Max overrides that make the native action messages more accurate.
 
-2. **Vendor Planning Hub (SB501100) review queue.** Instead of opening 30 individual POs, procurement opens the hub, sees the ranked to-do list, and bulk-approves by vendor. The hub screen is Acumatica-native, so the approval action is still a real PO release — the hub is just a grouping UI layered over `drp_recommendations` joined to `POOrder`.
+**SB501100 (Vendor Planning Hub)** becomes a view into agent-computed metrics and recommendations, not a PO approval surface. It shows: agent vs native parameter diffs, lead-time analytics, MOQ summaries, and override-eligibility status.
 
 ### 14.6 Exception routing
 
@@ -942,33 +885,34 @@ A **replay command** (`drp-agent replay <run_id>`) re-runs the same phase sequen
 
 Rails are enforced in the governance phase (14.1 step `02:45`). Every rec passes through each rail in order; failing any rail either *trims* the rec, *blocks* the rec, or *aborts* the run. All outcomes logged to `drp_recommendations.status`.
 
+> **2026-04-11 REVISION:** Rails simplified — no PO-related rails (R4, R8 removed) since agent doesn't create POs. Renumbered.
+
 | # | Rail | Trigger | Action |
 |---|---|---|---|
 | R1 | `OverrideReplenishmentSettings=true` on ItemWarehouse | Item is hard-opted-out | Skip item entirely |
-| R2 | Active `drp_manual_overrides` row | Human override present | Compute rec but set `status='blocked_by_override'`, no write |
-| R3 | Single-rec ROP change >20% | Delta too large | `status='review_required'`, no write |
-| R4 | Run-level write $ change > `max_daily_po_value_usd` (default $500k) | Aggregate too large | Pause + page Kevin, no writes this run |
-| R5 | Forecast p90 < p10 or NaN anywhere | Forecast invalid | Abort run, blocked state |
-| R6 | Effective lead time = 0 or negative | Lead-time invalid | Skip item, log warning |
-| R7 | Vendor with no `LeadTimedays` populated after Phase 0 | Data gap | Skip item, flag in brief |
-| R8 | Concentration cap breach (13.3) | Trim tail spec recs | Log trimmed recs |
-| R9 | Cash cap breach (13.6) | Warning only | Continue, flag in brief |
-| R10 | `drp_phase_config.write_enabled=false` | Kill-switch | No writes, recs saved as paper |
-| R11 | Acumatica write returns non-2xx | Network/validation error | Rollback run, mark partial |
-| R12 | Item newly created (<4 weeks) AND rec is speculative | Cold-start risk | Skip, log as `too_new_to_speculate` |
+| R2 | Active `drp_manual_overrides` row | Human override present | Compute shadow params but set `status='blocked_by_override'`, no write |
+| R3 | Single-item ROP change >20% (Phase 2 only) | Delta too large for auto-override | `status='review_required'`, no write |
+| R4 | Forecast p90 < p10 or NaN anywhere | Forecast invalid | Abort run, blocked state |
+| R5 | Effective lead time = 0 or negative | Lead-time invalid | Skip item, log warning |
+| R6 | Vendor with no `LeadTimedays` populated after Phase 0 | Data gap | Skip item, flag in brief |
+| R7 | Cash cap breach (13.4) | Warning only | Continue, flag in brief |
+| R8 | `drp_phase_config.write_enabled=false` | Kill-switch | No writes, shadow params saved only |
+| R9 | `drp_phase_config.override_enabled=false` | Override kill-switch | Inputs written, ROP/SS/Max not overridden |
+| R10 | Acumatica write returns non-2xx | Network/validation error | Rollback run, mark partial |
+| R11 | Item newly created (<4 weeks) | Cold-start risk | Shadow params computed but marked `too_new`, no override eligibility |
 
-R1-R12 are code-enforced. Tuning knobs (R3 threshold, R4 cap, R8 limits, R9 cap) live in `drp_phase_config` so procurement can tighten/loosen without deploys.
+R1-R11 are code-enforced. Tuning knobs (R3 threshold, R7 cap) live in `drp_phase_config`.
 
 ### 15.2 Kill-switch state machine
 
+> **2026-04-11 REVISION:** Simplified to two phases. No autopilot.
+
 ```
-                  ┌─────────────────────────────┐
-                  ↓                             │
-             ┌─────────┐    promote    ┌────────────┐    promote    ┌───────────┐
-  initial → │ advisor │ ────────────→ │  draft_po  │ ────────────→ │ autopilot │
-             └─────────┘                └────────────┘                └───────────┘
-                  ↑                             ↑                             │
-                  │  ←─────── auto-revert (red flag) or manual revert ────────┘
+             ┌──────────────┐    promote    ┌─────────────────────┐
+  initial → │  input_only  │ ────────────→ │  selective_override  │
+             └──────────────┘                └─────────────────────┘
+                  ↑                                     │
+                  │  ←───── auto-revert (red flag) ─────┘
 ```
 
 Transitions are explicit rows in `drp_phase_config_transitions`:
@@ -979,17 +923,14 @@ transition_at, from_phase, to_phase, reason, actor
 ```
 
 **Promote conditions** (manual only):
-- advisor → draft_po: 60 days of paper trading completed, forecast MAPE_28d pooled <30%, override agreement rate >70%, Kevin approval in Slack
-- draft_po → autopilot: 60 days of drafted POs completed, human-accept rate >80%, no R4 breaches, Kevin approval in Slack
+- input_only → selective_override: 60 days of shadow parameter comparison, agent shadow ROP beats native on ≥30% of items by stockout+dollar-day metrics, Kevin approval
 
 **Auto-revert conditions** (programmatic):
-- Forecast MAPE_28d pooled >50% for 3 runs in a row → revert one phase
-- Override storm: >20 new human overrides in 7 days → revert one phase
-- Signal blocked state persisting across 3 nightly runs → revert one phase
-- R4 (run-level $ cap) breach → revert one phase
-- Drawdown (metric defined 15.4) > threshold → revert one phase
+- Forecast MAPE_28d pooled >50% for 3 runs in a row → revert to input_only
+- Override storm: >20 new human overrides in 7 days → revert to input_only
+- Signal blocked state persisting across 3 nightly runs → revert to input_only
 
-Reverts are silent to autopilot → draft_po, loud (Slack DM + canvas banner) going to advisor.
+Revert is loud (Slack DM + canvas banner).
 
 ### 15.3 Drift detection
 
@@ -1040,17 +981,17 @@ Service level (98% A, 95% B, 90% C) is a constraint — tracked as a floor, not 
 
 Consolidated list of what flips the agent backwards a phase without human action:
 
+> **2026-04-11 REVISION:** Simplified — only one revert path (selective_override → input_only).
+
 | Condition | Threshold | Revert |
 |---|---|---|
-| Forecast MAPE_28d pooled | > 50% for 3 runs | 1 phase |
-| Override storm | >20 new overrides in 7d | 1 phase |
-| Signal blocked | ≥3 consecutive blocked runs | 1 phase |
-| R4 run-level $ cap | Any single breach | 1 phase |
-| Drawdown (dead_inv_$ + speculation_$ increase) | >10% WoW for 2w | 1 phase |
-| Cross-dock hit rate | <20% for 14 consecutive days, post month 3 | 1 phase |
-| Manual kill (`write_enabled=false`) | Any | Immediate to advisor |
+| Forecast MAPE_28d pooled | > 50% for 3 runs | selective_override → input_only |
+| Override storm | >20 new overrides in 7d | selective_override → input_only |
+| Signal blocked | ≥3 consecutive blocked runs | selective_override → input_only |
+| Manual kill (`write_enabled=false`) | Any | Immediate to input_only |
+| Manual kill (`override_enabled=false`) | Any | Stops ROP/SS/Max overrides, inputs continue |
 
-Autopilot → draft_po and draft_po → advisor are the reversion paths. Never skips two phases at once — a second red flag during a recovery state forces the revert from draft_po to advisor on top of whatever is live.
+Only one revert path exists: selective_override → input_only. Input-only mode continues writing lead times, MOQs, and ABC codes (these are always beneficial). The kill switch only stops ROP/SS/Max parameter overrides.
 
 ---
 
@@ -1126,4 +1067,65 @@ Design changes after this point go through RFCs appended as Section 18+ amendmen
 
 ---
 
-**End of design doc. Sections 0-15 LOCKED. Implementation begins in Phase 0.**
+**End of original design doc. Sections 0-15 were LOCKED 2026-04-09, revised 2026-04-11 per Section 20.**
+
+---
+
+## 20. Architectural Pivot — Agent as Supplement, Not Replacement (2026-04-11)
+
+### 20.1 What changed
+
+The original design (Approach B, "agent is the brain") positioned the DRP agent as a complete replacement for Acumatica's native replenishment engine. The agent would compute forecasts, generate PO recommendations, create draft POs, track PO-to-SO allocations, and eventually auto-release C-item POs.
+
+**Revised design (Approach C, "agent supplements native DRP"):** The agent enhances native DRP's *inputs* (lead times, MOQs, ABC codes) and selectively overrides native DRP's *outputs* (ROP/SS/Max) only where backtest evidence proves the agent beats native. The agent never creates POs, never tracks allocations, and never enters the PO approval workflow. Native Acumatica screens (IN508500, AM510000, AM400000, PO503000, PO301000) handle the full planning-to-PO pipeline.
+
+### 20.2 Why
+
+Kevin's intent from the start was for the agent to supplement, not replace. The original design drifted. The key observations:
+
+1. **Acumatica's native DRP was "broken" due to missing configuration (98% of vendors had no lead times), not missing capability.** Populating lead times and running IN508500 gives working DRP with zero code.
+
+2. **The agent was rebuilding native functionality.** Draft PO creation, PO-to-SO allocation tracking, approval workflows, C-item autopilot — all of this exists in Acumatica. Rebuilding it externally adds maintenance burden without adding capability.
+
+3. **The agent's genuine value-add is in the inputs, not the engine.** Learned lead times from container ATA data, LLM-parsed MOQs from vendor price lists, auto-classified ABC codes, forward-looking demand signals, factory closure calendars — none of this exists natively. Feeding these into native DRP makes the native engine dramatically better.
+
+4. **Phase 0.5 proves the point.** The FERNCREST-MEDLINE canary enables native DRP on 78 items with zero code changes, delivering value in days. The agent should have to beat this baseline before overriding anything.
+
+### 20.3 What was killed
+
+| Killed | Reason |
+|---|---|
+| `drp_po_allocations` table | Agent doesn't track PO-to-SO allocations — native DRP does demand matching |
+| `drp_cross_dock_matches` table | Agent flags cross-dock feasibility in brief, doesn't manage matches |
+| Phase 2 draft-PO creation | Native PO503000 generates POs from action messages |
+| Phase 3 C-item autopilot | Not needed — if native DRP parameters are good, native PO generation works |
+| Section 13.1-13.5 (old) — ordering logic, quantity shaping, concentration guardrails, NPV freight consolidation, PO-line tagging | All PO-generation-related, replaced by parameter-recommendation logic |
+| Section 14.3 (old) — draft_po and autopilot write paths | Replaced by input_only and selective_override paths |
+| Section 14.5 (old) — approval workflows | Entirely native now |
+| Section 15.2 (old) — three-phase state machine | Replaced by two-phase (input_only → selective_override) |
+
+### 20.4 What survived (no changes)
+
+| Survived | Why |
+|---|---|
+| 4 OData GIs | Agent still reads native tables for forecasting |
+| POOrderExt fields (AcknowledgedDate, FactoryReadyDate) | Feeds lead-time learning |
+| Lead-time learner + `drp_lead_time_samples` | Core "better input" for `Vendor.LeadTimedays` |
+| MOQ intake + `drp_vendor_moq_*` | Core "better input" for `VendorDetails.MinOrderQty` |
+| ABC classification + `drp_abc_*` | Core "better input" for `StockItem.ABCCode` |
+| Stockout emitter + `drp_lost_demand_events` | Demand censoring for forecasts |
+| Forecast engine (Section 11) | Computes shadow ROP/SS/Max for comparison and selective override |
+| Factory closure calendars | Adjusts effective lead times written to `Vendor.LeadTimedays` |
+| Email watcher | Populates AcknowledgedDate/FactoryReadyDate for lead-time learning |
+| Daily brief + Slack canvas | Now focused on agent-vs-native comparison instead of PO recommendations |
+
+### 20.5 Impact on shipped work
+
+**Nothing shipped needs to be thrown away.** All 15 merged PRs (Wave 1 migrations, lead-time learner, stockout emitter, Stream A GIs, POOrderExt fields) survive and serve the same purpose in the revised architecture. The killed features (`drp_po_allocations`, `drp_cross_dock_matches`, draft-PO creation, autopilot) were all planned but not yet built.
+
+### 20.6 Revised Phase 0 task status
+
+Tasks in the Phase 0 implementation plan (`2026-04-10-drp-phase-0-implementation-plan.md`) need a matching update:
+- **Kill:** Any task related to PO allocation tracking or draft PO creation (none were started)
+- **Simplify:** `drp_recommendations` schema — remove `allocation_type`, `cross_dock_status`, `so_nbr` columns
+- **Keep:** All input-enhancement tasks (lead times, MOQs, ABC, GIs, email watcher, stockout logger)
