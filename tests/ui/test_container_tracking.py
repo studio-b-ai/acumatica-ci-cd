@@ -169,19 +169,28 @@ class TestPO301000ContainerFields:
         btn = acumatica_page.locator("text=CONTAINER TRACKING")
         assert btn.count() > 0, "CONTAINER TRACKING button not found on PO301000"
 
-    def test_container_tracking_navigates_to_sb501000(self, acumatica_screen):
-        """Clicking CONTAINER TRACKING should navigate to SB501000 without error."""
-        screen = acumatica_screen("PO301000")
+    def test_container_tracking_navigates_to_sb501000(self, acumatica_page):
+        """Clicking CONTAINER TRACKING should navigate to SB501000 without error.
 
-        btn = screen.locator("text=CONTAINER TRACKING").first
+        Uses direct ASPX URL (same as test_container_tracking_button_exists)
+        because PO301000 is shadowed in SiteMap (ScreenID="PO3010PL") and
+        acumatica_screen("PO301000") redirects to home via Main?ScreenId=.
+        """
+        acumatica_page.goto(
+            f"{ACUMATICA_URL}/Pages/PO/PO301000.aspx",
+            wait_until="domcontentloaded",
+        )
+        acumatica_page.wait_for_timeout(3_000)
+
+        btn = acumatica_page.locator("text=CONTAINER TRACKING").first
         if btn.is_visible(timeout=3000):
             btn.click()
-            screen.page.wait_for_load_state("domcontentloaded")
-            screen.page.wait_for_timeout(3000)
+            acumatica_page.wait_for_load_state("domcontentloaded")
+            acumatica_page.wait_for_timeout(3000)
 
         # Should land on SB501000 or stay on PO301000, NOT error page
-        assert "ScreenId=ERROR" not in screen.page.url, \
-            f"CONTAINER TRACKING button caused error. URL: {screen.page.url}"
+        assert "ScreenId=ERROR" not in acumatica_page.url, \
+            f"CONTAINER TRACKING button caused error. URL: {acumatica_page.url}"
 
 
 class TestIGCMScreensRemoved:
