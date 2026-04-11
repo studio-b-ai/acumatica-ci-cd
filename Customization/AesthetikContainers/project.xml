@@ -2276,7 +2276,7 @@ public partial class Page_SB_SB302040 : PXPage
             <GIResult LineNbr="5" SortOrder="5" IsActive="1" Field="OrderQty" Width="80" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Order Qty" RowID="8e257121-86d8-46ff-944c-4a0f8dd8459e" />
             <GIResult LineNbr="6" SortOrder="6" IsActive="1" Field="ShippedQty" Width="80" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Shipped Qty" RowID="ea7b4ec5-17d0-40b4-ba57-32ad3f1cb0e7" />
             <GIResult LineNbr="7" SortOrder="7" IsActive="1" Field="OpenQty" Width="80" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Open Qty" RowID="b820f682-e2a8-401c-8d9e-5c5004b8d6ea" />
-            <GIResult LineNbr="8" SortOrder="8" IsActive="1" Field="RequestedDate" Width="100" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Req Ship Date" RowID="8f870880-3313-497e-9846-41f3286ecad0" />
+            <GIResult LineNbr="8" SortOrder="8" IsActive="1" Field="RequestDate" Width="100" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Req Ship Date" RowID="8f870880-3313-497e-9846-41f3286ecad0" />
             <GIResult LineNbr="10" SortOrder="10" IsActive="1" Field="SiteID" Width="60" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Site" RowID="7501a3a2-2147-4369-96f6-f44490f8440a" />
             <GIResult LineNbr="11" SortOrder="11" IsActive="1" Field="UOM" Width="60" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="UOM" RowID="812a72b9-c8bc-47b8-a738-e839a814a529" />
           </GITable>
@@ -2288,7 +2288,7 @@ public partial class Page_SB_SB302040 : PXPage
           <GIWhere LineNbr="3" OpenBrackets="1" IsActive="1" DataFieldName="SOLine.OrderType" Condition="E " IsExpression="0" Value1="CO" Operation="A" />
           <GIWhere LineNbr="4" IsActive="1" DataFieldName="SOLine.OrderType" Condition="E " IsExpression="0" Value1="SO" Operation="O" />
           <GIWhere LineNbr="5" CloseBrackets="1" IsActive="1" DataFieldName="SOLine.OrderType" Condition="E " IsExpression="0" Value1="PC" Operation="O" />
-          <GISort LineNbr="1" IsActive="1" DataFieldName="SOLine.RequestedDate" SortOrder="A" />
+          <GISort LineNbr="1" IsActive="1" DataFieldName="SOLine.RequestDate" SortOrder="A" />
           <SiteMap linkname="toDesignById">
             <row Position="1170" Title="DRP Open SO Commitments" Url="~/GenericInquiry/GenericInquiry.aspx?id=f918a504-7620-461c-aad8-f1b3395d1e79" Expanded="0" IsFolder="0" ScreenID="SB401090" NodeID="af758f49-f888-4d32-b162-838a5fa34c52" ParentID="9c89e3db-7c47-43c0-8554-5d2c9f2c0e87">
               <MUIScreen IsPortal="0" WorkspaceID="95191203-a0b8-4fc0-8b20-4efe831708e9" Order="2080" SubcategoryID="acf1bb34-2055-411e-88be-d840efcc7424" />
@@ -2672,27 +2672,74 @@ public partial class Page_SB_SB302040 : PXPage
                 <SiteMap>
                     <row Position="7.5" Title="Procurement Command Center" Url="~/Pages/SB/SB501000.aspx" ScreenID="SB501000" NodeID="b88b362d-cad6-44c3-8656-a418f2f08923" ParentID="9c89e3db-7c47-43c0-8554-5d2c9f2c0e87" SelectedUI="E">
                         <RolesInGraph Rolename="Administrator" ApplicationName="/" Accessrights="4" />
-                        <RolesInGraph Rolename="*" ApplicationName="/" Accessrights="0" />
+                        <RolesInGraph Rolename="*" ApplicationName="/" Accessrights="4" />
                     </row>
                     <row Position="7.9" Title="Freight Forwarders" Url="~/Pages/SB/SB302000.aspx" ScreenID="SB302000" NodeID="a1b2c3d4-0004-4000-8000-000000000004" ParentID="9c89e3db-7c47-43c0-8554-5d2c9f2c0e87" SelectedUI="E">
                         <RolesInGraph Rolename="Administrator" ApplicationName="/" Accessrights="4" />
-                        <RolesInGraph Rolename="*" ApplicationName="/" Accessrights="0" />
+                        <RolesInGraph Rolename="*" ApplicationName="/" Accessrights="4" />
                     </row>
                     <row Position="8.2" Title="Container Types" Url="~/Pages/SB/SB302010.aspx" ScreenID="SB302010" NodeID="a1b2c3d4-0006-4000-8000-000000000006" ParentID="9c89e3db-7c47-43c0-8554-5d2c9f2c0e87" SelectedUI="E">
                         <RolesInGraph Rolename="Administrator" ApplicationName="/" Accessrights="4" />
-                        <RolesInGraph Rolename="*" ApplicationName="/" Accessrights="0" />
+                        <RolesInGraph Rolename="*" ApplicationName="/" Accessrights="4" />
                     </row>
                     <row Position="8.3" Title="Destinations/Ports" Url="~/Pages/SB/SB302020.aspx" ScreenID="SB302020" NodeID="a1b2c3d4-0007-4000-8000-000000000007" ParentID="9c89e3db-7c47-43c0-8554-5d2c9f2c0e87" SelectedUI="E">
                         <RolesInGraph Rolename="Administrator" ApplicationName="/" Accessrights="4" />
-                        <RolesInGraph Rolename="*" ApplicationName="/" Accessrights="0" />
+                        <RolesInGraph Rolename="*" ApplicationName="/" Accessrights="4" />
                     </row>
                     <row Position="8.4" Title="Container Preferences" Url="~/Pages/SB/SB302030.aspx" ScreenID="SB302030" NodeID="a1b2c3d4-0008-4000-8000-000000000008" ParentID="9c89e3db-7c47-43c0-8554-5d2c9f2c0e87" SelectedUI="E">
                         <RolesInGraph Rolename="Administrator" ApplicationName="/" Accessrights="4" />
-                        <RolesInGraph Rolename="*" ApplicationName="/" Accessrights="0" />
+                        <RolesInGraph Rolename="*" ApplicationName="/" Accessrights="4" />
                     </row>
                     <row Position="8.5" Title="Customs Brokers" Url="~/Pages/SB/SB302040.aspx" ScreenID="SB302040" NodeID="a1b2c3d4-0009-4000-8000-000000000009" ParentID="9c89e3db-7c47-43c0-8554-5d2c9f2c0e87" SelectedUI="E">
                         <RolesInGraph Rolename="Administrator" ApplicationName="/" Accessrights="4" />
-                        <RolesInGraph Rolename="*" ApplicationName="/" Accessrights="0" />
+                        <RolesInGraph Rolename="*" ApplicationName="/" Accessrights="4" />
+                    </row>
+                    <!-- PO Receipt Entry — grants access to Cst_POReceiptEntry graph extension -->
+                    <row Position="0" Title="Purchase Receipts" Url="~/Pages/PO/PO302000.aspx" ScreenID="PO302000" NodeID="F31FF1CE-FE47-4072-AF20-4B6C95B1E8E3" ParentID="12167736-AE7E-46AB-8A8C-DD4B86217519" SelectedUI="E">
+                        <RolesInGraph Rolename="Administrator" ApplicationName="/" Accessrights="4" />
+                        <RolesInGraph Rolename="*" ApplicationName="/" Accessrights="4" />
+                    </row>
+                    <!-- Generic Inquiry screens — Container Tracking -->
+                    <row Position="0" Title="PO Containers" Url="~/GenericInquiry/GenericInquiry.aspx?id=c51f9373-0b67-4955-9fce-ea35570bb2d0" ScreenID="SB401000" NodeID="c51f9373-0b67-4955-9fce-ea35570bb2d0" ParentID="9c89e3db-7c47-43c0-8554-5d2c9f2c0e87" SelectedUI="E">
+                        <RolesInGraph Rolename="Administrator" ApplicationName="/" Accessrights="4" />
+                        <RolesInGraph Rolename="*" ApplicationName="/" Accessrights="4" />
+                    </row>
+                    <row Position="0" Title="Container Events" Url="~/GenericInquiry/GenericInquiry.aspx?id=9b530442-4f3e-42d4-b23c-15ec0af087ab" ScreenID="SB401020" NodeID="9b530442-4f3e-42d4-b23c-15ec0af087ab" ParentID="9c89e3db-7c47-43c0-8554-5d2c9f2c0e87" SelectedUI="E">
+                        <RolesInGraph Rolename="Administrator" ApplicationName="/" Accessrights="4" />
+                        <RolesInGraph Rolename="*" ApplicationName="/" Accessrights="4" />
+                    </row>
+                    <row Position="0" Title="PO Container Lines" Url="~/GenericInquiry/GenericInquiry.aspx?id=6a7d8fbb-a1ae-4559-adf8-e5e63cb4c05d" ScreenID="SB401040" NodeID="6a7d8fbb-a1ae-4559-adf8-e5e63cb4c05d" ParentID="9c89e3db-7c47-43c0-8554-5d2c9f2c0e87" SelectedUI="E">
+                        <RolesInGraph Rolename="Administrator" ApplicationName="/" Accessrights="4" />
+                        <RolesInGraph Rolename="*" ApplicationName="/" Accessrights="4" />
+                    </row>
+                    <row Position="0" Title="Arriving This Week" Url="~/GenericInquiry/GenericInquiry.aspx?id=bf82d1d5-a528-42c8-87a0-26f6f39fa1f1" ScreenID="SB401050" NodeID="bf82d1d5-a528-42c8-87a0-26f6f39fa1f1" ParentID="9c89e3db-7c47-43c0-8554-5d2c9f2c0e87" SelectedUI="E">
+                        <RolesInGraph Rolename="Administrator" ApplicationName="/" Accessrights="4" />
+                        <RolesInGraph Rolename="*" ApplicationName="/" Accessrights="4" />
+                    </row>
+                    <row Position="0" Title="Containers Needing Attention" Url="~/GenericInquiry/GenericInquiry.aspx?id=6365a9eb-cfa6-4c6a-92f9-65defed34c17" ScreenID="SB401060" NodeID="6365a9eb-cfa6-4c6a-92f9-65defed34c17" ParentID="9c89e3db-7c47-43c0-8554-5d2c9f2c0e87" SelectedUI="E">
+                        <RolesInGraph Rolename="Administrator" ApplicationName="/" Accessrights="4" />
+                        <RolesInGraph Rolename="*" ApplicationName="/" Accessrights="4" />
+                    </row>
+                    <row Position="0" Title="Landed Cost Summary" Url="~/GenericInquiry/GenericInquiry.aspx?id=6a7d8fbb-a1ae-4559-adf8-e5e63cb4c05d" ScreenID="SB401070" NodeID="6a7d8fbb-a1ae-4559-adf8-e5e63cb4c05d" ParentID="9c89e3db-7c47-43c0-8554-5d2c9f2c0e87" SelectedUI="E">
+                        <RolesInGraph Rolename="Administrator" ApplicationName="/" Accessrights="4" />
+                        <RolesInGraph Rolename="*" ApplicationName="/" Accessrights="4" />
+                    </row>
+                    <!-- Generic Inquiry screens — DRP -->
+                    <row Position="0" Title="DRP Velocity History" Url="~/GenericInquiry/GenericInquiry.aspx?id=1ce25f0a-cde6-4f0a-b939-d274fe343574" ScreenID="SB401080" NodeID="1ce25f0a-cde6-4f0a-b939-d274fe343574" ParentID="9c89e3db-7c47-43c0-8554-5d2c9f2c0e87" SelectedUI="E">
+                        <RolesInGraph Rolename="Administrator" ApplicationName="/" Accessrights="4" />
+                        <RolesInGraph Rolename="*" ApplicationName="/" Accessrights="4" />
+                    </row>
+                    <row Position="0" Title="DRP Open SO Commitments" Url="~/GenericInquiry/GenericInquiry.aspx?id=f918a504-7620-461c-aad8-f1b3395d1e79" ScreenID="SB401090" NodeID="f918a504-7620-461c-aad8-f1b3395d1e79" ParentID="9c89e3db-7c47-43c0-8554-5d2c9f2c0e87" SelectedUI="E">
+                        <RolesInGraph Rolename="Administrator" ApplicationName="/" Accessrights="4" />
+                        <RolesInGraph Rolename="*" ApplicationName="/" Accessrights="4" />
+                    </row>
+                    <row Position="0" Title="DRP Open PO Lines" Url="~/GenericInquiry/GenericInquiry.aspx?id=89912975-c6ed-41ad-b514-a0f775a89362" ScreenID="SB401100" NodeID="89912975-c6ed-41ad-b514-a0f775a89362" ParentID="9c89e3db-7c47-43c0-8554-5d2c9f2c0e87" SelectedUI="E">
+                        <RolesInGraph Rolename="Administrator" ApplicationName="/" Accessrights="4" />
+                        <RolesInGraph Rolename="*" ApplicationName="/" Accessrights="4" />
+                    </row>
+                    <row Position="0" Title="DRP Inventory By Site" Url="~/GenericInquiry/GenericInquiry.aspx?id=a5337a02-6d79-42e9-b400-d7178ac3fd24" ScreenID="SB401110" NodeID="a5337a02-6d79-42e9-b400-d7178ac3fd24" ParentID="9c89e3db-7c47-43c0-8554-5d2c9f2c0e87" SelectedUI="E">
+                        <RolesInGraph Rolename="Administrator" ApplicationName="/" Accessrights="4" />
+                        <RolesInGraph Rolename="*" ApplicationName="/" Accessrights="4" />
                     </row>
                 </SiteMap>
                 <Roles>
