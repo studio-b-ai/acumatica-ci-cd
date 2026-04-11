@@ -1,0 +1,19 @@
+name: Session Scorecard
+
+on:
+  schedule:
+    # 12:47 UTC = 8:47am ET (EDT) every Monday
+    - cron: '47 12 * * 1'
+  workflow_dispatch:
+
+jobs:
+  scorecard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run session scorecard
+        env:
+          QDRANT_URL: ${{ secrets.QDRANT_URL }}
+          SLACK_BOT_TOKEN: ${{ secrets.STUDIOB_SLACK_BOT_TOKEN }}
+        run: python3 scripts/session-scorecard.py
