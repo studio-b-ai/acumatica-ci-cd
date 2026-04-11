@@ -23,6 +23,15 @@ namespace StudioB.Containers
 
         public SelectFrom<UsrContainer>.View Container;
 
+        // Delegate: return only the grid-selected container so frmDetail/frmTimeline
+        // don't re-execute the full containers() delegate and reset Current.
+        protected virtual IEnumerable container()
+        {
+            UsrContainer current = Containers.Current;
+            if (current != null)
+                yield return current;
+        }
+
         public SelectFrom<UsrContainerEvent>
             .Where<UsrContainerEvent.containerID.IsEqual<UsrContainer.containerID.FromCurrent>>
             .OrderBy<UsrContainerEvent.eventDateTime.Desc>

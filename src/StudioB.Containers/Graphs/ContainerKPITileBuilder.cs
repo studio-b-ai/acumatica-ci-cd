@@ -390,6 +390,18 @@ window.sb501000ApplyRiskRowColors = function() {
   } catch(e) { console.error('sb501000ApplyRiskRowColors failed', e); }
 };
 
+// Auto-resize the PXHtmlView iframe to fit all content (tiles + metrics row).
+// Acumatica's PXHtmlView renders content in an iframe that defaults to 150px,
+// which clips the metrics row below the tile cards.
+(function() {
+  try {
+    if (window.frameElement) {
+      var h = document.body.scrollHeight;
+      if (h > 0) window.frameElement.style.height = h + 'px';
+    }
+  } catch(e) {}
+})();
+
 // Run on initial load and after every grid refresh. Acumatica's grid fires
 // updates through px_alls events; the simplest robust approach is to poll on
 // a short interval until the grid is settled, then re-run on any click within
@@ -398,6 +410,14 @@ window.sb501000ApplyRiskRowColors = function() {
   var applyAll = function() {
     if (window.sb501000ApplyRiskRowColors) window.sb501000ApplyRiskRowColors();
     if (window.sb501000ApplyTabLabels) window.sb501000ApplyTabLabels();
+    // Re-check iframe sizing in case KPI content changed
+    try {
+      if (window.frameElement) {
+        var h = document.body.scrollHeight;
+        if (h > 0 && window.frameElement.clientHeight < h)
+          window.frameElement.style.height = h + 'px';
+      }
+    } catch(e) {}
   };
   var count = 0;
   var tick = setInterval(function() {

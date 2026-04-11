@@ -76,8 +76,8 @@
                     </px:PXGridLevel>
                 </Levels>
                 <AutoSize Enabled="True" MinHeight="200" />
-                <AutoCallBack Command="Refresh" Target="frmDetail" ActiveBehavior="True">
-                    <Behavior RepaintControlsIDs="frmTimeline,frmDetail,tabDetail" />
+                <AutoCallBack Target="frmDetail" ActiveBehavior="True">
+                    <Behavior RepaintControlsIDs="frmTimeline,frmDetail,tabDetail" CommitChanges="True" />
                 </AutoCallBack>
             </px:PXGrid>
         </Template1>
@@ -85,7 +85,7 @@
             <%-- 2026-04-08: Phase D — Status timeline strip + grouped detail form.
                  Timeline rendered via PXHtmlView bound to UsrContainer.TimelineHtml,
                  populated in ContainerMaint.RowSelected<UsrContainer>. --%>
-            <px:PXFormView ID="frmTimeline" runat="server" DataSourceID="ds" DataMember="Containers"
+            <px:PXFormView ID="frmTimeline" runat="server" DataSourceID="ds" DataMember="Container"
                 Width="100%" CaptionVisible="False" RenderStyle="Simple" SkinID="Transparent">
                 <Template>
                     <%-- 2026-04-08: explicit layout rule so the hidden edTabLabelsJson
@@ -102,7 +102,7 @@
                         SuppressLabel="True" Style="display:none;" />
                 </Template>
             </px:PXFormView>
-            <px:PXFormView ID="frmDetail" runat="server" DataSourceID="ds" DataMember="Containers"
+            <px:PXFormView ID="frmDetail" runat="server" DataSourceID="ds" DataMember="Container"
                 Width="100%" CaptionVisible="False">
                 <Template>
                     <%-- Group 1: Identity --%>
