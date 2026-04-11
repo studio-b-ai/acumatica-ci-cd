@@ -1,0 +1,43 @@
+name: Sync Sandbox Data
+
+on:
+  schedule:
+    - cron: "23 8 * * *"  # 3:23am ET (after prod→test sync at 2:07am)
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Dry run (read only, no writes)"
+        type: boolean
+        default: false
+
+jobs:
+  sync:
+    name: Entity Sync — Prod → Sandbox
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install requests pyyaml
+
+      - name: Run entity sync to sandbox
+        env:
+          PYTHONUNBUFFERED: "1"
+          ACUMATICA_URL: ${{ secrets.ACUMATICA_PROD_URL }}
+          ACUMATICA_USERNAME: ${{ secrets.ACUMATICA_PROD_USERNAME }}
+          ACUMATICA_PASSWORD: ${{ secrets.ACUMATICA_PROD_PASSWORD }}
+          PROD_TENANT: "Heritage Fabrics"
+          SANDBOX_URL: ${{ secrets.ACUMATICA_SANDBOX_URL }}
+          SANDBOX_USERNAME: ${{ secrets.ACUMATICA_SANDBOX_USERNAME }}
+          SANDBOX_PASSWORD: ${{ secrets.ACUMATICA_SANDBOX_PASSWORD }}
+          SANDBOX_TENANT: ${{ secrets.ACUMATICA_SANDBOX_TENANT }}
+          SLACK_WEBHOOK_URL: ${{ secrets.STUDIOB_SLACK_WEBHOOK_URL }}
+        run: python scripts/heritage/entity-sync.py --target sandbox
