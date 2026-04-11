@@ -281,7 +281,10 @@ def check_custom_fields(
     results = []
     for f in fields:
         short_name = f.split(".")[-1]
-        if f in schema:
+        # Navigate dotted path (e.g. "custom.Document.UsrExpArrivalDate")
+        # through the nested schema dict
+        found = _resolve_dotted_path(schema, f)
+        if found:
             results.append(CheckResult(
                 name=f"field:{entity}.{short_name}",
                 status=CheckStatus.PASS,
@@ -296,6 +299,26 @@ def check_custom_fields(
                 http_code=status,
             ))
     return results
+
+
+def _resolve_dotted_path(obj: dict, dotted_path: str) -> bool:
+    """Walk a dotted path like 'custom.Document.UsrFoo' through nested dicts.
+
+    Returns True if the final key exists at the expected depth.
+    Also checks flat key as fallback for forward-compatibility.
+    """
+    # Fast path: flat key exists (original behavior)
+    if dotted_path in obj:
+        return True
+    # Walk nested path
+    parts = dotted_path.split(".")
+    current = obj
+    for part in parts:
+        if isinstance(current, dict) and part in current:
+            current = current[part]
+        else:
+            return False
+    return True
 
 
 def run_e2e_probe(
