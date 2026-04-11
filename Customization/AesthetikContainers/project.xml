@@ -292,7 +292,7 @@ IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('POOrder') 
                     </px:PXGridLevel>
                 </Levels>
                 <AutoSize Enabled="True" MinHeight="200" />
-                <AutoCallBack Target="frmDetail" ActiveBehavior="True">
+                <AutoCallBack Command="Refresh" Target="frmDetail" ActiveBehavior="True">
                     <Behavior RepaintControlsIDs="frmTimeline,frmDetail,tabDetail" CommitChanges="True" />
                 </AutoCallBack>
             </px:PXGrid>
