@@ -2694,12 +2694,10 @@ public partial class Page_SB_SB302040 : PXPage
                         <RolesInGraph Rolename="Administrator" ApplicationName="/" Accessrights="4" />
                         <RolesInGraph Rolename="*" ApplicationName="/" Accessrights="4" />
                     </row>
-                    <!-- PO Receipt Entry — grants access to Cst_POReceiptEntry graph extension -->
                     <row Position="0" Title="Purchase Receipts" Url="~/Pages/PO/PO302000.aspx" ScreenID="PO302000" NodeID="F31FF1CE-FE47-4072-AF20-4B6C95B1E8E3" ParentID="12167736-AE7E-46AB-8A8C-DD4B86217519" SelectedUI="E">
                         <RolesInGraph Rolename="Administrator" ApplicationName="/" Accessrights="4" />
                         <RolesInGraph Rolename="*" ApplicationName="/" Accessrights="4" />
                     </row>
-                    <!-- Generic Inquiry screens — Container Tracking -->
                     <row Position="0" Title="PO Containers" Url="~/GenericInquiry/GenericInquiry.aspx?id=c51f9373-0b67-4955-9fce-ea35570bb2d0" ScreenID="SB401000" NodeID="c51f9373-0b67-4955-9fce-ea35570bb2d0" ParentID="9c89e3db-7c47-43c0-8554-5d2c9f2c0e87" SelectedUI="E">
                         <RolesInGraph Rolename="Administrator" ApplicationName="/" Accessrights="4" />
                         <RolesInGraph Rolename="*" ApplicationName="/" Accessrights="4" />
@@ -2724,7 +2722,6 @@ public partial class Page_SB_SB302040 : PXPage
                         <RolesInGraph Rolename="Administrator" ApplicationName="/" Accessrights="4" />
                         <RolesInGraph Rolename="*" ApplicationName="/" Accessrights="4" />
                     </row>
-                    <!-- Generic Inquiry screens — DRP -->
                     <row Position="0" Title="DRP Velocity History" Url="~/GenericInquiry/GenericInquiry.aspx?id=1ce25f0a-cde6-4f0a-b939-d274fe343574" ScreenID="SB401080" NodeID="1ce25f0a-cde6-4f0a-b939-d274fe343574" ParentID="9c89e3db-7c47-43c0-8554-5d2c9f2c0e87" SelectedUI="E">
                         <RolesInGraph Rolename="Administrator" ApplicationName="/" Accessrights="4" />
                         <RolesInGraph Rolename="*" ApplicationName="/" Accessrights="4" />
