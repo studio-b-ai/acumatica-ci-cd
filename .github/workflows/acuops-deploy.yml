@@ -1085,7 +1085,7 @@ jobs:
           fi
 
       - name: Run container tracking tests
-        timeout-minutes: 20
+        timeout-minutes: 15
         env:
           ACUMATICA_URL: ${{ secrets.ACUMATICA_SANDBOX_URL }}
           ACUMATICA_USERNAME: ${{ secrets.ACUMATICA_SANDBOX_USERNAME }}
