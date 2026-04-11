@@ -257,7 +257,7 @@
                     <px:PXTabItem Text="Lead Time">
                         <Template>
                             <px:PXGrid ID="gridLeadTimes" runat="server" DataSourceID="ds"
-                                Width="100%" SkinID="Details" DataMember="LeadTimes">
+                                Width="100%" SkinID="Details">
                                 <Levels>
                                     <px:PXGridLevel DataMember="LeadTimes">
                                         <Columns>
