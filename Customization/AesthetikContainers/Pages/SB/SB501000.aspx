@@ -18,6 +18,7 @@
             <px:PXDSCallbackCommand Name="RemovePOLink" CommitChanges="True" Visible="False" />
             <px:PXDSCallbackCommand Name="AttachDocument" CommitChanges="True" Visible="False" />
             <px:PXDSCallbackCommand Name="RecordETAUpdate" CommitChanges="True" Visible="False" />
+            <px:PXDSCallbackCommand Name="PlanNextOrder" CommitChanges="True" StartNewGroup="True" />
             <px:PXDSCallbackCommand Name="ImportForwarderCSV" CommitChanges="True" StartNewGroup="True" />
         </CallbackCommands>
     </px:PXDataSource>
@@ -245,6 +246,29 @@
                                             <px:PXGridColumn DataField="NewETA" Width="110" />
                                             <px:PXGridColumn DataField="Source" Width="100" />
                                             <px:PXGridColumn DataField="Note" Width="260" />
+                                        </Columns>
+                                    </px:PXGridLevel>
+                                </Levels>
+                                <AutoSize Enabled="True" MinHeight="150" />
+                            </px:PXGrid>
+                        </Template>
+                    </px:PXTabItem>
+                    <%-- 2026-04-11: PCC redesign — Lead Time breakdown per PO line --%>
+                    <px:PXTabItem Text="Lead Time">
+                        <Template>
+                            <px:PXGrid ID="gridLeadTimes" runat="server" DataSourceID="ds"
+                                Width="100%" SkinID="Details" DataMember="LeadTimes">
+                                <Levels>
+                                    <px:PXGridLevel DataMember="LeadTimes">
+                                        <Columns>
+                                            <px:PXGridColumn DataField="OrderNbr" Width="100" />
+                                            <px:PXGridColumn DataField="VendorName" Width="120" />
+                                            <px:PXGridColumn DataField="InventoryCD" Width="120" />
+                                            <px:PXGridColumn DataField="PlacedToAcked" Width="80" TextAlign="Right" />
+                                            <px:PXGridColumn DataField="AckedToFactory" Width="80" TextAlign="Right" />
+                                            <px:PXGridColumn DataField="FactoryToShip" Width="80" TextAlign="Right" />
+                                            <px:PXGridColumn DataField="ShipToDeliver" Width="80" TextAlign="Right" />
+                                            <px:PXGridColumn DataField="TotalDays" Width="60" TextAlign="Right" />
                                         </Columns>
                                     </px:PXGridLevel>
                                 </Levels>

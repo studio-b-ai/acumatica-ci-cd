@@ -4,13 +4,16 @@ using System.Text;
 namespace StudioB.Containers
 {
     /// <summary>
-    /// Builds the HTML for the SB501000 status timeline strip — 7 cells showing
-    /// the container's progress through the milestone lifecycle. Rendered via
-    /// <c>PXHtmlView</c> bound to <c>UsrContainer.TimelineHtml</c>.
+    /// Builds the HTML for the SB501000 status timeline strip — 8 cells showing
+    /// the PO-to-delivery lifecycle. Rendered via <c>PXHtmlView</c> bound to
+    /// <c>UsrContainer.TimelineHtml</c>.
     ///
-    /// The 7 milestones are: Booked → Departed → In Transit → Arrived Port →
-    /// Customs Released → Gated Out → Delivered. Each cell shows one of three
-    /// states:
+    /// Hybrid PO + container stages:
+    ///   PLACED → ACKED → FACTORY READY → SHIPPED → IN TRANSIT →
+    ///   ARRIVED PORT → CUSTOMS → DELIVERED
+    ///
+    /// First 3 sourced from linked PO dates, last 5 from container events.
+    /// Each cell shows one of three states:
     ///   complete — milestone has a real timestamp (green check)
     ///   active   — current state (colored marker)
     ///   pending  — not yet reached (gray)
@@ -20,15 +23,21 @@ namespace StudioB.Containers
         public struct TimelineData
         {
             public string Status;
-            public DateTime? BookedDate;
-            public DateTime? DepartedDate;
-            public DateTime? ArrivedPortDate;
-            public DateTime? CustomsReleasedDate;
-            public DateTime? DeliveredDate;
+            // PO-sourced dates (first 3 stages)
+            public DateTime? OrderDate;          // PLACED — earliest linked PO OrderDate
+            public DateTime? AcknowledgedDate;   // ACKED — latest linked PO UsrAcknowledgedDate
+            public DateTime? FactoryReadyDate;   // FACTORY READY — latest linked PO UsrFactoryReadyDate
+            // Container-sourced dates (last 5 stages)
+            public DateTime? DepartedDate;       // SHIPPED
+            public DateTime? ArrivedPortDate;    // ARRIVED PORT
+            public DateTime? CustomsReleasedDate; // CUSTOMS
+            public DateTime? DeliveredDate;      // DELIVERED
             public DateTime? ETD;
             public DateTime? ETA;
             public DateTime? ATA;
             public int? CustomsHoldDays;
+            // Legacy — kept for backwards compat but no longer drives a stop
+            public DateTime? BookedDate;
         }
 
         private struct Stop
@@ -88,14 +97,25 @@ namespace StudioB.Containers
 
         private static Stop[] BuildStops(TimelineData d)
         {
-            var stops = new Stop[7];
-            stops[0] = new Stop { Key = "BOOKED",    Label = "BOOKED",        ActualDate = d.BookedDate };
-            stops[1] = new Stop { Key = "DEPARTED",  Label = "DEPARTED",      ActualDate = d.DepartedDate, EstimatedDate = d.ETD };
-            stops[2] = new Stop { Key = "TRANSIT",   Label = "IN TRANSIT",    ActualDate = null };
-            stops[3] = new Stop { Key = "ARRIVED",   Label = "ARRIVED PORT",  ActualDate = d.ArrivedPortDate ?? d.ATA, EstimatedDate = d.ETA };
-            stops[4] = new Stop { Key = "CUSTOMS",   Label = "CUSTOMS",       ActualDate = d.CustomsReleasedDate };
-            stops[5] = new Stop { Key = "GATED",     Label = "GATED OUT",     ActualDate = null };
-            stops[6] = new Stop { Key = "DELIVERED", Label = "DELIVERED",     ActualDate = d.DeliveredDate };
+            var stops = new Stop[8];
+            // PO-sourced stages
+            stops[0] = new Stop { Key = "PLACED",    Label = "PLACED",        ActualDate = d.OrderDate };
+            stops[1] = new Stop { Key = "ACKED",     Label = "ACKED",         ActualDate = d.AcknowledgedDate };
+            stops[2] = new Stop { Key = "FACTORY",   Label = "FACTORY READY", ActualDate = d.FactoryReadyDate };
+            // Container-sourced stages
+            stops[3] = new Stop { Key = "SHIPPED",   Label = "SHIPPED",       ActualDate = d.DepartedDate, EstimatedDate = d.ETD };
+            stops[4] = new Stop { Key = "TRANSIT",   Label = "IN TRANSIT",    ActualDate = null };
+            stops[5] = new Stop { Key = "ARRIVED",   Label = "ARRIVED PORT",  ActualDate = d.ArrivedPortDate ?? d.ATA, EstimatedDate = d.ETA };
+            stops[6] = new Stop { Key = "CUSTOMS",   Label = "CUSTOMS",       ActualDate = d.CustomsReleasedDate };
+            stops[7] = new Stop { Key = "DELIVERED", Label = "DELIVERED",     ActualDate = d.DeliveredDate };
+
+            // For IN TRANSIT, mark complete if departed and not yet arrived
+            if (d.DepartedDate.HasValue && !d.ArrivedPortDate.HasValue && !d.ATA.HasValue)
+            {
+                string status = d.Status ?? "";
+                if (status == "IN_TRANSIT" || status == "DEPARTED")
+                    stops[4].ActualDate = d.DepartedDate; // show as reached
+            }
 
             // Mark the current stop based on the container status
             string currentKey = MapStatusToStopKey(d.Status);
@@ -114,19 +134,19 @@ namespace StudioB.Containers
 
         private static string MapStatusToStopKey(string status)
         {
-            if (string.IsNullOrEmpty(status)) return "BOOKED";
+            if (string.IsNullOrEmpty(status)) return "PLACED";
             switch (status)
             {
-                case "BOOKED":         return "BOOKED";
-                case "DEPARTED":       return "DEPARTED";
+                case "BOOKED":         return "PLACED";
+                case "DEPARTED":       return "SHIPPED";
                 case "IN_TRANSIT":     return "TRANSIT";
                 case "ARRIVED":
                 case "DISCHARGED":     return "ARRIVED";
                 case "CUSTOMS_HOLD":   return "CUSTOMS";
-                case "GATED_OUT":      return "GATED";
+                case "GATED_OUT":      return "DELIVERED"; // gated out → near delivery
                 case "DELIVERED":      return "DELIVERED";
-                case "CANCELLED":      return "BOOKED";
-                default:               return "BOOKED";
+                case "CANCELLED":      return "PLACED";
+                default:               return "PLACED";
             }
         }
 

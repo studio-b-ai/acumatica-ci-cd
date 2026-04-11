@@ -55,6 +55,67 @@ namespace StudioB.Containers
             .View Documents;
         // --- end 2026-04-07 additions ---
 
+        // --- 2026-04-11: PCC redesign — Lead Time tab ---
+        public SelectFrom<UsrContainerLeadTime>.View LeadTimes;
+
+        protected virtual IEnumerable leadTimes()
+        {
+            var container = Container.Current;
+            if (container?.ContainerID == null) yield break;
+
+            foreach (PXResult<UsrContainerPOLink, POLine, POOrder, BAccount, InventoryItem> pr in
+                SelectFrom<UsrContainerPOLink>
+                    .LeftJoin<POLine>.On<POLine.orderType.IsEqual<UsrContainerPOLink.orderType>
+                        .And<POLine.orderNbr.IsEqual<UsrContainerPOLink.orderNbr>>
+                        .And<POLine.lineNbr.IsEqual<UsrContainerPOLink.lineNbr>>>
+                    .LeftJoin<POOrder>.On<POOrder.orderType.IsEqual<UsrContainerPOLink.orderType>
+                        .And<POOrder.orderNbr.IsEqual<UsrContainerPOLink.orderNbr>>>
+                    .LeftJoin<BAccount>.On<BAccount.bAccountID.IsEqual<POOrder.vendorID>>
+                    .LeftJoin<InventoryItem>.On<InventoryItem.inventoryID.IsEqual<POLine.inventoryID>>
+                    .Where<UsrContainerPOLink.containerID.IsEqual<@P.AsInt>>
+                    .View.Select(this, container.ContainerID))
+            {
+                var link = (UsrContainerPOLink)pr;
+                var po = (POOrder)pr;
+                var vendor = (BAccount)pr;
+                var item = (InventoryItem)pr;
+
+                var poExt = po != null ? PXCache<POOrder>.GetExtension<POOrderExt>(po) : null;
+
+                DateTime? orderDate = po?.OrderDate;
+                DateTime? ackedDate = poExt?.UsrAcknowledgedDate;
+                DateTime? factoryDate = poExt?.UsrFactoryReadyDate;
+                DateTime? shippedDate = container.DepartedDate;
+                DateTime? deliveredDate = container.DeliveredDate;
+
+                int? placedToAcked = DaysBetween(orderDate, ackedDate);
+                int? ackedToFactory = DaysBetween(ackedDate, factoryDate);
+                int? factoryToShip = DaysBetween(factoryDate, shippedDate);
+                int? shipToDeliver = DaysBetween(shippedDate, deliveredDate);
+                int? total = (placedToAcked ?? 0) + (ackedToFactory ?? 0) + (factoryToShip ?? 0) + (shipToDeliver ?? 0);
+
+                yield return new UsrContainerLeadTime
+                {
+                    LineKey = string.Format("{0}-{1}-{2}", link.OrderType, link.OrderNbr, link.LineNbr),
+                    OrderNbr = link.OrderNbr,
+                    VendorName = vendor?.AcctName,
+                    InventoryCD = item?.InventoryCD,
+                    PlacedToAcked = placedToAcked,
+                    AckedToFactory = ackedToFactory,
+                    FactoryToShip = factoryToShip,
+                    ShipToDeliver = shipToDeliver,
+                    TotalDays = total > 0 ? total : (int?)null,
+                };
+            }
+        }
+
+        private static int? DaysBetween(DateTime? from, DateTime? to)
+        {
+            if (!from.HasValue || !to.HasValue) return null;
+            return (int)(to.Value.Date - from.Value.Date).TotalDays;
+        }
+        // --- end 2026-04-11 additions ---
+
         protected virtual IEnumerable containers()
         {
             ContainerFilter filter = Filter.Current;
@@ -485,6 +546,29 @@ namespace StudioB.Containers
             Actions.PressSave();
         }
 
+        // --- 2026-04-11: PCC redesign — Plan Next Order deep-link ---
+        public PXAction<ContainerFilter> PlanNextOrder;
+        [PXButton(CommitChanges = true)]
+        [PXUIField(DisplayName = "Plan Next Order", MapEnableRights = PXCacheRights.Select)]
+        protected void planNextOrder()
+        {
+            var container = Container.Current;
+            if (container == null) return;
+
+            // Get primary vendor from first linked PO
+            foreach (PXResult<UsrContainerPOLink, POOrder, BAccount, POLine, InventoryItem> row in POLinks.Select())
+            {
+                var po = (POOrder)row;
+                if (po?.VendorID != null)
+                {
+                    throw new PXRedirectToUrlException(
+                        string.Format("https://wms.asthetik.com/vendors/{0}", po.VendorID),
+                        PXBaseRedirectException.WindowMode.NewWindow, "Plan Next Order");
+                }
+            }
+        }
+        // --- end 2026-04-11 Plan Next Order ---
+
         public PXAction<ContainerFilter> AddPOLink;
         [PXButton(CommitChanges = true)]
         [PXUIField(DisplayName = "Add PO Line", MapEnableRights = PXCacheRights.Update)]
@@ -676,6 +760,7 @@ namespace StudioB.Containers
 
             // Command Center tile data
             var tile = new ContainerKPITileBuilder.KPIData();
+            var metrics = new ContainerKPITileBuilder.MetricsData();
 
             foreach (UsrContainer c in SelectFrom<UsrContainer>.View.Select(this))
             {
@@ -690,6 +775,44 @@ namespace StudioB.Containers
                 // Skip terminal states from risk aggregation
                 if (status == ContainerStatus.Delivered || status == ContainerStatus.Cancelled)
                     continue;
+
+                // --- Portfolio metrics (active containers only) ---
+                metrics.ActiveContainerCount++;
+                if (c.ContainerID.HasValue)
+                {
+                    decimal containerPOValue = 0m;
+                    bool hasSOMatch = false;
+                    foreach (PXResult<UsrContainerPOLink, POLine> plr in SelectFrom<UsrContainerPOLink>
+                        .LeftJoin<POLine>.On<POLine.orderType.IsEqual<UsrContainerPOLink.orderType>
+                            .And<POLine.orderNbr.IsEqual<UsrContainerPOLink.orderNbr>>
+                            .And<POLine.lineNbr.IsEqual<UsrContainerPOLink.lineNbr>>>
+                        .Where<UsrContainerPOLink.containerID.IsEqual<@P.AsInt>>
+                        .View.Select(this, c.ContainerID))
+                    {
+                        var poLine = (POLine)plr;
+                        if (poLine?.ExtCost != null) containerPOValue += poLine.ExtCost.Value;
+
+                        // Check for SO commitment via InventoryID match
+                        if (!hasSOMatch && poLine?.InventoryID != null)
+                        {
+                            var soMatch = SelectFrom<PX.Objects.SO.SOLine>
+                                .Where<PX.Objects.SO.SOLine.inventoryID.IsEqual<@P.AsInt>
+                                    .And<PX.Objects.SO.SOLine.completed.IsEqual<False>>>
+                                .View.SelectSingleBound(this, null, poLine.InventoryID);
+                            if (soMatch != null) hasSOMatch = true;
+                        }
+                    }
+                    metrics.Position += containerPOValue;
+                    if (hasSOMatch)
+                    {
+                        metrics.ContainersWithSO++;
+                        // Cross-dock: this PO value has SO backing
+                    }
+                    else
+                    {
+                        metrics.Speculation += containerPOValue;
+                    }
+                }
 
                 // --- Risk level (inline, without doc/history joins for perf) ---
                 int holdDays = ContainerRiskCalculator.CustomsHoldDays(today, status, c.LastSyncDate);
@@ -745,6 +868,11 @@ namespace StudioB.Containers
 
             tile.ExposureTotal = tile.ExposureDemurrage + tile.ExposureDutyVariance + tile.ExposureOther;
 
+            // Compute cross-dock rate
+            metrics.CrossDockRate = metrics.ActiveContainerCount > 0
+                ? (decimal)metrics.ContainersWithSO / metrics.ActiveContainerCount * 100m
+                : 0m;
+
             // Assign legacy fields for backwards compat
             e.Row.KPIOpen = open;
             e.Row.KPIInTransit = inTransit;
@@ -755,7 +883,7 @@ namespace StudioB.Containers
             e.Row.KPIActionCount = tile.ActionCount;
             e.Row.KPIWatchCount = tile.WatchCount;
             e.Row.KPIExposureTotal = tile.ExposureTotal;
-            e.Row.KPITilesHtml = ContainerKPITileBuilder.Build(tile);
+            e.Row.KPITilesHtml = ContainerKPITileBuilder.Build(tile, metrics);
         }
 
         protected void _(Events.RowSelected<UsrContainer> e)
@@ -818,6 +946,11 @@ namespace StudioB.Containers
                 holdDays, customsHoldEstimatedCostPerDay: null);
 
             // --- Phase D: Timeline strip + tab count aggregation ---
+            // PO date aggregates for hybrid timeline (hoisted for timeline build below)
+            DateTime? earliestOrderDate = null;
+            DateTime? latestAckedDate = null;
+            DateTime? latestFactoryReadyDate = null;
+
             if (row.ContainerID.HasValue)
             {
                 // Events count — simple row count from the child view
@@ -830,19 +963,33 @@ namespace StudioB.Containers
                 }
                 row.EventsCount = eventsCount;
 
-                // PO links count + total extended cost
+                // PO links count + total extended cost + PO dates for timeline
                 int poLinksCount = 0;
                 decimal poLinksTotal = 0m;
-                foreach (PXResult<UsrContainerPOLink, POLine> pr in SelectFrom<UsrContainerPOLink>
+                foreach (PXResult<UsrContainerPOLink, POLine, POOrder> pr in SelectFrom<UsrContainerPOLink>
                     .LeftJoin<POLine>.On<POLine.orderType.IsEqual<UsrContainerPOLink.orderType>
                         .And<POLine.orderNbr.IsEqual<UsrContainerPOLink.orderNbr>>
                         .And<POLine.lineNbr.IsEqual<UsrContainerPOLink.lineNbr>>>
+                    .LeftJoin<POOrder>.On<POOrder.orderType.IsEqual<UsrContainerPOLink.orderType>
+                        .And<POOrder.orderNbr.IsEqual<UsrContainerPOLink.orderNbr>>>
                     .Where<UsrContainerPOLink.containerID.IsEqual<@P.AsInt>>
                     .View.Select(this, row.ContainerID))
                 {
                     poLinksCount++;
                     var line = (POLine)pr;
                     if (line?.ExtCost != null) poLinksTotal += line.ExtCost.Value;
+
+                    var po = (POOrder)pr;
+                    if (po != null)
+                    {
+                        if (po.OrderDate.HasValue && (!earliestOrderDate.HasValue || po.OrderDate.Value < earliestOrderDate.Value))
+                            earliestOrderDate = po.OrderDate;
+                        var poExt = PXCache<POOrder>.GetExtension<POOrderExt>(po);
+                        if (poExt?.UsrAcknowledgedDate != null && (!latestAckedDate.HasValue || poExt.UsrAcknowledgedDate.Value > latestAckedDate.Value))
+                            latestAckedDate = poExt.UsrAcknowledgedDate;
+                        if (poExt?.UsrFactoryReadyDate != null && (!latestFactoryReadyDate.HasValue || poExt.UsrFactoryReadyDate.Value > latestFactoryReadyDate.Value))
+                            latestFactoryReadyDate = poExt.UsrFactoryReadyDate;
+                    }
                 }
                 row.POLinksCount = poLinksCount;
                 row.POLinksTotal = poLinksTotal;
@@ -873,6 +1020,11 @@ namespace StudioB.Containers
             row.TimelineHtml = ContainerTimelineBuilder.Build(new ContainerTimelineBuilder.TimelineData
             {
                 Status = row.Status,
+                // PO-sourced dates (hybrid timeline)
+                OrderDate = earliestOrderDate,
+                AcknowledgedDate = latestAckedDate,
+                FactoryReadyDate = latestFactoryReadyDate,
+                // Container-sourced dates
                 BookedDate = row.BookedDate,
                 DepartedDate = row.DepartedDate,
                 ArrivedPortDate = row.ArrivedPortDate,

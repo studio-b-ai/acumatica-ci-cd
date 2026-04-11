@@ -718,3 +718,125 @@ class TestContainerE2EFlow:
             )
             page.wait_for_timeout(3000)
             click_delete(page)
+
+
+# ════════════════════════════════════════════════════════════════════════
+# PCC Redesign: Timeline, Metrics, Lead Time, Plan Next Order
+# ════════════════════════════════════════════════════════════════════════
+
+class TestPCCTimeline:
+    """Verify the hybrid PO-lifecycle timeline renders on SB501000."""
+
+    def test_pcc_timeline_8_stages(self, acumatica_screen):
+        """Timeline should show the 8 hybrid PO-lifecycle stage labels."""
+        screen = acumatica_screen("SB501000")
+        page = screen.page
+
+        # Navigate to last record to get a container with timeline
+        last_btn = screen.locator("div[icon='Last'], [id*='btnLast']").first
+        if last_btn.is_visible(timeout=3000):
+            last_btn.click()
+            page.wait_for_load_state("domcontentloaded")
+            page.wait_for_timeout(2000)
+
+        # Timeline is in htmlTimeline PXHtmlView
+        timeline = screen.locator("[id$='htmlTimeline']").first
+        assert timeline.is_visible(timeout=5000), "Timeline HTML view not visible"
+
+        timeline_text = timeline.text_content() or ""
+        # Verify new PO-sourced stage labels
+        assert "PLACED" in timeline_text, "PLACED stage not found in timeline"
+        assert "SHIPPED" in timeline_text, "SHIPPED stage not found in timeline"
+        assert "DELIVERED" in timeline_text, "DELIVERED stage not found in timeline"
+
+        screen.assert_no_errors()
+
+
+class TestPCCMetricsRow:
+    """Verify the metrics KPI row renders below the filter tiles."""
+
+    def test_pcc_metrics_row_visible(self, acumatica_screen):
+        """Metrics row with OPEN PO VALUE / CROSS-DOCK RATE / UNCOVERED VALUE should render."""
+        screen = acumatica_screen("SB501000")
+        page = screen.page
+
+        # KPI tiles are in htmlKPITiles PXHtmlView
+        kpi_html = screen.locator("[id$='htmlKPITiles']").first
+        assert kpi_html.is_visible(timeout=5000), "KPI tiles HTML view not visible"
+
+        kpi_text = kpi_html.text_content() or ""
+        assert "OPEN PO VALUE" in kpi_text, "OPEN PO VALUE metric not found"
+        assert "CROSS-DOCK RATE" in kpi_text, "CROSS-DOCK RATE metric not found"
+        assert "UNCOVERED VALUE" in kpi_text, "UNCOVERED VALUE metric not found"
+
+        screen.assert_no_errors()
+
+
+class TestPCCLeadTimeTab:
+    """Verify the Lead Time tab loads on SB501000."""
+
+    def test_pcc_lead_time_tab(self, acumatica_screen):
+        """Lead Time tab should load with expected columns."""
+        screen = acumatica_screen("SB501000")
+        page = screen.page
+
+        # Navigate to a record
+        last_btn = screen.locator("div[icon='Last'], [id*='btnLast']").first
+        if last_btn.is_visible(timeout=3000):
+            last_btn.click()
+            page.wait_for_load_state("domcontentloaded")
+            page.wait_for_timeout(2000)
+
+        # Click Lead Time tab
+        lead_time_tab = screen.locator("span:has-text('Lead Time')").first
+        assert lead_time_tab.is_visible(timeout=5000), "Lead Time tab not found"
+        lead_time_tab.click()
+        page.wait_for_timeout(1500)
+
+        # Verify grid loaded
+        grid = screen.locator("[id$='gridLeadTimes']").first
+        assert grid.is_visible(timeout=5000), "Lead Time grid not visible"
+
+        screen.assert_no_errors()
+
+
+class TestPCCPlanNextOrder:
+    """Verify PLAN NEXT ORDER button exists on SB501000."""
+
+    def test_pcc_plan_next_order_button(self, acumatica_screen):
+        """PLAN NEXT ORDER toolbar button should be present."""
+        screen = acumatica_screen("SB501000")
+        page = screen.page
+        page.wait_for_timeout(3000)
+
+        btn = page.locator("text=PLAN NEXT ORDER")
+        assert btn.count() > 0, "PLAN NEXT ORDER button not found on SB501000 toolbar"
+
+        screen.assert_no_errors()
+
+
+# ════════════════════════════════════════════════════════════════════════
+# SB501200: Supplier Intake Shell
+# ════════════════════════════════════════════════════════════════════════
+
+class TestSB501200:
+    """Verify Supplier Intake screen (SB501200) loads."""
+
+    def test_sb501200_loads(self, acumatica_screen):
+        """SB501200 should load without error and show intake content."""
+        screen = acumatica_screen("SB501200")
+        screen.assert_no_errors()
+
+    def test_sb501200_shows_intake_link(self, acumatica_screen):
+        """SB501200 should show the MOQ intake link."""
+        screen = acumatica_screen("SB501200")
+        page = screen.page
+
+        intake_html = screen.locator("[id$='htmlIntake']").first
+        assert intake_html.is_visible(timeout=5000), "Intake HTML view not visible"
+
+        intake_text = intake_html.text_content() or ""
+        assert "Supplier Intake" in intake_text, "Supplier Intake heading not found"
+        assert "OPEN MOQ INTAKE" in intake_text, "MOQ INTAKE button not found"
+
+        screen.assert_no_errors()

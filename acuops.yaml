@@ -79,6 +79,7 @@ pipeline:
 # in verify.py until the IIG orphan rows are cleaned (September 2026 DB access).
 no_merge_expected:
   - "aspx:Pages/SB/SB501000.aspx"
+  - "aspx:Pages/SB/SB501200.aspx"
 
 # ─── Qualification (Pre-Deploy Gates) ──────────────────────────────────────
 qualification:
