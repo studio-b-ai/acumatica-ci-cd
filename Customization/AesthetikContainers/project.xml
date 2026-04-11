@@ -252,7 +252,7 @@ IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('POOrder') 
         <Template>
             <px:PXLayoutRule ID="PXLayoutRule1" runat="server" StartRow="True" />
             <px:PXHtmlView ID="htmlKPITiles" runat="server" DataField="KPITilesHtml"
-                Height="160px" Width="100%" SkinID="Label" />
+                Height="280px" Width="100%" SkinID="Label" />
             <%-- Hidden field backing the tile click handlers. sb501000SetViewMode()
                  in the embedded JS writes to this field, then postData() refreshes
                  the grid with the new filter. --%>
@@ -293,7 +293,7 @@ IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('POOrder') 
                 </Levels>
                 <AutoSize Enabled="True" MinHeight="200" />
                 <AutoCallBack Command="Refresh" Target="frmDetail" ActiveBehavior="True">
-                    <Behavior RepaintControlsIDs="frmDetail,tabDetail" />
+                    <Behavior RepaintControlsIDs="frmTimeline,frmDetail,tabDetail" />
                 </AutoCallBack>
             </px:PXGrid>
         </Template1>
@@ -301,7 +301,7 @@ IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('POOrder') 
             <%-- 2026-04-08: Phase D — Status timeline strip + grouped detail form.
                  Timeline rendered via PXHtmlView bound to UsrContainer.TimelineHtml,
                  populated in ContainerMaint.RowSelected<UsrContainer>. --%>
-            <px:PXFormView ID="frmTimeline" runat="server" DataSourceID="ds" DataMember="Container"
+            <px:PXFormView ID="frmTimeline" runat="server" DataSourceID="ds" DataMember="Containers"
                 Width="100%" CaptionVisible="False" RenderStyle="Simple" SkinID="Transparent">
                 <Template>
                     <%-- 2026-04-08: explicit layout rule so the hidden edTabLabelsJson
@@ -318,7 +318,7 @@ IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('POOrder') 
                         SuppressLabel="True" Style="display:none;" />
                 </Template>
             </px:PXFormView>
-            <px:PXFormView ID="frmDetail" runat="server" DataSourceID="ds" DataMember="Container"
+            <px:PXFormView ID="frmDetail" runat="server" DataSourceID="ds" DataMember="Containers"
                 Width="100%" CaptionVisible="False">
                 <Template>
                     <%-- Group 1: Identity --%>
@@ -352,6 +352,22 @@ IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('POOrder') 
                     <px:PXNumberEdit ID="edDemurrageDailyRate" runat="server" DataField="DemurrageDailyRate" />
                     <px:PXTextEdit ID="edPortOfLoading" runat="server" DataField="PortOfLoading" />
                     <px:PXTextEdit ID="edPortOfDischarge" runat="server" DataField="PortOfDischarge" />
+
+                    <%-- 2026-04-12: IIG parity — Shipping & Delivery dates --%>
+                    <px:PXLayoutRule ID="lrShipping" runat="server"
+                        StartGroup="True" GroupCaption="Shipping &amp; Delivery" LabelsWidth="SM" ControlSize="M" />
+                    <px:PXDateTimeEdit ID="edCargoReadyDate" runat="server" DataField="CargoReadyDate" />
+                    <px:PXDateTimeEdit ID="edFactoryPickupDate" runat="server" DataField="FactoryPickupDate" />
+                    <px:PXDateTimeEdit ID="edOnBoardDate" runat="server" DataField="OnBoardDate" />
+                    <px:PXDateTimeEdit ID="edShipmentWindowStart" runat="server" DataField="ShipmentWindowStart" />
+                    <px:PXDateTimeEdit ID="edShipmentWindowEnd" runat="server" DataField="ShipmentWindowEnd" />
+                    <px:PXDateTimeEdit ID="edDrayageAppointmentDate" runat="server" DataField="DrayageAppointmentDate" />
+                    <px:PXTextEdit ID="edDeliveryOrderNbr" runat="server" DataField="DeliveryOrderNbr" />
+                    <px:PXDateTimeEdit ID="edDeliveryOrderDate" runat="server" DataField="DeliveryOrderDate" />
+                    <px:PXDateTimeEdit ID="edPaymentDueDate" runat="server" DataField="PaymentDueDate" />
+                    <px:PXNumberEdit ID="edEstimatedFreight" runat="server" DataField="EstimatedFreight" />
+                    <px:PXTextEdit ID="edSCACNumber" runat="server" DataField="SCACNumber" />
+                    <px:PXTextEdit ID="edBrokerInvoiceNbr" runat="server" DataField="BrokerInvoiceNbr" />
                 </Template>
             </px:PXFormView>
             <px:PXTab ID="tabDetail" runat="server" Width="100%" DataSourceID="ds">
