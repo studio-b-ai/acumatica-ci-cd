@@ -1220,6 +1220,26 @@ namespace StudioB.Containers
         private static int eventsCount(UsrContainer row) => row.EventsCount ?? 0;
         #endregion
 
+        #region IsDirty Override
+        // PrimaryView is "Filter" (PXFilter — never dirty by itself).
+        // Override IsDirty so the Save button activates when any data view changes.
+        public override bool IsDirty
+        {
+            get
+            {
+                if (base.IsDirty) return true;
+                if (Containers.Cache.IsDirty) return true;
+                if (Container.Cache.IsDirty) return true;
+                if (Events.Cache.IsDirty) return true;
+                if (POLinks.Cache.IsDirty) return true;
+                if (Costs.Cache.IsDirty) return true;
+                if (Documents.Cache.IsDirty) return true;
+                if (ETAHistory.Cache.IsDirty) return true;
+                return false;
+            }
+        }
+        #endregion
+
         #region Persist Override
         public override void Persist()
         {
