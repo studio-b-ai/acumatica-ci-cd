@@ -40,6 +40,41 @@ namespace StudioB.Containers
                 yield return current;
         }
 
+        protected void _(Events.FieldDefaulting<UsrContainer, UsrContainer.containerCD> e)
+        {
+            if (e.Row == null) return;
+            // Find max existing CNT number and increment
+            UsrContainer last = SelectFrom<UsrContainer>
+                .Where<UsrContainer.containerCD.IsLike<ContainerCDPrefix>>
+                .OrderBy<UsrContainer.containerCD.Desc>
+                .View.SelectSingleBound(this, null);
+
+            int next = 1;
+            if (last?.ContainerCD != null && last.ContainerCD.StartsWith("CNT"))
+            {
+                string numPart = last.ContainerCD.Substring(3);
+                if (int.TryParse(numPart, out int parsed))
+                    next = parsed + 1;
+            }
+            e.NewValue = string.Format("CNT{0:D6}", next);
+        }
+
+        public class ContainerCDPrefix : BqlString.Constant<ContainerCDPrefix>
+        {
+            public ContainerCDPrefix() : base("CNT%") { }
+        }
+
+        protected void _(Events.RowInserting<UsrContainer> e)
+        {
+            if (e.Row == null) return;
+            if (string.IsNullOrEmpty(e.Row.Status))
+                e.Row.Status = "BOOKED";
+            if (string.IsNullOrEmpty(e.Row.TransportMode))
+                e.Row.TransportMode = "OCEAN";
+            if (string.IsNullOrEmpty(e.Row.CarrierCode))
+                e.Row.CarrierCode = "OTHER";
+        }
+
         public SelectFrom<UsrContainerEvent>
             .Where<UsrContainerEvent.containerID.IsEqual<UsrContainer.containerID.FromCurrent>>
             .OrderBy<UsrContainerEvent.eventDateTime.Desc>
@@ -229,9 +264,7 @@ namespace StudioB.Containers
                 docsRequired: 0,
                 docsReceived: 0,
                 etaChangesLast7Days: 0,
-                customsHoldDays: customsHoldDays,
-                factoryPromisedDate: row.FactoryPromisedDate,
-                factoryActualDate: row.FactoryActualDate);
+                customsHoldDays: customsHoldDays);
         }
         #endregion
 
@@ -255,20 +288,9 @@ namespace StudioB.Containers
             public class delivered : BqlString.Constant<delivered> { public delivered() : base(Delivered) { } }
             public class cancelled : BqlString.Constant<cancelled> { public cancelled() : base(Cancelled) { } }
         }
-
-        private const decimal DefaultCustomsHoldCostPerDay = 150m;
         #endregion
 
         #region Actions
-        public PXAction<ContainerFilter> OpenContainerDetail;
-        [PXButton(CommitChanges = true)]
-        [PXUIField(DisplayName = "Open Detail", MapEnableRights = PXCacheRights.Select)]
-        protected void openContainerDetail()
-        {
-            if (Container.Current == null) return;
-            Container.AskExt();
-        }
-
         public PXAction<ContainerFilter> RefreshTracking;
         [PXButton(CommitChanges = true)]
         [PXUIField(DisplayName = "Refresh Tracking", MapEnableRights = PXCacheRights.Update)]
@@ -555,25 +577,99 @@ namespace StudioB.Containers
             Actions.PressSave();
         }
 
-        public PXAction<ContainerFilter> PrintReceivingDoc;
-        [PXButton]
-        [PXUIField(DisplayName = "Print Receiving Doc", MapEnableRights = PXCacheRights.Select)]
-        protected void printReceivingDoc()
+        public PXAction<ContainerFilter> ReceiveGoods;
+        [PXButton(CommitChanges = true)]
+        [PXUIField(DisplayName = "Receive Goods", MapEnableRights = PXCacheRights.Update)]
+        protected void receiveGoods()
         {
             var c = Container.Current;
             if (c == null) return;
-            // v1: stub — writes an event row so there's an audit trail and
-            // raises an info message. Actual PDF report rendering is Phase G
-            // polish work (will wire a PXReportTool.Launch here).
+
+            // Validate status
+            if (c.Status != "ARRIVED" && c.Status != "CUSTOMS_HOLD" && c.Status != "GATED_OUT")
+            {
+                throw new PXException(
+                    "Goods can only be received when container status is Arrived, Customs Hold, or Gated Out. Current status: {0}",
+                    c.Status);
+            }
+
+            // Validate PO links exist
+            var poLinksByVendor = new Dictionary<int, List<PXResult<UsrContainerPOLink, POOrder, BAccount, POLine, InventoryItem>>>();
+            foreach (PXResult<UsrContainerPOLink, POOrder, BAccount, POLine, InventoryItem> row in POLinks.Select())
+            {
+                var po = (POOrder)row;
+                int vendorID = po.VendorID ?? 0;
+                if (!poLinksByVendor.ContainsKey(vendorID))
+                    poLinksByVendor[vendorID] = new List<PXResult<UsrContainerPOLink, POOrder, BAccount, POLine, InventoryItem>>();
+                poLinksByVendor[vendorID].Add(row);
+            }
+
+            if (poLinksByVendor.Count == 0)
+                throw new PXException("Link at least one PO to this container before receiving goods.");
+
+            // Warn if already received
+            if (!string.IsNullOrEmpty(c.ReceiptNbr))
+            {
+                if (Container.Ask("Receive Goods",
+                    string.Format("Receipt(s) {0} already exist for this container. Create additional receipts?", c.ReceiptNbr),
+                    MessageButtons.YesNo) != WebDialogResult.Yes)
+                {
+                    return;
+                }
+            }
+
+            var receiptNbrs = new List<string>();
+
+            // Create one PO Receipt per vendor
+            foreach (var kvp in poLinksByVendor)
+            {
+                var receiptGraph = PXGraph.CreateInstance<PX.Objects.PO.POReceiptEntry>();
+                var receipt = receiptGraph.Document.Insert(new POReceipt());
+                receipt.ReceiptType = POReceiptType.POReceipt;
+                receipt.VendorID = kvp.Key;
+                receipt.ReceiptDate = Accessinfo.BusinessDate;
+                receiptGraph.Document.Update(receipt);
+
+                // Add receipt lines from linked PO lines
+                foreach (var row in kvp.Value)
+                {
+                    var link = (UsrContainerPOLink)row;
+                    var poLine = (POLine)row;
+                    if (poLine == null) continue;
+
+                    var rl = new POReceiptLine();
+                    rl.POType = link.OrderType;
+                    rl.PONbr = link.OrderNbr;
+                    rl.POLineNbr = link.LineNbr;
+                    receiptGraph.transactions.Insert(rl);
+                }
+
+                receiptGraph.Actions.PressSave();
+                receiptNbrs.Add(receiptGraph.Document.Current.ReceiptNbr);
+            }
+
+            // Update container
+            string allNbrs = string.Join(", ", receiptNbrs);
+            c.ReceiptNbr = allNbrs;
+            c.Status = "DELIVERED";
+            c.DeliveredDate = Accessinfo.BusinessDate ?? DateTime.Today;
+            Container.Update(c);
+
+            // Write event
             var ev = (UsrContainerEvent)Events.Cache.CreateInstance();
             ev.ContainerID = c.ContainerID;
-            ev.NormalizedEventCode = "DOC_PRINTED";
-            ev.CarrierEventCode = "DOC_PRINTED";
+            ev.NormalizedEventCode = "GOODS_RECEIVED";
+            ev.CarrierEventCode = "GOODS_RECEIVED";
             ev.EventDateTime = Accessinfo.BusinessDate ?? DateTime.Today;
             ev.EventClassifier = "ACT";
-            ev.Description = "Receiving document printed";
+            ev.Description = string.Format("PO Receipt(s) created: {0}", allNbrs);
             Events.Insert(ev);
+
             Actions.PressSave();
+
+            // Show confirmation
+            throw new PXOperationCompletedWithWarningException(
+                string.Format("Receipt(s) created: {0}. Open Purchase Receipts (PO302000) to review and release.", allNbrs));
         }
 
         // --- 2026-04-11: PCC redesign — Plan Next Order deep-link ---
@@ -791,7 +887,6 @@ namespace StudioB.Containers
             // Command Center tile data
             var tile = new ContainerKPITileBuilder.KPIData();
             var metrics = new ContainerKPITileBuilder.MetricsData();
-            decimal totalPOValue = 0m;
 
             foreach (UsrContainer c in SelectFrom<UsrContainer>.View.Select(this))
             {
@@ -803,69 +898,16 @@ namespace StudioB.Containers
                 if (status == ContainerStatus.CustomsHold) customsHold++;
                 if (c.ETA != null && c.ETA >= weekStart && c.ETA < weekEnd) arrivingThisWeek++;
 
-                // --- Pipeline stage counts (before skipping terminal) ---
-                switch (status)
-                {
-                    case ContainerStatus.Booked: tile.PipelineBooked++; break;
-                    case ContainerStatus.Departed:
-                    case ContainerStatus.InTransit: tile.PipelineInTransit++; break;
-                    case ContainerStatus.Arrived:
-                    case ContainerStatus.Discharged: tile.PipelineAtPort++; break;
-                    case ContainerStatus.CustomsHold: tile.PipelineCustoms++; break;
-                }
-
                 // Skip terminal states from risk aggregation
                 if (status == ContainerStatus.Delivered || status == ContainerStatus.Cancelled)
                     continue;
 
                 // --- Portfolio metrics (active containers only) ---
                 metrics.ActiveContainerCount++;
-
-                int holdDays = ContainerRiskCalculator.CustomsHoldDays(today, status, c.LastSyncDate);
-
-                // --- Tile 1: LATE ---
-                bool isLate = false;
-
-                if (c.FactoryPromisedDate.HasValue && c.FactoryPromisedDate.Value.Date < today.Date
-                    && !c.FactoryActualDate.HasValue)
-                {
-                    tile.LateFactoryOverdue++;
-                    isLate = true;
-                }
-                if (c.ETA.HasValue && c.ETA.Value.Date < today.Date && !c.ATA.HasValue
-                    && status != ContainerStatus.Delivered && status != ContainerStatus.Cancelled)
-                {
-                    tile.LatePastETA++;
-                    isLate = true;
-                }
-                if (c.LastFreeDay.HasValue && c.LastFreeDay.Value.Date < today.Date)
-                {
-                    tile.LatePastLFD++;
-                    isLate = true;
-                }
-                if (status == ContainerStatus.CustomsHold && holdDays > 3)
-                {
-                    tile.LateCustomsHold++;
-                    isLate = true;
-                }
-                if (isLate)
-                    tile.LateCount++;
-
-                // --- Tile 2: AT RISK $ ---
-                decimal demurrageExposure = ContainerRiskCalculator.ComputeDemurrageExposure(
-                    today, c.LastFreeDay, c.DemurrageDailyRate,
-                    customsHoldDays: holdDays,
-                    customsHoldEstimatedCostPerDay: null);
-                tile.AtRiskDemurrage += demurrageExposure;
-
-                // Customs hold estimated cost: $150/day as a default
-                if (holdDays > 0)
-                    tile.AtRiskCustomsHoldCost += holdDays * DefaultCustomsHoldCostPerDay;
-
-                // --- Yard-based cross-dock metrics ---
                 if (c.ContainerID.HasValue)
                 {
                     decimal containerPOValue = 0m;
+                    bool hasSOMatch = false;
                     foreach (PXResult<UsrContainerPOLink, POLine> plr in SelectFrom<UsrContainerPOLink>
                         .LeftJoin<POLine>.On<POLine.orderType.IsEqual<UsrContainerPOLink.orderType>
                             .And<POLine.orderNbr.IsEqual<UsrContainerPOLink.orderNbr>>
@@ -874,46 +916,115 @@ namespace StudioB.Containers
                         .View.Select(this, c.ContainerID))
                     {
                         var poLine = (POLine)plr;
+                        if (poLine?.ExtCost != null) containerPOValue += poLine.ExtCost.Value;
 
-                        // For each PO line, compute yard-based cross-dock
-                        if (poLine?.OrderQty != null && poLine.OrderQty.Value > 0m)
+                        // Check for SO commitment via InventoryID match
+                        if (!hasSOMatch && poLine?.InventoryID != null)
                         {
-                            metrics.TotalYards += poLine.OrderQty.Value;
-                            containerPOValue += poLine.ExtCost ?? 0m;
-
-                            // Find matching open SO lines for this InventoryID
-                            if (poLine.InventoryID != null)
-                            {
-                                decimal soQtySum = 0m;
-                                foreach (PX.Objects.SO.SOLine soLine in SelectFrom<PX.Objects.SO.SOLine>
-                                    .Where<PX.Objects.SO.SOLine.inventoryID.IsEqual<@P.AsInt>
-                                        .And<PX.Objects.SO.SOLine.completed.IsEqual<False>>>
-                                    .View.Select(this, poLine.InventoryID))
-                                {
-                                    soQtySum += soLine.OrderQty ?? 0m;
-                                }
-                                decimal crossDockedQty = Math.Min(poLine.OrderQty.Value, soQtySum);
-                                metrics.CrossDockedYards += crossDockedQty;
-
-                                // Uncovered proportion of this PO line's value
-                                decimal uncoveredQty = poLine.OrderQty.Value - crossDockedQty;
-                                if (uncoveredQty > 0m && poLine.OrderQty.Value > 0m)
-                                {
-                                    metrics.UncoveredValue += (poLine.ExtCost ?? 0m) * (uncoveredQty / poLine.OrderQty.Value);
-                                }
-                            }
+                            var soMatch = SelectFrom<PX.Objects.SO.SOLine>
+                                .Where<PX.Objects.SO.SOLine.inventoryID.IsEqual<@P.AsInt>
+                                    .And<PX.Objects.SO.SOLine.completed.IsEqual<False>>>
+                                .View.SelectSingleBound(this, null, poLine.InventoryID);
+                            if (soMatch != null) hasSOMatch = true;
                         }
                     }
-                    totalPOValue += containerPOValue;
+                    metrics.Position += containerPOValue;
+                    if (hasSOMatch)
+                    {
+                        metrics.ContainersWithSO++;
+                        // Cross-dock: this PO value has SO backing
+                    }
+                    else
+                    {
+                        metrics.Speculation += containerPOValue;
+                    }
+                }
+
+                // --- Risk level (with doc/ETA counts for accurate KPI tiles) ---
+                int holdDays = ContainerRiskCalculator.CustomsHoldDays(today, status, c.LastSyncDate);
+
+                // Doc counts per container — N+1 is acceptable at 5-10 active containers
+                int cDocsReq = 0, cDocsRcv = 0;
+                if (c.ContainerID.HasValue)
+                {
+                    foreach (UsrContainerDocument d in SelectFrom<UsrContainerDocument>
+                        .Where<UsrContainerDocument.containerID.IsEqual<@P.AsInt>>
+                        .View.Select(this, c.ContainerID))
+                    {
+                        if (d.Required == true) cDocsReq++;
+                        if (d.Status == "RECEIVED" || d.Status == "VERIFIED") cDocsRcv++;
+                    }
+                }
+
+                // ETA change count (last 7 days)
+                int cEtaChanges = 0;
+                if (c.ContainerID.HasValue)
+                {
+                    DateTime sevenDaysAgo = today.AddDays(-7);
+                    foreach (UsrContainerETAHistory h in SelectFrom<UsrContainerETAHistory>
+                        .Where<UsrContainerETAHistory.containerID.IsEqual<@P.AsInt>
+                            .And<UsrContainerETAHistory.recordedDate.IsGreaterEqual<@P.AsDateTime>>>
+                        .View.Select(this, c.ContainerID, sevenDaysAgo))
+                    {
+                        cEtaChanges++;
+                    }
+                }
+
+                string rl = ContainerRiskCalculator.ComputeRiskLevel(
+                    today, status, c.LastFreeDay, c.ETA, c.ISFFiledDate, c.DepartedDate,
+                    docsRequired: cDocsReq, docsReceived: cDocsRcv,
+                    etaChangesLast7Days: cEtaChanges, customsHoldDays: holdDays);
+
+                // --- Tile 1 breakdown ---
+                if (rl == ContainerRiskCalculator.RiskCritical)
+                {
+                    tile.ActionCount++;
+
+                    if (c.LastFreeDay.HasValue && c.LastFreeDay.Value.Date < today.Date)
+                    {
+                        tile.ActionPastLFD++;
+                        if (c.DemurrageDailyRate.HasValue)
+                            tile.ActionPastLFDDailyRate += c.DemurrageDailyRate.Value;
+                    }
+                    if (status == ContainerStatus.CustomsHold && holdDays > 2)
+                        tile.ActionCustomsHold++;
+                    if (!c.ISFFiledDate.HasValue && !c.DepartedDate.HasValue &&
+                        status == ContainerStatus.Booked &&
+                        c.ETA.HasValue && (c.ETA.Value.Date - today.Date).TotalDays < 14)
+                        tile.ActionISFCutoff++;
+                }
+                // --- Tile 2 breakdown ---
+                else if (rl == ContainerRiskCalculator.RiskWarning)
+                {
+                    tile.WatchCount++;
+
+                    if (c.LastFreeDay.HasValue &&
+                        (c.LastFreeDay.Value.Date - today.Date).TotalDays <= 3)
+                    {
+                        // LFD-soon counted in ETA slipped bucket only if it's not already action-level
+                    }
+                    if (c.ETA.HasValue &&
+                        c.ETA.Value.Date <= horizon7.Date &&
+                        c.ETA.Value.Date >= today.Date)
+                        tile.WatchArrivingSoon++;
+                }
+
+                // --- Tile 3 exposure ---
+                decimal exposure = ContainerRiskCalculator.ComputeDemurrageExposure(
+                    today, c.LastFreeDay, c.DemurrageDailyRate,
+                    customsHoldDays: holdDays,
+                    customsHoldEstimatedCostPerDay: null);
+                if (exposure > 0m)
+                {
+                    tile.ExposureDemurrage += exposure;
                 }
             }
 
-            tile.AtRiskTotal = tile.AtRiskDemurrage + tile.AtRiskCustomsHoldCost;
+            tile.ExposureTotal = tile.ExposureDemurrage + tile.ExposureDutyVariance + tile.ExposureOther;
 
-            // Compute yard-based cross-dock rate
-            metrics.OpenPOValue = totalPOValue;
-            metrics.CrossDockRate = metrics.TotalYards > 0m
-                ? metrics.CrossDockedYards / metrics.TotalYards * 100m
+            // Compute cross-dock rate
+            metrics.CrossDockRate = metrics.ActiveContainerCount > 0
+                ? (decimal)metrics.ContainersWithSO / metrics.ActiveContainerCount * 100m
                 : 0m;
 
             // Assign legacy fields for backwards compat
@@ -922,9 +1033,10 @@ namespace StudioB.Containers
             e.Row.KPIArrivingThisWeek = arrivingThisWeek;
             e.Row.KPICustomsHold = customsHold;
 
-            // Assign new tile fields
-            e.Row.KPILateCount = tile.LateCount;
-            e.Row.KPIAtRiskTotal = tile.AtRiskTotal;
+            // Assign Command Center tile fields
+            e.Row.KPIActionCount = tile.ActionCount;
+            e.Row.KPIWatchCount = tile.WatchCount;
+            e.Row.KPIExposureTotal = tile.ExposureTotal;
             e.Row.KPITilesHtml = ContainerKPITileBuilder.Build(tile, metrics);
         }
 
@@ -981,9 +1093,7 @@ namespace StudioB.Containers
 
             row.RiskLevel = ContainerRiskCalculator.ComputeRiskLevel(
                 today, row.Status, row.LastFreeDay, row.ETA, row.ISFFiledDate, row.DepartedDate,
-                docsRequired, docsReceived, etaChanges, holdDays,
-                factoryPromisedDate: row.FactoryPromisedDate,
-                factoryActualDate: row.FactoryActualDate);
+                docsRequired, docsReceived, etaChanges, holdDays);
 
             if (row.LastFreeDay.HasValue)
                 row.DaysToLFD = (int)(row.LastFreeDay.Value.Date - today.Date).TotalDays;
@@ -1073,10 +1183,6 @@ namespace StudioB.Containers
                 OrderDate = earliestOrderDate,
                 AcknowledgedDate = latestAckedDate,
                 FactoryReadyDate = latestFactoryReadyDate,
-                // Container-level mill/factory dates
-                FactoryPromisedDate = row.FactoryPromisedDate,
-                FactoryActualDate = row.FactoryActualDate,
-                MillAckDate = row.MillAckDate,
                 // Container-sourced dates
                 BookedDate = row.BookedDate,
                 DepartedDate = row.DepartedDate,

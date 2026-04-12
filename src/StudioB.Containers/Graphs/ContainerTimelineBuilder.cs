@@ -36,10 +36,6 @@ namespace StudioB.Containers
             public DateTime? ETA;
             public DateTime? ATA;
             public int? CustomsHoldDays;
-            // Container-level mill/factory dates (preferred over PO-sourced)
-            public DateTime? FactoryPromisedDate;  // Mill's promised ready date
-            public DateTime? FactoryActualDate;    // When goods were actually ready
-            public DateTime? MillAckDate;          // When mill acknowledged
             // Legacy — kept for backwards compat but no longer drives a stop
             public DateTime? BookedDate;
         }
@@ -52,8 +48,6 @@ namespace StudioB.Containers
             public DateTime? EstimatedDate;
             public bool IsCurrent;
             public bool IsAlert;  // customs hold, etc.
-            public bool IsWarning;      // yellow — within 5 days of due
-            public DateTime? SecondaryDate; // for showing promised vs actual side-by-side
         }
 
         public static string Build(TimelineData data)
@@ -74,7 +68,6 @@ namespace StudioB.Containers
                 if (isComplete) cls += " tl-complete";
                 if (s.IsCurrent) cls += " tl-current";
                 if (s.IsAlert) cls += " tl-alert";
-                if (s.IsWarning) cls += " tl-warning";
 
                 sb.AppendFormat("<div class='{0}'>", cls);
                 sb.Append("<div class='tl-marker'>");
@@ -107,13 +100,8 @@ namespace StudioB.Containers
             var stops = new Stop[8];
             // PO-sourced stages
             stops[0] = new Stop { Key = "PLACED",    Label = "PLACED",        ActualDate = d.OrderDate };
-            stops[1] = new Stop { Key = "ACKED",     Label = "ACKED",         ActualDate = d.MillAckDate ?? d.AcknowledgedDate };
-            stops[2] = new Stop {
-                Key = "FACTORY", Label = "FACTORY READY",
-                ActualDate = d.FactoryActualDate ?? d.FactoryReadyDate,
-                EstimatedDate = d.FactoryPromisedDate,
-                SecondaryDate = d.FactoryPromisedDate,
-            };
+            stops[1] = new Stop { Key = "ACKED",     Label = "ACKED",         ActualDate = d.AcknowledgedDate };
+            stops[2] = new Stop { Key = "FACTORY",   Label = "FACTORY READY", ActualDate = d.FactoryReadyDate };
             // Container-sourced stages
             stops[3] = new Stop { Key = "SHIPPED",   Label = "SHIPPED",       ActualDate = d.DepartedDate, EstimatedDate = d.ETD };
             stops[4] = new Stop { Key = "TRANSIT",   Label = "IN TRANSIT",    ActualDate = null };
@@ -141,30 +129,6 @@ namespace StudioB.Containers
                 }
             }
 
-            // Color thresholds: red for overdue, yellow for approaching due
-            DateTime today = DateTime.Today;
-            for (int i = 0; i < stops.Length; i++)
-            {
-                if (stops[i].ActualDate.HasValue)
-                    continue; // complete = green, no warning/alert needed
-
-                DateTime? expectedDate = stops[i].EstimatedDate;
-                if (!expectedDate.HasValue) continue;
-
-                double daysUntil = (expectedDate.Value.Date - today).TotalDays;
-                if (daysUntil < 0)
-                    stops[i].IsAlert = true;   // past due = red
-                else if (daysUntil <= 5)
-                    stops[i].IsWarning = true; // within 5 days = yellow
-            }
-
-            // Special case: FACTORY READY — if actual > promised, mark as alert (was late)
-            if (d.FactoryActualDate.HasValue && d.FactoryPromisedDate.HasValue &&
-                d.FactoryActualDate.Value.Date > d.FactoryPromisedDate.Value.Date)
-            {
-                stops[2].IsAlert = true;
-            }
-
             return stops;
         }
 
@@ -189,13 +153,7 @@ namespace StudioB.Containers
         private static string FormatCellDate(Stop s)
         {
             if (s.ActualDate.HasValue)
-            {
-                string actual = s.ActualDate.Value.ToString("MMM d");
-                // Show promised → actual when factory was late
-                if (s.SecondaryDate.HasValue && s.SecondaryDate.Value.Date != s.ActualDate.Value.Date)
-                    return s.SecondaryDate.Value.ToString("MMM d") + " &rarr; " + actual;
-                return actual;
-            }
+                return s.ActualDate.Value.ToString("MMM d");
             if (s.EstimatedDate.HasValue)
                 return "~" + s.EstimatedDate.Value.ToString("MMM d");
             return "&nbsp;";
@@ -264,13 +222,6 @@ namespace StudioB.Containers
 .cmd-timeline-cell.tl-complete .tl-label { color: #2d8a5f; }
 .cmd-timeline-cell.tl-current .tl-label { color: #1d3557; font-weight: 700; }
 .cmd-timeline-cell.tl-alert .tl-label { color: #d64045; font-weight: 700; }
-.cmd-timeline-cell.tl-warning .tl-marker {
-  color: #fff;
-  background: #e8a33d;
-  border-color: #e8a33d;
-  box-shadow: 0 0 0 3px #fef5e7;
-}
-.cmd-timeline-cell.tl-warning .tl-label { color: #b37517; font-weight: 700; }
 .tl-connector {
   flex: 1 1 auto;
   height: 2px;

@@ -99,10 +99,9 @@ namespace StudioB.Containers
                     EnsureColumn(conn, "UsrContainer", "BrokerInvoiceNbr",       "nvarchar(30) NULL");
                     EnsureColumn(conn, "UsrContainer", "SCACNumber",             "nvarchar(10) NULL");
                     EnsureColumn(conn, "UsrContainer", "EstimatedFreight",       "decimal(19,4) NULL");
-                    // 2026-04-11: PCC redesign — mill date fields
-                    EnsureColumn(conn, "UsrContainer", "MillAckDate",          "datetime NULL");
-                    EnsureColumn(conn, "UsrContainer", "FactoryPromisedDate",  "datetime NULL");
-                    EnsureColumn(conn, "UsrContainer", "FactoryActualDate",    "datetime NULL");
+
+                    // 2026-04-12: PCC usability — receipt tracking
+                    EnsureColumn(conn, "UsrContainer", "ReceiptNbr", "nvarchar(30) NULL");
 
                     EnsureTable(conn, "UsrContainerEvent", @"
                         CompanyID int NOT NULL DEFAULT 0,
