@@ -6,26 +6,30 @@ namespace StudioB.Containers
 {
     /// <summary>
     /// Builds the HTML string for the SB501000 KPI tile row.
-    /// Follows the approved tile spec from docs/plans/2026-04-07-sb501000-kpi-tile-approved.md.
-    /// Three tiles: ACTION REQUIRED (red), WATCH (amber), $ EXPOSURE (accent).
+    /// Follows the approved PCC redesign spec from docs/plans/2026-04-11-pcc-redesign-design.md.
+    /// Three tiles: LATE (red), AT RISK $ (amber), PIPELINE (accent).
     /// </summary>
     public static class ContainerKPITileBuilder
     {
         public struct KPIData
         {
-            public int ActionCount;
-            public int WatchCount;
-            public decimal ExposureTotal;
-            public int ActionPastLFD;
-            public decimal ActionPastLFDDailyRate;
-            public int ActionCustomsHold;
-            public int ActionISFCutoff;
-            public int WatchEtaSlipped;
-            public int WatchDocsIncomplete;
-            public int WatchArrivingSoon;
-            public decimal ExposureDemurrage;
-            public decimal ExposureDutyVariance;
-            public decimal ExposureOther;
+            // Tile 1 — LATE
+            public int LateCount;
+            public int LateFactoryOverdue;
+            public int LatePastETA;
+            public int LatePastLFD;
+            public int LateCustomsHold;
+
+            // Tile 2 — AT RISK $
+            public decimal AtRiskTotal;
+            public decimal AtRiskDemurrage;
+            public decimal AtRiskCustomsHoldCost;
+
+            // Tile 3 — PIPELINE (stage counts)
+            public int PipelineBooked;
+            public int PipelineInTransit;
+            public int PipelineAtPort;
+            public int PipelineCustoms;
         }
 
         /// <summary>
@@ -34,11 +38,12 @@ namespace StudioB.Containers
         /// </summary>
         public struct MetricsData
         {
-            public decimal Position;         // Total open PO value
-            public decimal CrossDockRate;    // % of containers with SO commitment
-            public decimal Speculation;      // PO value without SO coverage
+            public decimal OpenPOValue;
+            public decimal CrossDockRate;
+            public decimal CrossDockedYards;
+            public decimal TotalYards;
+            public decimal UncoveredValue;
             public int ActiveContainerCount;
-            public int ContainersWithSO;
         }
 
         public static string Build(KPIData data, MetricsData metrics = default)
@@ -54,84 +59,72 @@ namespace StudioB.Containers
 
             sb.Append("<div class='cmd-tile-row'>");
 
-            // ----- Tile 1: ACTION REQUIRED -----
-            bool actionEmpty = data.ActionCount == 0;
+            // ----- Tile 1: LATE -----
+            bool lateEmpty = data.LateCount == 0;
             sb.AppendFormat(
                 "<div class='cmd-tile cmd-tile-critical{0}' onclick=\"sb501000SetViewMode('EXCEPTIONS')\">",
-                actionEmpty ? " cmd-tile-empty" : "");
+                lateEmpty ? " cmd-tile-empty" : "");
             sb.Append("<div class='cmd-tile-header'>");
             sb.Append("<span class='cmd-tile-marker'>&#9679;</span>"); // ●
-            sb.Append("<span class='cmd-tile-label'>ACTION</span>");
+            sb.Append("<span class='cmd-tile-label'>LATE</span>");
             sb.Append("</div>");
-            sb.AppendFormat("<div class='cmd-tile-number'>{0}</div>", data.ActionCount);
+            sb.AppendFormat("<div class='cmd-tile-number'>{0}</div>", data.LateCount);
             sb.AppendFormat("<div class='cmd-tile-sublabel'>{0}</div>",
-                actionEmpty ? "NO CRITICAL ITEMS" : "CONTAINERS NEED ACTION");
+                lateEmpty ? "NO LATE ITEMS" : "CONTAINERS LATE");
 
-            if (!actionEmpty)
+            if (!lateEmpty)
             {
                 sb.Append("<div class='cmd-tile-subtext'>");
-                if (data.ActionPastLFD > 0)
-                    sb.AppendFormat("<div>&bull; {0} PAST LFD &middot; {1}/DAY</div>",
-                        data.ActionPastLFD, FormatMoney(data.ActionPastLFDDailyRate));
-                if (data.ActionCustomsHold > 0)
-                    sb.AppendFormat("<div>&bull; {0} CUSTOMS HOLD &gt; 2D</div>", data.ActionCustomsHold);
-                if (data.ActionISFCutoff > 0)
-                    sb.AppendFormat("<div>&bull; {0} ISF CUTOFF &lt; 14D</div>", data.ActionISFCutoff);
+                if (data.LateFactoryOverdue > 0)
+                    sb.AppendFormat("<div>&bull; {0} FACTORY OVERDUE</div>", data.LateFactoryOverdue);
+                if (data.LatePastETA > 0)
+                    sb.AppendFormat("<div>&bull; {0} PAST ETA</div>", data.LatePastETA);
+                if (data.LatePastLFD > 0)
+                    sb.AppendFormat("<div>&bull; {0} PAST LFD</div>", data.LatePastLFD);
+                if (data.LateCustomsHold > 0)
+                    sb.AppendFormat("<div>&bull; {0} CUSTOMS HOLD</div>", data.LateCustomsHold);
                 sb.Append("</div>");
             }
             sb.Append("</div>");
 
-            // ----- Tile 2: WATCH -----
-            bool watchEmpty = data.WatchCount == 0;
+            // ----- Tile 2: AT RISK -----
+            bool riskEmpty = data.AtRiskTotal == 0m;
             sb.AppendFormat(
                 "<div class='cmd-tile cmd-tile-warning{0}' onclick=\"sb501000SetViewMode('WATCH')\">",
-                watchEmpty ? " cmd-tile-empty" : "");
+                riskEmpty ? " cmd-tile-empty" : "");
             sb.Append("<div class='cmd-tile-header'>");
             sb.Append("<span class='cmd-tile-marker cmd-tile-marker-warning'>&#9670;</span>"); // ◆
-            sb.Append("<span class='cmd-tile-label cmd-tile-label-warning'>WATCH</span>");
+            sb.Append("<span class='cmd-tile-label cmd-tile-label-warning'>AT RISK</span>");
             sb.Append("</div>");
-            sb.AppendFormat("<div class='cmd-tile-number cmd-tile-number-warning'>{0}</div>", data.WatchCount);
+            sb.AppendFormat("<div class='cmd-tile-number cmd-tile-number-warning'>{0}</div>",
+                FormatMoney(data.AtRiskTotal));
             sb.AppendFormat("<div class='cmd-tile-sublabel'>{0}</div>",
-                watchEmpty ? "NOTHING ON WATCH" : "CONTAINERS ON WATCHLIST");
+                riskEmpty ? "NO RISK EXPOSURE" : "ACCRUING COST");
 
-            if (!watchEmpty)
+            if (!riskEmpty)
             {
                 sb.Append("<div class='cmd-tile-subtext'>");
-                if (data.WatchEtaSlipped > 0)
-                    sb.AppendFormat("<div>&bull; {0} ETA SLIPPED 7D</div>", data.WatchEtaSlipped);
-                if (data.WatchDocsIncomplete > 0)
-                    sb.AppendFormat("<div>&bull; {0} DOCS INCOMPLETE</div>", data.WatchDocsIncomplete);
-                if (data.WatchArrivingSoon > 0)
-                    sb.AppendFormat("<div>&bull; {0} ARRIVE IN 7D</div>", data.WatchArrivingSoon);
+                if (data.AtRiskDemurrage > 0m)
+                    sb.AppendFormat("<div>&bull; {0} DEMURRAGE</div>", FormatMoney(data.AtRiskDemurrage));
+                if (data.AtRiskCustomsHoldCost > 0m)
+                    sb.AppendFormat("<div>&bull; {0} CUSTOMS HOLD</div>", FormatMoney(data.AtRiskCustomsHoldCost));
                 sb.Append("</div>");
             }
             sb.Append("</div>");
 
-            // ----- Tile 3: $ EXPOSURE -----
-            bool exposureEmpty = data.ExposureTotal == 0m;
-            sb.AppendFormat(
-                "<div class='cmd-tile cmd-tile-exposure{0}' onclick=\"sb501000ShowExposurePanel()\">",
-                exposureEmpty ? " cmd-tile-empty" : "");
+            // ----- Tile 3: PIPELINE -----
+            int pipelineTotal = data.PipelineBooked + data.PipelineInTransit
+                + data.PipelineAtPort + data.PipelineCustoms;
+            sb.Append("<div class='cmd-tile cmd-tile-exposure'>");
             sb.Append("<div class='cmd-tile-header'>");
-            sb.Append("<span class='cmd-tile-marker cmd-tile-marker-accent'>$</span>");
-            sb.Append("<span class='cmd-tile-label cmd-tile-label-accent'>EXPOSURE</span>");
+            sb.Append("<span class='cmd-tile-marker cmd-tile-marker-accent'>&#8801;</span>"); // ≡
+            sb.Append("<span class='cmd-tile-label cmd-tile-label-accent'>PIPELINE</span>");
             sb.Append("</div>");
-            sb.AppendFormat("<div class='cmd-tile-number cmd-tile-number-exposure'>{0}</div>",
-                FormatMoney(data.ExposureTotal));
-            sb.AppendFormat("<div class='cmd-tile-sublabel'>{0}</div>",
-                exposureEmpty ? "NO EXPOSURE" : "AT RISK THIS WEEK");
-
-            if (!exposureEmpty)
-            {
-                sb.Append("<div class='cmd-tile-subtext'>");
-                if (data.ExposureDemurrage > 0m)
-                    sb.AppendFormat("<div>&bull; {0} DEMURRAGE</div>", FormatMoney(data.ExposureDemurrage));
-                if (data.ExposureDutyVariance > 0m)
-                    sb.AppendFormat("<div>&bull; {0} DUTY VAR</div>", FormatMoney(data.ExposureDutyVariance));
-                if (data.ExposureOther > 0m)
-                    sb.AppendFormat("<div>&bull; {0} OTHER</div>", FormatMoney(data.ExposureOther));
-                sb.Append("</div>");
-            }
+            sb.Append("<div class='cmd-tile-pipeline-counts'>");
+            sb.AppendFormat("BOOKED {0} &middot; IN TRANSIT {1}<br/>", data.PipelineBooked, data.PipelineInTransit);
+            sb.AppendFormat("AT PORT {0} &middot; CUSTOMS {1}", data.PipelineAtPort, data.PipelineCustoms);
+            sb.Append("</div>");
+            sb.AppendFormat("<div class='cmd-tile-sublabel'>{0} ACTIVE CONTAINERS</div>", pipelineTotal);
             sb.Append("</div>");
 
             sb.Append("</div>"); // cmd-tile-row
@@ -155,25 +148,27 @@ namespace StudioB.Containers
             var sb = new StringBuilder(512);
             sb.Append("<div class='cmd-metrics-row'>");
 
-            // Metric 1: OPEN PO VALUE (was "Position" internally)
+            // Metric 1: OPEN PO VALUE
             sb.Append("<div class='cmd-metric'>");
             sb.Append("<div class='cmd-metric-label'>OPEN PO VALUE</div>");
-            sb.AppendFormat("<div class='cmd-metric-value'>{0}</div>", FormatMoney(m.Position));
+            sb.AppendFormat("<div class='cmd-metric-value'>{0}</div>", FormatMoney(m.OpenPOValue));
             sb.Append("<div class='cmd-metric-sublabel'>ACROSS ACTIVE CONTAINERS</div>");
             sb.Append("</div>");
 
-            // Metric 2: CROSS-DOCK RATE
+            // Metric 2: CROSS-DOCK RATE (yard-based)
             sb.Append("<div class='cmd-metric'>");
             sb.Append("<div class='cmd-metric-label'>CROSS-DOCK RATE</div>");
             sb.AppendFormat("<div class='cmd-metric-value'>{0:0}%</div>", m.CrossDockRate);
-            sb.AppendFormat("<div class='cmd-metric-sublabel'>{0} OF {1} CONTAINERS WITH SO</div>",
-                m.ContainersWithSO, m.ActiveContainerCount);
+            sb.AppendFormat("<div class='cmd-metric-sublabel'>{0}</div>",
+                m.TotalYards > 0m
+                    ? string.Format("{0} OF {1} YDS", FormatYards(m.CrossDockedYards), FormatYards(m.TotalYards))
+                    : "NO ACTIVE PO LINES");
             sb.Append("</div>");
 
-            // Metric 3: UNCOVERED VALUE (was "Speculation" internally)
+            // Metric 3: UNCOVERED VALUE
             sb.Append("<div class='cmd-metric'>");
             sb.Append("<div class='cmd-metric-label'>UNCOVERED VALUE</div>");
-            sb.AppendFormat("<div class='cmd-metric-value'>{0}</div>", FormatMoney(m.Speculation));
+            sb.AppendFormat("<div class='cmd-metric-value'>{0}</div>", FormatMoney(m.UncoveredValue));
             sb.Append("<div class='cmd-metric-sublabel'>PO VALUE WITHOUT SO COVERAGE</div>");
             sb.Append("</div>");
 
@@ -185,6 +180,11 @@ namespace StudioB.Containers
         {
             if (amount == 0m) return "$0";
             return amount.ToString("C0", CultureInfo.GetCultureInfo("en-US"));
+        }
+
+        private static string FormatYards(decimal yards)
+        {
+            return yards.ToString("N0", CultureInfo.GetCultureInfo("en-US"));
         }
 
         private const string EmbeddedStyles = @"
@@ -230,6 +230,14 @@ namespace StudioB.Containers
 .cmd-tile-sublabel { font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; color: #4a5568; margin-bottom: 6px; }
 .cmd-tile-subtext { font-size: 11px; color: #4a5568; line-height: 1.45; font-variant-numeric: tabular-nums; }
 .cmd-tile-subtext div { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cmd-tile-pipeline-counts {
+  font-size: 16px;
+  font-weight: 400;
+  line-height: 1.6;
+  color: #1d3557;
+  font-variant-numeric: tabular-nums;
+  margin-bottom: 2px;
+}
 
 /* --- Phase C: Grid row risk coloring --- */
 /* Applied by ContainerGridRowColorScript to <tr> rows based on RiskLevel cell. */
@@ -320,15 +328,6 @@ window.sb501000SetViewMode = function(mode) {
     }
   } catch(e) { console.error('sb501000SetViewMode failed', e); }
 };
-window.sb501000ShowExposurePanel = function() {
-  try {
-    var ds = px_alls['ds'];
-    if (ds && ds.executeCallback) {
-      ds.executeCallback('ShowExposurePanel');
-    }
-  } catch(e) { console.error('sb501000ShowExposurePanel failed', e); }
-};
-
 /* --- Phase D: update tabDetail tab labels from TabLabelsJson hidden field --- */
 window.sb501000ApplyTabLabels = function() {
   try {
