@@ -328,14 +328,6 @@ window.sb501000SetViewMode = function(mode) {
     }
   } catch(e) { console.error('sb501000SetViewMode failed', e); }
 };
-window.sb501000OnGridDblClick = function(sender, args) {
-  try {
-    var ds = px_alls['ds'];
-    if (ds && ds.executeCallback) {
-      ds.executeCallback('OpenContainerDetail');
-    }
-  } catch(e) { console.error('sb501000OnGridDblClick failed', e); }
-};
 /* --- Phase D: update tabDetail tab labels from TabLabelsJson hidden field --- */
 window.sb501000ApplyTabLabels = function() {
   try {

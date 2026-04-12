@@ -296,7 +296,6 @@ IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('POOrder') 
         <AutoCallBack Command="Refresh" Target="frmTimeline" ActiveBehavior="True">
             <Behavior RepaintControlsIDs="frmTimeline" CommitChanges="True" />
         </AutoCallBack>
-        <ClientEvents AfterRowDblClick="sb501000OnGridDblClick" />
     </px:PXGrid>
 
     <%-- Slide-out detail panel (right-anchored) --%>
