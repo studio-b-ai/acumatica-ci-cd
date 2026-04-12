@@ -99,7 +99,7 @@ Class names already encode the long-cycle reality. This intelligence isn't yet w
 | Decision | Value | Notes |
 |---|---|---|
 | ~~**Approach**~~ | ~~B — External forecasting agent writes to Acumatica~~ | ~~Agent is the brain; Acumatica is the system of record~~ |
-| **Approach (revised)** | **C — Hybrid: agent enhances native DRP inputs, native engine does the planning** | Agent writes better lead times, MOQs, ABC codes. Native IN508500 → AM510000 → PO503000 handles planning + PO generation. Agent overrides ROP/SS/Max only where backtest proves it beats native. |
+| **Approach (revised)** | **C — Hybrid: agent enhances native DRP inputs, native engine does the planning** | Agent writes better lead times, MOQs, ABC codes. Native IN508500 → AM505000 → PO503000 handles planning + PO generation. Agent overrides ROP/SS/Max only where backtest proves it beats native. |
 | **Objective function** | Minimize inventory dollar-days, subject to committed fill-rate floor | Not service-level maximization |
 | **Primary metric** | Cross-dock hit rate (% of receipts shipped within 7d) | Plus turns/year, dead inventory $, days of cover |
 | **Service level floor** | 98% committed / 90% speculative | Floor, not target |
@@ -155,7 +155,7 @@ Class names already encode the long-cycle reality. This intelligence isn't yet w
                                      │                 │
                                      │ NATIVE DRP:     │
                                      │ • IN508500 calc │
-                                     │ • AM510000 regen│
+                                     │ • AM505000 regen│
                                      │ • AM400000 view │
                                      │ • PO503000 POs  │
                                      │ • PO301000 aprv │
@@ -842,7 +842,7 @@ Brief rendering reuses the Slack canvas primitives already in webhook-router.
 
 Native DRP workflow (no agent involvement):
 1. IN508500 computes replenishment parameters (using agent-improved inputs)
-2. AM510000 regenerates action messages
+2. AM505000 regenerates action messages
 3. Staff reviews action messages on AM400000
 4. PO503000 converts approved action messages to draft POs
 5. Staff reviews and releases POs on PO301000
@@ -1077,7 +1077,7 @@ Design changes after this point go through RFCs appended as Section 18+ amendmen
 
 The original design (Approach B, "agent is the brain") positioned the DRP agent as a complete replacement for Acumatica's native replenishment engine. The agent would compute forecasts, generate PO recommendations, create draft POs, track PO-to-SO allocations, and eventually auto-release C-item POs.
 
-**Revised design (Approach C, "agent supplements native DRP"):** The agent enhances native DRP's *inputs* (lead times, MOQs, ABC codes) and selectively overrides native DRP's *outputs* (ROP/SS/Max) only where backtest evidence proves the agent beats native. The agent never creates POs, never tracks allocations, and never enters the PO approval workflow. Native Acumatica screens (IN508500, AM510000, AM400000, PO503000, PO301000) handle the full planning-to-PO pipeline.
+**Revised design (Approach C, "agent supplements native DRP"):** The agent enhances native DRP's *inputs* (lead times, MOQs, ABC codes) and selectively overrides native DRP's *outputs* (ROP/SS/Max) only where backtest evidence proves the agent beats native. The agent never creates POs, never tracks allocations, and never enters the PO approval workflow. Native Acumatica screens (IN508500, AM505000, AM400000, PO503000, PO301000) handle the full planning-to-PO pipeline.
 
 ### 20.2 Why
 
