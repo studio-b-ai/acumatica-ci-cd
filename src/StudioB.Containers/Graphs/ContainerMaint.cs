@@ -295,15 +295,7 @@ namespace StudioB.Containers
         #endregion
 
         #region Actions
-        public PXAction<ContainerFilter> SaveChanges;
-        [PXButton(CommitChanges = true)]
-        [PXUIField(DisplayName = "Save", MapEnableRights = PXCacheRights.Update)]
-        protected void saveChanges()
-        {
-            Actions.PressSave();
-        }
-
-        public PXAction<ContainerFilter> OpenContainerDetail;
+        public PXAction<UsrContainer> OpenContainerDetail;
         [PXButton(CommitChanges = true)]
         [PXUIField(DisplayName = "Open Detail", MapEnableRights = PXCacheRights.Select)]
         protected void openContainerDetail()
@@ -312,7 +304,7 @@ namespace StudioB.Containers
             Container.AskExt();
         }
 
-        public PXAction<ContainerFilter> RefreshTracking;
+        public PXAction<UsrContainer> RefreshTracking;
         [PXButton(CommitChanges = true)]
         [PXUIField(DisplayName = "Refresh Tracking", MapEnableRights = PXCacheRights.Update)]
         protected void refreshTracking()
@@ -324,7 +316,7 @@ namespace StudioB.Containers
             Actions.PressSave();
         }
 
-        public PXAction<ContainerFilter> CreateLandedCost;
+        public PXAction<UsrContainer> CreateLandedCost;
         [PXButton(CommitChanges = true)]
         [PXUIField(DisplayName = "Create Landed Cost", MapEnableRights = PXCacheRights.Update, Visible = false)]
         protected void createLandedCost()
@@ -500,7 +492,7 @@ namespace StudioB.Containers
 
         // --- 2026-04-08: Phase E — Operational actions for the command center ---
 
-        public PXAction<ContainerFilter> MarkCustomsCleared;
+        public PXAction<UsrContainer> MarkCustomsCleared;
         [PXButton(CommitChanges = true)]
         [PXUIField(DisplayName = "Mark Customs Cleared", MapEnableRights = PXCacheRights.Update)]
         protected void markCustomsCleared()
@@ -532,7 +524,7 @@ namespace StudioB.Containers
             Actions.PressSave();
         }
 
-        public PXAction<ContainerFilter> MarkDelivered;
+        public PXAction<UsrContainer> MarkDelivered;
         [PXButton(CommitChanges = true)]
         [PXUIField(DisplayName = "Mark Delivered", MapEnableRights = PXCacheRights.Update)]
         protected void markDelivered()
@@ -556,7 +548,7 @@ namespace StudioB.Containers
             Actions.PressSave();
         }
 
-        public PXAction<ContainerFilter> RecordETAUpdate;
+        public PXAction<UsrContainer> RecordETAUpdate;
         [PXButton(CommitChanges = true)]
         [PXUIField(DisplayName = "Record ETA Update", MapEnableRights = PXCacheRights.Update)]
         protected void recordETAUpdate()
@@ -579,7 +571,7 @@ namespace StudioB.Containers
             Actions.PressSave();
         }
 
-        public PXAction<ContainerFilter> AttachDocument;
+        public PXAction<UsrContainer> AttachDocument;
         [PXButton(CommitChanges = true)]
         [PXUIField(DisplayName = "Attach Document", MapEnableRights = PXCacheRights.Update)]
         protected void attachDocument()
@@ -598,7 +590,7 @@ namespace StudioB.Containers
             Actions.PressSave();
         }
 
-        public PXAction<ContainerFilter> ReceiveGoods;
+        public PXAction<UsrContainer> ReceiveGoods;
         [PXButton(CommitChanges = true)]
         [PXUIField(DisplayName = "Receive Goods", MapEnableRights = PXCacheRights.Update)]
         protected void receiveGoods()
@@ -694,7 +686,7 @@ namespace StudioB.Containers
         }
 
         // --- 2026-04-11: PCC redesign — Plan Next Order deep-link ---
-        public PXAction<ContainerFilter> PlanNextOrder;
+        public PXAction<UsrContainer> PlanNextOrder;
         [PXButton(CommitChanges = true)]
         [PXUIField(DisplayName = "Plan Next Order", MapEnableRights = PXCacheRights.Select, Visible = false)]
         protected void planNextOrder()
@@ -716,7 +708,7 @@ namespace StudioB.Containers
         }
         // --- end 2026-04-11 Plan Next Order ---
 
-        public PXAction<ContainerFilter> AddPOLink;
+        public PXAction<UsrContainer> AddPOLink;
         [PXButton(CommitChanges = true)]
         [PXUIField(DisplayName = "Add PO Line", MapEnableRights = PXCacheRights.Update)]
         protected void addPOLink()
@@ -739,7 +731,7 @@ namespace StudioB.Containers
             }
         }
 
-        public PXAction<ContainerFilter> RemovePOLink;
+        public PXAction<UsrContainer> RemovePOLink;
         [PXButton(CommitChanges = true)]
         [PXUIField(DisplayName = "Remove PO Line", MapEnableRights = PXCacheRights.Delete)]
         protected void removePOLink()
@@ -758,7 +750,7 @@ namespace StudioB.Containers
         // parses it as CSV (forwarder-exported format: ContainerNumber, NewETA,
         // NewStatus, EventDate, EventDescription), and updates containers +
         // writes ETA history + event rows.
-        public PXAction<ContainerFilter> ImportForwarderCSV;
+        public PXAction<UsrContainer> ImportForwarderCSV;
         [PXButton(CommitChanges = true)]
         [PXUIField(DisplayName = "Import Forwarder CSV", MapEnableRights = PXCacheRights.Update)]
         protected void importForwarderCSV()
@@ -1226,26 +1218,6 @@ namespace StudioB.Containers
 
         // Helper for format-string nullable int — keeps the composite string clean
         private static int eventsCount(UsrContainer row) => row.EventsCount ?? 0;
-        #endregion
-
-        #region IsDirty Override
-        // PrimaryView is "Filter" (PXFilter — never dirty by itself).
-        // Override IsDirty so the Save button activates when any data view changes.
-        public override bool IsDirty
-        {
-            get
-            {
-                if (base.IsDirty) return true;
-                if (Containers.Cache.IsDirty) return true;
-                if (Container.Cache.IsDirty) return true;
-                if (Events.Cache.IsDirty) return true;
-                if (POLinks.Cache.IsDirty) return true;
-                if (Costs.Cache.IsDirty) return true;
-                if (Documents.Cache.IsDirty) return true;
-                if (ETAHistory.Cache.IsDirty) return true;
-                return false;
-            }
-        }
         #endregion
 
         #region Persist Override
