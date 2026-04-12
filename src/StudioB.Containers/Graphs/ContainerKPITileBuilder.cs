@@ -6,8 +6,8 @@ namespace StudioB.Containers
 {
     /// <summary>
     /// Builds the HTML string for the SB501000 KPI tile row.
-    /// Follows the approved tile spec from docs/plans/2026-04-07-sb501000-kpi-tile-approved.md.
-    /// Three tiles: ACTION REQUIRED (red), WATCH (amber), $ EXPOSURE (accent).
+    /// Follows the approved PCC redesign spec from docs/plans/2026-04-11-pcc-redesign-design.md.
+    /// Three tiles: LATE (red), AT RISK $ (amber), PIPELINE (accent).
     /// </summary>
     public static class ContainerKPITileBuilder
     {
@@ -328,15 +328,6 @@ window.sb501000SetViewMode = function(mode) {
     }
   } catch(e) { console.error('sb501000SetViewMode failed', e); }
 };
-window.sb501000ShowExposurePanel = function() {
-  try {
-    var ds = px_alls['ds'];
-    if (ds && ds.executeCallback) {
-      ds.executeCallback('ShowExposurePanel');
-    }
-  } catch(e) { console.error('sb501000ShowExposurePanel failed', e); }
-};
-
 /* --- Phase D: update tabDetail tab labels from TabLabelsJson hidden field --- */
 window.sb501000ApplyTabLabels = function() {
   try {

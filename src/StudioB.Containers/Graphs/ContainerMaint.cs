@@ -253,6 +253,8 @@ namespace StudioB.Containers
             public class delivered : BqlString.Constant<delivered> { public delivered() : base(Delivered) { } }
             public class cancelled : BqlString.Constant<cancelled> { public cancelled() : base(Cancelled) { } }
         }
+
+        private const decimal DefaultCustomsHoldCostPerDay = 150m;
         #endregion
 
         #region Actions
@@ -847,7 +849,7 @@ namespace StudioB.Containers
 
                 // Customs hold estimated cost: $150/day as a default
                 if (holdDays > 0)
-                    tile.AtRiskCustomsHoldCost += holdDays * 150m;
+                    tile.AtRiskCustomsHoldCost += holdDays * DefaultCustomsHoldCostPerDay;
 
                 // --- Yard-based cross-dock metrics ---
                 if (c.ContainerID.HasValue)
