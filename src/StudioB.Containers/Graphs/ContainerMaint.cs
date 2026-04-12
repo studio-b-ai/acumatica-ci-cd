@@ -10,7 +10,7 @@ using PX.Objects.IN;
 
 namespace StudioB.Containers
 {
-    public class ContainerMaint : PXGraph<ContainerMaint>
+    public class ContainerMaint : PXGraph<ContainerMaint, UsrContainer>
     {
         public static bool IsActive() => true;
 
