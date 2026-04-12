@@ -14,7 +14,7 @@
 
 ## What the pivot changed
 
-**Core principle:** Native Acumatica DRP (IN508500 → AM510000 → AM400000 → PO503000 → PO301000) is the planning engine. The agent writes better inputs and selectively overrides parameters where backtest earns it. The agent NEVER creates POs, tracks allocations, or enters the approval workflow.
+**Core principle:** Native Acumatica DRP (IN508500 → AM505000 → AM400000 → PO503000 → PO301000) is the planning engine. The agent writes better inputs and selectively overrides parameters where backtest earns it. The agent NEVER creates POs, tracks allocations, or enters the approval workflow.
 
 **Killed:**
 - `drp_po_allocations` table (not yet built)
