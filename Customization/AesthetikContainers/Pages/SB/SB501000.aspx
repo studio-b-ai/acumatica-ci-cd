@@ -5,6 +5,7 @@
         TypeName="StudioB.Containers.ContainerMaint" PrimaryView="Filter">
         <CallbackCommands>
             <px:PXDSCallbackCommand CommitChanges="True" Name="Save" />
+            <px:PXDSCallbackCommand Name="SaveChanges" CommitChanges="True" />
             <px:PXDSCallbackCommand Name="Insert" PostData="Self" />
             <px:PXDSCallbackCommand Name="Delete" PostData="Self" />
             <px:PXDSCallbackCommand Name="First" PostData="Self" StartNewGroup="True" />
