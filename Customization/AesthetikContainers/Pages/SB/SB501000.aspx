@@ -80,7 +80,6 @@
         <AutoCallBack Command="Refresh" Target="frmTimeline" ActiveBehavior="True">
             <Behavior RepaintControlsIDs="frmTimeline" CommitChanges="True" />
         </AutoCallBack>
-        <ClientEvents AfterRowDblClick="sb501000OnGridDblClick" />
     </px:PXGrid>
 
     <%-- Slide-out detail panel (right-anchored) --%>
