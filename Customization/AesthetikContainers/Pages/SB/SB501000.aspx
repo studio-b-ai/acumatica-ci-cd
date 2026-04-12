@@ -2,7 +2,7 @@
 <%@ MasterType VirtualPath="~/MasterPages/FormDetail.master" %>
 <asp:Content ID="cont1" ContentPlaceHolderID="phDS" Runat="Server">
     <px:PXDataSource ID="ds" runat="server" Visible="True" Width="100%"
-        TypeName="StudioB.Containers.ContainerMaint" PrimaryView="Filter">
+        TypeName="StudioB.Containers.ContainerMaint" PrimaryView="Containers">
         <CallbackCommands>
             <px:PXDSCallbackCommand CommitChanges="True" Name="Save" />
             <px:PXDSCallbackCommand Name="Insert" PostData="Self" />
@@ -88,7 +88,9 @@
         Caption="Container Detail" CaptionVisible="True"
         LoadOnDemand="True" Key="Container" AutoCallBack-Enabled="True"
         AutoCallBack-Target="frmDetail" AutoCallBack-ActiveBehavior="True"
-        ShowCloseButton="True" Width="600px" Height="100%">
+        AutoRepaint="True"
+        ShowCloseButton="True" Width="600px" Height="100%"
+        Style="overflow-y:auto;">
 
         <px:PXFormView ID="frmDetail" runat="server" DataSourceID="ds" DataMember="Container"
             Width="100%" CaptionVisible="False">
@@ -155,7 +157,7 @@
                         </px:PXGrid>
                     </Template>
                 </px:PXTabItem>
-                <px:PXTabItem Text="PO Links">
+                <px:PXTabItem Text="PO Links" RepaintOnDemand="False">
                     <Template>
                         <px:PXGrid ID="gridPOLinks" runat="server" DataSourceID="ds" Width="100%" SkinID="Details">
                             <ActionBar>
@@ -182,7 +184,7 @@
                         </px:PXGrid>
                     </Template>
                 </px:PXTabItem>
-                <px:PXTabItem Text="Costs">
+                <px:PXTabItem Text="Costs" RepaintOnDemand="False">
                     <Template>
                         <px:PXGrid ID="gridCosts" runat="server" DataSourceID="ds" Width="100%" SkinID="Details">
                             <Levels>
@@ -202,7 +204,7 @@
                         </px:PXGrid>
                     </Template>
                 </px:PXTabItem>
-                <px:PXTabItem Text="Documents">
+                <px:PXTabItem Text="Documents" RepaintOnDemand="False">
                     <Template>
                         <px:PXGrid ID="gridDocuments" runat="server" DataSourceID="ds" Width="100%" SkinID="Details">
                             <ActionBar>
@@ -225,7 +227,7 @@
                         </px:PXGrid>
                     </Template>
                 </px:PXTabItem>
-                <px:PXTabItem Text="ETA History">
+                <px:PXTabItem Text="ETA History" RepaintOnDemand="False">
                     <Template>
                         <px:PXGrid ID="gridETAHistory" runat="server" DataSourceID="ds" Width="100%" SkinID="Details">
                             <ActionBar>
@@ -248,7 +250,7 @@
                         </px:PXGrid>
                     </Template>
                 </px:PXTabItem>
-                <px:PXTabItem Text="Lead Time">
+                <px:PXTabItem Text="Lead Time" RepaintOnDemand="False">
                     <Template>
                         <px:PXGrid ID="gridLeadTimes" runat="server" DataSourceID="ds"
                             Width="100%" SkinID="Details">
