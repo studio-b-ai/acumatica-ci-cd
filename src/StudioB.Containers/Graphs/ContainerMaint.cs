@@ -260,6 +260,15 @@ namespace StudioB.Containers
         #endregion
 
         #region Actions
+        public PXAction<ContainerFilter> OpenContainerDetail;
+        [PXButton(CommitChanges = true)]
+        [PXUIField(DisplayName = "Open Detail", MapEnableRights = PXCacheRights.Select)]
+        protected void openContainerDetail()
+        {
+            if (Container.Current == null) return;
+            Container.AskExt();
+        }
+
         public PXAction<ContainerFilter> RefreshTracking;
         [PXButton(CommitChanges = true)]
         [PXUIField(DisplayName = "Refresh Tracking", MapEnableRights = PXCacheRights.Update)]
