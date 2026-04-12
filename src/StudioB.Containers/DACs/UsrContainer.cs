@@ -525,6 +525,29 @@ namespace StudioB.Containers
         #endregion
         // --- end 2026-04-12 additions ---
 
+        // --- 2026-04-11: PCC redesign — Mill date fields ---
+        #region MillAckDate
+        public abstract class millAckDate : BqlDateTime.Field<millAckDate> { }
+        [PXDBDate(PreserveTime = true)]
+        [PXUIField(DisplayName = "Mill Ack Date")]
+        public DateTime? MillAckDate { get; set; }
+        #endregion
+
+        #region FactoryPromisedDate
+        public abstract class factoryPromisedDate : BqlDateTime.Field<factoryPromisedDate> { }
+        [PXDBDate]
+        [PXUIField(DisplayName = "Factory Promised")]
+        public DateTime? FactoryPromisedDate { get; set; }
+        #endregion
+
+        #region FactoryActualDate
+        public abstract class factoryActualDate : BqlDateTime.Field<factoryActualDate> { }
+        [PXDBDate]
+        [PXUIField(DisplayName = "Factory Actual")]
+        public DateTime? FactoryActualDate { get; set; }
+        #endregion
+        // --- end 2026-04-11 mill date fields ---
+
         #region NoteID
         public abstract class noteID : BqlGuid.Field<noteID> { }
         [PXNote]
