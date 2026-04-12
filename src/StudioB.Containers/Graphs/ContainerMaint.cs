@@ -295,6 +295,14 @@ namespace StudioB.Containers
         #endregion
 
         #region Actions
+        public PXAction<ContainerFilter> SaveChanges;
+        [PXButton(CommitChanges = true)]
+        [PXUIField(DisplayName = "Save", MapEnableRights = PXCacheRights.Update)]
+        protected void saveChanges()
+        {
+            Actions.PressSave();
+        }
+
         public PXAction<ContainerFilter> OpenContainerDetail;
         [PXButton(CommitChanges = true)]
         [PXUIField(DisplayName = "Open Detail", MapEnableRights = PXCacheRights.Select)]
