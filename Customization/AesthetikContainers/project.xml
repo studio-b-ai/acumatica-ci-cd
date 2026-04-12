@@ -225,16 +225,16 @@ IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('POOrder') 
             <px:PXDSCallbackCommand Name="Delete" PostData="Self" />
             <px:PXDSCallbackCommand Name="First" PostData="Self" StartNewGroup="True" />
             <px:PXDSCallbackCommand Name="Last" PostData="Self" />
-            <px:PXDSCallbackCommand Name="CreateLandedCost" CommitChanges="True" />
+            <%-- CreateLandedCost removed — automated on receipt release --%>
             <%-- 2026-04-08: Phase E + F — new Command Center actions --%>
             <px:PXDSCallbackCommand Name="MarkCustomsCleared" CommitChanges="True" StartNewGroup="True" />
             <px:PXDSCallbackCommand Name="MarkDelivered" CommitChanges="True" />
-            <px:PXDSCallbackCommand Name="PrintReceivingDoc" />
+            <px:PXDSCallbackCommand Name="ReceiveGoods" CommitChanges="True" />
             <px:PXDSCallbackCommand Name="AddPOLink" CommitChanges="True" Visible="False" />
             <px:PXDSCallbackCommand Name="RemovePOLink" CommitChanges="True" Visible="False" />
             <px:PXDSCallbackCommand Name="AttachDocument" CommitChanges="True" Visible="False" />
             <px:PXDSCallbackCommand Name="RecordETAUpdate" CommitChanges="True" Visible="False" />
-            <px:PXDSCallbackCommand Name="PlanNextOrder" CommitChanges="True" StartNewGroup="True" />
+            <%-- PlanNextOrder removed per user feedback --%>
             <px:PXDSCallbackCommand Name="ImportForwarderCSV" CommitChanges="True" StartNewGroup="True" />
         </CallbackCommands>
     </px:PXDataSource>
@@ -266,8 +266,9 @@ IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('POOrder') 
         <AutoSize Enabled="True" Container="Window" />
         <Template1>
             <px:PXGrid ID="gridContainers" runat="server" DataSourceID="ds"
-                Width="100%" SkinID="Inquire" SyncPosition="True"
-                AllowPaging="True" AdjustPageSize="Auto" NoteIndicator="False" FilesIndicator="False">
+                Width="100%" SkinID="DetailsInTab" SyncPosition="True"
+                AllowPaging="True" AdjustPageSize="Auto" AllowInsert="True" AllowDelete="True"
+                NoteIndicator="True" FilesIndicator="True">
                 <Levels>
                     <px:PXGridLevel DataMember="Containers">
                         <Columns>
