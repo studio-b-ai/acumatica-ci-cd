@@ -37,49 +37,20 @@ namespace StudioB.Containers
         public string ViewMode { get; set; }
         #endregion
 
-        // Tile 1 — ACTION REQUIRED
-        #region KPIActionCount
-        public abstract class kpiActionCount : BqlInt.Field<kpiActionCount> { }
+        // Tile 1 — LATE
+        #region KPILateCount
+        public abstract class kpiLateCount : BqlInt.Field<kpiLateCount> { }
         [PXInt]
-        [PXUIField(DisplayName = "Action Required", Enabled = false)]
-        public int? KPIActionCount { get; set; }
+        [PXUIField(DisplayName = "Late", Enabled = false)]
+        public int? KPILateCount { get; set; }
         #endregion
 
-        #region KPIActionBreakdown
-        public abstract class kpiActionBreakdown : BqlString.Field<kpiActionBreakdown> { }
-        [PXString(500)]
-        [PXUIField(DisplayName = "Action Breakdown", Enabled = false)]
-        public string KPIActionBreakdown { get; set; }
-        #endregion
-
-        // Tile 2 — WATCH
-        #region KPIWatchCount
-        public abstract class kpiWatchCount : BqlInt.Field<kpiWatchCount> { }
-        [PXInt]
-        [PXUIField(DisplayName = "Watch", Enabled = false)]
-        public int? KPIWatchCount { get; set; }
-        #endregion
-
-        #region KPIWatchBreakdown
-        public abstract class kpiWatchBreakdown : BqlString.Field<kpiWatchBreakdown> { }
-        [PXString(500)]
-        [PXUIField(DisplayName = "Watch Breakdown", Enabled = false)]
-        public string KPIWatchBreakdown { get; set; }
-        #endregion
-
-        // Tile 3 — $ EXPOSURE
-        #region KPIExposureTotal
-        public abstract class kpiExposureTotal : BqlDecimal.Field<kpiExposureTotal> { }
+        // Tile 2 — AT RISK $
+        #region KPIAtRiskTotal
+        public abstract class kpiAtRiskTotal : BqlDecimal.Field<kpiAtRiskTotal> { }
         [PXDecimal(2)]
-        [PXUIField(DisplayName = "Exposure", Enabled = false)]
-        public decimal? KPIExposureTotal { get; set; }
-        #endregion
-
-        #region KPIExposureBreakdown
-        public abstract class kpiExposureBreakdown : BqlString.Field<kpiExposureBreakdown> { }
-        [PXString(500)]
-        [PXUIField(DisplayName = "Exposure Breakdown", Enabled = false)]
-        public string KPIExposureBreakdown { get; set; }
+        [PXUIField(DisplayName = "At Risk", Enabled = false)]
+        public decimal? KPIAtRiskTotal { get; set; }
         #endregion
 
         // Rendered HTML for PXHtmlView tile row
