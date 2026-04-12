@@ -40,6 +40,41 @@ namespace StudioB.Containers
                 yield return current;
         }
 
+        protected void _(Events.FieldDefaulting<UsrContainer, UsrContainer.containerCD> e)
+        {
+            if (e.Row == null) return;
+            // Find max existing CNT number and increment
+            UsrContainer last = SelectFrom<UsrContainer>
+                .Where<UsrContainer.containerCD.IsLike<ContainerCDPrefix>>
+                .OrderBy<UsrContainer.containerCD.Desc>
+                .View.SelectSingleBound(this, null);
+
+            int next = 1;
+            if (last?.ContainerCD != null && last.ContainerCD.StartsWith("CNT"))
+            {
+                string numPart = last.ContainerCD.Substring(3);
+                if (int.TryParse(numPart, out int parsed))
+                    next = parsed + 1;
+            }
+            e.NewValue = string.Format("CNT{0:D6}", next);
+        }
+
+        public class ContainerCDPrefix : BqlString.Constant<ContainerCDPrefix>
+        {
+            public ContainerCDPrefix() : base("CNT%") { }
+        }
+
+        protected void _(Events.RowInserting<UsrContainer> e)
+        {
+            if (e.Row == null) return;
+            if (string.IsNullOrEmpty(e.Row.Status))
+                e.Row.Status = "BOOKED";
+            if (string.IsNullOrEmpty(e.Row.TransportMode))
+                e.Row.TransportMode = "OCEAN";
+            if (string.IsNullOrEmpty(e.Row.CarrierCode))
+                e.Row.CarrierCode = "OTHER";
+        }
+
         public SelectFrom<UsrContainerEvent>
             .Where<UsrContainerEvent.containerID.IsEqual<UsrContainer.containerID.FromCurrent>>
             .OrderBy<UsrContainerEvent.eventDateTime.Desc>
@@ -542,25 +577,99 @@ namespace StudioB.Containers
             Actions.PressSave();
         }
 
-        public PXAction<ContainerFilter> PrintReceivingDoc;
-        [PXButton]
-        [PXUIField(DisplayName = "Print Receiving Doc", MapEnableRights = PXCacheRights.Select)]
-        protected void printReceivingDoc()
+        public PXAction<ContainerFilter> ReceiveGoods;
+        [PXButton(CommitChanges = true)]
+        [PXUIField(DisplayName = "Receive Goods", MapEnableRights = PXCacheRights.Update)]
+        protected void receiveGoods()
         {
             var c = Container.Current;
             if (c == null) return;
-            // v1: stub — writes an event row so there's an audit trail and
-            // raises an info message. Actual PDF report rendering is Phase G
-            // polish work (will wire a PXReportTool.Launch here).
+
+            // Validate status
+            if (c.Status != "ARRIVED" && c.Status != "CUSTOMS_HOLD" && c.Status != "GATED_OUT")
+            {
+                throw new PXException(
+                    "Goods can only be received when container status is Arrived, Customs Hold, or Gated Out. Current status: {0}",
+                    c.Status);
+            }
+
+            // Validate PO links exist
+            var poLinksByVendor = new Dictionary<int, List<PXResult<UsrContainerPOLink, POOrder, BAccount, POLine, InventoryItem>>>();
+            foreach (PXResult<UsrContainerPOLink, POOrder, BAccount, POLine, InventoryItem> row in POLinks.Select())
+            {
+                var po = (POOrder)row;
+                int vendorID = po.VendorID ?? 0;
+                if (!poLinksByVendor.ContainsKey(vendorID))
+                    poLinksByVendor[vendorID] = new List<PXResult<UsrContainerPOLink, POOrder, BAccount, POLine, InventoryItem>>();
+                poLinksByVendor[vendorID].Add(row);
+            }
+
+            if (poLinksByVendor.Count == 0)
+                throw new PXException("Link at least one PO to this container before receiving goods.");
+
+            // Warn if already received
+            if (!string.IsNullOrEmpty(c.ReceiptNbr))
+            {
+                if (Container.Ask("Receive Goods",
+                    string.Format("Receipt(s) {0} already exist for this container. Create additional receipts?", c.ReceiptNbr),
+                    MessageButtons.YesNo) != WebDialogResult.Yes)
+                {
+                    return;
+                }
+            }
+
+            var receiptNbrs = new List<string>();
+
+            // Create one PO Receipt per vendor
+            foreach (var kvp in poLinksByVendor)
+            {
+                var receiptGraph = PXGraph.CreateInstance<PX.Objects.PO.POReceiptEntry>();
+                var receipt = receiptGraph.Document.Insert(new POReceipt());
+                receipt.ReceiptType = POReceiptType.POReceipt;
+                receipt.VendorID = kvp.Key;
+                receipt.ReceiptDate = Accessinfo.BusinessDate;
+                receiptGraph.Document.Update(receipt);
+
+                // Add receipt lines from linked PO lines
+                foreach (var row in kvp.Value)
+                {
+                    var link = (UsrContainerPOLink)row;
+                    var poLine = (POLine)row;
+                    if (poLine == null) continue;
+
+                    var rl = new POReceiptLine();
+                    rl.POType = link.OrderType;
+                    rl.PONbr = link.OrderNbr;
+                    rl.POLineNbr = link.LineNbr;
+                    receiptGraph.transactions.Insert(rl);
+                }
+
+                receiptGraph.Actions.PressSave();
+                receiptNbrs.Add(receiptGraph.Document.Current.ReceiptNbr);
+            }
+
+            // Update container
+            string allNbrs = string.Join(", ", receiptNbrs);
+            c.ReceiptNbr = allNbrs;
+            c.Status = "DELIVERED";
+            c.DeliveredDate = Accessinfo.BusinessDate ?? DateTime.Today;
+            Container.Update(c);
+
+            // Write event
             var ev = (UsrContainerEvent)Events.Cache.CreateInstance();
             ev.ContainerID = c.ContainerID;
-            ev.NormalizedEventCode = "DOC_PRINTED";
-            ev.CarrierEventCode = "DOC_PRINTED";
+            ev.NormalizedEventCode = "GOODS_RECEIVED";
+            ev.CarrierEventCode = "GOODS_RECEIVED";
             ev.EventDateTime = Accessinfo.BusinessDate ?? DateTime.Today;
             ev.EventClassifier = "ACT";
-            ev.Description = "Receiving document printed";
+            ev.Description = string.Format("PO Receipt(s) created: {0}", allNbrs);
             Events.Insert(ev);
+
             Actions.PressSave();
+
+            // Show confirmation
+            throw new PXOperationCompletedWithWarningException(
+                string.Format("Receipt(s) created: {0}. Open Purchase Receipts (PO302000) to review and release.", allNbrs));
         }
 
         // --- 2026-04-11: PCC redesign — Plan Next Order deep-link ---
