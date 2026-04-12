@@ -225,16 +225,14 @@ IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('POOrder') 
             <px:PXDSCallbackCommand Name="Delete" PostData="Self" />
             <px:PXDSCallbackCommand Name="First" PostData="Self" StartNewGroup="True" />
             <px:PXDSCallbackCommand Name="Last" PostData="Self" />
-            <px:PXDSCallbackCommand Name="CreateLandedCost" CommitChanges="True" />
             <%-- 2026-04-08: Phase E + F — new Command Center actions --%>
             <px:PXDSCallbackCommand Name="MarkCustomsCleared" CommitChanges="True" StartNewGroup="True" />
             <px:PXDSCallbackCommand Name="MarkDelivered" CommitChanges="True" />
-            <px:PXDSCallbackCommand Name="PrintReceivingDoc" />
+            <px:PXDSCallbackCommand Name="ReceiveGoods" CommitChanges="True" />
             <px:PXDSCallbackCommand Name="AddPOLink" CommitChanges="True" Visible="False" />
             <px:PXDSCallbackCommand Name="RemovePOLink" CommitChanges="True" Visible="False" />
             <px:PXDSCallbackCommand Name="AttachDocument" CommitChanges="True" Visible="False" />
             <px:PXDSCallbackCommand Name="RecordETAUpdate" CommitChanges="True" Visible="False" />
-            <px:PXDSCallbackCommand Name="PlanNextOrder" CommitChanges="True" StartNewGroup="True" />
             <px:PXDSCallbackCommand Name="ImportForwarderCSV" CommitChanges="True" StartNewGroup="True" />
         </CallbackCommands>
     </px:PXDataSource>
