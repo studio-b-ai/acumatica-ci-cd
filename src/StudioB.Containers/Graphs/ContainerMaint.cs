@@ -229,7 +229,9 @@ namespace StudioB.Containers
                 docsRequired: 0,
                 docsReceived: 0,
                 etaChangesLast7Days: 0,
-                customsHoldDays: customsHoldDays);
+                customsHoldDays: customsHoldDays,
+                factoryPromisedDate: row.FactoryPromisedDate,
+                factoryActualDate: row.FactoryActualDate);
         }
         #endregion
 
@@ -970,7 +972,9 @@ namespace StudioB.Containers
 
             row.RiskLevel = ContainerRiskCalculator.ComputeRiskLevel(
                 today, row.Status, row.LastFreeDay, row.ETA, row.ISFFiledDate, row.DepartedDate,
-                docsRequired, docsReceived, etaChanges, holdDays);
+                docsRequired, docsReceived, etaChanges, holdDays,
+                factoryPromisedDate: row.FactoryPromisedDate,
+                factoryActualDate: row.FactoryActualDate);
 
             if (row.LastFreeDay.HasValue)
                 row.DaysToLFD = (int)(row.LastFreeDay.Value.Date - today.Date).TotalDays;
@@ -1060,6 +1064,10 @@ namespace StudioB.Containers
                 OrderDate = earliestOrderDate,
                 AcknowledgedDate = latestAckedDate,
                 FactoryReadyDate = latestFactoryReadyDate,
+                // Container-level mill/factory dates
+                FactoryPromisedDate = row.FactoryPromisedDate,
+                FactoryActualDate = row.FactoryActualDate,
+                MillAckDate = row.MillAckDate,
                 // Container-sourced dates
                 BookedDate = row.BookedDate,
                 DepartedDate = row.DepartedDate,

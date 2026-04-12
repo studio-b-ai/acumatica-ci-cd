@@ -28,7 +28,9 @@ namespace StudioB.Containers
             int docsRequired,
             int docsReceived,
             int etaChangesLast7Days,
-            int customsHoldDays)
+            int customsHoldDays,
+            DateTime? factoryPromisedDate = null,
+            DateTime? factoryActualDate = null)
         {
             // ----- CRITICAL triggers -----
             if (lastFreeDay.HasValue && lastFreeDay.Value.Date < today.Date)
@@ -61,6 +63,11 @@ namespace StudioB.Containers
                 return RiskWarning;
 
             if (docsRequired > 0 && docsReceived < docsRequired)
+                return RiskWarning;
+
+            // Factory date overdue — promised date passed without actual
+            if (factoryPromisedDate.HasValue && !factoryActualDate.HasValue &&
+                factoryPromisedDate.Value.Date < today.Date)
                 return RiskWarning;
 
             return RiskOk;
