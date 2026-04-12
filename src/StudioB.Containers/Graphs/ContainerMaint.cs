@@ -305,7 +305,7 @@ namespace StudioB.Containers
 
         public PXAction<ContainerFilter> CreateLandedCost;
         [PXButton(CommitChanges = true)]
-        [PXUIField(DisplayName = "Create Landed Cost", MapEnableRights = PXCacheRights.Update)]
+        [PXUIField(DisplayName = "Create Landed Cost", MapEnableRights = PXCacheRights.Update, Visible = false)]
         protected void createLandedCost()
         {
             UsrContainer container = Container.Current;
@@ -675,7 +675,7 @@ namespace StudioB.Containers
         // --- 2026-04-11: PCC redesign — Plan Next Order deep-link ---
         public PXAction<ContainerFilter> PlanNextOrder;
         [PXButton(CommitChanges = true)]
-        [PXUIField(DisplayName = "Plan Next Order", MapEnableRights = PXCacheRights.Select)]
+        [PXUIField(DisplayName = "Plan Next Order", MapEnableRights = PXCacheRights.Select, Visible = false)]
         protected void planNextOrder()
         {
             var container = Container.Current;
