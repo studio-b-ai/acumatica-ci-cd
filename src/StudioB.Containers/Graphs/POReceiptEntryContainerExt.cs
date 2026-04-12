@@ -153,20 +153,14 @@ namespace StudioB.Containers
 
         private static string GetLCCode(UsrContainerPrefs prefs, string costType)
         {
-            switch (costType?.ToUpperInvariant())
+            switch (costType)
             {
-                case "DUTY":
-                case "TARIFF":
-                    return prefs.DutyLCCode;
-                case "SHIPPING":
-                case "FREIGHT":
-                    return prefs.FreightLCCode;
-                case "BROKERAGE":
-                    return prefs.BrokerageLCCode;
-                case "INSURANCE":
-                    return prefs.InsuranceLCCode;
-                default:
-                    return prefs.OtherLCCode;
+                case "SHIPPING": return prefs.LCCodeShipping;
+                case "DUTY": return prefs.LCCodeDuty;
+                case "TARIFF": return prefs.LCCodeTariff;
+                case "BROKERAGE": return prefs.LCCodeBrokerage;
+                case "OTHER": return prefs.LCCodeOther;
+                default: return prefs.LCCodeOther;
             }
         }
     }
