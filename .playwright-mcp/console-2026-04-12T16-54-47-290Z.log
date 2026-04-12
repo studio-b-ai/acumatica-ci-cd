@@ -1,0 +1,21 @@
+[     168ms] [LOG] 3(+3) registerControls start @ https://heritagefabrics-sandbox.acumatica.com/PX.ScriptBatch.axd?d=cFBYLldlYi5VSXxQWC5XZWIuVUkuQmFzZQ2&t=638742913580000000:277
+[     168ms] [LOG] 3(+0) registerControls end @ https://heritagefabrics-sandbox.acumatica.com/PX.ScriptBatch.axd?d=cFBYLldlYi5VSXxQWC5XZWIuVUkuQmFzZQ2&t=638742913580000000:277
+[     168ms] [LOG] 4(+1) handleLoad start @ https://heritagefabrics-sandbox.acumatica.com/PX.ScriptBatch.axd?d=cFBYLldlYi5VSXxQWC5XZWIuVUkuQmFzZQ2&t=638742913580000000:277
+[     168ms] [LOG] 4(+0) handleLoad end @ https://heritagefabrics-sandbox.acumatica.com/PX.ScriptBatch.axd?d=cFBYLldlYi5VSXxQWC5XZWIuVUkuQmFzZQ2&t=638742913580000000:277
+[     170ms] [LOG] 5(+1) register start @ https://heritagefabrics-sandbox.acumatica.com/PX.ScriptBatch.axd?d=cFBYLldlYi5VSXxQWC5XZWIuVUkuQmFzZQ2&t=638742913580000000:277
+[     170ms] [LOG] 6(+1) register end @ https://heritagefabrics-sandbox.acumatica.com/PX.ScriptBatch.axd?d=cFBYLldlYi5VSXxQWC5XZWIuVUkuQmFzZQ2&t=638742913580000000:277
+[    4852ms] [LOG] 4688(+4682) End callback ctl00$phDS$ds ReloadPage 4688 @ https://heritagefabrics-sandbox.acumatica.com/PX.ScriptBatch.axd?d=cFBYLldlYi5VSXxQWC5XZWIuVUkuQmFzZQ2&t=638742913580000000:277
+[    5456ms] [ERROR] Failed to load resource: the server responded with a status of 404 () @ https://heritagefabrics-sandbox.acumatica.com/Content/AesthetikTheme.css:0
+[    5501ms] [LOG] 5332(+644) PXControl @ https://heritagefabrics-sandbox.acumatica.com/PX.ScriptBatch.axd?d=cFBYLldlYi5VSXxQWC5XZWIuVUkuQmFzZQ2&t=638742913580000000:277
+[    5513ms] [LOG] 5349(+17) _handleFrameLoad @ https://heritagefabrics-sandbox.acumatica.com/PX.ScriptBatch.axd?d=cFBYLldlYi5VSXxQWC5XZWIuVUkuQmFzZQ2&t=638742913580000000:277
+[    5564ms] [WARNING] XSLTProcessor and XSLT Processing Instructions have been deprecated by all browsers. These features will be removed from this browser soon. See https://chromestatus.com/feature/4709671889534976. @ https://heritagefabrics-sandbox.acumatica.com/PX.ScriptBatch.axd?d=cFBYLldlYi5VSXxQWC5XZWIuVUkuR3JpZA2&t=638742913580000000:4
+[    5569ms] [LOG] 5350(+1) registerControls start @ https://heritagefabrics-sandbox.acumatica.com/PX.ScriptBatch.axd?d=cFBYLldlYi5VSXxQWC5XZWIuVUkuQmFzZQ2&t=638742913580000000:277
+[    5592ms] [LOG] 5358(+8) registerControls end @ https://heritagefabrics-sandbox.acumatica.com/PX.ScriptBatch.axd?d=cFBYLldlYi5VSXxQWC5XZWIuVUkuQmFzZQ2&t=638742913580000000:277
+[    5592ms] [LOG] 5358(+0) handleLoad start @ https://heritagefabrics-sandbox.acumatica.com/PX.ScriptBatch.axd?d=cFBYLldlYi5VSXxQWC5XZWIuVUkuQmFzZQ2&t=638742913580000000:277
+[    5593ms] [LOG] 5405(+47) handleLoad end @ https://heritagefabrics-sandbox.acumatica.com/PX.ScriptBatch.axd?d=cFBYLldlYi5VSXxQWC5XZWIuVUkuQmFzZQ2&t=638742913580000000:277
+[    5728ms] [LOG] 5541(+136) reloadPage start @ https://heritagefabrics-sandbox.acumatica.com/PX.ScriptBatch.axd?d=cFBYLldlYi5VSXxQWC5XZWIuVUkuQmFzZQ2&t=638742913580000000:277
+[    5729ms] [LOG] 5554(+13) reloadPage end @ https://heritagefabrics-sandbox.acumatica.com/PX.ScriptBatch.axd?d=cFBYLldlYi5VSXxQWC5XZWIuVUkuQmFzZQ2&t=638742913580000000:277
+[    5729ms] [LOG] 5563(+9) register start @ https://heritagefabrics-sandbox.acumatica.com/PX.ScriptBatch.axd?d=cFBYLldlYi5VSXxQWC5XZWIuVUkuQmFzZQ2&t=638742913580000000:277
+[    5729ms] [LOG] 5564(+1) register end @ https://heritagefabrics-sandbox.acumatica.com/PX.ScriptBatch.axd?d=cFBYLldlYi5VSXxQWC5XZWIuVUkuQmFzZQ2&t=638742913580000000:277
+[    6271ms] [LOG] 6105(+541) End callback ctl00_phG_gridContainers Refresh 449 @ https://heritagefabrics-sandbox.acumatica.com/PX.ScriptBatch.axd?d=cFBYLldlYi5VSXxQWC5XZWIuVUkuQmFzZQ2&t=638742913580000000:277
+[    6474ms] [LOG] 6307(+202) End callback ctl00_phF_frmTimeline Refresh 200 @ https://heritagefabrics-sandbox.acumatica.com/PX.ScriptBatch.axd?d=cFBYLldlYi5VSXxQWC5XZWIuVUkuQmFzZQ2&t=638742913580000000:277
