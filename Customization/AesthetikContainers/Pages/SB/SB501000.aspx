@@ -2,10 +2,9 @@
 <%@ MasterType VirtualPath="~/MasterPages/FormDetail.master" %>
 <asp:Content ID="cont1" ContentPlaceHolderID="phDS" Runat="Server">
     <px:PXDataSource ID="ds" runat="server" Visible="True" Width="100%"
-        TypeName="StudioB.Containers.ContainerMaint" PrimaryView="Filter">
+        TypeName="StudioB.Containers.ContainerMaint" PrimaryView="Containers">
         <CallbackCommands>
             <px:PXDSCallbackCommand CommitChanges="True" Name="Save" />
-            <px:PXDSCallbackCommand Name="SaveChanges" CommitChanges="True" />
             <px:PXDSCallbackCommand Name="Insert" PostData="Self" />
             <px:PXDSCallbackCommand Name="Delete" PostData="Self" />
             <px:PXDSCallbackCommand Name="First" PostData="Self" StartNewGroup="True" />
