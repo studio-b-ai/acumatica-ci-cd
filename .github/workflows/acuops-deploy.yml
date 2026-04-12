@@ -113,7 +113,7 @@ on:
         default: ''
 
 permissions:
-  contents: write
+  contents: read
   id-token: write
   pull-requests: write
 
