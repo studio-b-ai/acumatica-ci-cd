@@ -176,6 +176,13 @@ namespace StudioB.Containers
         public string LandedCostStatus { get; set; }
         #endregion
 
+        #region ReceiptNbr
+        public abstract class receiptNbr : BqlString.Field<receiptNbr> { }
+        [PXDBString(30, IsUnicode = true)]
+        [PXUIField(DisplayName = "Receipt Nbr", Enabled = false)]
+        public string ReceiptNbr { get; set; }
+        #endregion
+
         #region LastEventCode
         public abstract class lastEventCode : BqlString.Field<lastEventCode> { }
         [PXDBString(20, IsUnicode = true)]

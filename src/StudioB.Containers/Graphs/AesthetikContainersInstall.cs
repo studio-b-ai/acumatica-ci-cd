@@ -100,6 +100,9 @@ namespace StudioB.Containers
                     EnsureColumn(conn, "UsrContainer", "SCACNumber",             "nvarchar(10) NULL");
                     EnsureColumn(conn, "UsrContainer", "EstimatedFreight",       "decimal(19,4) NULL");
 
+                    // 2026-04-12: PCC usability — receipt tracking
+                    EnsureColumn(conn, "UsrContainer", "ReceiptNbr", "nvarchar(30) NULL");
+
                     EnsureTable(conn, "UsrContainerEvent", @"
                         CompanyID int NOT NULL DEFAULT 0,
                         EventID int IDENTITY(1,1) NOT NULL,
