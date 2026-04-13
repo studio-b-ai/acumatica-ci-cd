@@ -1,0 +1,43 @@
+name: Sandbox — Maintenance (one-off)
+
+# Sandbox-only maintenance operations:
+#   1. Unpublish all customizations (clears orphaned project metadata)
+#   2. Optionally republish specified projects after unpublish
+# SAFETY: Only sandbox credentials are used. No prod/test option.
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "Action to perform"
+        type: choice
+        options:
+          - unpublish-all
+          - unpublish-and-republish
+        default: unpublish-all
+      republish_projects:
+        description: "Projects to republish (comma-separated, only for unpublish-and-republish)"
+        type: string
+        default: "AesthetikContainers,AesthetikWMS,StudioBAcuOps,AsthetikTheme,PXLotSertialNbrAttributeExtPkg"
+
+jobs:
+  maintenance:
+    name: Sandbox Maintenance
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Run sandbox-unpublish-all.py
+        env:
+          ACUMATICA_SANDBOX_URL:      ${{ secrets.ACUMATICA_SANDBOX_URL }}
+          ACUMATICA_SANDBOX_USERNAME: ${{ secrets.ACUMATICA_SANDBOX_USERNAME }}
+          ACUMATICA_SANDBOX_PASSWORD: ${{ secrets.ACUMATICA_SANDBOX_PASSWORD }}
+          ACUMATICA_SANDBOX_TENANT:   ${{ secrets.ACUMATICA_SANDBOX_TENANT }}
+          REPUBLISH:                  ${{ github.event.inputs.action == 'unpublish-and-republish' && github.event.inputs.republish_projects || '' }}
+        run: python3 scripts/sandbox-unpublish-all.py
