@@ -84,8 +84,8 @@ def import_package():
         "projectName": PROJECT,
         "projectDescription": "One-off: DROP KNMCSalesPriceSyncData",
         "projectLevel": 0,
-        "isReplaceIfExists": False,
-        "projectContent": pkg_b64
+        "isReplaceIfExists": True,
+        "projectContentBase64": pkg_b64
     }
 
     code, raw = api_request("POST", "/CustomizationApi/import", body, "Import")
