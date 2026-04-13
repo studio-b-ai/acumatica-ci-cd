@@ -76,34 +76,74 @@ def logout():
 
 # ── Unpublish All ────────────────────────────────────────────────────────────
 
+def get_published_projects():
+    """Get list of currently published customization projects."""
+    code, raw = api_request("GET", "/CustomizationApi/published", label="GetPublished")
+    if code == 200:
+        try:
+            projects = json.loads(raw)
+            print(f"[GetPublished] Currently published: {projects}")
+            return projects
+        except json.JSONDecodeError:
+            print(f"[GetPublished] Could not parse: {raw[:300]}")
+    else:
+        print(f"[GetPublished] HTTP {code} — endpoint may not exist")
+    return None
+
+
 def unpublish_all():
     """
-    The Customization API doesn't have a direct 'unpublish all' endpoint.
-    We use publishBegin with an empty project list + isOnlyDbUpdates=false
-    to trigger an unpublish.
+    Unpublish all customization projects.
 
-    Actually — the correct approach per Acumatica docs is:
-    POST /CustomizationApi/publishBegin with projectNames=[] (empty array)
-    which unpublishes everything.
+    Strategy: publish with isMergeWithExistingPackages=false and a single
+    dummy/known project. This replaces the published set, effectively
+    unpublishing everything else. Then unpublish the dummy.
+
+    Alternative: try publishBegin with isOnlyDbUpdates=true which may
+    skip the CleanUpDatabase step.
     """
-    print("[Unpublish] Starting unpublish of all projects...")
+    # First, see what's published
+    get_published_projects()
+
+    # Try approach: publish with isOnlyDbUpdates=true
+    # This should skip CleanUpDatabase and only run SQL scripts
+    print("[Unpublish] Trying isOnlyDbUpdates=true publish (skips CleanUpDatabase)...")
+
+    body = {
+        "isMergeWithExistingPackages": False,
+        "isOnlyValidation": False,
+        "isOnlyDbUpdates": True,
+        "projectNames": ["StudioBAcuOps"],
+        "tenantMode": "Current"
+    }
+
+    code, raw = api_request("POST", "/CustomizationApi/publishBegin", body, "DbOnlyPublish")
+    if code in (200, 204):
+        print("[Unpublish] publishBegin (dbOnly) OK — polling...")
+        result = poll_publish("DbOnly")
+        if result:
+            return True
+        print("[Unpublish] dbOnly failed, trying normal approach...")
+
+    # Fallback: try normal publish with merge=false to replace published set
+    print("[Unpublish] Trying merge=false publish to replace published set...")
 
     body = {
         "isMergeWithExistingPackages": False,
         "isOnlyValidation": False,
         "isOnlyDbUpdates": False,
-        "projectNames": [],
+        "projectNames": ["StudioBAcuOps"],
         "tenantMode": "Current"
     }
 
-    code, raw = api_request("POST", "/CustomizationApi/publishBegin", body, "UnpublishBegin")
+    code, raw = api_request("POST", "/CustomizationApi/publishBegin", body, "ReplacePublish")
     if code not in (200, 204):
         print(f"[Unpublish] publishBegin failed — HTTP {code}")
         print(f"[Unpublish] Response: {raw[:500]}")
         return False
 
     print("[Unpublish] publishBegin OK — polling for completion...")
-    return poll_publish("Unpublish")
+    return poll_publish("Replace")
 
 
 def poll_publish(label):
