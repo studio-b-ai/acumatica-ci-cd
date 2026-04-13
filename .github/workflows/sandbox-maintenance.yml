@@ -1,8 +1,6 @@
 name: Sandbox — Maintenance (one-off)
 
-# Sandbox-only maintenance operations:
-#   1. Unpublish all customizations (clears orphaned project metadata)
-#   2. Optionally republish specified projects after unpublish
+# Sandbox-only maintenance operations.
 # SAFETY: Only sandbox credentials are used. No prod/test option.
 
 on:
@@ -12,11 +10,12 @@ on:
         description: "Action to perform"
         type: choice
         options:
+          - drop-knmc-table
           - unpublish-all
           - unpublish-and-republish
-        default: unpublish-all
+        default: drop-knmc-table
       republish_projects:
-        description: "Projects to republish (comma-separated, only for unpublish-and-republish)"
+        description: "Projects to republish (only for unpublish-and-republish)"
         type: string
         default: "AesthetikContainers,AesthetikWMS,StudioBAcuOps,AsthetikTheme,PXLotSertialNbrAttributeExtPkg"
 
@@ -33,7 +32,22 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Run sandbox-unpublish-all.py
+      - name: Build drop-table package
+        if: github.event.inputs.action == 'drop-knmc-table'
+        run: cd drop-table-package && zip -j ../drop-table-package.zip project.xml
+
+      - name: Drop KNMC table
+        if: github.event.inputs.action == 'drop-knmc-table'
+        env:
+          ACUMATICA_SANDBOX_URL:      ${{ secrets.ACUMATICA_SANDBOX_URL }}
+          ACUMATICA_SANDBOX_USERNAME: ${{ secrets.ACUMATICA_SANDBOX_USERNAME }}
+          ACUMATICA_SANDBOX_PASSWORD: ${{ secrets.ACUMATICA_SANDBOX_PASSWORD }}
+          ACUMATICA_SANDBOX_TENANT:   ${{ secrets.ACUMATICA_SANDBOX_TENANT }}
+          PACKAGE_PATH:               drop-table-package.zip
+        run: python3 scripts/sandbox-drop-knmc-table.py
+
+      - name: Unpublish all / republish
+        if: github.event.inputs.action != 'drop-knmc-table'
         env:
           ACUMATICA_SANDBOX_URL:      ${{ secrets.ACUMATICA_SANDBOX_URL }}
           ACUMATICA_SANDBOX_USERNAME: ${{ secrets.ACUMATICA_SANDBOX_USERNAME }}
