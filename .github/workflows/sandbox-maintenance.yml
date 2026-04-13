@@ -85,3 +85,4 @@ jobs:
           ACUMATICA_SANDBOX_TENANT:   ${{ secrets.ACUMATICA_SANDBOX_TENANT }}
           REPUBLISH:                  ${{ github.event.inputs.action == 'unpublish-and-republish' && github.event.inputs.republish_projects || '' }}
         run: python3 scripts/sandbox-unpublish-all.py
+
