@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
-"""Build a StudioBAcuOps package with DROP TABLE KNMCSalesPriceSyncData injected."""
+"""Build a minimal customization package with DROP TABLE KNMCSalesPriceSyncData."""
 
 import os
 import zipfile
 
-SRC = os.path.join(os.path.dirname(__file__), "..", "Customization", "StudioBAcuOps", "project.xml")
 OUT = "drop-table-package.zip"
 
-DROP_SQL = """
+PROJECT_XML = """<?xml version="1.0" encoding="utf-8"?>
+<Customization level="0" description="One-off: Drop KNMCSalesPriceSyncData table" product-version="24.208">
+
     <Sql Name="DropKNMCSalesPriceSyncData" Script="#CDATA">
         <CDATA name="Script"><![CDATA[IF OBJECT_ID('dbo.KNMCSalesPriceSyncData', 'U') IS NOT NULL
 BEGIN
@@ -20,14 +21,11 @@ BEGIN
 END
         ]]></CDATA>
     </Sql>
+
+</Customization>
 """
 
-with open(SRC, "r") as f:
-    content = f.read()
-
-content = content.replace("</Customization>", DROP_SQL + "\n</Customization>")
-
 with zipfile.ZipFile(OUT, "w", zipfile.ZIP_DEFLATED) as zf:
-    zf.writestr("project.xml", content)
+    zf.writestr("project.xml", PROJECT_XML)
 
 print(f"Built {OUT} ({os.path.getsize(OUT)} bytes)")

@@ -24,7 +24,7 @@ USERNAME  = os.environ.get("ACUMATICA_SANDBOX_USERNAME", "")
 PASSWORD  = os.environ.get("ACUMATICA_SANDBOX_PASSWORD", "")
 TENANT    = os.environ.get("ACUMATICA_SANDBOX_TENANT", "")
 PACKAGE   = os.environ.get("PACKAGE_PATH", "drop-table-package.zip")
-PROJECT   = "StudioBAcuOps"
+PROJECT   = "StudioBOneOff"
 POLL_INTERVAL = 10
 POLL_TIMEOUT  = 600
 
@@ -82,9 +82,9 @@ def import_package():
 
     body = {
         "projectName": PROJECT,
-        "projectDescription": "StudioBAcuOps + DROP KNMCSalesPriceSyncData",
-        "projectLevel": 1,
-        "isReplaceIfExists": True,
+        "projectDescription": "One-off: DROP KNMCSalesPriceSyncData",
+        "projectLevel": 0,
+        "isReplaceIfExists": False,
         "projectContent": pkg_b64
     }
 
