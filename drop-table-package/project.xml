@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Customization level="0" description="One-time: Drop KNMCSalesPriceSyncData table" product-version="24.208">
+
+    <Sql Name="DropKNMCSalesPriceSyncData" Script="#CDATA">
+        <CDATA name="Script"><![CDATA[IF OBJECT_ID('dbo.KNMCSalesPriceSyncData', 'U') IS NOT NULL
+BEGIN
+    DROP TABLE dbo.KNMCSalesPriceSyncData;
+    PRINT 'Dropped table KNMCSalesPriceSyncData';
+END
+ELSE
+BEGIN
+    PRINT 'Table KNMCSalesPriceSyncData does not exist — no action taken';
+END
+        ]]></CDATA>
+    </Sql>
+
+</Customization>
