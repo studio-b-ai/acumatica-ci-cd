@@ -32,9 +32,39 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Build drop-table package
+      - name: Build drop-table package (uses StudioBAcuOps as carrier)
         if: github.event.inputs.action == 'drop-knmc-table'
-        run: cd drop-table-package && zip -j ../drop-table-package.zip project.xml
+        run: |
+          # Build a StudioBAcuOps package that includes the DROP TABLE SQL
+          # We overlay the drop-table SQL into the existing StudioBAcuOps project.xml
+          cp Customization/StudioBAcuOps/project.xml drop-table-project.xml
+          # Inject DROP TABLE SQL before closing </Customization> tag
+          python3 -c "
+          import re
+          with open('drop-table-project.xml', 'r') as f:
+              content = f.read()
+          drop_sql = '''
+    <Sql Name=\"DropKNMCSalesPriceSyncData\" Script=\"#CDATA\">
+        <CDATA name=\"Script\"><![CDATA[IF OBJECT_ID('dbo.KNMCSalesPriceSyncData', 'U') IS NOT NULL
+  BEGIN
+      DROP TABLE dbo.KNMCSalesPriceSyncData;
+      PRINT 'Dropped table KNMCSalesPriceSyncData';
+  END
+  ELSE
+  BEGIN
+      PRINT 'Table KNMCSalesPriceSyncData does not exist';
+  END
+          ]]></CDATA>
+    </Sql>
+  '''
+          content = content.replace('</Customization>', drop_sql + '</Customization>')
+          with open('drop-table-project.xml', 'w') as f:
+              f.write(content)
+          "
+          zip -j drop-table-package.zip drop-table-project.xml
+          # Rename inside zip to project.xml
+          mkdir -p _tmp && cp drop-table-project.xml _tmp/project.xml
+          cd _tmp && zip -j ../drop-table-package.zip project.xml
 
       - name: Drop KNMC table
         if: github.event.inputs.action == 'drop-knmc-table'

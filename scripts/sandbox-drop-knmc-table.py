@@ -24,7 +24,7 @@ USERNAME  = os.environ.get("ACUMATICA_SANDBOX_USERNAME", "")
 PASSWORD  = os.environ.get("ACUMATICA_SANDBOX_PASSWORD", "")
 TENANT    = os.environ.get("ACUMATICA_SANDBOX_TENANT", "")
 PACKAGE   = os.environ.get("PACKAGE_PATH", "drop-table-package.zip")
-PROJECT   = "DropKNMCSalesPriceSyncData"
+PROJECT   = "StudioBAcuOps"
 POLL_INTERVAL = 10
 POLL_TIMEOUT  = 600
 
@@ -69,7 +69,7 @@ def logout():
 
 
 def import_package():
-    """Import the .zip package via Customization API."""
+    """Import the .zip package via Customization API, replacing StudioBAcuOps."""
     if not os.path.exists(PACKAGE):
         print(f"[Import] Package not found: {PACKAGE}")
         sys.exit(1)
@@ -78,12 +78,12 @@ def import_package():
         pkg_bytes = f.read()
 
     pkg_b64 = base64.b64encode(pkg_bytes).decode("ascii")
-    print(f"[Import] Uploading {PACKAGE} ({len(pkg_bytes)} bytes, {len(pkg_b64)} b64 chars)")
+    print(f"[Import] Uploading {PACKAGE} ({len(pkg_bytes)} bytes) as {PROJECT}")
 
     body = {
         "projectName": PROJECT,
-        "projectDescription": "One-time: Drop KNMCSalesPriceSyncData table",
-        "projectLevel": 0,
+        "projectDescription": "StudioBAcuOps + DROP KNMCSalesPriceSyncData",
+        "projectLevel": 1,
         "isReplaceIfExists": True,
         "projectContent": pkg_b64
     }
