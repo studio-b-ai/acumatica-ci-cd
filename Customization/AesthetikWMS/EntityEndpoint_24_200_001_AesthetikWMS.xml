@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  AesthetikWMS REST Endpoint Extension — extends Default v24.200.001
+  Adds custom DAC extension fields to existing entities.
+
+  Fields added to SalesOrder:
+    UsrWMSStatus            — WMS fulfillment status (N/A/P/F/K/S)
+    UsrHubSpotDealId        — HubSpot Order ID for sync write-back
+    UsrComplianceHold       — Compliance hold flag
+    UsrComplianceHoldReason — Compliance hold reason text
+
+  These fields exist in SOOrderExt (Aesthetik.WMS namespace) and have SQL
+  columns created by the AesthetikWMS <Sql> elements. They read via
+  GET $custom=Document.UsrWMSStatus but writes are silently dropped unless
+  the field is mapped in the endpoint definition.
+
+  Naming: EntityEndpoint_{version_underscored}_{EndpointName}.xml
+  Placed alongside project.xml — picked up automatically during publish.
+-->
+<EntityEndpoint>
+    <Endpoint
+        xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+        xmlns="http://www.acumatica.com/entity/maintenance/5.31"
+        name="AesthetikWMS"
+        version="24.200.001"
+        extends="Default"
+        extendsVersion="24.200.001"
+        systemContractVersion="4">
+
+        <!-- SalesOrder: add custom DAC extension fields from SOOrderExt -->
+        <TopLevelEntity name="SalesOrder" screen="SO301000">
+            <Fields>
+                <Field name="UsrWMSStatus"            type="StringValue" />
+                <Field name="UsrHubSpotDealId"        type="StringValue" />
+                <Field name="UsrComplianceHold"       type="BooleanValue" />
+                <Field name="UsrComplianceHoldReason" type="StringValue" />
+            </Fields>
+            <Mappings>
+                <Mapping field="UsrWMSStatus">
+                    <To object="Order Summary" field="UsrWMSStatus" />
+                </Mapping>
+                <Mapping field="UsrHubSpotDealId">
+                    <To object="Order Summary" field="UsrHubSpotDealId" />
+                </Mapping>
+                <Mapping field="UsrComplianceHold">
+                    <To object="Order Summary" field="UsrComplianceHold" />
+                </Mapping>
+                <Mapping field="UsrComplianceHoldReason">
+                    <To object="Order Summary" field="UsrComplianceHoldReason" />
+                </Mapping>
+            </Mappings>
+        </TopLevelEntity>
+
+    </Endpoint>
+</EntityEndpoint>
