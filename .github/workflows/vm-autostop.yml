@@ -1,0 +1,50 @@
+# VM Auto-Stop — shut down acumatica-test at midnight CT
+#
+# Saves GCE compute costs by stopping the self-hosted Windows runner
+# after working hours. Paired with vm-autostart.yml (10 AM CT daily).
+
+name: VM Auto-Stop
+
+on:
+  schedule:
+    # 05:00 UTC = 12:00 AM CT (CDT), 11:00 PM CT (CST)
+    # Daily
+    - cron: '2 5 * * *'
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  id-token: write   # Required for Workload Identity Federation
+
+jobs:
+  stop-vm:
+    name: Stop acumatica-test VM
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Authenticate to GCP
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - name: Setup gcloud
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Stop VM if running
+        run: |
+          STATUS=$(gcloud compute instances describe acumatica-test \
+            --zone=us-central1-a \
+            --format='get(status)' 2>/dev/null || echo "UNKNOWN")
+
+          echo "Current VM status: $STATUS"
+
+          if [ "$STATUS" = "RUNNING" ]; then
+            echo "Stopping acumatica-test..."
+            gcloud compute instances stop acumatica-test --zone=us-central1-a
+            echo "::notice::acumatica-test VM stopped for overnight cost savings"
+          elif [ "$STATUS" = "TERMINATED" ] || [ "$STATUS" = "STOPPED" ]; then
+            echo "::notice::acumatica-test is already stopped"
+          else
+            echo "::warning::acumatica-test is in unexpected state: $STATUS"
+          fi

@@ -1,16 +1,17 @@
-# VM Auto-Start — ensure acumatica-test is running before business hours
+# VM Auto-Start — ensure acumatica-test is running during working hours
 #
 # The acumatica-test GCE VM goes offline (auto-shutdown or preemption)
 # and blocks the build-validate job which runs on self-hosted Windows.
-# This workflow starts it at 8:00 AM ET (12:00 UTC) on weekdays.
+# This workflow starts it at 10:00 AM CT (15:00 UTC CDT) daily.
+# Paired with vm-autostop.yml which shuts it down at midnight CT.
 
 name: VM Auto-Start
 
 on:
   schedule:
-    # 12:00 UTC = 8:00 AM ET (EDT), 7:00 AM ET (EST)
-    # Weekdays only
-    - cron: '0 12 * * 1-5'
+    # 15:00 UTC = 10:00 AM CT (CDT), 9:00 AM CT (CST)
+    # Daily (deploys can happen on weekends)
+    - cron: '3 15 * * *'
   workflow_dispatch: {}
 
 permissions:
