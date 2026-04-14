@@ -385,6 +385,9 @@ namespace StudioB.Containers
                         try { EnsureContainerTrackingSiteMap(conn, companyId); }
                         catch (Exception ex) { WriteLog(string.Format("[AesthetikContainers] SiteMap update failed CID={0}: {1}", companyId, ex.Message)); }
 
+                        try { EnsureDRPGISiteMap(conn, companyId); }
+                        catch (Exception ex) { WriteLog(string.Format("[AesthetikContainers] DRP GI SiteMap failed CID={0}: {1}", companyId, ex.Message)); }
+
                         try { EnsureItemUomConsistency(conn, companyId); }
                         catch (Exception ex) { WriteLog(string.Format("[AesthetikContainers] EnsureItemUomConsistency failed CID={0}: {1}", companyId, ex.Message)); }
 
@@ -613,6 +616,73 @@ namespace StudioB.Containers
                 }
             }
             WriteLog(string.Format("[AesthetikContainers] Container Tracking SiteMap (4 form screens) for CompanyID={0} — OK", companyId));
+        }
+
+        // ── EnsureDRPGISiteMap ─────────────────────────────────────────────
+        // 2026-04-13: DRP Generic Inquiries lose OData registration after CI/CD
+        // reimport. Root cause: SiteMap rows don't exist for GI screen IDs,
+        // so the OData endpoint returns 404 or 403. Fix: upsert SiteMap rows
+        // for all DRP GI screen IDs on every publish.
+        //
+        // Parent workspace: same Container Tracking workspace (DRP is under
+        // Inventory > Inquiries but SiteMap parent controls access tree).
+        private void EnsureDRPGISiteMap(SqlConnection conn, int companyId)
+        {
+            // DRP GI screen IDs — must match ScreenID in project.xml <GIDesign> rows
+            string[][] entries = new[]
+            {
+                new[] { "SB401080", "DRP Velocity History",    "~/GenericInquiry/GenericInquiry.aspx?id=1ce25f0a-cde6-4f0a-b939-d274fe343574", "20.1" },
+                new[] { "SB401090", "DRP Open SO Commitments", "~/GenericInquiry/GenericInquiry.aspx?id=f918a504-7620-461c-aad8-f1b3395d1e79", "20.2" },
+                new[] { "SB401100", "DRP Open PO Lines",       "~/GenericInquiry/GenericInquiry.aspx?id=89912975-c6ed-41ad-b514-a0f775a89362", "20.3" },
+                new[] { "SB401110", "DRP Inventory By Site",   "~/GenericInquiry/GenericInquiry.aspx?id=a5337a02-6d79-42e9-b400-d7178ac3fd24", "20.4" },
+            };
+
+            foreach (var e in entries)
+            {
+                string sql = @"
+                    IF EXISTS (SELECT 1 FROM SiteMap WHERE ScreenID = @sid AND CompanyID = @cid)
+                        UPDATE SiteMap SET Url = @url, Title = @title, Position = @pos
+                        WHERE ScreenID = @sid AND CompanyID = @cid;
+                    ELSE
+                        INSERT INTO SiteMap (CompanyID, NodeID, ScreenID, Title, Url, Position, ParentID, SelectedUI, CreatedByID, CreatedByScreenID, CreatedDateTime, LastModifiedByID, LastModifiedByScreenID, LastModifiedDateTime)
+                        VALUES (@cid, NEWID(), @sid, @title, @url, @pos, '9c89e3db-7c47-43c0-8554-5d2c9f2c0e87', N'E', N'B5344897-037E-4D58-B5C3-1BDFD0F47BF4', N'SM208000', GETUTCDATE(), N'B5344897-037E-4D58-B5C3-1BDFD0F47BF4', N'SM208000', GETUTCDATE());";
+                using (var cmd = new SqlCommand(sql, conn))
+                {
+                    cmd.Parameters.AddWithValue("@cid", companyId);
+                    cmd.Parameters.AddWithValue("@sid", e[0]);
+                    cmd.Parameters.AddWithValue("@title", e[1]);
+                    cmd.Parameters.AddWithValue("@url", e[2]);
+                    cmd.Parameters.AddWithValue("@pos", e[3]);
+                    cmd.ExecuteNonQuery();
+                }
+            }
+
+            // Also fix any GI that got auto-assigned a GI6xxxxx Screen ID
+            // instead of the SB4010xx ID from project.xml. This happens when
+            // the GI was first created via UI before being imported via CI/CD.
+            string fixScreenId = @"
+                UPDATE GIDesign SET ScreenID = @newSid
+                WHERE Name = @giName AND CompanyID = @cid AND ScreenID <> @newSid";
+            string[][] giFixups = new[]
+            {
+                new[] { "DRP_VelocityHistory",    "SB401080" },
+                new[] { "DRP_OpenSOCommitments",   "SB401090" },
+                new[] { "DRP_OpenPOLines",         "SB401100" },
+                new[] { "DRP_InventoryBySite",     "SB401110" },
+            };
+            foreach (var fix in giFixups)
+            {
+                using (var cmd = new SqlCommand(fixScreenId, conn))
+                {
+                    cmd.Parameters.AddWithValue("@cid", companyId);
+                    cmd.Parameters.AddWithValue("@giName", fix[0]);
+                    cmd.Parameters.AddWithValue("@newSid", fix[1]);
+                    int rows = cmd.ExecuteNonQuery();
+                    if (rows > 0) WriteLog(string.Format("[AesthetikContainers] Fixed ScreenID for {0} → {1} (CID={2})", fix[0], fix[1], companyId));
+                }
+            }
+
+            WriteLog(string.Format("[AesthetikContainers] DRP GI SiteMap (4 inquiries) for CompanyID={0} — OK", companyId));
         }
 
         // ── EnsureItemUomConsistency ────────────────────────────────────────
