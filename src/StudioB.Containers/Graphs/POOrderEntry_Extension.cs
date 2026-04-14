@@ -41,13 +41,53 @@ namespace StudioB.Containers
         protected void _(Events.FieldDefaulting<POLine, POLineExt.usrExpArrivalDate> e)
         {
             if (e.Row == null) return;
+
+            // First: try header-level expected arrival
             POOrder header = Base.Document.Current;
-            if (header == null) return;
-            POOrderExt headerExt = header.GetExtension<POOrderExt>();
-            if (headerExt?.UsrExpArrivalDate != null)
+            if (header != null)
             {
-                e.NewValue = headerExt.UsrExpArrivalDate;
+                POOrderExt headerExt = header.GetExtension<POOrderExt>();
+                if (headerExt?.UsrExpArrivalDate != null)
+                {
+                    e.NewValue = headerExt.UsrExpArrivalDate;
+                    e.Cancel = true;
+                    return;
+                }
+            }
+
+            // Fallback: seed from line's PromisedDate so expected arrival is never blank
+            if (e.Row.PromisedDate != null)
+            {
+                e.NewValue = e.Row.PromisedDate;
                 e.Cancel = true;
+            }
+        }
+
+        /// <summary>
+        /// When PromisedDate changes on a PO line and UsrExpArrivalDate hasn't been
+        /// manually overridden (still null or still matches old PromisedDate), update
+        /// UsrExpArrivalDate to match. This ensures expected arrival is never blank
+        /// and stays in sync until explicitly overridden by container propagation,
+        /// forwarder update, or manual entry.
+        /// </summary>
+        protected void _(Events.FieldUpdated<POLine, POLine.promisedDate> e)
+        {
+            if (e.Row == null) return;
+            POLineExt lineExt = e.Row.GetExtension<POLineExt>();
+            if (lineExt == null) return;
+
+            DateTime? oldPromised = (DateTime?)e.OldValue;
+            DateTime? newPromised = e.Row.PromisedDate;
+            if (newPromised == null) return;
+
+            // Seed if expected is null, or update if expected still matches old promised
+            bool shouldUpdate = lineExt.UsrExpArrivalDate == null
+                             || lineExt.UsrExpArrivalDate == oldPromised;
+
+            if (shouldUpdate)
+            {
+                lineExt.UsrExpArrivalDate = newPromised;
+                Base.Transactions.Update(e.Row);
             }
         }
 
