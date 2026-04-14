@@ -166,9 +166,9 @@ A2_GIDESIGN = f'''        <row DesignID="{A2_DESIGN}" Name="DRP_OpenSOCommitment
 {gitable("SOOrder", "PX.Objects.SO.SOOrder", a2_soorder_results)}
           <GIWhere LineNbr="1" IsActive="1" DataFieldName="SOLine.LineType" Condition="E " IsExpression="0" Value1="GoodsForInventory" Operation="A" />
           <GIWhere LineNbr="2" IsActive="1" DataFieldName="SOLine.OpenQty" Condition="G " IsExpression="0" Value1="0" Operation="A" />
-          <GIWhere LineNbr="3" OpenBrackets="1" IsActive="1" DataFieldName="SOLine.OrderType" Condition="E " IsExpression="0" Value1="CO" Operation="A" />
+          <GIWhere LineNbr="3" OpenBrackets="1" IsActive="1" DataFieldName="SOLine.OrderType" Condition="E " IsExpression="0" Value1="CO" Operation="O" />
           <GIWhere LineNbr="4" IsActive="1" DataFieldName="SOLine.OrderType" Condition="E " IsExpression="0" Value1="SO" Operation="O" />
-          <GIWhere LineNbr="5" CloseBrackets="1" IsActive="1" DataFieldName="SOLine.OrderType" Condition="E " IsExpression="0" Value1="PC" Operation="O" />
+          <GIWhere LineNbr="5" CloseBrackets="1" IsActive="1" DataFieldName="SOLine.OrderType" Condition="E " IsExpression="0" Value1="PC" Operation="A" />
           <GISort LineNbr="1" IsActive="1" DataFieldName="SOLine.RequestedDate" SortOrder="A" />
 {sitemap_row(1170, "DRP Open SO Commitments", A2_DESIGN, "SB401090", A2_NODE, 2080)}
 
@@ -198,8 +198,8 @@ A4_GIDESIGN = f'''        <row DesignID="{A4_DESIGN}" Name="DRP_InventoryBySite"
 {gitable("InventoryItem", "PX.Objects.IN.InventoryItem", a4_item_relations + a4_item_results)}
 {gitable("INSiteStatus", "PX.Objects.IN.INSiteStatus", a4_site_results)}
           <GIWhere LineNbr="1" IsActive="1" DataFieldName="InventoryItem.StkItem" Condition="E " IsExpression="0" Value1="True" Operation="A" />
-          <GIWhere LineNbr="2" OpenBrackets="1" IsActive="1" DataFieldName="InventoryItem.ItemStatus" Condition="E " IsExpression="0" Value1="AC" Operation="A" />
-          <GIWhere LineNbr="3" CloseBrackets="1" IsActive="1" DataFieldName="InventoryItem.ItemStatus" Condition="E " IsExpression="0" Value1="NS" Operation="O" />
+          <GIWhere LineNbr="2" OpenBrackets="1" IsActive="1" DataFieldName="InventoryItem.ItemStatus" Condition="E " IsExpression="0" Value1="AC" Operation="O" />
+          <GIWhere LineNbr="3" CloseBrackets="1" IsActive="1" DataFieldName="InventoryItem.ItemStatus" Condition="E " IsExpression="0" Value1="NS" Operation="A" />
           <GISort LineNbr="1" IsActive="1" DataFieldName="InventoryItem.InventoryCD" SortOrder="A" />
           <GISort LineNbr="2" IsActive="1" DataFieldName="INSiteStatus.SiteID" SortOrder="A" />
 {sitemap_row(1180, "DRP Inventory By Site", A4_DESIGN, "SB401110", A4_NODE, 2090)}
