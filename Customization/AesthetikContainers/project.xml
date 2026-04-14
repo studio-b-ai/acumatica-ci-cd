@@ -24,6 +24,21 @@ IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('POOrder') 
   ALTER TABLE POOrder ADD UsrFactoryReadyDate datetime NULL;
 ]]></CDATA>
     </Sql>
+    <Sql Name="AesthetikContainers_EnableOData_v1" Script="#CDATA">
+        <CDATA name="Script"><![CDATA[-- Enable OData exposure for DRP Generic Inquiries after publish.
+-- The import engine sets ExposeViaOData from XML, but subsequent publishes
+-- can reset it. This SQL ensures it stays enabled.
+-- DesignIDs are fixed GUIDs from build_drp_phase0_gis.py.
+UPDATE GIDesign SET ExposeViaOData = 1
+WHERE DesignID IN (
+  '1ce25f0a-cde6-4f0a-b939-d274fe343574',  -- DRP_VelocityHistory
+  'f918a504-7620-461c-aad8-f1b3395d1e79',  -- DRP_OpenSOCommitments
+  'a5337a02-6d79-42e9-b400-d7178ac3fd24',  -- DRP_InventoryBySite
+  '89912975-c6ed-41ad-b514-a0f775a89362'   -- DRP_OpenPOLines
+)
+AND ExposeViaOData = 0;
+]]></CDATA>
+    </Sql>
     <Page path="~/pages/po/po301000.aspx">
         <PXFormView ID="form" ParentId="phF_form" TypeFullName="PX.Web.UI.PXFormView">
             <Children Key="Template">
@@ -2329,9 +2344,9 @@ public partial class Page_SB_SB302040 : PXPage
           </GITable>
           <GIWhere LineNbr="1" IsActive="1" DataFieldName="SOLine.LineType" Condition="E " IsExpression="0" Value1="GI" Operation="A" />
           <GIWhere LineNbr="2" IsActive="1" DataFieldName="SOLine.OpenQty" Condition="G " IsExpression="0" Value1="0" Operation="A" />
-          <GIWhere LineNbr="3" OpenBrackets="1" IsActive="1" DataFieldName="SOLine.OrderType" Condition="E " IsExpression="0" Value1="CO" Operation="A" />
+          <GIWhere LineNbr="3" OpenBrackets="1" IsActive="1" DataFieldName="SOLine.OrderType" Condition="E " IsExpression="0" Value1="CO" Operation="O" />
           <GIWhere LineNbr="4" IsActive="1" DataFieldName="SOLine.OrderType" Condition="E " IsExpression="0" Value1="SO" Operation="O" />
-          <GIWhere LineNbr="5" CloseBrackets="1" IsActive="1" DataFieldName="SOLine.OrderType" Condition="E " IsExpression="0" Value1="PC" Operation="O" />
+          <GIWhere LineNbr="5" CloseBrackets="1" IsActive="1" DataFieldName="SOLine.OrderType" Condition="E " IsExpression="0" Value1="PC" Operation="A" />
           <GISort LineNbr="1" IsActive="1" DataFieldName="SOLine.RequestDate" SortOrder="A" />
           <SiteMap linkname="toDesignById">
             <row Position="1170" Title="DRP Open SO Commitments" Url="~/GenericInquiry/GenericInquiry.aspx?id=f918a504-7620-461c-aad8-f1b3395d1e79" Expanded="0" IsFolder="0" ScreenID="SB401090" NodeID="af758f49-f888-4d32-b162-838a5fa34c52" ParentID="9c89e3db-7c47-43c0-8554-5d2c9f2c0e87">
@@ -2496,8 +2511,8 @@ public partial class Page_SB_SB302040 : PXPage
             <GIResult LineNbr="9" SortOrder="9" IsActive="1" Field="QtyAllocated" Width="100" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Qty Allocated" RowID="78f5dc04-3821-493e-822d-984b1805f2d5" />
           </GITable>
           <GIWhere LineNbr="1" IsActive="1" DataFieldName="InventoryItem.StkItem" Condition="E " IsExpression="0" Value1="True" Operation="A" />
-          <GIWhere LineNbr="2" OpenBrackets="1" IsActive="1" DataFieldName="InventoryItem.ItemStatus" Condition="E " IsExpression="0" Value1="AC" Operation="A" />
-          <GIWhere LineNbr="3" CloseBrackets="1" IsActive="1" DataFieldName="InventoryItem.ItemStatus" Condition="E " IsExpression="0" Value1="NS" Operation="O" />
+          <GIWhere LineNbr="2" OpenBrackets="1" IsActive="1" DataFieldName="InventoryItem.ItemStatus" Condition="E " IsExpression="0" Value1="AC" Operation="O" />
+          <GIWhere LineNbr="3" CloseBrackets="1" IsActive="1" DataFieldName="InventoryItem.ItemStatus" Condition="E " IsExpression="0" Value1="NS" Operation="A" />
           <GISort LineNbr="1" IsActive="1" DataFieldName="InventoryItem.InventoryCD" SortOrder="A" />
           <GISort LineNbr="2" IsActive="1" DataFieldName="INSiteStatus.SiteID" SortOrder="A" />
           <SiteMap linkname="toDesignById">
@@ -2680,8 +2695,8 @@ public partial class Page_SB_SB302040 : PXPage
           </GITable>
           <GIWhere LineNbr="1" IsActive="1" DataFieldName="Line.LineType" Condition="E " IsExpression="0" Value1="GI" Operation="A" />
           <GIWhere LineNbr="2" IsActive="1" DataFieldName="Line.OpenQty" Condition="G " IsExpression="0" Value1="0" Operation="A" />
-          <GIWhere LineNbr="3" OpenBrackets="1" IsActive="1" DataFieldName="POOrder.Status" Condition="E " IsExpression="0" Value1="N" Operation="A" />
-          <GIWhere LineNbr="4" CloseBrackets="1" IsActive="1" DataFieldName="POOrder.Status" Condition="E " IsExpression="0" Value1="O" Operation="O" />
+          <GIWhere LineNbr="3" OpenBrackets="1" IsActive="1" DataFieldName="POOrder.Status" Condition="E " IsExpression="0" Value1="N" Operation="O" />
+          <GIWhere LineNbr="4" CloseBrackets="1" IsActive="1" DataFieldName="POOrder.Status" Condition="E " IsExpression="0" Value1="O" Operation="A" />
           <GISort LineNbr="1" IsActive="1" DataFieldName="Line.PromisedDate" SortOrder="A" />
           <SiteMap linkname="toDesignById">
             <row Position="1190" Title="DRP Open PO Lines" Url="~/GenericInquiry/GenericInquiry.aspx?id=89912975-c6ed-41ad-b514-a0f775a89362" Expanded="0" IsFolder="0" ScreenID="SB401100" NodeID="660b0c64-b2bf-4848-a863-468f5ff34fbd" ParentID="9c89e3db-7c47-43c0-8554-5d2c9f2c0e87">
