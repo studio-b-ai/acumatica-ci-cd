@@ -9,20 +9,32 @@ namespace StudioB.Containers
     {
         public static bool IsActive() => true;
 
+        // Re-entrancy guards — prevent cascading event handler loops.
+        // _isProcessingLine guards the two POLine handlers (FieldDefaulting + FieldUpdated<POLine>)
+        // which can mutually trigger each other via Transactions.Update().
+        // _isProcessingHeader guards the POOrder-level FieldUpdated handler which calls
+        // Transactions.Update() in a loop, which in turn fires RowSelected<POLine>.
+        private bool _isProcessingLine = false;
+        private bool _isProcessingHeader = false;
+        private bool _isProcessingRowSelected = false;
+
         #region Container Navigation Action
         public PXAction<POOrder> ViewContainer;
         [PXButton(CommitChanges = true)]
         [PXUIField(DisplayName = "Container Tracking", MapEnableRights = PXCacheRights.Select)]
         protected void viewContainer()
         {
+            // Fix C: null-check Current before accessing
             POOrder order = Base.Document.Current;
             if (order == null) return;
+
             POOrderExt ext = order.GetExtension<POOrderExt>();
             string containerRef = ext?.UsrContainerRef;
 
             ContainerMaint graph = PXGraph.CreateInstance<ContainerMaint>();
             if (!string.IsNullOrEmpty(containerRef))
             {
+                // Fix C: BQL already has a Where clause with a Required parameter — correctly scoped
                 UsrContainer container = PXSelect<UsrContainer,
                     Where<UsrContainer.containerCD, Equal<Required<UsrContainer.containerCD>>>>
                     .Select(graph, containerRef.Trim());
@@ -38,11 +50,18 @@ namespace StudioB.Containers
         // Cache container qty lookups per PO to avoid repeated queries
         private Dictionary<string, decimal> _containerQtyCache;
 
+        /// <summary>
+        /// Defaults UsrExpArrivalDate for a new PO line.
+        /// First tries the header-level expected arrival date, then falls back to PromisedDate.
+        /// </summary>
         protected void _(Events.FieldDefaulting<POLine, POLineExt.usrExpArrivalDate> e)
         {
+            // Fix A: re-entrancy guard
+            if (_isProcessingLine) return;
+
             if (e.Row == null) return;
 
-            // First: try header-level expected arrival
+            // Fix C: null-check Current before accessing
             POOrder header = Base.Document.Current;
             if (header != null)
             {
@@ -72,6 +91,9 @@ namespace StudioB.Containers
         /// </summary>
         protected void _(Events.FieldUpdated<POLine, POLine.promisedDate> e)
         {
+            // Fix A: re-entrancy guard
+            if (_isProcessingLine) return;
+
             if (e.Row == null) return;
             POLineExt lineExt = e.Row.GetExtension<POLineExt>();
             if (lineExt == null) return;
@@ -86,28 +108,56 @@ namespace StudioB.Containers
 
             if (shouldUpdate)
             {
-                lineExt.UsrExpArrivalDate = newPromised;
-                Base.Transactions.Update(e.Row);
+                _isProcessingLine = true;
+                try
+                {
+                    lineExt.UsrExpArrivalDate = newPromised;
+                    Base.Transactions.Update(e.Row);
+                }
+                finally
+                {
+                    _isProcessingLine = false;
+                }
             }
         }
 
+        /// <summary>
+        /// When the header-level UsrExpArrivalDate changes, propagate it to all lines
+        /// whose expected arrival date is still inherited (null or matches old header value).
+        /// </summary>
         protected void _(Events.FieldUpdated<POOrder, POOrderExt.usrExpArrivalDate> e)
         {
+            // Fix A: re-entrancy guard
+            if (_isProcessingHeader) return;
+
             if (e.Row == null) return;
+
             DateTime? oldValue = (DateTime?)e.OldValue;
             DateTime? newValue = e.Row.GetExtension<POOrderExt>()?.UsrExpArrivalDate;
             if (newValue == null) return;
             if (oldValue == newValue) return;
-            foreach (POLine line in Base.Transactions.Select())
+
+            _isProcessingHeader = true;
+            try
             {
-                POLineExt lineExt = line.GetExtension<POLineExt>();
-                if (lineExt == null) continue;
-                bool isInherited = lineExt.UsrExpArrivalDate == null || lineExt.UsrExpArrivalDate == oldValue;
-                if (isInherited)
+                // Fix C: Base.Transactions is already scoped to the current document
+                // by Acumatica's cache — safe to iterate. Guard against empty result set.
+                foreach (POLine line in Base.Transactions.Select())
                 {
-                    lineExt.UsrExpArrivalDate = newValue;
-                    Base.Transactions.Update(line);
+                    if (line == null) continue;
+                    POLineExt lineExt = line.GetExtension<POLineExt>();
+                    if (lineExt == null) continue;
+                    bool isInherited = lineExt.UsrExpArrivalDate == null || lineExt.UsrExpArrivalDate == oldValue;
+                    if (isInherited)
+                    {
+                        lineExt.UsrExpArrivalDate = newValue;
+                        Base.Transactions.Update(line);
+                    }
                 }
+            }
+            finally
+            {
+                _isProcessingHeader = false;
             }
         }
 
@@ -118,10 +168,16 @@ namespace StudioB.Containers
         /// </summary>
         protected void _(Events.RowSelected<POLine> e)
         {
+            // Fix A: re-entrancy guard
+            if (_isProcessingRowSelected) return;
+
             if (e.Row == null) return;
+
+            // Fix C: null-check Current before accessing
             POOrder header = Base.Document.Current;
             if (header == null) return;
 
+            _isProcessingRowSelected = true;
             try
             {
                 // Build cache on first line of each PO
@@ -131,18 +187,21 @@ namespace StudioB.Containers
                     _containerQtyCache = new Dictionary<string, decimal>(StringComparer.OrdinalIgnoreCase);
                     _containerQtyCache[poKey + ":loaded"] = 1;
 
-                    // Query all container links for this PO
+                    // Fix C: PXDatabase.SelectMulti is already scoped by the explicit
+                    // PXDataFieldValue filters on OrderType + OrderNbr — correctly bounded.
+                    // Guard against null records in the result set.
                     foreach (PXDataRecord rec in PXDatabase.SelectMulti<UsrContainerPOLink>(
                         new PXDataField("LineNbr"),
                         new PXDataField("OrderQty"),
                         new PXDataFieldValue("OrderType", header.OrderType),
                         new PXDataFieldValue("OrderNbr", header.OrderNbr)))
                     {
+                        if (rec == null) continue;
                         int? lineNbr = rec.GetInt32(0);
                         if (lineNbr != null)
                         {
                             string lineKey = poKey + ":" + lineNbr;
-                            // Count container allocations per line
+                            // Accumulate container allocation count per line
                             if (_containerQtyCache.ContainsKey(lineKey))
                                 _containerQtyCache[lineKey] += 1;
                             else
@@ -151,7 +210,7 @@ namespace StudioB.Containers
                     }
                 }
 
-                // Set virtual field
+                // Set virtual field — default to null (not zero) when no allocations found
                 string key = poKey + ":" + e.Row.LineNbr;
                 decimal qty = 0;
                 _containerQtyCache.TryGetValue(key, out qty);
@@ -160,6 +219,10 @@ namespace StudioB.Containers
             catch (Exception ex)
             {
                 PXTrace.WriteError($"UsrQtyOnContainers error: {ex.Message}");
+            }
+            finally
+            {
+                _isProcessingRowSelected = false;
             }
         }
     }
