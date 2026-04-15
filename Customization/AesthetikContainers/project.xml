@@ -2714,15 +2714,22 @@ public partial class Page_SB_SB302040 : PXPage
             <GIRelation LineNbr="2" ChildTable="INSite" IsActive="1" JoinType="L">
               <GIOn LineNbr="1" ParentField="SiteID" Condition="E " ChildField="SiteID" Operation="A" />
             </GIRelation>
+            <GIRelation LineNbr="3" ChildTable="POVendorInventory" IsActive="1" JoinType="L">
+              <GIOn LineNbr="1" ParentField="InventoryID" Condition="E " ChildField="InventoryID" Operation="A" />
+              <GIOn LineNbr="2" ParentField="PreferredVendorID" Condition="E " ChildField="VendorID" Operation="A" />
+            </GIRelation>
             <GIResult LineNbr="4" SortOrder="4" IsActive="1" Field="SafetyStock" Width="100" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Safety Stock" RowID="30357e10-590f-48d6-9bc9-4533b4353300" />
             <GIResult LineNbr="5" SortOrder="5" IsActive="1" Field="MinQty" Width="100" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Reorder Point" RowID="1fd0bf01-6062-412f-848c-7cc803aaf88a" />
             <GIResult LineNbr="6" SortOrder="6" IsActive="1" Field="MaxQty" Width="100" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Max Qty" RowID="a7483a20-c13d-458f-b167-39c4d6733fd3" />
             <GIResult LineNbr="7" SortOrder="7" IsActive="1" Field="MinOrdQty" Width="100" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Min Order Qty" RowID="0d734a9c-4fb0-4a15-aba3-ef6d1bcc2fbf" />
             <GIResult LineNbr="8" SortOrder="8" IsActive="1" Field="ReplenishmentSource" Width="120" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Replenishment Source" RowID="e01b5ea1-7dd7-4be8-a983-e3a17b7a2f41" />
-            <GIResult LineNbr="9" SortOrder="9" IsActive="1" Field="OverrideInvtSettings" Width="100" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Override Settings" RowID="aee7e44e-7ade-43a0-8485-4b6e0a1fb4bd" />
+            <GIResult LineNbr="9" SortOrder="9" IsActive="1" Field="ReplenishmentPolicyOverride" Width="100" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Override Settings" RowID="aee7e44e-7ade-43a0-8485-4b6e0a1fb4bd" />
             <GIResult LineNbr="10" SortOrder="10" IsActive="1" Field="PreferredVendorID" Width="120" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Preferred Vendor" RowID="7405ecbc-7ff1-4474-aa32-2a777ae48c23" />
-            <GIResult LineNbr="11" SortOrder="11" IsActive="1" Field="LeadTime" Width="80" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Lead Time (Days)" RowID="9a03d998-4f58-48e8-8a0a-41a3ba3305ef" />
             <GIResult LineNbr="12" SortOrder="12" IsActive="1" Field="ABCCodeID" Width="60" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="ABC Code" RowID="def1c599-a2ff-4b18-ab0c-6358c8c5430a" />
+          </GITable>
+          <GITable Alias="POVendorInventory" Name="PX.Objects.PO.POVendorInventory">
+            <GIResult LineNbr="11" SortOrder="11" IsActive="1" Field="VLeadTime" Width="80" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Lead Time (Days)" RowID="68b19a50-2a69-408c-948f-c5cbc2db0a02" />
+            <GIResult LineNbr="13" SortOrder="13" IsActive="1" Field="AddLeadTimeDays" Width="80" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Add Lead Time (Days)" RowID="5d81b185-d1ad-40e8-8ca0-c1f42dd03746" />
           </GITable>
           <GITable Alias="InventoryItem" Name="PX.Objects.IN.InventoryItem">
             <GIResult LineNbr="1" SortOrder="1" IsActive="1" Field="InventoryCD" Width="120" IsVisible="1" DefaultNav="1" QuickFilter="0" FastFilter="1" Caption="Inventory ID" RowID="5cbd9931-6bc5-4c98-868b-61aeb474664e" />
