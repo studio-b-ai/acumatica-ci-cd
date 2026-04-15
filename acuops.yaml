@@ -64,10 +64,8 @@ pipeline:
   also_publish_test:
     # AesthetikContainerGIs deleted 2026-04-09 — every GI/SiteMap entry was
     # a verbatim duplicate of what AesthetikContainers already ships (same
-    # DesignIDs). PR #211 added it as a level-4 package to work around a
-    # compile-ordering concern that turned out to not be real. The orphan
-    # CustProject row on both sandbox and production still needs cleanup via
-    # the Acumatica support ticket (docs/acumatica-support-ticket-iig-orphan.md).
+    # DesignIDs). Orphan CustProject row cleaned up 2026-04-15 via
+    # /CustomizationApi/delete (no support ticket needed).
     - "AesthetikWMS"
     - "StudioBAcuOps"
   test_tenant_enabled: true
