@@ -721,14 +721,34 @@ class TestContainerE2EFlow:
 
 
 # ════════════════════════════════════════════════════════════════════════
-# PCC Redesign: Timeline, Metrics, Lead Time, Plan Next Order
+# PCC Redesign: Timeline, Metrics, Lead Time
 # ════════════════════════════════════════════════════════════════════════
+# PXHtmlView renders its content inside a sandboxed
+# <iframe class="htmlviewinner"> child. Playwright's text_content() does
+# NOT descend into iframes, so reading the outer wrapper always returns
+# template whitespace. _read_html_view drops into the inner iframe via
+# screen.evaluate so assertions see the actual rendered HTML.
+
+
+def _read_html_view(screen, view_id_suffix: str) -> str:
+    """Read text content of a PXHtmlView's inner htmlviewinner iframe."""
+    js = """() => {
+        var outer = document.querySelector('[id$="__SUFFIX__"]');
+        if (!outer) return null;
+        var inner = outer.querySelector('iframe.htmlviewinner');
+        if (!inner || !inner.contentDocument || !inner.contentDocument.body) return '';
+        return inner.contentDocument.body.innerText
+            || inner.contentDocument.body.textContent
+            || '';
+    }""".replace("__SUFFIX__", view_id_suffix)
+    return screen.evaluate(js) or ""
+
 
 class TestPCCTimeline:
     """Verify the hybrid PO-lifecycle timeline renders on SB501000."""
 
     def test_pcc_timeline_8_stages(self, acumatica_screen):
-        """Timeline should show the 8 hybrid PO-lifecycle stage labels."""
+        """Timeline should show the hybrid PO-lifecycle stage labels."""
         screen = acumatica_screen("SB501000")
         page = screen.page
 
@@ -739,13 +759,16 @@ class TestPCCTimeline:
             page.wait_for_load_state("domcontentloaded")
             page.wait_for_timeout(2000)
 
-        # Timeline is in htmlTimeline PXHtmlView
+        # Timeline outer wrapper must be visible
         timeline = screen.locator("[id$='htmlTimeline']").first
         assert timeline.is_visible(timeout=5000), "Timeline HTML view not visible"
 
-        timeline_text = timeline.text_content() or ""
-        # Verify new PO-sourced stage labels
-        assert "PLACED" in timeline_text, "PLACED stage not found in timeline"
+        # Read content from the inner iframe (PXHtmlView wraps content in
+        # an <iframe class="htmlviewinner">)
+        timeline_text = _read_html_view(screen, "htmlTimeline")
+        assert "PLACED" in timeline_text, (
+            "PLACED stage not found in timeline (iframe content: %r)" % timeline_text[:200]
+        )
         assert "SHIPPED" in timeline_text, "SHIPPED stage not found in timeline"
         assert "DELIVERED" in timeline_text, "DELIVERED stage not found in timeline"
 
@@ -760,12 +783,15 @@ class TestPCCMetricsRow:
         screen = acumatica_screen("SB501000")
         page = screen.page
 
-        # KPI tiles are in htmlKPITiles PXHtmlView
+        # KPI tiles outer wrapper must be visible
         kpi_html = screen.locator("[id$='htmlKPITiles']").first
         assert kpi_html.is_visible(timeout=5000), "KPI tiles HTML view not visible"
 
-        kpi_text = kpi_html.text_content() or ""
-        assert "OPEN PO VALUE" in kpi_text, "OPEN PO VALUE metric not found"
+        # Read content from the inner iframe
+        kpi_text = _read_html_view(screen, "htmlKPITiles")
+        assert "OPEN PO VALUE" in kpi_text, (
+            "OPEN PO VALUE metric not found (iframe content: %r)" % kpi_text[:200]
+        )
         assert "CROSS-DOCK RATE" in kpi_text, "CROSS-DOCK RATE metric not found"
         assert "UNCOVERED VALUE" in kpi_text, "UNCOVERED VALUE metric not found"
 
@@ -773,7 +799,13 @@ class TestPCCMetricsRow:
 
 
 class TestPCCLeadTimeTab:
-    """Verify the Lead Time tab loads on SB501000."""
+    """Verify the Lead Time tab loads on SB501000.
+
+    The Lead Time tab lives inside the slide-out detail panel
+    (pnlContainerDetail), which opens when the user clicks a ContainerCD
+    grid link (LinkCommand="OpenContainerDetail"). The tab is not in the
+    DOM until the panel is opened.
+    """
 
     def test_pcc_lead_time_tab(self, acumatica_screen):
         """Lead Time tab should load with expected columns."""
@@ -787,7 +819,20 @@ class TestPCCLeadTimeTab:
             page.wait_for_load_state("domcontentloaded")
             page.wait_for_timeout(2000)
 
-        # Click Lead Time tab
+        # Open the slide-out detail panel by clicking the first ContainerCD
+        # link in the grid. The Lead Time tab is registered inside frmDetail
+        # on pnlContainerDetail and isn't present in the DOM until the panel
+        # is opened.
+        container_link = screen.locator(
+            "a[href*='OpenContainerDetail'], "
+            "td[uv*='ContainerCD'] a, "
+            "[id*='gridContainers'] tr:not(.gh) a"
+        ).first
+        if container_link.is_visible(timeout=5000):
+            container_link.click()
+            page.wait_for_timeout(2000)
+
+        # Click Lead Time tab inside the now-open detail panel
         lead_time_tab = screen.locator("span:has-text('Lead Time')").first
         assert lead_time_tab.is_visible(timeout=5000), "Lead Time tab not found"
         lead_time_tab.click()
@@ -800,19 +845,10 @@ class TestPCCLeadTimeTab:
         screen.assert_no_errors()
 
 
-class TestPCCPlanNextOrder:
-    """Verify PLAN NEXT ORDER button exists on SB501000."""
-
-    def test_pcc_plan_next_order_button(self, acumatica_screen):
-        """PLAN NEXT ORDER toolbar button should be present."""
-        screen = acumatica_screen("SB501000")
-        page = screen.page
-        page.wait_for_timeout(3000)
-
-        btn = page.locator("text=PLAN NEXT ORDER")
-        assert btn.count() > 0, "PLAN NEXT ORDER button not found on SB501000 toolbar"
-
-        screen.assert_no_errors()
+# TestPCCPlanNextOrder removed 2026-04-15: the PLAN NEXT ORDER toolbar
+# button was intentionally retired in PR #390 (see
+# docs/plans/2026-04-12-pcc-usability-fixes-plan.md Task 2). The test
+# was asserting a UI element that no longer exists.
 
 
 # ════════════════════════════════════════════════════════════════════════
@@ -835,8 +871,13 @@ class TestSB501200:
         intake_html = screen.locator("[id$='htmlIntake']").first
         assert intake_html.is_visible(timeout=5000), "Intake HTML view not visible"
 
-        intake_text = intake_html.text_content() or ""
-        assert "Supplier Intake" in intake_text, "Supplier Intake heading not found"
+        # IntakeUrl is HTML rendered inside a PXHtmlView iframe — read
+        # from the inner htmlviewinner iframe, not the outer wrapper.
+        intake_text = _read_html_view(screen, "htmlIntake")
+        assert "Supplier Intake" in intake_text, (
+            "Supplier Intake heading not found (iframe content: %r)"
+            % intake_text[:200]
+        )
         assert "OPEN MOQ INTAKE" in intake_text, "MOQ INTAKE button not found"
 
         screen.assert_no_errors()
