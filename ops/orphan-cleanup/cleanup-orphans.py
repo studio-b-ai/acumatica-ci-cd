@@ -48,7 +48,7 @@ class AcuClient:
             f"{self.base}/entity/auth/login",
             json={"name": self.username, "password": self.password,
                   "company": self.tenant},
-            timeout=60,
+            timeout=180,
         )
         r.raise_for_status()
         log("Logged in.", "ok")
@@ -90,7 +90,7 @@ class AcuClient:
         r = self.session.post(
             f"{self.base}/CustomizationApi/delete",
             json={"projectName": project_name},
-            timeout=60,
+            timeout=180,
         )
         try:
             data = r.json()
@@ -118,7 +118,7 @@ class AcuClient:
                 "projectNames": project_names or [],
                 "tenantMode": "Current",
             },
-            timeout=60,
+            timeout=180,
         )
         if r.status_code not in (200, 204):
             return False, f"publishBegin returned {r.status_code}: {r.text[:300]}"
