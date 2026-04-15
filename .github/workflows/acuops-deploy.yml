@@ -92,7 +92,17 @@ on:
         type: string
         default: ''
       skip_sandbox_gate:
-        description: 'EMERGENCY: skip sandbox-gate entirely (for when the sandbox instance is down). Set to "OVERRIDE" literally.'
+        description: 'EMERGENCY: skip sandbox-gate entirely (for when the sandbox instance is down). Set to "OVERRIDE" literally. Requires skip_sandbox_gate_reason.'
+        required: false
+        type: string
+        default: ''
+      skip_sandbox_gate_reason:
+        description: 'REQUIRED when skip_sandbox_gate=OVERRIDE. Short justification (e.g. "sandbox down — #acumatica 2026-04-15"). Empty string is rejected.'
+        required: false
+        type: string
+        default: ''
+      i_really_mean_it:
+        description: 'DOUBLE-EMERGENCY: required when skip_sandbox_gate=OVERRIDE AND force_business_hours=true are both set. That combination broke prod on 2026-04-15 (PR #415, commit cc76dfff05). Set to "OVERRIDE" literally.'
         required: false
         type: string
         default: ''
@@ -142,6 +152,74 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 3
     steps:
+      # ── skip_sandbox_gate semantics (2026-04-15 incident hardening) ─────
+      # On 2026-04-15 a manual prod deploy of PR #415 (cc76dfff05) pulled
+      # skip_sandbox_gate=OVERRIDE during business hours with no reason
+      # field. The publish hit a 240s app-pool-recovery timeout, left
+      # prod in a partial state, and broke PCC (SB501000/SB501200 HTML
+      # views rendered empty) for live Heritage Fabrics users. The
+      # sandbox-gate WOULD have caught it — the identical UI tests
+      # (TestPCCTimeline, TestPCCMetricsRow, TestPCCLeadTimeTab,
+      # TestPCCPlanNextOrder, TestSB501200 in
+      # tests/ui/test_container_tracking.py) failed on the retry run
+      # 24466886228 against sandbox and correctly blocked prod.
+      #
+      # Gate semantics are now:
+      #   - skip_sandbox_gate=OVERRIDE requires a non-empty
+      #     skip_sandbox_gate_reason (fail-fast here, not mid-deploy).
+      #   - skip_sandbox_gate=OVERRIDE + force_business_hours=true
+      #     additionally requires i_really_mean_it=OVERRIDE. Layered
+      #     friction for the exact combination that hurt prod.
+      #   - The override is logged prominently to the step summary
+      #     with operator + SHA + reason — paper trail, not a sticky
+      #     note.
+      - name: Validate skip_sandbox_gate override
+        if: github.event.inputs.skip_sandbox_gate == 'OVERRIDE'
+        env:
+          REASON: ${{ github.event.inputs.skip_sandbox_gate_reason }}
+          BUSINESS_HOURS: ${{ github.event.inputs.force_business_hours }}
+          REALLY: ${{ github.event.inputs.i_really_mean_it }}
+          SHA: ${{ github.sha }}
+          ACTOR: ${{ github.triggering_actor }}
+        run: |
+          set -e
+          FAIL=0
+          TRIMMED_REASON="$(echo -n "${REASON}" | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//')"
+          if [[ -z "${TRIMMED_REASON}" ]]; then
+            echo "::error::skip_sandbox_gate=OVERRIDE requires a non-empty skip_sandbox_gate_reason."
+            echo "::error::2026-04-15 incident: PR #415 (cc76dfff05) pulled this lever with no reason, hit a 240s app-pool-recovery timeout mid-publish, left prod in partial state, and broke PCC (SB501000/SB501200) for live users."
+            FAIL=1
+          fi
+          if [[ "${BUSINESS_HOURS}" == "true" && "${REALLY}" != "OVERRIDE" ]]; then
+            echo "::error::skip_sandbox_gate=OVERRIDE + force_business_hours=true is the combination that broke prod on 2026-04-15."
+            echo "::error::To proceed with this combination, also set i_really_mean_it=OVERRIDE. Layered friction is intentional."
+            FAIL=1
+          fi
+          if (( FAIL )); then
+            {
+              echo "## 🚫 skip_sandbox_gate=OVERRIDE rejected"
+              echo ""
+              echo "See step log for the specific validation that failed."
+              echo ""
+              echo "Context: 2026-04-15 PR #415 deploy (\`cc76dfff05\`) bypassed sandbox-gate with no reason, during business hours, and broke PCC (SB501000/SB501200) for live users when the publish timed out mid-flight."
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+          {
+            echo "## 🚨 SANDBOX-GATE BYPASSED"
+            echo ""
+            echo "| Field | Value |"
+            echo "|-------|-------|"
+            echo "| Operator | \`${ACTOR}\` |"
+            echo "| Commit | \`${SHA}\` |"
+            echo "| Reason | ${TRIMMED_REASON} |"
+            echo "| force_business_hours | ${BUSINESS_HOURS} |"
+            echo "| i_really_mean_it | ${REALLY} |"
+            echo ""
+            echo "⚠️ This deploy is going to prod without sandbox UI-test coverage. If it breaks live users, this row is the paper trail. See 2026-04-15 incident (PR #415, \`cc76dfff05\`)."
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "::warning::skip_sandbox_gate=OVERRIDE active — operator=${ACTOR} sha=${SHA} reason=${TRIMMED_REASON}"
+
       - name: Audit emergency overrides
         if: >
           github.event.inputs.force_qualify == 'true' ||
@@ -158,7 +236,8 @@ jobs:
             echo "|----------|-------|"
             [[ "${{ github.event.inputs.force_qualify }}" == "true" ]]        && echo "| force_qualify | true (skip qualify + smoke test) |"
             [[ "${{ github.event.inputs.force_deploy }}" == "OVERRIDE" ]]     && echo "| force_deploy | OVERRIDE (bypass sandbox-gate failure) |"
-            [[ "${{ github.event.inputs.skip_sandbox_gate }}" == "OVERRIDE" ]] && echo "| skip_sandbox_gate | OVERRIDE (skip sandbox-gate entirely) |"
+            [[ "${{ github.event.inputs.skip_sandbox_gate }}" == "OVERRIDE" ]] && echo "| skip_sandbox_gate | OVERRIDE — reason: ${{ github.event.inputs.skip_sandbox_gate_reason }} |"
+            [[ "${{ github.event.inputs.i_really_mean_it }}" == "OVERRIDE" ]] && echo "| i_really_mean_it | OVERRIDE (skip_sandbox_gate + force_business_hours combo) |"
             [[ "${{ github.event.inputs.force_dispatch_cap }}" == "OVERRIDE" ]] && echo "| force_dispatch_cap | OVERRIDE (bypass 24h cap) |"
             [[ "${{ github.event.inputs.acknowledge_unpublish }}" == "OVERRIDE" ]] && echo "| acknowledge_unpublish | OVERRIDE (allow projects to be unpublished) |"
             [[ "${{ github.event.inputs.force_business_hours }}" == "true" ]] && echo "| force_business_hours | true (deploy during business hours) |"
