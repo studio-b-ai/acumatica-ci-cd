@@ -566,7 +566,7 @@ namespace StudioB.Containers
                 DELETE FROM SiteMap
                 WHERE CompanyID = @cid
                   AND ParentID = '9c89e3db-7c47-43c0-8554-5d2c9f2c0e87'
-                  AND ScreenID NOT IN ('SB501000','SB302000','SB302010','SB302020','SB302030')";
+                  AND ScreenID NOT IN ('SB501000','SB501200','SB302000','SB302010','SB302020','SB302030')";
             using (var cmd = new SqlCommand(deleteOldEntries, conn))
             {
                 cmd.Parameters.AddWithValue("@cid", companyId);
@@ -579,7 +579,7 @@ namespace StudioB.Containers
                 DELETE FROM SiteMap
                 WHERE CompanyID = @cid
                   AND (ScreenID LIKE 'IGCM%' OR ScreenID LIKE 'IG.CM%')
-                  AND ScreenID NOT IN ('SB501000','SB302000','SB302010','SB302020','SB302030')";
+                  AND ScreenID NOT IN ('SB501000','SB501200','SB302000','SB302010','SB302020','SB302030')";
             using (var cmd = new SqlCommand(deleteIgcmEntries, conn))
             {
                 cmd.Parameters.AddWithValue("@cid", companyId);
@@ -587,13 +587,20 @@ namespace StudioB.Containers
                 if (rows > 0) WriteLog(string.Format("[AesthetikContainers] Cleaned {0} IGCM SiteMap entries outside workspace (CID={1})", rows, companyId));
             }
 
-            // Step 3: Upsert our 4 form screen entries
+            // Step 3: Upsert our 5 form screen entries
+            // 2026-04-15: Added SB501200 (Supplier Intake) — was missing from
+            // the whitelist DELETE + upsert, so the project.xml SiteMap row was
+            // wiped on every publish. Symptom: SB501200 returned the
+            // "screen not registered" stub <script>window.open("/Main","_top")
+            // </script> instead of the page, breaking
+            // tests/ui/test_container_tracking.py::TestSB501200.
             string[][] entries = new[]
             {
                 new[] { "SB302000", "Freight Forwarders", "~/Pages/SB/SB302000.aspx", "7.9" },
                 new[] { "SB302010", "Container Types", "~/Pages/SB/SB302010.aspx", "8.2" },
                 new[] { "SB302020", "Destinations/Ports", "~/Pages/SB/SB302020.aspx", "8.3" },
                 new[] { "SB302030", "Container Preferences", "~/Pages/SB/SB302030.aspx", "8.4" },
+                new[] { "SB501200", "Supplier Intake", "~/Pages/SB/SB501200.aspx", "8.6" },
             };
 
             foreach (var e in entries)
@@ -615,7 +622,7 @@ namespace StudioB.Containers
                     cmd.ExecuteNonQuery();
                 }
             }
-            WriteLog(string.Format("[AesthetikContainers] Container Tracking SiteMap (4 form screens) for CompanyID={0} — OK", companyId));
+            WriteLog(string.Format("[AesthetikContainers] Container Tracking SiteMap (5 form screens) for CompanyID={0} — OK", companyId));
         }
 
         // ── EnsureDRPGISiteMap ─────────────────────────────────────────────
