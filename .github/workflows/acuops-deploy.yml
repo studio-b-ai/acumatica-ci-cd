@@ -1630,12 +1630,15 @@ jobs:
               ALSO_PUBLISH_PROJECTS="${ALSO}" \
               python pipeline/scripts/emergency-deploy.py
           else
+            # --no-merge REMOVED 2026-04-15: orphan CustProject rows no longer
+            # block merge=true (validated via empty-list publishBegin on prod).
+            # merge=true restores GI OData re-registration that no-merge skipped.
+            # --pre-cleanup REMOVED: it attempts to delete live projects which
+            # trips NullReferenceException in UserRecordsDBUpdater.
             python3 pipeline/scripts/deploy.py \
               --project "${PROJECT}" \
               --package "${PACKAGE_FILE}" \
               --also-publish "${ALSO}" \
-              --no-merge \
-              --pre-cleanup \
               ${EXTRA_FLAGS}
           fi
 
