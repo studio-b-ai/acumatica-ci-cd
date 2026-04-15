@@ -9,13 +9,26 @@ namespace StudioB.Containers
     {
         public static bool IsActive() => true;
 
-        // Re-entrancy guards — prevent cascading event handler loops.
-        // _isProcessingLine guards the two POLine handlers (FieldDefaulting + FieldUpdated<POLine>)
-        // which can mutually trigger each other via Transactions.Update().
-        // _isProcessingHeader guards the POOrder-level FieldUpdated handler which calls
-        // Transactions.Update() in a loop, which in turn fires RowSelected<POLine>.
-        private bool _isProcessingLine = false;
-        private bool _isProcessingHeader = false;
+        // ── Re-entrancy guards ───────────────────────────────────────────────────
+        // Prevents cascading event-handler loops that caused the PO-entry failure.
+        //
+        //  _isProcessingLine    — guards FieldDefaulting<POLine> and
+        //                         FieldUpdated<POLine, promisedDate>, which can
+        //                         mutually trigger each other via Transactions.Update().
+        //
+        //  _isProcessingHeader  — guards FieldUpdated<POOrder, usrExpArrivalDate>,
+        //                         which calls Transactions.Update() in a loop and
+        //                         would otherwise cascade back into itself through
+        //                         the line-level RowSelected handler.
+        //
+        //  _isProcessingRowSelected — guards RowSelected<POLine>, which performs a
+        //                         PXDatabase query and cache write; without this guard
+        //                         the Transactions.Update() calls inside the header
+        //                         propagation loop would re-enter RowSelected for
+        //                         every line on every update.
+        // ────────────────────────────────────────────────────────────────────────
+        private bool _isProcessingLine        = false;
+        private bool _isProcessingHeader      = false;
         private bool _isProcessingRowSelected = false;
 
         #region Container Navigation Action
@@ -24,7 +37,7 @@ namespace StudioB.Containers
         [PXUIField(DisplayName = "Container Tracking", MapEnableRights = PXCacheRights.Select)]
         protected void viewContainer()
         {
-            // Fix C: null-check Current before accessing
+            // Fix C: null-check Current before any access to the document
             POOrder order = Base.Document.Current;
             if (order == null) return;
 
@@ -34,7 +47,8 @@ namespace StudioB.Containers
             ContainerMaint graph = PXGraph.CreateInstance<ContainerMaint>();
             if (!string.IsNullOrEmpty(containerRef))
             {
-                // Fix C: BQL already has a Where clause with a Required parameter — correctly scoped
+                // Fix C: BQL has a Where<> clause with a Required<> parameter — correctly
+                // scoped; no unfiltered select.
                 UsrContainer container = PXSelect<UsrContainer,
                     Where<UsrContainer.containerCD, Equal<Required<UsrContainer.containerCD>>>>
                     .Select(graph, containerRef.Trim());
@@ -47,21 +61,24 @@ namespace StudioB.Containers
         }
         #endregion
 
-        // Cache container qty lookups per PO to avoid repeated queries
+        // Cache for container-qty lookups — keyed by "OrderType:OrderNbr:LineNbr".
+        // Invalidated whenever lines are inserted, deleted, or the document changes.
         private Dictionary<string, decimal> _containerQtyCache;
 
         /// <summary>
         /// Defaults UsrExpArrivalDate for a new PO line.
-        /// First tries the header-level expected arrival date, then falls back to PromisedDate.
+        /// Priority: header UsrExpArrivalDate → line PromisedDate → leave blank.
         /// </summary>
         protected void _(Events.FieldDefaulting<POLine, POLineExt.usrExpArrivalDate> e)
         {
-            // Fix A: re-entrancy guard
+            // Fix A: re-entrancy guard — FieldUpdated<POLine> sets _isProcessingLine=true
+            // before calling Transactions.Update(), which would re-fire FieldDefaulting
+            // for the same line.  Block that second invocation here.
             if (_isProcessingLine) return;
 
             if (e.Row == null) return;
 
-            // Fix C: null-check Current before accessing
+            // Fix C: null-check Current before accessing document header
             POOrder header = Base.Document.Current;
             if (header != null)
             {
@@ -74,7 +91,7 @@ namespace StudioB.Containers
                 }
             }
 
-            // Fallback: seed from line's PromisedDate so expected arrival is never blank
+            // Fallback: seed from the line's PromisedDate so the field is never blank
             if (e.Row.PromisedDate != null)
             {
                 e.NewValue = e.Row.PromisedDate;
@@ -84,14 +101,13 @@ namespace StudioB.Containers
 
         /// <summary>
         /// When PromisedDate changes on a PO line and UsrExpArrivalDate hasn't been
-        /// manually overridden (still null or still matches old PromisedDate), update
-        /// UsrExpArrivalDate to match. This ensures expected arrival is never blank
-        /// and stays in sync until explicitly overridden by container propagation,
-        /// forwarder update, or manual entry.
+        /// manually overridden (still null or still matches the old PromisedDate),
+        /// update UsrExpArrivalDate to match.
         /// </summary>
         protected void _(Events.FieldUpdated<POLine, POLine.promisedDate> e)
         {
-            // Fix A: re-entrancy guard
+            // Fix A: re-entrancy guard — this handler calls Transactions.Update(),
+            // which fires FieldDefaulting and can re-enter here.
             if (_isProcessingLine) return;
 
             if (e.Row == null) return;
@@ -102,7 +118,7 @@ namespace StudioB.Containers
             DateTime? newPromised = e.Row.PromisedDate;
             if (newPromised == null) return;
 
-            // Seed if expected is null, or update if expected still matches old promised
+            // Only propagate when the expected-arrival date is still inherited
             bool shouldUpdate = lineExt.UsrExpArrivalDate == null
                              || lineExt.UsrExpArrivalDate == oldPromised;
 
@@ -122,12 +138,16 @@ namespace StudioB.Containers
         }
 
         /// <summary>
-        /// When the header-level UsrExpArrivalDate changes, propagate it to all lines
-        /// whose expected arrival date is still inherited (null or matches old header value).
+        /// When the header-level UsrExpArrivalDate changes, propagate it down to all
+        /// lines whose expected-arrival date is still "inherited" (null, or equal to
+        /// the old header value).
         /// </summary>
         protected void _(Events.FieldUpdated<POOrder, POOrderExt.usrExpArrivalDate> e)
         {
-            // Fix A: re-entrancy guard
+            // Fix A: re-entrancy guard — each Transactions.Update() below fires
+            // RowSelected<POLine>, which is on a separate flag, but also fires
+            // FieldUpdated<POOrder> again if any line update bubbles header-side
+            // recalculation.  Block that second entry here.
             if (_isProcessingHeader) return;
 
             if (e.Row == null) return;
@@ -140,14 +160,17 @@ namespace StudioB.Containers
             _isProcessingHeader = true;
             try
             {
-                // Fix C: Base.Transactions is already scoped to the current document
-                // by Acumatica's cache — safe to iterate. Guard against empty result set.
+                // Fix C: Base.Transactions is a PXSelect scoped to the current document
+                // by the Acumatica cache infrastructure — no additional Where<> is needed.
+                // Null-check each element to guard against empty result sets.
                 foreach (POLine line in Base.Transactions.Select())
                 {
                     if (line == null) continue;
                     POLineExt lineExt = line.GetExtension<POLineExt>();
                     if (lineExt == null) continue;
-                    bool isInherited = lineExt.UsrExpArrivalDate == null || lineExt.UsrExpArrivalDate == oldValue;
+
+                    bool isInherited = lineExt.UsrExpArrivalDate == null
+                                    || lineExt.UsrExpArrivalDate == oldValue;
                     if (isInherited)
                     {
                         lineExt.UsrExpArrivalDate = newValue;
@@ -162,55 +185,55 @@ namespace StudioB.Containers
         }
 
         /// <summary>
-        /// Populates UsrQtyOnContainers (virtual) for each PO line.
-        /// Replaces IIG's IGCMQtyOnContainers field.
-        /// Queries UsrContainerPOLink to find matching container allocations.
+        /// Populates the virtual UsrQtyOnContainers field for each PO line.
+        /// Uses a per-PO cache to avoid one DB round-trip per line on every render.
         /// </summary>
         protected void _(Events.RowSelected<POLine> e)
         {
-            // Fix A: re-entrancy guard
+            // Fix A: re-entrancy guard — the header FieldUpdated handler calls
+            // Transactions.Update() inside a loop, which fires RowSelected for
+            // every updated line.  Without this guard that causes O(n²) re-entry.
             if (_isProcessingRowSelected) return;
 
             if (e.Row == null) return;
 
-            // Fix C: null-check Current before accessing
+            // Fix C: null-check Current before accessing document header
             POOrder header = Base.Document.Current;
             if (header == null) return;
 
             _isProcessingRowSelected = true;
             try
             {
-                // Build cache on first line of each PO
                 string poKey = header.OrderType + ":" + header.OrderNbr;
+
+                // Build (or rebuild) the cache on the first RowSelected call for this PO
                 if (_containerQtyCache == null || !_containerQtyCache.ContainsKey(poKey + ":loaded"))
                 {
                     _containerQtyCache = new Dictionary<string, decimal>(StringComparer.OrdinalIgnoreCase);
                     _containerQtyCache[poKey + ":loaded"] = 1;
 
-                    // Fix C: PXDatabase.SelectMulti is already scoped by the explicit
+                    // Fix C: PXDatabase.SelectMulti is explicitly scoped by
                     // PXDataFieldValue filters on OrderType + OrderNbr — correctly bounded.
-                    // Guard against null records in the result set.
+                    // Null-check each record to guard against unexpected nulls in the set.
                     foreach (PXDataRecord rec in PXDatabase.SelectMulti<UsrContainerPOLink>(
                         new PXDataField("LineNbr"),
                         new PXDataField("OrderQty"),
                         new PXDataFieldValue("OrderType", header.OrderType),
-                        new PXDataFieldValue("OrderNbr", header.OrderNbr)))
+                        new PXDataFieldValue("OrderNbr",  header.OrderNbr)))
                     {
                         if (rec == null) continue;
                         int? lineNbr = rec.GetInt32(0);
-                        if (lineNbr != null)
-                        {
-                            string lineKey = poKey + ":" + lineNbr;
-                            // Accumulate container allocation count per line
-                            if (_containerQtyCache.ContainsKey(lineKey))
-                                _containerQtyCache[lineKey] += 1;
-                            else
-                                _containerQtyCache[lineKey] = 1;
-                        }
+                        if (lineNbr == null) continue;
+
+                        string lineKey = poKey + ":" + lineNbr;
+                        if (_containerQtyCache.ContainsKey(lineKey))
+                            _containerQtyCache[lineKey] += 1;
+                        else
+                            _containerQtyCache[lineKey] = 1;
                     }
                 }
 
-                // Set virtual field — default to null (not zero) when no allocations found
+                // Populate the virtual field; use null (not 0) when there are no allocations
                 string key = poKey + ":" + e.Row.LineNbr;
                 decimal qty = 0;
                 _containerQtyCache.TryGetValue(key, out qty);
@@ -218,12 +241,32 @@ namespace StudioB.Containers
             }
             catch (Exception ex)
             {
-                PXTrace.WriteError($"UsrQtyOnContainers error: {ex.Message}");
+                PXTrace.WriteError($"[POOrderEntry_Extension] UsrQtyOnContainers error: {ex.Message}");
             }
             finally
             {
                 _isProcessingRowSelected = false;
             }
+        }
+
+        /// <summary>
+        /// Invalidate the container-qty cache whenever a new PO line is inserted so that
+        /// the next RowSelected call re-queries and the new line gets a fresh allocation count.
+        /// </summary>
+        protected void _(Events.RowInserted<POLine> e)
+        {
+            // Flush the cache so RowSelected rebuilds it for the updated line set
+            _containerQtyCache = null;
+        }
+
+        /// <summary>
+        /// Invalidate the container-qty cache whenever a PO line is deleted so that
+        /// removed lines no longer contribute stale counts to the cache.
+        /// </summary>
+        protected void _(Events.RowDeleted<POLine> e)
+        {
+            // Flush the cache so RowSelected rebuilds it for the updated line set
+            _containerQtyCache = null;
         }
     }
 }
