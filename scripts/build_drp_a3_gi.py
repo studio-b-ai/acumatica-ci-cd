@@ -134,6 +134,8 @@ A3_GIDESIGN = f'''        <row DesignID="{A3_DESIGN}" Name="DRP_OpenPOLines" Scr
           <SiteMap linkname="toDesignById">
             <row Position="1190" Title="DRP Open PO Lines" Url="~/GenericInquiry/GenericInquiry.aspx?id={A3_DESIGN}" Expanded="0" IsFolder="0" ScreenID="SB401100" NodeID="{A3_NODE}" ParentID="{PARENT_ID}">
               <MUIScreen IsPortal="0" WorkspaceID="{WORKSPACE_ID}" Order="2100" SubcategoryID="{SUBCAT_ID}" />
+              <RolesInGraph Rolename="Administrator" ApplicationName="/" Accessrights="4" />
+              <RolesInGraph Rolename="*" ApplicationName="/" Accessrights="4" />
             </row>
           </SiteMap>
 

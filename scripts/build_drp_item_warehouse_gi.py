@@ -70,6 +70,8 @@ def sitemap_row(position, title, design_id, screen_id, node_id, order_num):
             f'NodeID="{node_id}" ParentID="{PARENT_ID}">\n'
             f'              <MUIScreen IsPortal="0" WorkspaceID="{WORKSPACE_ID}" '
             f'Order="{order_num}" SubcategoryID="{SUBCAT_ID}" />\n'
+            f'              <RolesInGraph Rolename="Administrator" ApplicationName="/" Accessrights="4" />\n'
+            f'              <RolesInGraph Rolename="*" ApplicationName="/" Accessrights="4" />\n'
             f'            </row>\n'
             f'          </SiteMap>')
 
