@@ -2388,6 +2388,17 @@ jobs:
             --no-merge-expected acuops.yaml \
             --json-output verify-result.json
 
+      - name: Verify GI OData endpoints
+        if: always()
+        continue-on-error: true
+        env:
+          ACUMATICA_URL: ${{ secrets.ACUMATICA_PROD_URL }}
+          ACUMATICA_USERNAME: ${{ secrets.ACUMATICA_VERIFY_USERNAME || secrets.ACUMATICA_PROD_USERNAME }}
+          ACUMATICA_PASSWORD: ${{ secrets.ACUMATICA_VERIFY_PASSWORD || secrets.ACUMATICA_PROD_PASSWORD }}
+          ACUMATICA_TENANT: ${{ secrets.ACUMATICA_PROD_TENANT }}
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: python scripts/verify-gi-odata.py
+
       - name: Publish test metrics
         if: always()
         env:
