@@ -39,7 +39,7 @@ namespace Aesthetik.WMS
 
         [PXDBBool]
         [PXDefault(false, PersistingCheck = PXPersistingCheck.Nothing)]
-        [PXUIField(DisplayName = "Compliance Hold", Enabled = false)]
+        [PXUIField(DisplayName = "Compliance Hold", Enabled = true)]
         public bool? UsrComplianceHold { get; set; }
         #endregion
 
@@ -47,7 +47,7 @@ namespace Aesthetik.WMS
         public abstract class usrComplianceHoldReason : BqlString.Field<usrComplianceHoldReason> { }
 
         [PXDBString(500, IsUnicode = true)]
-        [PXUIField(DisplayName = "Compliance Hold Reason", Enabled = false)]
+        [PXUIField(DisplayName = "Compliance Hold Reason", Enabled = true)]
         public string UsrComplianceHoldReason { get; set; }
         #endregion
     }
