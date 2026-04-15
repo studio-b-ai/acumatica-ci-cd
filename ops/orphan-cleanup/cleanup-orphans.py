@@ -102,15 +102,20 @@ class AcuClient:
             )
         return data
 
-    def test_merge_publish(self, project_names: list[str]) -> tuple[bool, str]:
-        """Validate-only publishBegin with merge=true. Returns (success, message)."""
+    def test_merge_publish(self, project_names=None) -> tuple[bool, str]:
+        """Validate-only publishBegin with merge=true. Returns (success, message).
+
+        With empty project_names, exercises Acumatica's merge-state enumeration
+        (the code path that crashes on orphan rows) without needing any real
+        project content. This is the most reliable orphan-presence test.
+        """
         r = self.session.post(
             f"{self.base}/CustomizationApi/publishBegin",
             json={
                 "isMergeWithExistingPackages": True,
                 "isOnlyValidation": True,
                 "isOnlyDbUpdates": False,
-                "projectNames": project_names,
+                "projectNames": project_names or [],
                 "tenantMode": "Current",
             },
             timeout=60,
@@ -214,9 +219,9 @@ def main():
                 log(f"Delete failed: {e}", "err")
 
         if not args.skip_merge_test:
-            print("\n→ Testing merge=true publishBegin (validation only)...")
-            # Use a known existing project for the test
-            ok, msg = client.test_merge_publish(["AesthetikContainers"])
+            print("\n→ Testing merge=true publishBegin (validation only, empty list)...")
+            # Empty list exercises orphan enumeration without needing real content
+            ok, msg = client.test_merge_publish()
             if ok:
                 log(msg, "ok")
                 print("\n✅ ORPHAN CLEANUP SUCCESSFUL — merge=true is now safe to use.")
