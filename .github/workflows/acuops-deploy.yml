@@ -963,12 +963,10 @@ jobs:
 
           # Sandbox uses only managed code — no ISV packages.
           # Read sandbox co-publish list from acuops.yaml (same as old test tenant list).
-          # --no-merge: sandbox AND prod have orphaned CustProject rows for
-          # IIGCONTAINERMGMT[24.204.0004][R19]1, IIGHFContainerMods[24.204.0004][R04],
-          # and AesthetikContainerGIs. merge=true triggers "An error has occurred"
-          # on publishBegin. VAR support ticket pending at
-          # docs/acumatica-support-ticket-iig-orphan.md — drop --no-merge once
-          # Acumatica engineering cleans the three ghost rows.
+          # Orphan CustProject rows (IIGCONTAINERMGMT, IIGHFContainerMods,
+          # AesthetikContainerGIs) that blocked merge=true were cleaned 2026-04-15.
+          # --no-merge and --pre-cleanup are no longer needed and cause GI OData
+          # de-registration + circuit-breaker trips. See memory/context/gi-odata-deploy-fix.md.
           SANDBOX_ALSO=$(python3 -c "
           import yaml
           with open('acuops.yaml') as f:
@@ -980,9 +978,7 @@ jobs:
             --project "${PROJECT}" \
             --package "${PACKAGE_FILE}" \
             --also-publish "${SANDBOX_ALSO}" \
-            --no-merge \
             --skip-smoke-test \
-            --pre-cleanup \
             ${EXTRA_FLAGS}
 
       - name: Verify sandbox
@@ -2284,7 +2280,6 @@ jobs:
             --project "${PROJECT}" \
             --package "${PACKAGE_FILE}" \
             --also-publish "${STG_COPUBLISH}" \
-            --pre-cleanup \
             ${EXTRA_FLAGS}
 
       - name: Verify staging publish
