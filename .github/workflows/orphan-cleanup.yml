@@ -1,0 +1,90 @@
+# Orphan Customization Metadata Cleanup
+#
+# Reconciles + removes the 3 orphan CustProject entries blocking merge=true:
+#   - IIGCONTAINERMGMT[24.204.0004][R19]1
+#   - IIGHFContainerMods[24.204.0004][R04]
+#   - AesthetikContainerGIs
+#
+# Strategy: re-import each orphan via Customization API, then call
+# /CustomizationApi/delete to let Acumatica's own deletion logic clean
+# up CustProject + CustPublishedProject + child tables. NO direct SQL.
+#
+# Manual dispatch only. Sandbox first, then production after verification.
+
+name: Orphan Cleanup (one-shot)
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Target environment'
+        required: true
+        type: choice
+        options:
+          - sandbox
+          - production
+      dry_run:
+        description: 'Print plan, do not make changes'
+        required: false
+        type: boolean
+        default: true
+      confirm_production:
+        description: 'For production runs: type "YES I HAVE TESTED ON SANDBOX"'
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  cleanup:
+    name: Cleanup orphans (${{ github.event.inputs.environment }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Production safety gate
+        if: github.event.inputs.environment == 'production' && github.event.inputs.dry_run == 'false'
+        run: |
+          if [ "${{ github.event.inputs.confirm_production }}" != "YES I HAVE TESTED ON SANDBOX" ]; then
+            echo "::error::Production runs require confirm_production='YES I HAVE TESTED ON SANDBOX'"
+            exit 1
+          fi
+          echo "Production confirmation accepted."
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install requests
+
+      - name: Stage orphan packages
+        run: |
+          mkdir -p /tmp/orphan-cleanup
+          # IIG zips committed under ops/orphan-cleanup/ in this repo
+          if [ -d ops/orphan-cleanup ]; then
+            cp ops/orphan-cleanup/*.zip /tmp/orphan-cleanup/
+            ls -la /tmp/orphan-cleanup/
+          else
+            echo "::error::ops/orphan-cleanup/ directory missing — IIG zips must be committed there"
+            exit 1
+          fi
+
+      - name: Run cleanup
+        env:
+          ACUMATICA_URL: ${{ github.event.inputs.environment == 'production' && secrets.ACUMATICA_PROD_URL || secrets.ACUMATICA_SANDBOX_URL }}
+          ACUMATICA_USERNAME: ${{ github.event.inputs.environment == 'production' && secrets.ACUMATICA_PROD_USERNAME || secrets.ACUMATICA_SANDBOX_USERNAME }}
+          ACUMATICA_PASSWORD: ${{ github.event.inputs.environment == 'production' && secrets.ACUMATICA_PROD_PASSWORD || secrets.ACUMATICA_SANDBOX_PASSWORD }}
+          ACUMATICA_TENANT: ${{ github.event.inputs.environment == 'production' && secrets.ACUMATICA_PROD_TENANT || secrets.ACUMATICA_SANDBOX_TENANT }}
+          CONFIRM_PRODUCTION: ${{ github.event.inputs.environment == 'production' && 'YES' || '' }}
+        run: |
+          DRY_FLAG=""
+          if [ "${{ github.event.inputs.dry_run }}" == "true" ]; then
+            DRY_FLAG="--dry-run"
+          fi
+          python3 ops/orphan-cleanup/cleanup-orphans.py --env ${{ github.event.inputs.environment }} $DRY_FLAG
