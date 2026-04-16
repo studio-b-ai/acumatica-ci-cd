@@ -117,15 +117,6 @@ class TestPCCBugFixes:
             "Bug 3 (real doc counts in risk aggregation) may not be fixed."
         )
 
-    @pytest.mark.xfail(
-        reason="PR #366 residual bug: htmlKPITiles outer element has 0px "
-        "computed height on sandbox. The Height=280px change from PR #366 "
-        "isn't reaching the rendered DOM — likely ASPX attribute not applied "
-        "or parent container overflow clipping. Not an iframe issue — our "
-        "read_html_view fix confirmed inner content loads. Tracked for "
-        "separate fix.",
-        strict=False,
-    )
     def test_metrics_row_visible(self, acumatica_screen):
         """Bug 2: Metrics row should be visible below KPI tiles.
 
@@ -139,9 +130,13 @@ class TestPCCBugFixes:
         screen = acumatica_screen("SB501000")
         screen.page.wait_for_timeout(3000)
 
-        # Check the htmlKPITiles outer element has sufficient height
+        # Check the htmlKPITiles outer element has sufficient height.
+        # Use [id$="htmlKPITiles"] (ends-with) to target the rendered TABLE
+        # element directly — [id*="htmlKPITiles"] (contains) also matches
+        # the hidden '..._state' INPUT that PXHtmlView emits first in DOM
+        # order, which has offsetHeight=0 and would mask the real height.
         height = screen.evaluate(
-            "() => { const el = document.querySelector('[id*=\"htmlKPITiles\"]'); "
+            "() => { const el = document.querySelector('[id$=\"htmlKPITiles\"]'); "
             "if (!el) return 0; "
             "return el.offsetHeight || parseInt(el.style.height) || 0; }"
         )
