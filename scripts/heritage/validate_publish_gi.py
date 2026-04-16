@@ -11,11 +11,12 @@ PXGenericInqGrph+Definition on app pool restart).
 PROBE_GIS = [
     "InventoryAllocationDetail",
     "LotAvailability",
-    # DRP Phase 0 Stream A (2026-04-09) — inline GIs in AesthetikContainers
-    "DRP_VelocityHistory",     # SB401080 — SOShipLine × SOShipment × SOLine
-    "DRP_OpenSOCommitments",   # SB401090 — SOLine × SOOrder
-    "DRP_OpenPOLines",         # SB401100 — POLine × POOrder × UsrContainerPOLink × UsrContainer
-    "DRP_InventoryBySite",     # SB401110 — InventoryItem × INSiteStatus
+    # DRP Phase 0 Stream A — SQL-installed GIs in AesthetikContainers (no ScreenID)
+    "DRP_VelocityHistory",        # SOShipLine × SOShipment × SOLine
+    "DRP_OpenSOCommitments",      # SOOrder × SOLine
+    "DRP_OpenPOLines",            # POOrder × POLine × UsrContainerPOLink × UsrContainer
+    "DRP_InventoryBySite",        # InventoryItem × INSiteStatus
+    "DRP_ItemWarehouseSettings",  # INItemSite × InventoryItem × INSite × POVendorInventory
 ]
 
 RED = "\033[91m"
