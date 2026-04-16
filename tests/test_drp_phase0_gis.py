@@ -76,9 +76,11 @@ def sql_scripts():
     out: dict[str, str] = {}
     for sql_el in root.findall("Sql"):
         name = sql_el.get("Name", "")
-        if name.startswith("InstallDRP_") and name.endswith("GI"):
-            # Extract GI name from script name: InstallDRP_FooGI → DRP_Foo
-            gi_name = name[len("Install"):-len("GI")]
+        if name.startswith("InstallDRP_") and "GI" in name:
+            # Extract GI name from script name: InstallDRP_FooGI_v2 → DRP_Foo
+            # Strip version suffix (_v2, _v3, etc.) then strip trailing "GI"
+            base = re.sub(r"_v\d+$", "", name)
+            gi_name = base[len("Install"):-len("GI")]
             cdata = sql_el.find("CDATA")
             if cdata is not None and cdata.text:
                 out[gi_name] = cdata.text

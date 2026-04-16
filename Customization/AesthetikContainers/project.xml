@@ -24,7 +24,7 @@ IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('POOrder') 
   ALTER TABLE POOrder ADD UsrFactoryReadyDate datetime NULL;
 ]]></CDATA>
     </Sql>
-    <Sql Name="InstallDRP_VelocityHistoryGI" Script="#CDATA">
+    <Sql Name="InstallDRP_VelocityHistoryGI_v2" Script="#CDATA">
         <CDATA name="Script"><![CDATA[-- REVIEWED: gi-sql-safe
 -- DRP_VelocityHistory GI installer — shipped lines with dates for velocity analysis.
 -- SQL-installed with NO ScreenID so OData works without SiteMap access checks.
@@ -105,7 +105,7 @@ INSERT INTO GISort (CompanyID, DesignID, LineNbr, DataFieldName, IsDescending)
 VALUES (@CompanyID, @DesignID, 1, 'SOShipment.ShipDate', 1);
 ]]></CDATA>
     </Sql>
-    <Sql Name="InstallDRP_OpenSOCommitmentsGI" Script="#CDATA">
+    <Sql Name="InstallDRP_OpenSOCommitmentsGI_v2" Script="#CDATA">
         <CDATA name="Script"><![CDATA[-- REVIEWED: gi-sql-safe
 -- DRP_OpenSOCommitments GI installer — open SO lines for demand planning.
 -- SQL-installed with NO ScreenID so OData works without SiteMap access checks.
@@ -179,7 +179,7 @@ INSERT INTO GISort (CompanyID, DesignID, LineNbr, DataFieldName, IsDescending)
 VALUES (@CompanyID, @DesignID, 1, 'SOLine.RequestDate', 0);
 ]]></CDATA>
     </Sql>
-    <Sql Name="InstallDRP_InventoryBySiteGI" Script="#CDATA">
+    <Sql Name="InstallDRP_InventoryBySiteGI_v2" Script="#CDATA">
         <CDATA name="Script"><![CDATA[-- REVIEWED: gi-sql-safe
 -- DRP_InventoryBySite GI installer — stock item quantities per warehouse.
 -- SQL-installed with NO ScreenID so OData works without SiteMap access checks.
@@ -249,7 +249,7 @@ VALUES
     (@CompanyID, @DesignID, 2, 'INSiteStatus.SiteID', 0);
 ]]></CDATA>
     </Sql>
-    <Sql Name="InstallDRP_OpenPOLinesGI" Script="#CDATA">
+    <Sql Name="InstallDRP_OpenPOLinesGI_v2" Script="#CDATA">
         <CDATA name="Script"><![CDATA[-- REVIEWED: gi-sql-safe
 -- DRP_OpenPOLines GI installer — open PO lines with container linkage.
 -- SQL-installed with NO ScreenID so OData works without SiteMap access checks.
@@ -343,7 +343,7 @@ INSERT INTO GISort (CompanyID, DesignID, LineNbr, DataFieldName, IsDescending)
 VALUES (@CompanyID, @DesignID, 1, 'Line.PromisedDate', 0);
 ]]></CDATA>
     </Sql>
-    <Sql Name="InstallDRP_ItemWarehouseSettingsGI" Script="#CDATA">
+    <Sql Name="InstallDRP_ItemWarehouseSettingsGI_v2" Script="#CDATA">
         <CDATA name="Script"><![CDATA[-- REVIEWED: gi-sql-safe
 -- DRP_ItemWarehouseSettings GI installer — replenishment settings per item/warehouse.
 -- SQL-installed with NO ScreenID so OData works without SiteMap access checks.
