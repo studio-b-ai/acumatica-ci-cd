@@ -40,6 +40,7 @@ WHERE DesignID IN (
 AND ExposeViaOData = 0;
 ]]></CDATA>
     </Sql>
+    <%-- AesthetikContainers_SchemaDiscovery_v1 removed — diagnostic only, not needed in CI --%>
     <Page path="~/pages/po/po301000.aspx">
         <PXFormView ID="form" ParentId="phF_form" TypeFullName="PX.Web.UI.PXFormView">
             <Children Key="Template">
