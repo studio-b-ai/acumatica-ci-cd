@@ -27,7 +27,6 @@ publish:
     - "AesthetikWMS"
     - "AsthetikTheme"
     - "StudioBAcuOps"
-    - "PXLotSertialNbrAttributeExtPkg"
   poll_interval: 10
   poll_timeout: 600
 
