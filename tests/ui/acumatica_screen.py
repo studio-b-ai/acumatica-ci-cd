@@ -229,6 +229,41 @@ class AcumaticaScreen:
         if "igcm.dac" in body:
             raise AssertionError(f"{self.screen_id} references IGCM.DAC types")
 
+    def read_html_view(self, view_id_suffix: str) -> str:
+        """Read text content of a PXHtmlView's inner htmlviewinner iframe.
+
+        PXHtmlView renders its content inside a sandboxed
+        <iframe class="htmlviewinner"> child. Playwright's text_content()
+        does NOT descend into iframes, so this method uses evaluate() to
+        traverse into the inner iframe's contentDocument.
+        """
+        js = """() => {
+            var outer = document.querySelector('[id$="__SUFFIX__"]');
+            if (!outer) return null;
+            var inner = outer.querySelector('iframe.htmlviewinner');
+            if (!inner || !inner.contentDocument || !inner.contentDocument.body) return '';
+            return inner.contentDocument.body.innerText
+                || inner.contentDocument.body.textContent
+                || '';
+        }""".replace("__SUFFIX__", view_id_suffix)
+        return self.evaluate(js) or ""
+
+    def read_html_view_html(self, view_id_suffix: str) -> str:
+        """Read innerHTML of a PXHtmlView's inner htmlviewinner iframe.
+
+        Like read_html_view() but returns raw HTML instead of text content.
+        Useful when you need to parse structured content (e.g. extracting
+        numbers from KPI tile markup).
+        """
+        js = """() => {
+            var outer = document.querySelector('[id$="__SUFFIX__"]');
+            if (!outer) return null;
+            var inner = outer.querySelector('iframe.htmlviewinner');
+            if (!inner || !inner.contentDocument || !inner.contentDocument.body) return '';
+            return inner.contentDocument.body.innerHTML || '';
+        }""".replace("__SUFFIX__", view_id_suffix)
+        return self.evaluate(js) or ""
+
     def find_fields(self, field_names: list[str]) -> dict[str, bool]:
         """Check which fields are present in the DOM."""
         results = {}

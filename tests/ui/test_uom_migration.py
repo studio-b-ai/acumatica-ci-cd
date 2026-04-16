@@ -44,15 +44,18 @@ SAVE_SAMPLE_SIZE = 10
 @pytest.mark.ui
 class TestBaseUom:
 
-    @pytest.mark.xfail(reason="Pre-existing: iframe evaluate() returns empty on sandbox", strict=False)
     def test_stock_item_base_uom_is_yds(self, acumatica_screen):
         """Open item 00004 and verify BaseUnit = YDS.
 
         Uses AcumaticaScreen.get_field() which retries on the known
         iframe-read flake (frame.evaluate() returning empty string).
-        Previously xfailed since 2026-04-08.
+        An additional wait after navigation gives Acumatica time to
+        populate the field (the default 3x500ms retry was too short
+        on sandbox where app-pool warmup delays field rendering).
         """
         screen = acumatica_screen("IN202500", params=f"InventoryCD={ITEM_CD}")
+        # Extra wait for field population after app-pool warmup
+        screen.page.wait_for_timeout(3000)
 
         base_unit = screen.get_field("edBaseUnit_text")
 

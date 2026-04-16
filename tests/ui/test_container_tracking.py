@@ -726,22 +726,13 @@ class TestContainerE2EFlow:
 # PXHtmlView renders its content inside a sandboxed
 # <iframe class="htmlviewinner"> child. Playwright's text_content() does
 # NOT descend into iframes, so reading the outer wrapper always returns
-# template whitespace. _read_html_view drops into the inner iframe via
-# screen.evaluate so assertions see the actual rendered HTML.
+# template whitespace. Use screen.read_html_view() (AcumaticaScreen)
+# which drops into the inner iframe via evaluate.
 
 
 def _read_html_view(screen, view_id_suffix: str) -> str:
-    """Read text content of a PXHtmlView's inner htmlviewinner iframe."""
-    js = """() => {
-        var outer = document.querySelector('[id$="__SUFFIX__"]');
-        if (!outer) return null;
-        var inner = outer.querySelector('iframe.htmlviewinner');
-        if (!inner || !inner.contentDocument || !inner.contentDocument.body) return '';
-        return inner.contentDocument.body.innerText
-            || inner.contentDocument.body.textContent
-            || '';
-    }""".replace("__SUFFIX__", view_id_suffix)
-    return screen.evaluate(js) or ""
+    """Delegate to AcumaticaScreen.read_html_view()."""
+    return screen.read_html_view(view_id_suffix)
 
 
 class TestPCCTimeline:

@@ -31,12 +31,14 @@ class TestPCCBugFixes:
         screen = acumatica_screen("SB501000")
         screen.assert_no_errors()
 
-    @pytest.mark.xfail(reason="Pre-existing: grid shadow overlay intercepts clicks", strict=False)
     def test_detail_panel_syncs_on_row_click(self, acumatica_screen):
         """Bug 1: Clicking different grid rows should update the detail panel.
 
         After fixing DataMember="Containers" on frmTimeline + frmDetail,
         the Container.Current should sync when grid selection changes.
+
+        Uses force=True to bypass Acumatica's grid shadow overlay that
+        intercepts Playwright's default click targeting.
         """
         screen = acumatica_screen("SB501000")
         screen.page.wait_for_timeout(3000)
@@ -46,21 +48,21 @@ class TestPCCBugFixes:
         assert grid.count() > 0, "gridContainers not found"
 
         # Find clickable data rows (skip header)
-        rows = screen.locator("[id*='gridContainers'] tr.GridRow, [id*='gridContainers'] [class*='Row']")
+        rows = screen.locator("[id*='gridContainers'] tr.GridRow")
         screen.page.wait_for_timeout(2000)
 
         row_count = rows.count()
         if row_count < 2:
             pytest.skip("Need at least 2 container rows to test detail sync")
 
-        # Click first row, read container nbr from detail
-        rows.nth(0).click()
+        # Click first row with force=True to bypass grid overlay
+        rows.nth(0).click(force=True)
         screen.page.wait_for_timeout(2000)
 
         first_container = screen.get_field("edContainerCD") or screen.get_field("ContainerCD")
 
-        # Click second row, read container nbr from detail
-        rows.nth(1).click()
+        # Click second row
+        rows.nth(1).click(force=True)
         screen.page.wait_for_timeout(2000)
 
         second_container = screen.get_field("edContainerCD") or screen.get_field("ContainerCD")
@@ -73,30 +75,29 @@ class TestPCCBugFixes:
 
         # Click a third row if available
         if row_count >= 3:
-            rows.nth(2).click()
+            rows.nth(2).click(force=True)
             screen.page.wait_for_timeout(2000)
             third_container = screen.get_field("edContainerCD") or screen.get_field("ContainerCD")
             assert third_container != second_container, (
                 f"Detail panel did not sync on 3rd click: still shows '{second_container}'"
             )
 
-    @pytest.mark.xfail(reason="Pre-existing: htmlKPITiles iframe read returns empty", strict=False)
     def test_kpi_tiles_show_counts(self, acumatica_screen):
         """Bug 3: KPI tiles should show non-zero counts for ACTION/WATCH/CLEAR.
 
         After adding real doc counts to RowSelected<ContainerFilter>,
         the risk aggregation should produce non-zero bucket counts.
+
+        PXHtmlView renders content inside iframe.htmlviewinner — must
+        use read_html_view_html() to traverse into the inner iframe.
         """
         screen = acumatica_screen("SB501000")
         screen.page.wait_for_timeout(3000)
 
-        # Read the KPI tiles HTML content
-        kpi_html = screen.evaluate(
-            "() => { const el = document.querySelector('[id*=\"htmlKPITiles\"]'); "
-            "return el ? el.innerHTML : ''; }"
-        )
+        # Read the KPI tiles HTML from the inner htmlviewinner iframe
+        kpi_html = screen.read_html_view_html("htmlKPITiles")
 
-        assert kpi_html, "KPI tiles HTML is empty — htmlKPITiles not rendering"
+        assert kpi_html, "KPI tiles HTML is empty — htmlKPITiles iframe not rendering"
 
         # Check that at least one tile shows a non-zero count
         # The tiles render as HTML with count values — at least one should be > 0
@@ -109,18 +110,20 @@ class TestPCCBugFixes:
             "Bug 3 (real doc counts in risk aggregation) may not be fixed."
         )
 
-    @pytest.mark.xfail(reason="Pre-existing: KPI tiles height 0px on sandbox", strict=False)
     def test_metrics_row_visible(self, acumatica_screen):
         """Bug 2: Metrics row should be visible below KPI tiles.
 
         After changing htmlKPITiles Height from 160px to 280px,
         the metrics row (OPEN PO VALUE / CROSS-DOCK RATE / UNCOVERED VALUE)
         should not be clipped.
+
+        PXHtmlView renders content inside iframe.htmlviewinner — must
+        use read_html_view() to traverse into the inner iframe.
         """
         screen = acumatica_screen("SB501000")
         screen.page.wait_for_timeout(3000)
 
-        # Check the htmlKPITiles element has sufficient height
+        # Check the htmlKPITiles outer element has sufficient height
         height = screen.evaluate(
             "() => { const el = document.querySelector('[id*=\"htmlKPITiles\"]'); "
             "if (!el) return 0; "
@@ -131,19 +134,16 @@ class TestPCCBugFixes:
             f"htmlKPITiles height is {height}px — expected >= 200px for metrics row visibility"
         )
 
-        # Verify the metrics row content exists in the HTML
-        kpi_html = screen.evaluate(
-            "() => { const el = document.querySelector('[id*=\"htmlKPITiles\"]'); "
-            "return el ? el.innerHTML.toLowerCase() : ''; }"
-        )
+        # Verify the metrics row content inside the inner iframe
+        kpi_text = screen.read_html_view("htmlKPITiles").lower()
 
         # Check for metrics row keywords
         has_metrics = any(
-            keyword in kpi_html
+            keyword in kpi_text
             for keyword in ["open po", "cross-dock", "uncovered", "po value"]
         )
         assert has_metrics, (
-            "Metrics row content not found in KPI tiles HTML. "
+            "Metrics row content not found in KPI tiles iframe. "
             "Expected OPEN PO VALUE / CROSS-DOCK RATE / UNCOVERED VALUE."
         )
 
@@ -163,17 +163,28 @@ class TestPCCDateFields:
         "edPaymentDueDate",
     ]
 
-    @pytest.mark.xfail(reason="Pre-existing: Shipping & Delivery date fields missing from DOM", strict=False)
     def test_shipping_delivery_fields_exist(self, acumatica_screen):
-        """All 8 new Shipping & Delivery date fields should be in the DOM."""
+        """All 8 new Shipping & Delivery date fields should be in the DOM.
+
+        The detail form (frmDetail) on SB501000 renders below the grid.
+        Click a grid row first to ensure Current is populated and the
+        detail form has rendered its fields.
+        """
         screen = acumatica_screen("SB501000")
         screen.page.wait_for_timeout(3000)
 
-        # Navigate to a record so the detail form renders
-        last_btn = screen.locator("div[icon='Last'], [id*='btnLast']").first
-        if last_btn.is_visible(timeout=3000):
-            last_btn.click()
-            screen.page.wait_for_timeout(2000)
+        # Click the first grid row to populate frmDetail (fields may not
+        # render until a container is selected)
+        rows = screen.locator("[id*='gridContainers'] tr.GridRow")
+        if rows.count() > 0:
+            rows.first.click(force=True)
+            screen.page.wait_for_timeout(3000)
+        else:
+            # Fallback: navigate to last record
+            last_btn = screen.locator("div[icon='Last'], [id*='btnLast']").first
+            if last_btn.is_visible(timeout=3000):
+                last_btn.click()
+                screen.page.wait_for_timeout(3000)
 
         missing = []
         for field_id in self.SHIPPING_DELIVERY_FIELDS:
@@ -216,14 +227,27 @@ class TestPCCTabs:
 class TestPCCContainerCreation:
     """Verify container creation workflow after usability fixes."""
 
-    @pytest.mark.xfail(reason="Pre-existing: Add Row button not found on grid toolbar", strict=False)
     def test_grid_has_add_button(self, acumatica_screen):
-        """Grid toolbar should have a + (Add Row) button."""
+        """Grid toolbar should have a + (Add Row) button.
+
+        Acumatica grid toolbars use multiple DOM patterns depending on
+        version and skin. Try several selectors to find the Add button.
+        """
         screen = acumatica_screen("SB501000")
         screen.page.wait_for_timeout(3000)
         frame = screen.ctx
-        add_btn = frame.locator("[id*='gridContainers'] [icon='AddNew'], [id*='gridContainers'] .ToolBtn[title*='Add']")
-        assert add_btn.count() > 0, "Add Row button not found on grid toolbar"
+        # Acumatica grid toolbars vary by version — try multiple selectors
+        add_btn = frame.locator(
+            "[id*='gridContainers'] [icon='AddNew'], "
+            "[id*='gridContainers'] .ToolBtn[title*='Add'], "
+            "[id*='gridContainers_at'] div[data-cmd='AddNew'], "
+            "[id*='gridContainers'] div[icon='RecordIns'], "
+            "[id*='gridContainers_at'] [title='Add Row']"
+        )
+        assert add_btn.count() > 0, (
+            "Add Row button not found on gridContainers toolbar. "
+            "Checked: icon=AddNew, ToolBtn title=Add, data-cmd=AddNew, icon=RecordIns, title=Add Row"
+        )
 
     def test_grid_has_file_indicator(self, acumatica_screen):
         """Grid should show paperclip file indicator column."""
