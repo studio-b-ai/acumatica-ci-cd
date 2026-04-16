@@ -216,7 +216,7 @@ class TestPCCContainerCreation:
         """Grid toolbar should have a + (Add Row) button."""
         screen = acumatica_screen("SB501000")
         screen.page.wait_for_timeout(3000)
-        frame = screen.get_main_frame()
+        frame = screen.ctx
         add_btn = frame.locator("[id*='gridContainers'] [icon='AddNew'], [id*='gridContainers'] .ToolBtn[title*='Add']")
         assert add_btn.count() > 0, "Add Row button not found on grid toolbar"
 
@@ -224,7 +224,7 @@ class TestPCCContainerCreation:
         """Grid should show paperclip file indicator column."""
         screen = acumatica_screen("SB501000")
         screen.page.wait_for_timeout(3000)
-        frame = screen.get_main_frame()
+        frame = screen.ctx
         files_col = frame.locator("[id*='gridContainers'] [id*='ef']")
         # File indicator column should exist in grid
         assert files_col.count() >= 0  # Presence check — column renders even if no files
@@ -233,7 +233,7 @@ class TestPCCContainerCreation:
         """After skin change, detail tabs should allow editing."""
         screen = acumatica_screen("SB501000")
         screen.page.wait_for_timeout(3000)
-        frame = screen.get_main_frame()
+        frame = screen.ctx
 
         # Click first container row
         first_row = frame.locator("[id*='gridContainers'] tr.GridRow").first
@@ -253,7 +253,7 @@ class TestPCCContainerCreation:
         """Receive Goods should appear on toolbar (renamed from Print Receiving Doc)."""
         screen = acumatica_screen("SB501000")
         screen.page.wait_for_timeout(3000)
-        frame = screen.get_main_frame()
+        frame = screen.ctx
         btn = frame.locator("text=Receive Goods")
         assert btn.count() > 0, "Receive Goods button not found on toolbar"
 
@@ -261,7 +261,7 @@ class TestPCCContainerCreation:
         """Plan Next Order should no longer appear on toolbar."""
         screen = acumatica_screen("SB501000")
         screen.page.wait_for_timeout(3000)
-        frame = screen.get_main_frame()
+        frame = screen.ctx
         btn = frame.locator("text=Plan Next Order")
         assert btn.count() == 0, "Plan Next Order should be removed from toolbar"
 
@@ -269,6 +269,6 @@ class TestPCCContainerCreation:
         """Create Landed Cost should no longer appear on toolbar."""
         screen = acumatica_screen("SB501000")
         screen.page.wait_for_timeout(3000)
-        frame = screen.get_main_frame()
+        frame = screen.ctx
         btn = frame.locator("text=Create Landed Cost")
         assert btn.count() == 0, "Create Landed Cost should be removed from toolbar"
