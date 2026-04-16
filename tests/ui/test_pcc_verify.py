@@ -82,18 +82,17 @@ class TestPCCBugFixes:
                 f"Detail panel did not sync on 3rd click: still shows '{second_container}'"
             )
 
-    @pytest.mark.xfail(
-        reason="PR #366 residual bug: risk aggregation counts always zero. "
-        "Iframe read works (read_html_view confirms content); but ACTION/WATCH/"
-        "CLEAR bucket counts all render as 0. RowSelected<ContainerFilter> "
-        "doc count logic not producing non-zero values. Tracked for separate fix.",
-        strict=False,
-    )
     def test_kpi_tiles_show_counts(self, acumatica_screen):
-        """Bug 3: KPI tiles should show non-zero counts for ACTION/WATCH/CLEAR.
+        """KPI tiles should reflect real container data in RowSelected<ContainerFilter>.
 
-        After adding real doc counts to RowSelected<ContainerFilter>,
-        the risk aggregation should produce non-zero bucket counts.
+        The PIPELINE tile always renders an '{N} ACTIVE CONTAINERS' sublabel
+        regardless of LATE/AT-RISK criteria, so it's the most reliable
+        signal that the graph's aggregation handler ran and counted real
+        containers. The legacy regex `>(\\d+)<` only matched the LATE
+        count's `>{N}</div>` pattern — AT RISK renders `>$N<` ($ breaks
+        \\d) and pipeline counts like `BOOKED 0 · IN TRANSIT 1` are bare
+        text with no `>N<` boundary, so the old test would fail any time
+        sandbox had active-but-on-time containers.
 
         PXHtmlView renders content inside iframe.htmlviewinner — must
         use read_html_view_html() to traverse into the inner iframe.
@@ -101,31 +100,23 @@ class TestPCCBugFixes:
         screen = acumatica_screen("SB501000")
         screen.page.wait_for_timeout(3000)
 
-        # Read the KPI tiles HTML from the inner htmlviewinner iframe
         kpi_html = screen.read_html_view_html("htmlKPITiles")
-
         assert kpi_html, "KPI tiles HTML is empty — htmlKPITiles iframe not rendering"
 
-        # Check that at least one tile shows a non-zero count
-        # The tiles render as HTML with count values — at least one should be > 0
-        # since we have known containers in sandbox
         import re
-        numbers = re.findall(r'>(\d+)<', kpi_html)
-        total = sum(int(n) for n in numbers if n.isdigit())
-        assert total > 0, (
-            f"All KPI tile counts are zero. Extracted numbers: {numbers}. "
-            "Bug 3 (real doc counts in risk aggregation) may not be fixed."
+        active_match = re.search(r"(\d+)\s+ACTIVE\s+CONTAINERS", kpi_html, re.I)
+        assert active_match, (
+            "PIPELINE tile did not render '{N} ACTIVE CONTAINERS' sublabel — "
+            "RowSelected<ContainerFilter> may not have fired or ContainerKPITileBuilder "
+            f"is producing unexpected markup. First 500 chars:\n{kpi_html[:500]}"
+        )
+        active_count = int(active_match.group(1))
+        assert active_count > 0, (
+            f"PIPELINE tile shows 0 ACTIVE CONTAINERS — expected sandbox to have "
+            "at least one non-terminal container (status != Delivered/Cancelled) "
+            "so the graph's aggregation loop produces a non-zero count."
         )
 
-    @pytest.mark.xfail(
-        reason="PR #366 residual bug: htmlKPITiles outer element has 0px "
-        "computed height on sandbox. The Height=280px change from PR #366 "
-        "isn't reaching the rendered DOM — likely ASPX attribute not applied "
-        "or parent container overflow clipping. Not an iframe issue — our "
-        "read_html_view fix confirmed inner content loads. Tracked for "
-        "separate fix.",
-        strict=False,
-    )
     def test_metrics_row_visible(self, acumatica_screen):
         """Bug 2: Metrics row should be visible below KPI tiles.
 
@@ -139,9 +130,13 @@ class TestPCCBugFixes:
         screen = acumatica_screen("SB501000")
         screen.page.wait_for_timeout(3000)
 
-        # Check the htmlKPITiles outer element has sufficient height
+        # Check the htmlKPITiles outer element has sufficient height.
+        # Use [id$="htmlKPITiles"] (ends-with) to target the rendered TABLE
+        # element directly — [id*="htmlKPITiles"] (contains) also matches
+        # the hidden '..._state' INPUT that PXHtmlView emits first in DOM
+        # order, which has offsetHeight=0 and would mask the real height.
         height = screen.evaluate(
-            "() => { const el = document.querySelector('[id*=\"htmlKPITiles\"]'); "
+            "() => { const el = document.querySelector('[id$=\"htmlKPITiles\"]'); "
             "if (!el) return 0; "
             "return el.offsetHeight || parseInt(el.style.height) || 0; }"
         )
@@ -179,38 +174,29 @@ class TestPCCDateFields:
         "edPaymentDueDate",
     ]
 
-    @pytest.mark.xfail(
-        reason="PR #366 residual bug: all 8 Shipping & Delivery date fields "
-        "(edCargoReadyDate, edFactoryPickupDate, edOnBoardDate, "
-        "edShipmentWindowStart/End, edDrayageAppointmentDate, "
-        "edDeliveryOrderDate, edPaymentDueDate) missing from rendered DOM "
-        "even after clicking a grid row to populate frmDetail. Either "
-        "ASPX declarations missing, DAC extensions missing, or fields in "
-        "a tab/group that doesn't render. Tracked for separate fix.",
-        strict=False,
-    )
     def test_shipping_delivery_fields_exist(self, acumatica_screen):
         """All 8 new Shipping & Delivery date fields should be in the DOM.
 
-        The detail form (frmDetail) on SB501000 renders below the grid.
-        Click a grid row first to ensure Current is populated and the
-        detail form has rendered its fields.
+        The detail form (frmDetail) lives inside a LoadOnDemand SmartPanel —
+        content is not in the DOM until the panel is opened. Opening the
+        panel requires firing the OpenContainerDetail callback, which is
+        wired to the ContainerCD column's LinkCommand. Clicking the
+        ContainerCD <a> in a grid row triggers it.
         """
         screen = acumatica_screen("SB501000")
         screen.page.wait_for_timeout(3000)
 
-        # Click the first grid row to populate frmDetail (fields may not
-        # render until a container is selected)
-        rows = screen.locator("[id*='gridContainers'] tr.GridRow")
-        if rows.count() > 0:
-            rows.first.click(force=True)
-            screen.page.wait_for_timeout(3000)
-        else:
-            # Fallback: navigate to last record
-            last_btn = screen.locator("div[icon='Last'], [id*='btnLast']").first
-            if last_btn.is_visible(timeout=3000):
-                last_btn.click()
-                screen.page.wait_for_timeout(3000)
+        # Acumatica grid data rows use id='..._row_N' and have no class —
+        # the legacy 'tr.GridRow' selector never matches.
+        rows = screen.locator("tr[id*='gridContainers_row_']")
+        if rows.count() == 0:
+            pytest.skip("Sandbox grid has no containers")
+
+        # Click the ContainerCD link to open the LoadOnDemand SmartPanel.
+        # The first <a> in the row is the ContainerCD cell (first column
+        # with LinkCommand='OpenContainerDetail').
+        rows.first.locator("a").first.click()
+        screen.page.wait_for_timeout(3000)
 
         missing = []
         for field_id in self.SHIPPING_DELIVERY_FIELDS:

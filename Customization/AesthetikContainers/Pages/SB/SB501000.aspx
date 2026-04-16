@@ -128,7 +128,10 @@
                 <px:PXDateTimeEdit ID="edFactoryPromisedDate" runat="server" DataField="FactoryPromisedDate" />
                 <px:PXDateTimeEdit ID="edFactoryActualDate" runat="server" DataField="FactoryActualDate" />
                 <px:PXDateTimeEdit ID="edCargoReadyDate" runat="server" DataField="CargoReadyDate" />
+                <px:PXDateTimeEdit ID="edFactoryPickupDate" runat="server" DataField="FactoryPickupDate" />
                 <px:PXDateTimeEdit ID="edOnBoardDate" runat="server" DataField="OnBoardDate" />
+                <px:PXDateTimeEdit ID="edShipmentWindowStart" runat="server" DataField="ShipmentWindowStart" />
+                <px:PXDateTimeEdit ID="edShipmentWindowEnd" runat="server" DataField="ShipmentWindowEnd" />
                 <px:PXDateTimeEdit ID="edDrayageAppointmentDate" runat="server" DataField="DrayageAppointmentDate" />
                 <px:PXTextEdit ID="edDeliveryOrderNbr" runat="server" DataField="DeliveryOrderNbr" />
                 <px:PXDateTimeEdit ID="edDeliveryOrderDate" runat="server" DataField="DeliveryOrderDate" />
