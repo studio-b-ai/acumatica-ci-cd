@@ -769,15 +769,25 @@ jobs:
           AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
           AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          NOTIFY_RECIPIENTS: ${{ vars.NOTIFY_RECIPIENTS }}
+          NOTIFY_SENDER: ${{ vars.NOTIFY_SENDER }}
         run: |
-          if [ -f pipeline/scripts/notify.py ]; then
+          # notify.py requires --recipients; skip entirely if not configured.
+          # The build job used to expose notify_recipients/notify_sender as
+          # outputs but they were never actually wired up (broken since before
+          # the pipeline split). GitHub Variables are the new source of truth.
+          if [ -f pipeline/scripts/notify.py ] && [ -n "${NOTIFY_RECIPIENTS}" ]; then
             python pipeline/scripts/notify.py \
               --type countdown \
               --minutes 20 \
+              --recipients "${NOTIFY_RECIPIENTS}" \
+              --sender "${NOTIFY_SENDER}" \
               --project "${{ inputs.project_name }}" \
               --environment "${{ steps.env.outputs.target }}" \
               --slack-webhook "${SLACK_WEBHOOK_URL}" \
               ${{ steps.hours.outputs.after_hours == 'true' && '--skip-email' || '' }}
+          else
+            echo "Skipping notify — NOTIFY_RECIPIENTS var not set"
           fi
 
       # ── Pre-deploy smoke test ────────────────────────────────────────
@@ -1101,14 +1111,20 @@ jobs:
           AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
           AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          NOTIFY_RECIPIENTS: ${{ vars.NOTIFY_RECIPIENTS }}
+          NOTIFY_SENDER: ${{ vars.NOTIFY_SENDER }}
         run: |
-          if [ -f pipeline/scripts/notify.py ]; then
+          if [ -f pipeline/scripts/notify.py ] && [ -n "${NOTIFY_RECIPIENTS}" ]; then
             python pipeline/scripts/notify.py \
               --type online \
+              --recipients "${NOTIFY_RECIPIENTS}" \
+              --sender "${NOTIFY_SENDER}" \
               --project "${{ inputs.project_name }}" \
               --environment "${{ steps.env.outputs.target }}" \
               --slack-webhook "${SLACK_WEBHOOK_URL}" \
               ${{ steps.hours.outputs.after_hours == 'true' && '--skip-email' || '' }}
+          else
+            echo "Skipping notify — NOTIFY_RECIPIENTS var not set"
           fi
 
       - name: Notify deploy failed
@@ -1119,14 +1135,20 @@ jobs:
           AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
           AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          NOTIFY_RECIPIENTS: ${{ vars.NOTIFY_RECIPIENTS }}
+          NOTIFY_SENDER: ${{ vars.NOTIFY_SENDER }}
         run: |
-          if [ -f pipeline/scripts/notify.py ]; then
+          if [ -f pipeline/scripts/notify.py ] && [ -n "${NOTIFY_RECIPIENTS}" ]; then
             python pipeline/scripts/notify.py \
               --type failed \
+              --recipients "${NOTIFY_RECIPIENTS}" \
+              --sender "${NOTIFY_SENDER}" \
               --project "${{ inputs.project_name }}" \
               --environment "${{ steps.env.outputs.target }}" \
               --slack-webhook "${SLACK_WEBHOOK_URL}" \
               ${{ steps.hours.outputs.after_hours == 'true' && '--skip-email' || '' }}
+          else
+            echo "Skipping notify — NOTIFY_RECIPIENTS var not set"
           fi
 
       # ── Auto-lockout on deploy failure ───────────────────────────────
