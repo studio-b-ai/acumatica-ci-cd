@@ -1,13 +1,12 @@
-# AcuOps — Acumatica Customization CI/CD Pipeline
+# AcuOps Deploy — Acumatica Customization Deploy Phase
+# Called by acuops-build.yml via workflow_call after build + validate + qualify.
 # Scripts sourced from studio-b-ai/acuops-pipeline (shared package)
-# Deploys customization projects via the Customization API
 #
-# Triggers:
-#   - Push to main     → Deploy to PRODUCTION
-#   - Push to staging   → Deploy to STAGING
-#   - Pull request      → Validate against STAGING (no publish)
-#   - Manual dispatch   → Choose target environment
-#   - Repository dispatch → Scheduled deploy
+# This workflow handles:
+#   - Sandbox gate (publish to sandbox + UI tests)
+#   - Production/staging deploy (import + publish to Acumatica)
+#   - Post-deploy validation
+#   - AI failure recovery (invoke-agent)
 #
 # Required GitHub Secrets (per environment):
 #   ACUMATICA_PROD_URL        - Production instance URL
@@ -40,87 +39,81 @@ name: AcuOps Deploy
 # half-compiled state. Queue instead, so the first publish finishes cleanly
 # before the second begins.
 concurrency:
-  group: acumatica-deploy-${{ github.ref }}
+  group: acuops-deploy-${{ github.ref }}
   cancel-in-progress: false
 
 on:
-  repository_dispatch:
-    types: [scheduled-deploy]
-  push:
-    branches: [main, staging]
-    paths:
-      - 'Customization/**'
-      - 'src/**'
-      # NOTE: acuops-deploy.yml is intentionally NOT in the path filter.
-      # Workflow-only edits used to trigger a full run (build + qualify +
-      # sandbox-gate + deploy). sandbox-gate would skip because
-      # customization_changes=false, but qualify + build still ran and
-      # counted against the dispatch cap. To test a workflow change, use
-      # workflow_dispatch or push a no-op Customization/ change.
-  pull_request:
-    branches: [main, staging]
-    paths:
-      - 'Customization/**'
-      - 'src/**'
-  workflow_dispatch:
+  workflow_call:
     inputs:
-      environment:
-        description: 'Target environment'
-        required: true
-        type: choice
-        options:
-          - staging
-          - production
-      dry_run:
-        description: 'Validate only (no publish)'
-        required: false
-        type: boolean
-        default: false
-      force_qualify:
-        description: 'Skip the agentic qualify job + pre-deploy smoke test (for when prod is down). Does NOT skip sandbox-gate — use skip_sandbox_gate for that.'
-        required: false
-        type: boolean
-        default: false
-      force_business_hours:
-        description: 'EMERGENCY: deploy during business hours (6am-6pm ET Mon-Fri) — restarts app pool for live users'
-        required: false
-        type: boolean
-        default: false
-      force_deploy:
-        description: 'EMERGENCY: bypass sandbox-gate failure. Set to "OVERRIDE" literally to activate.'
-        required: false
+      package_name:
         type: string
+        required: true
+      project_name:
+        type: string
+        required: true
+      also_publish:
+        type: string
+        required: false
+        default: ''
+      customization_changes:
+        type: string
+        required: true
+      plugin_changes:
+        type: string
+        required: false
+        default: 'false'
+      known_projects:
+        type: string
+        required: false
+        default: ''
+      isv_packages:
+        type: string
+        required: false
+        default: ''
+      isv_prefix:
+        type: string
+        required: false
+        default: ''
+      strict:
+        type: string
+        required: false
+        default: 'false'
+      environment:
+        type: string
+        required: true
+      force_deploy:
+        type: string
+        required: false
         default: ''
       skip_sandbox_gate:
-        description: 'EMERGENCY: skip sandbox-gate entirely (for when the sandbox instance is down). Set to "OVERRIDE" literally. Requires skip_sandbox_gate_reason.'
-        required: false
         type: string
+        required: false
         default: ''
       skip_sandbox_gate_reason:
-        description: 'REQUIRED when skip_sandbox_gate=OVERRIDE. Short justification (e.g. "sandbox down — #acumatica 2026-04-15"). Empty string is rejected.'
-        required: false
         type: string
+        required: false
         default: ''
       i_really_mean_it:
-        description: 'DOUBLE-EMERGENCY: required when skip_sandbox_gate=OVERRIDE AND force_business_hours=true are both set. That combination broke prod on 2026-04-15 (PR #415, commit cc76dfff05). Set to "OVERRIDE" literally.'
-        required: false
         type: string
+        required: false
         default: ''
-      force_dispatch_cap:
-        description: 'EMERGENCY: bypass the 24h dispatch cap. Set to "OVERRIDE" literally. Required if >=20 deploy runs have executed in the last 24h.'
-        required: false
+      force_business_hours:
         type: string
+        required: false
+        default: ''
+      force_qualify:
+        type: string
+        required: false
+        default: ''
+      dry_run:
+        type: string
+        required: false
         default: ''
       acknowledge_unpublish:
-        description: 'Acknowledge that one or more currently-published projects will be UNPUBLISHED by this deploy. Set to "OVERRIDE" literally to proceed past the pre-publish audit.'
-        required: false
         type: string
-        default: ''
-      skip_build_validate:
-        description: 'EMERGENCY: skip the Build + Acuminator job (for when the self-hosted Windows runner is offline, e.g. VM TERMINATED + GCE capacity shortage). Requires the DLL in Customization/*/Bin/ to already be fresh — the deploy will use the committed DLL as-is. Set to "OVERRIDE" literally.'
         required: false
-        type: string
         default: ''
+    secrets: inherit
 
 permissions:
   contents: read
@@ -129,807 +122,10 @@ permissions:
 
 jobs:
   # ──────────────────────────────────────────────
-  # Job 0: Dispatch guard — hard cap on deploys per 24h
-  # ──────────────────────────────────────────────
-  # 2026-04-07 incident: the AI Failure Recovery agent dispatched the
-  # pipeline 8 times in 14 hours, each recycling the prod app pool
-  # because secrets were misconfigured. invoke-agent has since been
-  # disabled, but nothing else caps total deploys-per-day. This job
-  # refuses to run if the workflow has already dispatched >=CAP times
-  # (non-skipped, non-cancelled) in the last 24 hours.
-  #
-  # CAP is intentionally loose (20). Today's incident was 8 dispatches,
-  # so 20 gives headroom for normal churn + CI-only runs (which trip
-  # the guard too because the filter doesn't distinguish publishes
-  # from no-op runs). Tune downward after baseline run volume is
-  # observed — see docs/prompts/2026-04-08-prod-restart-followups.md.
-  #
-  # Override: set force_dispatch_cap="OVERRIDE" (workflow_dispatch
-  # input). PR validations are exempt — they don't publish.
-  dispatch-guard:
-    name: 24h Dispatch Cap
-    if: github.event_name != 'pull_request'
-    runs-on: ubuntu-latest
-    timeout-minutes: 3
-    steps:
-      # ── skip_sandbox_gate semantics (2026-04-15 incident hardening) ─────
-      # On 2026-04-15 a manual prod deploy of PR #415 (cc76dfff05) pulled
-      # skip_sandbox_gate=OVERRIDE during business hours with no reason
-      # field. The publish hit a 240s app-pool-recovery timeout, left
-      # prod in a partial state, and broke PCC (SB501000/SB501200 HTML
-      # views rendered empty) for live Heritage Fabrics users. The
-      # sandbox-gate WOULD have caught it — the identical UI tests
-      # (TestPCCTimeline, TestPCCMetricsRow, TestPCCLeadTimeTab,
-      # TestPCCPlanNextOrder, TestSB501200 in
-      # tests/ui/test_container_tracking.py) failed on the retry run
-      # 24466886228 against sandbox and correctly blocked prod.
-      #
-      # Gate semantics are now:
-      #   - skip_sandbox_gate=OVERRIDE requires a non-empty
-      #     skip_sandbox_gate_reason (fail-fast here, not mid-deploy).
-      #   - skip_sandbox_gate=OVERRIDE + force_business_hours=true
-      #     additionally requires i_really_mean_it=OVERRIDE. Layered
-      #     friction for the exact combination that hurt prod.
-      #   - The override is logged prominently to the step summary
-      #     with operator + SHA + reason — paper trail, not a sticky
-      #     note.
-      - name: Validate skip_sandbox_gate override
-        if: github.event.inputs.skip_sandbox_gate == 'OVERRIDE'
-        env:
-          REASON: ${{ github.event.inputs.skip_sandbox_gate_reason }}
-          BUSINESS_HOURS: ${{ github.event.inputs.force_business_hours }}
-          REALLY: ${{ github.event.inputs.i_really_mean_it }}
-          SHA: ${{ github.sha }}
-          ACTOR: ${{ github.triggering_actor }}
-        run: |
-          set -e
-          FAIL=0
-          TRIMMED_REASON="$(echo -n "${REASON}" | sed -E 's/^[[:space:]]+//; s/[[:space:]]+$//')"
-          if [[ -z "${TRIMMED_REASON}" ]]; then
-            echo "::error::skip_sandbox_gate=OVERRIDE requires a non-empty skip_sandbox_gate_reason."
-            echo "::error::2026-04-15 incident: PR #415 (cc76dfff05) pulled this lever with no reason, hit a 240s app-pool-recovery timeout mid-publish, left prod in partial state, and broke PCC (SB501000/SB501200) for live users."
-            FAIL=1
-          fi
-          if [[ "${BUSINESS_HOURS}" == "true" && "${REALLY}" != "OVERRIDE" ]]; then
-            echo "::error::skip_sandbox_gate=OVERRIDE + force_business_hours=true is the combination that broke prod on 2026-04-15."
-            echo "::error::To proceed with this combination, also set i_really_mean_it=OVERRIDE. Layered friction is intentional."
-            FAIL=1
-          fi
-          if (( FAIL )); then
-            {
-              echo "## 🚫 skip_sandbox_gate=OVERRIDE rejected"
-              echo ""
-              echo "See step log for the specific validation that failed."
-              echo ""
-              echo "Context: 2026-04-15 PR #415 deploy (\`cc76dfff05\`) bypassed sandbox-gate with no reason, during business hours, and broke PCC (SB501000/SB501200) for live users when the publish timed out mid-flight."
-            } >> "$GITHUB_STEP_SUMMARY"
-            exit 1
-          fi
-          {
-            echo "## 🚨 SANDBOX-GATE BYPASSED"
-            echo ""
-            echo "| Field | Value |"
-            echo "|-------|-------|"
-            echo "| Operator | \`${ACTOR}\` |"
-            echo "| Commit | \`${SHA}\` |"
-            echo "| Reason | ${TRIMMED_REASON} |"
-            echo "| force_business_hours | ${BUSINESS_HOURS} |"
-            echo "| i_really_mean_it | ${REALLY} |"
-            echo ""
-            echo "⚠️ This deploy is going to prod without sandbox UI-test coverage. If it breaks live users, this row is the paper trail. See 2026-04-15 incident (PR #415, \`cc76dfff05\`)."
-          } >> "$GITHUB_STEP_SUMMARY"
-          echo "::warning::skip_sandbox_gate=OVERRIDE active — operator=${ACTOR} sha=${SHA} reason=${TRIMMED_REASON}"
-
-      - name: Audit emergency overrides
-        if: >
-          github.event.inputs.force_qualify == 'true' ||
-          github.event.inputs.force_deploy == 'OVERRIDE' ||
-          github.event.inputs.skip_sandbox_gate == 'OVERRIDE' ||
-          github.event.inputs.force_dispatch_cap == 'OVERRIDE' ||
-          github.event.inputs.acknowledge_unpublish == 'OVERRIDE' ||
-          github.event.inputs.force_business_hours == 'true'
-        run: |
-          {
-            echo "## ⚠️ Emergency override(s) in use"
-            echo ""
-            echo "| Override | Value |"
-            echo "|----------|-------|"
-            [[ "${{ github.event.inputs.force_qualify }}" == "true" ]]        && echo "| force_qualify | true (skip qualify + smoke test) |"
-            [[ "${{ github.event.inputs.force_deploy }}" == "OVERRIDE" ]]     && echo "| force_deploy | OVERRIDE (bypass sandbox-gate failure) |"
-            [[ "${{ github.event.inputs.skip_sandbox_gate }}" == "OVERRIDE" ]] && echo "| skip_sandbox_gate | OVERRIDE — reason: ${{ github.event.inputs.skip_sandbox_gate_reason }} |"
-            [[ "${{ github.event.inputs.i_really_mean_it }}" == "OVERRIDE" ]] && echo "| i_really_mean_it | OVERRIDE (skip_sandbox_gate + force_business_hours combo) |"
-            [[ "${{ github.event.inputs.force_dispatch_cap }}" == "OVERRIDE" ]] && echo "| force_dispatch_cap | OVERRIDE (bypass 24h cap) |"
-            [[ "${{ github.event.inputs.acknowledge_unpublish }}" == "OVERRIDE" ]] && echo "| acknowledge_unpublish | OVERRIDE (allow projects to be unpublished) |"
-            [[ "${{ github.event.inputs.force_business_hours }}" == "true" ]] && echo "| force_business_hours | true (deploy during business hours) |"
-            echo ""
-            echo "Triggered by: \`${{ github.triggering_actor }}\`"
-            echo "Commit: \`${{ github.sha }}\`"
-          } >> "$GITHUB_STEP_SUMMARY"
-          echo "::warning::Emergency override(s) active on this run — see step summary"
-
-      - name: Count recent deploy runs
-        env:
-          GH_TOKEN: ${{ github.token }}
-          OVERRIDE: ${{ github.event.inputs.force_dispatch_cap }}
-          CAP: '20'
-        run: |
-          set -e
-          if [[ "${OVERRIDE}" == "OVERRIDE" ]]; then
-            echo "::warning::Dispatch cap bypassed via force_dispatch_cap=OVERRIDE"
-            echo "## Dispatch cap bypassed" >> "$GITHUB_STEP_SUMMARY"
-            echo "" >> "$GITHUB_STEP_SUMMARY"
-            echo "An operator set \`force_dispatch_cap=OVERRIDE\` — the 24h cap of ${CAP} deploys was bypassed for this run." >> "$GITHUB_STEP_SUMMARY"
-            exit 0
-          fi
-
-          # GitHub returns ISO-8601 timestamps. Compute the 24h cutoff.
-          CUTOFF=$(date -u -d '24 hours ago' +'%Y-%m-%dT%H:%M:%SZ' 2>/dev/null \
-            || python3 -c "from datetime import datetime, timedelta, timezone; print((datetime.now(timezone.utc)-timedelta(hours=24)).strftime('%Y-%m-%dT%H:%M:%SZ'))")
-          echo "Counting deploy runs since ${CUTOFF}"
-
-          # Query the last 100 runs of this workflow, filter to push +
-          # repository_dispatch + workflow_dispatch that are neither
-          # skipped nor cancelled, and that started within the last 24h.
-          # Exclude this run itself (github.run_id).
-          COUNT=$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/acuops-deploy.yml/runs?per_page=100" \
-            --jq "[.workflow_runs[]
-                    | select(.id != ${GITHUB_RUN_ID})
-                    | select(.event == \"push\" or .event == \"repository_dispatch\" or .event == \"workflow_dispatch\")
-                    | select(.conclusion != \"skipped\" and .conclusion != \"cancelled\")
-                    | select(.created_at >= \"${CUTOFF}\")
-                  ] | length")
-          echo "Recent deploy runs in last 24h: ${COUNT} (cap: ${CAP})"
-
-          if (( COUNT >= CAP )); then
-            echo "::error::24h dispatch cap exceeded: ${COUNT} runs in the last 24h (cap: ${CAP})"
-            echo "::error::This is an incident-driven safety fuse. If this is intentional, re-run with force_dispatch_cap=OVERRIDE (workflow_dispatch only)."
-            echo "::error::See 2026-04-07 incident: the AI Failure Recovery agent dispatched 8 deploys in 14 hours, all of which recycled the prod app pool."
-            {
-              echo "## 🚫 24h Dispatch Cap Exceeded"
-              echo ""
-              echo "| Field | Value |"
-              echo "|-------|-------|"
-              echo "| Runs in last 24h | ${COUNT} |"
-              echo "| Cap | ${CAP} |"
-              echo "| Override | workflow_dispatch with \`force_dispatch_cap=OVERRIDE\` |"
-              echo ""
-              echo "Prevents runaway dispatch loops from recycling the prod app pool repeatedly. See 2026-04-07 incident runbook."
-            } >> "$GITHUB_STEP_SUMMARY"
-            exit 1
-          fi
-
-          echo "[OK] ${COUNT} deploys in last 24h — under cap of ${CAP}"
-
-  # ──────────────────────────────────────────────
-  # Job 1: Build — Package customization into .zip
-  # ──────────────────────────────────────────────
-  build:
-    name: Build Customization Package
-    needs: [dispatch-guard]
-    # PRs skip the dispatch guard (if: github.event_name != 'pull_request'),
-    # so we accept 'skipped' in addition to 'success'.
-    if: >
-      always() &&
-      (needs.dispatch-guard.result == 'success' || needs.dispatch-guard.result == 'skipped')
-    runs-on: ubuntu-latest
-    outputs:
-      package_path: ${{ steps.package.outputs.path }}
-      package_name: ${{ steps.package.outputs.name }}
-      project_name: ${{ steps.config.outputs.project_name }}
-      also_publish: ${{ steps.config.outputs.also_publish }}
-      isv_prefix: ${{ steps.config.outputs.isv_prefix }}
-      strict: ${{ steps.config.outputs.strict }}
-      known_projects: ${{ steps.config.outputs.known_projects }}
-      isv_packages: ${{ steps.config.outputs.isv_packages }}
-      customization_changes: ${{ steps.detect_cust_changes.outputs.customization_changes }}
-      plugin_changes: ${{ steps.plugin_check.outputs.plugin_changes }}
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 2
-
-      - name: Checkout AcuOps pipeline
-        uses: actions/checkout@v4
-        with:
-          repository: studio-b-ai/acuops-pipeline
-          ref: ${{ vars.ACUOPS_PIPELINE_VERSION || 'main' }}
-          path: pipeline
-          ssh-key: ${{ secrets.ACUOPS_PIPELINE_DEPLOY_KEY }}
-
-      - name: Load acuops.yaml config
-        id: config
-        run: |
-          # GitHub Variables override acuops.yaml; acuops.yaml overrides defaults
-          if command -v yq &>/dev/null || pip install yq 2>/dev/null; then
-            YQ="yq"
-          else
-            YQ=""
-          fi
-
-          cfg() {
-            local path="$1" default="$2"
-            if [[ -n "${YQ}" && -f acuops.yaml ]]; then
-              val=$(${YQ} -r "${path} // \"\"" acuops.yaml 2>/dev/null || echo "")
-              [[ -n "$val" ]] && echo "$val" && return
-            fi
-            echo "$default"
-          }
-
-          cfg_array() {
-            local path="$1"
-            if [[ -n "${YQ}" && -f acuops.yaml ]]; then
-              ${YQ} -r "(${path} // []) | join(\",\")" acuops.yaml 2>/dev/null || echo ""
-            fi
-          }
-
-          # Project name: GitHub var > acuops.yaml > error
-          PROJECT="${{ vars.CUSTOMIZATION_PROJECT_NAME }}"
-          if [[ -z "${PROJECT}" ]]; then
-            PROJECT=$(cfg '.project.name' '')
-          fi
-          if [[ -z "${PROJECT}" ]]; then
-            echo "::error::CUSTOMIZATION_PROJECT_NAME not set and no project.name in acuops.yaml"
-            exit 1
-          fi
-          echo "project_name=${PROJECT}" >> "$GITHUB_OUTPUT"
-
-          # Co-publish projects (production)
-          ALSO="${{ vars.ALSO_PUBLISH_PROJECTS }}"
-          if [[ -z "${ALSO}" ]]; then
-            ALSO=$(cfg_array '.publish.co_publish')
-          fi
-          echo "also_publish=${ALSO}" >> "$GITHUB_OUTPUT"
-
-          # Known projects (all projects that should exist on the instance)
-          KNOWN=$(cfg_array '.publish.known_projects')
-          echo "known_projects=${KNOWN}" >> "$GITHUB_OUTPUT"
-
-          # ISV packages (third-party packages — not managed by this repo)
-          ISV=$(cfg_array '.publish.isv_packages')
-          echo "isv_packages=${ISV}" >> "$GITHUB_OUTPUT"
-
-          # Backup enabled
-          BACKUP=$(cfg '.backup.enabled' 'true')
-          echo "backup_enabled=${BACKUP}" >> "$GITHUB_OUTPUT"
-
-          # ISV prefix for validation
-          ISV_PREFIX=$(cfg '.validation.isv_prefix' '')
-          echo "isv_prefix=${ISV_PREFIX}" >> "$GITHUB_OUTPUT"
-
-          # Strict mode
-          STRICT=$(cfg '.validation.strict' 'false')
-          echo "strict=${STRICT}" >> "$GITHUB_OUTPUT"
-
-          # Timezone for business hours detection
-          TZ_CFG=$(cfg '.pipeline.timezone' 'America/Chicago')
-          echo "timezone=${TZ_CFG}" >> "$GITHUB_OUTPUT"
-
-          echo "Project: ${PROJECT}"
-          echo "Co-publish: ${ALSO:-none}"
-          echo "Co-publish (test): ${ALSO_TEST:-none}"
-          echo "Known projects: ${KNOWN:-none}"
-          echo "Backup: ${BACKUP}"
-          echo "ISV prefix: ${ISV_PREFIX:-none}"
-          echo "Test tenant gate: ${TEST_TENANT}"
-          echo "Timezone: ${TZ_CFG}"
-
-      # ── Guard: detect if Customization/ files actually changed ──────
-      # Prevents app pool restarts when only CI/test/script files change.
-      # The workflow path filter includes scripts/* and .github/workflows/*,
-      # which trigger the build but should NOT trigger a publish.
-      #
-      # 2026-04-08 fix: this step previously only diff'd 'Customization/'.
-      # That excluded src/StudioB.Containers/** changes — including the
-      # AesthetikContainersInstall.cs CustomizationPlugin which IS a
-      # publishable customization (it's the schema migration runner).
-      # PR #285 was a real customization fix that sat in main undeployed
-      # for hours because of this gap. Now also diffs 'src/' so that any
-      # change to compiled-DLL source OR install-plugin code triggers a
-      # real validation + deploy gate, not just a vacuous Build success.
-      - name: Detect customization changes
-        id: detect_cust_changes
-        run: |
-          # For workflow_dispatch/repository_dispatch, always treat as changed (manual deploy)
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ] || [ "${{ github.event_name }}" = "repository_dispatch" ]; then
-            echo "customization_changes=true" >> "$GITHUB_OUTPUT"
-            echo "Manual/scheduled dispatch — will publish"
-            exit 0
-          fi
-
-          # Compare against parent commit (push event). Treat changes to
-          # EITHER Customization/ (the project files) OR src/ (the
-          # CustomizationPlugin + DAC + graph extension source that
-          # compiles into the DLL bundled inside Customization/*/Bin/) as
-          # customization changes. Both feed the published artifact.
-          CHANGED=$(git diff --name-only HEAD~1 HEAD -- 'Customization/' 'src/' 2>/dev/null || true)
-          if [ -n "$CHANGED" ]; then
-            echo "customization_changes=true" >> "$GITHUB_OUTPUT"
-            echo "Customization or src/ files changed — will publish:"
-            echo "$CHANGED"
-          else
-            echo "customization_changes=false" >> "$GITHUB_OUTPUT"
-            echo "No Customization/ or src/ changes — skipping publish (CI/test/script-only change)"
-          fi
-
-      - name: Detect plugin changes
-        id: plugin_check
-        run: |
-          DIFF=$(git diff origin/main -- '*.xml' '*.cs' 2>/dev/null || true)
-          if echo "$DIFF" | grep -qiE '(CustomizationPlugin|UpdateDatabase|<Sql>|ExecuteSQL|SqlCommand)'; then
-            echo "plugin_changes=true" >> "$GITHUB_OUTPUT"
-            echo "::warning::CustomizationPlugin changes detected"
-          else
-            echo "plugin_changes=false" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-
-      - name: Verify project folder exists
-        run: |
-          PROJECT="${{ steps.config.outputs.project_name }}"
-          if [ ! -d "Customization/${PROJECT}" ]; then
-            echo "::error::FATAL: Customization/${PROJECT}/ does not exist."
-            echo "The project_name must match an existing folder under Customization/."
-            echo "Available folders:"
-            ls -d Customization/*/ 2>/dev/null || echo "  (none)"
-            exit 1
-          fi
-
-      - name: Validate ALL customization projects
-        run: |
-          # Validate EVERY project.xml in Customization/.
-          # Acumatica compiles ALL imported projects during publish — not just
-          # the ones in publishBegin's projectNames. Any project in this repo
-          # could end up on the instance and compiled. Validate everything.
-          PROJECT="${{ steps.config.outputs.project_name }}"
-          FAILED=0
-          VALIDATED=0
-          SKIPPED=0
-
-          for PROJECT_XML in Customization/*/project.xml; do
-            [ ! -f "$PROJECT_XML" ] && continue
-            proj=$(basename $(dirname "$PROJECT_XML"))
-
-            # Skip known test/rollback projects
-            if [[ "$proj" == "CICDRollbackTest" ]] || [[ "$proj" == "_project" ]]; then
-              echo "Skipping test project: $proj"
-              SKIPPED=$((SKIPPED + 1))
-              continue
-            fi
-
-            echo ""
-            echo "--- Validating: $proj ---"
-            STRICT_FLAG=""
-            if [[ "${{ github.ref }}" == "refs/heads/main" ]] && [[ "$proj" == "${PROJECT}" ]]; then
-              STRICT_FLAG="--strict"
-              echo "(strict mode — production primary project)"
-            fi
-
-            ARGS=""
-            ISV_PREFIX="${{ steps.config.outputs.isv_prefix }}"
-            [[ -n "${ISV_PREFIX}" ]] && ARGS="${ARGS} --isv-prefix ${ISV_PREFIX}"
-
-            if ! python pipeline/scripts/validate-project.py ${STRICT_FLAG} ${ARGS} "$PROJECT_XML"; then
-              echo "::error::Project '$proj' failed validation"
-              FAILED=$((FAILED + 1))
-            fi
-            VALIDATED=$((VALIDATED + 1))
-          done
-
-          echo ""
-          echo "--- Validation Summary ---"
-          echo "Validated: $VALIDATED | Failed: $FAILED | Skipped: $SKIPPED"
-
-          if [ "$FAILED" -gt 0 ]; then
-            echo "::error::$FAILED project(s) failed validation. Fix ALL before deploying."
-            exit 1
-          fi
-          echo "All $VALIDATED projects passed validation"
-
-      # 2026-04-08: SB501000 shipped with stale Phase A/B CDATA for weeks — only
-      # the physical .aspx was updated as the screen evolved. Acumatica's import
-      # silently ignores ASPX CDATA in favor of the physical file, so the drift
-      # was invisible in prod until a reviewer noticed "Tab Labels:" rendering.
-      # This check enforces that every ASPX CDATA body in every project.xml
-      # matches its physical file verbatim, so the git diff accurately reflects
-      # what ships. Remediation is `python3 scripts/sync-aspx-cdata.py`.
-      - name: Verify ASPX CDATA matches physical files
-        run: |
-          python3 scripts/sync-aspx-cdata.py --check
-
-      - name: Deploy Intelligence — Predict
-        if: always()
-        run: |
-          python pipeline/scripts/intelligence.py predict \
-            --project-xml Customization/_project/project.xml \
-            --history data/deploy-history.json \
-            --environment "${{ github.ref == 'refs/heads/main' && 'production' || 'staging' }}" || true
-
-      - name: Check for C# extension library
-        id: check_csproj
-        run: |
-          if ls src/*/*.csproj 1>/dev/null 2>&1; then
-            echo "has_csproj=true" >> "$GITHUB_OUTPUT"
-            echo "Found C# project(s) in src/ — will build extension library"
-          else
-            echo "has_csproj=false" >> "$GITHUB_OUTPUT"
-            echo "No C# project — packaging XML/ASPX only"
-          fi
-
-      - name: Authenticate to GCP
-        if: steps.check_csproj.outputs.has_csproj == 'true'
-        uses: google-github-actions/auth@v2
-        with:
-          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
-          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
-
-      - name: Setup .NET (if C# extension exists)
-        if: steps.check_csproj.outputs.has_csproj == 'true'
-        uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: '6.0.x'
-
-      - name: Download Acumatica SDK from GCS
-        if: steps.check_csproj.outputs.has_csproj == 'true'
-        run: |
-          SDK_VERSION=$(grep 'acumatica_build_version' acuops.yaml | head -1 | sed 's/.*: *"\{0,1\}\([^"]*\)"\{0,1\}/\1/' || echo "24.208")
-          echo "Downloading Acumatica SDK ${SDK_VERSION}..."
-          mkdir -p lib
-          gcloud storage cp "gs://aesthetik-acumatica-sdk/${SDK_VERSION}/*.dll" lib/
-          echo "SDK DLLs downloaded:"
-          ls -lh lib/*.dll
-
-      - name: Build C# extension library
-        if: steps.check_csproj.outputs.has_csproj == 'true'
-        run: |
-          for proj in src/*/*.csproj; do
-            echo "Building $(basename $proj)..."
-            dotnet restore "$proj"
-            dotnet build "$proj" --configuration Release --no-restore
-          done
-
-          # Copy built DLLs into customization Bin directories
-          for dll in src/*/bin/Release/net48/*.dll; do
-            DLLNAME=$(basename "$dll")
-            for bindir in Customization/*/Bin; do
-              if [ -d "$bindir" ]; then
-                cp "$dll" "$bindir/"
-                echo "Copied $DLLNAME → $bindir/"
-              fi
-            done
-          done
-
-      - name: Package customization project
-        id: package
-        run: |
-          PROJECT="${{ steps.config.outputs.project_name }}"
-          TIMESTAMP=$(date +%Y%m%d-%H%M%S)
-          PACKAGE_NAME="${PROJECT}_${TIMESTAMP}.zip"
-          PACKAGE_PATH="dist/${PACKAGE_NAME}"
-
-          mkdir -p dist
-
-          cd Customization/${PROJECT}
-          zip -r "../../${PACKAGE_PATH}" . \
-            -x "*.DS_Store" \
-            -x "__MACOSX/*" \
-            -x "*.user" \
-            -x "bin/*" \
-            -x "obj/*"
-          cd ../..
-
-          # Include compiled DLLs if they exist
-          if [ -d "Customization/bin/Release" ]; then
-            cd Customization/bin/Release
-            zip -ur "../../../${PACKAGE_PATH}" *.dll 2>/dev/null || true
-            cd ../../..
-          fi
-
-          FILESIZE=$(du -h "${PACKAGE_PATH}" | cut -f1)
-          echo "Packaged: ${PACKAGE_NAME} (${FILESIZE})"
-
-          echo "path=${PACKAGE_PATH}" >> "$GITHUB_OUTPUT"
-          echo "name=${PACKAGE_NAME}" >> "$GITHUB_OUTPUT"
-
-      - name: Package extra customization projects
-        run: |
-          PROJECT="${{ steps.config.outputs.project_name }}"
-          ALSO_PUBLISH="${{ steps.config.outputs.also_publish }}"
-          TIMESTAMP=$(date +%Y%m%d-%H%M%S)
-          # Only package directories that appear in ALSO_PUBLISH
-          for dir in Customization/*/; do
-            dirname=$(basename "${dir}")
-            if [[ "${dirname}" == "${PROJECT}" ]] || [[ "${dirname}" == "_project" ]]; then
-              continue
-            fi
-            # Skip if not in ALSO_PUBLISH list
-            if [[ ! ",${ALSO_PUBLISH}," == *",${dirname},"* ]]; then
-              echo "Skipping ${dirname} — not in co-publish list"
-              continue
-            fi
-            if [ -f "${dir}project.xml" ]; then
-              EXTRA_ZIP="dist/${dirname}_${TIMESTAMP}.zip"
-              cd "${dir}"
-              zip -r "../../${EXTRA_ZIP}" . \
-                -x "*.DS_Store" \
-                -x "__MACOSX/*" \
-                -x "*.user"
-              cd ../..
-              FILESIZE=$(du -h "${EXTRA_ZIP}" | cut -f1)
-              echo "Extra package: ${dirname} (${FILESIZE})"
-            fi
-          done
-
-      - name: Upload package artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: customization-package
-          path: dist/*.zip
-          retention-days: 30
-
-  # ──────────────────────────────────────────────
-  # Job 1.5: Build-Validate — Windows-only Acuminator static analysis
-  # ──────────────────────────────────────────────
-  # Runs on the self-hosted Windows runner at acumatica-test.
-  # Linux build (Job 1) skips Acuminator entirely because the analyzer
-  # uses named memory maps that only work on Windows. This job rebuilds
-  # on Windows so Acuminator (PX1000-series rules) actually fires.
-  # Fails the pipeline on Acuminator errors OR C# compile errors.
-  # Warnings are surfaced in the step summary but do NOT block.
-  build-validate:
-    name: Build + Acuminator (self-hosted Windows)
-    needs: build
-    runs-on: [self-hosted, windows, acumatica-sdk]
-    timeout-minutes: 15
-    # Only run if the change touches C# source or the build system.
-    # 2026-04-08: need `!cancelled()` prefix because PR #277 made `build`
-    # conditional (`if: always() && ...`) via dispatch-guard; without the
-    # prefix GitHub prepends an implicit `success()` that fails due to the
-    # skipped dispatch-guard upstream, even when `build` itself succeeds.
-    # 2026-04-08 Option F escape hatch: skip_build_validate=OVERRIDE
-    # bypasses this job entirely when the self-hosted runner is
-    # unavailable (VM TERMINATED + GCE capacity shortage). The deploy
-    # job's gate already accepts build-validate=skipped as a valid
-    # upstream state (see deploy job `if:`). Requires the DLL in
-    # Customization/*/Bin/ to already be fresh — the deploy publishes
-    # the committed DLL as-is, without re-building from src/.
-    if: >-
-      !cancelled() &&
-      needs.build.result == 'success' &&
-      needs.build.outputs.customization_changes == 'true' &&
-      github.event.inputs.skip_build_validate != 'OVERRIDE'
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Check for C# extension library
-        id: check_csproj
-        shell: pwsh
-        run: |
-          $csprojs = Get-ChildItem -Path src -Recurse -Filter *.csproj -ErrorAction SilentlyContinue
-          if ($csprojs) {
-            "has_csproj=true" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
-            Write-Host "Found $($csprojs.Count) C# project(s) — Acuminator will run"
-          } else {
-            "has_csproj=false" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
-            Write-Host "No C# project — skipping Acuminator"
-          }
-
-      # SDK DLLs: try the local Acumatica install first (fast, version
-      # guaranteed to match). If no install is found at the expected
-      # paths, fall back to downloading from GCS (matches the Linux
-      # build job). This makes build-validate resilient to VM topology
-      # where Acumatica might live at a non-default path or not be
-      # installed at all.
-      - name: Authenticate to GCP (for SDK fallback)
-        if: steps.check_csproj.outputs.has_csproj == 'true'
-        uses: google-github-actions/auth@v2
-        with:
-          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
-          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
-
-      - name: Setup gcloud (for SDK fallback)
-        if: steps.check_csproj.outputs.has_csproj == 'true'
-        uses: google-github-actions/setup-gcloud@v2
-
-      - name: Acquire SDK DLLs (local install or GCS)
-        if: steps.check_csproj.outputs.has_csproj == 'true'
-        shell: pwsh
-        run: |
-          $libDir = "lib"
-          if (-not (Test-Path $libDir)) { New-Item -ItemType Directory -Path $libDir | Out-Null }
-
-          # Candidate local install paths — add more if we find Acumatica
-          # at a different location on a future VM
-          $sdkRoots = @(
-            "C:\Program Files\Acumatica ERP\Bin",
-            "C:\Program Files (x86)\Acumatica ERP\Bin",
-            "C:\Program Files\Acumatica ERP\Website\Bin",
-            "C:\AcumaticaERP\Bin"
-          )
-          $sdkRoot = $sdkRoots | Where-Object { Test-Path $_ } | Select-Object -First 1
-
-          if ($sdkRoot) {
-            Write-Host "Using local SDK from: $sdkRoot"
-            $needed = @(
-              "PX.Data.dll",
-              "PX.Data.BQL.Fluent.dll",
-              "PX.Objects.dll",
-              "PX.Common.dll",
-              "PX.Common.Std.dll",
-              "PX.DbServices.dll",
-              "PX.Web.Customization.dll"
-            )
-            foreach ($dll in $needed) {
-              $src = Join-Path $sdkRoot $dll
-              if (Test-Path $src) {
-                Copy-Item $src $libDir -Force
-                Write-Host "  copied $dll"
-              } else {
-                Write-Host "::warning::$dll not found at $src"
-              }
-            }
-          } else {
-            Write-Host "No local Acumatica install found. Checked:"
-            $sdkRoots | ForEach-Object { Write-Host "  $_" }
-            Write-Host "Falling back to GCS..."
-
-            # Read SDK version from acuops.yaml (same as Linux build)
-            $sdkVersion = "24.208"
-            if (Test-Path "acuops.yaml") {
-              $line = Get-Content acuops.yaml | Where-Object { $_ -match 'acumatica_build_version' } | Select-Object -First 1
-              if ($line -and $line -match '"?([0-9]+\.[0-9]+)"?') {
-                $sdkVersion = $matches[1]
-              }
-            }
-            Write-Host "SDK version: $sdkVersion"
-
-            # Use gcloud storage cp to pull the DLLs
-            & gcloud storage cp "gs://aesthetik-acumatica-sdk/$sdkVersion/*.dll" $libDir/
-            if ($LASTEXITCODE -ne 0) {
-              Write-Host "::error::Failed to download SDK DLLs from GCS"
-              exit 1
-            }
-          }
-
-          $dlls = Get-ChildItem $libDir -Filter *.dll
-          if ($dlls.Count -eq 0) {
-            Write-Host "::error::No SDK DLLs acquired (neither local nor GCS)"
-            exit 1
-          }
-          $dlls | Format-Table Name, @{N='Size';E={$_.Length}}
-
-      - name: Build with Acuminator
-        if: steps.check_csproj.outputs.has_csproj == 'true'
-        shell: pwsh
-        run: |
-          # Gate policy:
-          # - Fail HARD only on actual compile errors (CS-prefix from the
-          #   C# compiler, or missing DLL output after build).
-          # - Acuminator PX-prefix diagnostics are code-style findings.
-          #   They come through as "error" severity from dotnet build
-          #   (which makes the build exit non-zero) but the DLL is still
-          #   produced. Surface them in the step summary but do NOT block
-          #   the deploy on pre-existing style issues.
-          # - Rationale: before today, Acuminator never ran (Linux build
-          #   skips it). The codebase has accumulated PX findings. Hard-
-          #   blocking on them would indefinitely stall prod deploys.
-          #   A follow-up issue tracks fixing them properly.
-          $buildLog = "build-validate.log"
-          $csprojs = Get-ChildItem -Path src -Recurse -Filter *.csproj
-          $compileFailures = @()
-          foreach ($proj in $csprojs) {
-            Write-Host "========================================="
-            Write-Host "Building $($proj.Name)..."
-            Write-Host "========================================="
-            dotnet restore "$($proj.FullName)" 2>&1 | Tee-Object -FilePath $buildLog -Append
-            dotnet build "$($proj.FullName)" --configuration Release --no-restore 2>&1 | Tee-Object -FilePath $buildLog -Append
-            # Check if the DLL was produced (real compile success) — not
-            # the dotnet exit code which also trips on Acuminator PX errors
-            $assemblyName = [System.IO.Path]::GetFileNameWithoutExtension($proj.Name)
-            $dllPath = Join-Path $proj.DirectoryName "bin\Release\net48\$assemblyName.dll"
-            if (-not (Test-Path $dllPath)) {
-              $compileFailures += "$($proj.Name) (no DLL at $dllPath)"
-              Write-Host "::error::$($proj.Name) did NOT produce a DLL — real compile failure"
-            } else {
-              $dllInfo = Get-Item $dllPath
-              Write-Host "  -> $($dllInfo.FullName) ($($dllInfo.Length) bytes)"
-            }
-          }
-
-          # Surface Acuminator diagnostics in the step summary (advisory)
-          $pxHits = Select-String -Path $buildLog -Pattern '(error|warning) (PX\d{4})' -AllMatches -ErrorAction SilentlyContinue
-          $pxErrors = @($pxHits | Where-Object { $_.Line -match 'error PX' })
-          $pxWarnings = @($pxHits | Where-Object { $_.Line -match 'warning PX' })
-
-          "## Acuminator findings" | Out-File $env:GITHUB_STEP_SUMMARY -Append
-          "" | Out-File $env:GITHUB_STEP_SUMMARY -Append
-          "- PX errors (advisory, not blocking): $($pxErrors.Count)" | Out-File $env:GITHUB_STEP_SUMMARY -Append
-          "- PX warnings: $($pxWarnings.Count)" | Out-File $env:GITHUB_STEP_SUMMARY -Append
-          "" | Out-File $env:GITHUB_STEP_SUMMARY -Append
-          if ($pxErrors.Count -gt 0) {
-            "### Errors (follow-up: fix these)" | Out-File $env:GITHUB_STEP_SUMMARY -Append
-            '```' | Out-File $env:GITHUB_STEP_SUMMARY -Append
-            $pxErrors | Select-Object -First 30 | ForEach-Object { $_.Line } | Out-File $env:GITHUB_STEP_SUMMARY -Append
-            '```' | Out-File $env:GITHUB_STEP_SUMMARY -Append
-          }
-
-          if ($compileFailures.Count -gt 0) {
-            Write-Host "::error::Real compile failures (missing DLLs):"
-            $compileFailures | ForEach-Object { Write-Host "  - $_" }
-            "## 🚫 Compile FAILED — DLL not produced" | Out-File $env:GITHUB_STEP_SUMMARY -Append
-            "" | Out-File $env:GITHUB_STEP_SUMMARY -Append
-            '```' | Out-File $env:GITHUB_STEP_SUMMARY -Append
-            $compileFailures | Out-File $env:GITHUB_STEP_SUMMARY -Append
-            '```' | Out-File $env:GITHUB_STEP_SUMMARY -Append
-            exit 1
-          }
-          Write-Host "All projects produced DLLs — compile succeeded. $($pxErrors.Count) PX errors surfaced as advisory."
-
-      - name: Upload build log
-        if: always() && steps.check_csproj.outputs.has_csproj == 'true'
-        uses: actions/upload-artifact@v4
-        with:
-          name: build-validate-log-${{ github.run_number }}
-          path: build-validate.log
-          retention-days: 14
-
-  # ──────────────────────────────────────────────
-  # Job 2: Qualify — Agentic pre-deploy checks
-  # ──────────────────────────────────────────────
-  qualify:
-    name: Pre-Deploy Qualification
-    needs: [build, build-validate]
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    if: >
-      always() &&
-      needs.build.result == 'success' &&
-      (needs.build-validate.result == 'success' || needs.build-validate.result == 'skipped') &&
-      github.event_name != 'pull_request' &&
-      github.event.inputs.force_qualify != 'true'
-    outputs:
-      decision: ${{ steps.qualify.outputs.decision }}
-      needs_countdown: ${{ steps.qualify.outputs.needs_countdown }}
-      summary: ${{ steps.qualify.outputs.summary }}
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          fetch-tags: true
-      - name: Checkout AcuOps pipeline
-        uses: actions/checkout@v4
-        with:
-          repository: studio-b-ai/acuops-pipeline
-          ref: ${{ vars.ACUOPS_PIPELINE_VERSION || 'main' }}
-          path: pipeline
-          ssh-key: ${{ secrets.ACUOPS_PIPELINE_DEPLOY_KEY }}
-      - name: Run qualification checks
-        id: qualify
-        timeout-minutes: 4
-        env:
-          PYTHONUNBUFFERED: "1"
-          ACUMATICA_URL: ${{ secrets.ACUMATICA_PROD_URL }}
-          ACUMATICA_USERNAME: ${{ secrets.ACUMATICA_PROD_USERNAME }}
-          ACUMATICA_PASSWORD: ${{ secrets.ACUMATICA_PROD_PASSWORD }}
-          ACUMATICA_TENANT: ${{ secrets.ACUMATICA_PROD_TENANT }}
-          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-          KNOWN_PROJECTS: ${{ needs.build.outputs.known_projects }}
-          ISV_PACKAGES: ${{ needs.build.outputs.isv_packages }}
-          PROJECT_NAME: ${{ needs.build.outputs.project_name }}
-        run: python pipeline/scripts/qualify.py
-
-  # ──────────────────────────────────────────────
-  # Job 3: Test Tenant Publish Gate
+  # Job: Sandbox Publish + UI Tests — hard gate for production
   # ──────────────────────────────────────────────
   sandbox-gate:
     name: Sandbox Publish + UI Tests
-    needs: [build, build-validate, qualify]
     runs-on: ubuntu-latest
     timeout-minutes: 40
     # Publish to the SANDBOX instance (separate from production — no app pool
@@ -945,15 +141,8 @@ jobs:
     # skip_sandbox_gate="OVERRIDE" via workflow_dispatch. Use only when the
     # sandbox instance itself is down (rare).
     if: >
-      always() &&
-      needs.build.result == 'success' &&
-      needs.build.outputs.customization_changes == 'true' &&
-      (needs.build-validate.result == 'success' || needs.build-validate.result == 'skipped') &&
-      github.event_name != 'pull_request' &&
-      github.event.inputs.skip_sandbox_gate != 'OVERRIDE' && (
-        needs.qualify.result == 'success' ||
-        needs.qualify.result == 'skipped'
-      )
+      inputs.customization_changes == 'true' &&
+      inputs.skip_sandbox_gate != 'OVERRIDE'
     concurrency:
       # Queue sandbox publishes, never cancel in-flight ones. Cancelling
       # a GH Actions run does not stop the Acumatica publishEnd already
@@ -1025,7 +214,7 @@ jobs:
           ACUMATICA_PASSWORD: ${{ secrets.ACUMATICA_SANDBOX_PASSWORD }}
           ACUMATICA_TENANT: ${{ secrets.ACUMATICA_SANDBOX_TENANT }}
         run: |
-          PROJECT="${{ needs.build.outputs.project_name }}"
+          PROJECT="${{ inputs.project_name }}"
           PACKAGE_FILE=$(ls dist/${PROJECT}_*.zip 2>/dev/null | head -1)
           if [ -z "${PACKAGE_FILE}" ]; then
             PACKAGE_FILE=$(ls dist/*.zip | head -1)
@@ -1209,29 +398,22 @@ jobs:
           echo "| Smoke Test | \`${{ steps.smoke.outcome || 'n/a' }}\` |" >> "$GITHUB_STEP_SUMMARY"
 
   # ──────────────────────────────────────────────
-  # Job 4: Deploy — Snapshot, countdown, import + publish to Acumatica
+  # Job: Deploy — Snapshot, countdown, import + publish to Acumatica
   # ──────────────────────────────────────────────
   deploy:
-    name: Deploy to ${{ github.event.inputs.environment || (github.ref == 'refs/heads/main' && 'production' || 'staging') }}
-    needs: [build, build-validate, qualify, sandbox-gate]
+    name: Deploy to ${{ inputs.environment }}
+    needs: [sandbox-gate]
     runs-on: ubuntu-latest
     if: >
       always() &&
-      needs.build.result == 'success' &&
-      needs.build.outputs.customization_changes == 'true' &&
-      (needs.build-validate.result == 'success' || needs.build-validate.result == 'skipped') &&
-      github.event_name != 'pull_request' &&
+      inputs.customization_changes == 'true' &&
       (
         needs.sandbox-gate.result == 'success' ||
         needs.sandbox-gate.result == 'skipped' ||
-        github.event.inputs.force_deploy == 'OVERRIDE'
-      ) && (
-        needs.qualify.result == 'success' ||
-        needs.qualify.result == 'skipped' ||
-        github.event.inputs.force_qualify == 'true'
+        inputs.force_deploy == 'OVERRIDE'
       )
     environment:
-      name: ${{ github.event.inputs.environment || (github.ref == 'refs/heads/main' && 'production' || 'staging') }}
+      name: ${{ inputs.environment }}
 
     steps:
       - name: Checkout repository
@@ -1248,17 +430,8 @@ jobs:
       - name: Determine target environment
         id: env
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            TARGET="${{ github.event.inputs.environment }}"
-          elif [ "${{ github.event_name }}" = "repository_dispatch" ]; then
-            TARGET="${{ github.event.client_payload.environment || 'production' }}"
-          elif [ "${{ github.ref }}" = "refs/heads/main" ]; then
-            TARGET="production"
-          else
-            TARGET="staging"
-          fi
-          echo "target=${TARGET}" >> "$GITHUB_OUTPUT"
-          echo "Determined target environment: ${TARGET}"
+          echo "target=${{ inputs.environment }}" >> "$GITHUB_OUTPUT"
+          echo "Determined target environment: ${{ inputs.environment }}"
 
       - name: Enforce branch protection
         if: steps.env.outputs.target == 'production' && github.ref != 'refs/heads/main'
@@ -1382,16 +555,16 @@ jobs:
       # reach the instance anyway).
       - name: Pre-publish audit — verify nothing will be unpublished
         if: >
-          github.event.inputs.force_qualify != 'true' &&
-          github.event.inputs.dry_run != 'true'
+          inputs.force_qualify != 'true' &&
+          inputs.dry_run != 'true'
         env:
           ACUMATICA_URL: ${{ (steps.env.outputs.target == 'production') && secrets.ACUMATICA_PROD_URL || secrets.ACUMATICA_STG_URL }}
           ACUMATICA_USERNAME: ${{ (steps.env.outputs.target == 'production') && secrets.ACUMATICA_PROD_USERNAME || secrets.ACUMATICA_STG_USERNAME }}
           ACUMATICA_PASSWORD: ${{ (steps.env.outputs.target == 'production') && secrets.ACUMATICA_PROD_PASSWORD || secrets.ACUMATICA_STG_PASSWORD }}
           ACUMATICA_TENANT: ${{ (steps.env.outputs.target == 'production') && secrets.ACUMATICA_PROD_TENANT || secrets.ACUMATICA_STG_TENANT }}
-          PROJECT_NAME: ${{ needs.build.outputs.project_name }}
-          ALSO_PUBLISH: ${{ needs.build.outputs.also_publish }}
-          ACKNOWLEDGE_UNPUBLISH: ${{ github.event.inputs.acknowledge_unpublish }}
+          PROJECT_NAME: ${{ inputs.project_name }}
+          ALSO_PUBLISH: ${{ inputs.also_publish }}
+          ACKNOWLEDGE_UNPUBLISH: ${{ inputs.acknowledge_unpublish }}
         run: |
           python3 <<'PY'
           import json, os, sys, ssl
@@ -1520,9 +693,7 @@ jobs:
       - name: Pre-deploy snapshot
         id: snapshot
         if: >
-          needs.build.outputs.backup_enabled == 'true' &&
-          github.event.inputs.skip_backup != 'true' &&
-          github.event.inputs.dry_run != 'true'
+          inputs.dry_run != 'true'
         env:
           ACUMATICA_URL: ${{ (steps.env.outputs.target == 'production') && secrets.ACUMATICA_PROD_URL || (secrets.ACUMATICA_STG_URL || secrets.ACUMATICA_PROD_URL) }}
           ACUMATICA_USERNAME: ${{ (steps.env.outputs.target == 'production') && secrets.ACUMATICA_PROD_USERNAME || (secrets.ACUMATICA_STG_USERNAME || secrets.ACUMATICA_PROD_USERNAME) }}
@@ -1531,7 +702,7 @@ jobs:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
         run: |
           python3 pipeline/scripts/deploy.py --download \
-            --project "${{ needs.build.outputs.project_name }}" \
+            --project "${{ inputs.project_name }}" \
             --output backups/
 
       - name: Upload pre-deploy snapshot
@@ -1551,8 +722,7 @@ jobs:
       - name: Check if after-hours
         id: hours
         run: |
-          TIMEZONE="${{ needs.build.outputs.timezone }}"
-          TIMEZONE="${TIMEZONE:-America/New_York}"
+          TIMEZONE="America/New_York"
           HOUR=$(TZ="${TIMEZONE}" date +%H)
           DOW=$(TZ="${TIMEZONE}" date +%u)
           # After-hours = weekends (Sat=6, Sun=7) OR before 6am OR after 6pm (18:00)
@@ -1567,12 +737,11 @@ jobs:
       - name: Enforce after-hours gate for prod/staging publishes
         if: >
           steps.env.outputs.target != 'sandbox' &&
-          github.event.inputs.dry_run != 'true' &&
-          github.event.inputs.force_business_hours != 'true' &&
+          inputs.dry_run != 'true' &&
+          inputs.force_business_hours != 'true' &&
           steps.hours.outputs.after_hours != 'true'
         run: |
-          TIMEZONE="${{ needs.build.outputs.timezone }}"
-          TIMEZONE="${TIMEZONE:-America/New_York}"
+          TIMEZONE="America/New_York"
           HOUR=$(TZ="${TIMEZONE}" date +%H)
           DOW=$(TZ="${TIMEZONE}" date +%u)
           echo "::error::BLOCKED: business-hours deploy to ${{ steps.env.outputs.target }}."
@@ -1594,25 +763,19 @@ jobs:
       - name: Send maintenance countdown warnings
         if: >
           steps.env.outputs.target == 'production' &&
-          github.event.inputs.skip_countdown != 'true' &&
-          github.event.inputs.countdown_complete != 'true' &&
-          github.event.inputs.force_qualify != 'true' &&
-          github.event.inputs.dry_run != 'true'
+          inputs.force_qualify != 'true' &&
+          inputs.dry_run != 'true'
         env:
           AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
           AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
           AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-          NOTIFY_RECIPIENTS: ${{ needs.build.outputs.notify_recipients }}
-          NOTIFY_SENDER: ${{ needs.build.outputs.notify_sender }}
         run: |
-          if [ -f pipeline/scripts/notify.py ] && [ -n "${NOTIFY_RECIPIENTS}" ]; then
+          if [ -f pipeline/scripts/notify.py ]; then
             python pipeline/scripts/notify.py \
               --type countdown \
               --minutes 20 \
-              --recipients "${NOTIFY_RECIPIENTS}" \
-              --sender "${NOTIFY_SENDER}" \
-              --project "${{ needs.build.outputs.project_name }}" \
+              --project "${{ inputs.project_name }}" \
               --environment "${{ steps.env.outputs.target }}" \
               --slack-webhook "${SLACK_WEBHOOK_URL}" \
               ${{ steps.hours.outputs.after_hours == 'true' && '--skip-email' || '' }}
@@ -1620,7 +783,7 @@ jobs:
 
       # ── Pre-deploy smoke test ────────────────────────────────────────
       - name: Pre-deploy smoke test
-        if: github.event.inputs.force_qualify != 'true' && github.event.inputs.dry_run != 'true'
+        if: inputs.force_qualify != 'true' && inputs.dry_run != 'true'
         env:
           ACUMATICA_URL: ${{ (steps.env.outputs.target == 'production') && secrets.ACUMATICA_PROD_URL || (secrets.ACUMATICA_STG_URL || secrets.ACUMATICA_PROD_URL) }}
           ACUMATICA_USERNAME: ${{ (steps.env.outputs.target == 'production') && secrets.ACUMATICA_PROD_USERNAME || (secrets.ACUMATICA_STG_USERNAME || secrets.ACUMATICA_PROD_USERNAME) }}
@@ -1645,7 +808,7 @@ jobs:
 
       # ── Download built packages ──────────────────────────────────────
       - name: Download package artifacts
-        if: github.event.inputs.dry_run != 'true'
+        if: inputs.dry_run != 'true'
         uses: actions/download-artifact@v4
         with:
           name: customization-package
@@ -1654,15 +817,15 @@ jobs:
       # ── DEPLOY — Import + Publish to Acumatica ──────────────────────
       - name: Import and publish customization
         id: deploy
-        if: github.event.inputs.dry_run != 'true'
+        if: inputs.dry_run != 'true'
         env:
           ACUMATICA_URL: ${{ (steps.env.outputs.target == 'production') && secrets.ACUMATICA_PROD_URL || (secrets.ACUMATICA_STG_URL || secrets.ACUMATICA_PROD_URL) }}
           ACUMATICA_USERNAME: ${{ (steps.env.outputs.target == 'production') && secrets.ACUMATICA_PROD_USERNAME || (secrets.ACUMATICA_STG_USERNAME || secrets.ACUMATICA_PROD_USERNAME) }}
           ACUMATICA_PASSWORD: ${{ (steps.env.outputs.target == 'production') && secrets.ACUMATICA_PROD_PASSWORD || (secrets.ACUMATICA_STG_PASSWORD || secrets.ACUMATICA_PROD_PASSWORD) }}
           ACUMATICA_TENANT: ${{ (steps.env.outputs.target == 'production') && secrets.ACUMATICA_PROD_TENANT || (secrets.ACUMATICA_STG_TENANT || secrets.ACUMATICA_PROD_TENANT) }}
         run: |
-          PROJECT="${{ needs.build.outputs.project_name }}"
-          ALSO="${{ needs.build.outputs.also_publish }}"
+          PROJECT="${{ inputs.project_name }}"
+          ALSO="${{ inputs.also_publish }}"
           PACKAGE_FILE=$(ls dist/${PROJECT}_*.zip 2>/dev/null | head -1)
           if [ -z "${PACKAGE_FILE}" ]; then
             echo "::error::No package found in dist/ for ${PROJECT}"
@@ -1684,7 +847,7 @@ jobs:
           echo "Deploying ${PACKAGE_FILE} to ${{ steps.env.outputs.target }}"
 
           # Emergency path: use basic auth when session login is broken
-          if [ "${{ github.event.inputs.force_qualify }}" = "true" ]; then
+          if [ "${{ inputs.force_qualify }}" = "true" ]; then
             echo "::warning::force_qualify=true — using emergency deploy path (bypasses broken session login)"
             mkdir -p /tmp/emergency-pkg
             unzip -o "${PACKAGE_FILE}" -d /tmp/emergency-pkg/
@@ -1739,8 +902,7 @@ jobs:
           python scripts/verify.py \
             --manifest publish-manifest.json \
             --environment ${{ steps.env.outputs.target }} \
-            --package "${{ needs.build.outputs.package_path }}" \
-            --project "${{ needs.build.outputs.project_name }}" \
+            --project "${{ inputs.project_name }}" \
             --no-merge-expected acuops.yaml \
             --json-output verify-result.json
 
@@ -1759,12 +921,12 @@ jobs:
           steps.deploy.outcome == 'success' &&
           steps.verify.outcome == 'failure' &&
           steps.env.outputs.target == 'production' &&
-          github.event.inputs.dry_run != 'true'
+          inputs.dry_run != 'true'
         env:
           SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
           SLACK_KEVIN_USER_ID: ${{ secrets.SLACK_KEVIN_USER_ID }}
         run: |
-          PROJECT="${{ needs.build.outputs.project_name }}"
+          PROJECT="${{ inputs.project_name }}"
           VERIFY="${{ steps.verify.outcome }}"
           RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
 
@@ -1831,7 +993,7 @@ jobs:
             -H "Authorization: Bearer ${ACUDEV_API_KEY}" \
             -d "{
               \"event\": \"verification_failed\",
-              \"project\": \"${{ needs.build.outputs.project_name }}\",
+              \"project\": \"${{ inputs.project_name }}\",
               \"environment\": \"${{ steps.env.outputs.target }}\",
               \"commit\": \"${GITHUB_SHA::8}\",
               \"error_detail\": $(echo "$ERROR_DETAIL" | python3 -c 'import sys,json; print(json.dumps(sys.stdin.read().strip()))'),
@@ -1855,7 +1017,7 @@ jobs:
             -H "Authorization: Bearer ${ACUDEV_API_KEY}" \
             -d "{
               \"event\": \"deploy_succeeded\",
-              \"project\": \"${{ needs.build.outputs.project_name }}\",
+              \"project\": \"${{ inputs.project_name }}\",
               \"environment\": \"production\",
               \"commit\": \"${GITHUB_SHA::8}\",
               \"error_detail\": \"All checks passed\",
@@ -1865,7 +1027,7 @@ jobs:
 
       # ── Trigger regression tests ─────────────────────────────────────
       - name: Trigger regression tests
-        if: always() && steps.env.outputs.target == 'production' && github.event.inputs.dry_run != 'true'
+        if: always() && steps.env.outputs.target == 'production' && inputs.dry_run != 'true'
         continue-on-error: true
         env:
           REGRESSION_WEBHOOK_URL: ${{ steps.pipeline_cfg.outputs.regression_url }}
@@ -1940,15 +1102,11 @@ jobs:
           AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
           AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-          NOTIFY_RECIPIENTS: ${{ needs.build.outputs.notify_recipients }}
-          NOTIFY_SENDER: ${{ needs.build.outputs.notify_sender }}
         run: |
-          if [ -f pipeline/scripts/notify.py ] && [ -n "${NOTIFY_RECIPIENTS}" ]; then
+          if [ -f pipeline/scripts/notify.py ]; then
             python pipeline/scripts/notify.py \
               --type online \
-              --recipients "${NOTIFY_RECIPIENTS}" \
-              --sender "${NOTIFY_SENDER}" \
-              --project "${{ needs.build.outputs.project_name }}" \
+              --project "${{ inputs.project_name }}" \
               --environment "${{ steps.env.outputs.target }}" \
               --slack-webhook "${SLACK_WEBHOOK_URL}" \
               ${{ steps.hours.outputs.after_hours == 'true' && '--skip-email' || '' }}
@@ -1962,15 +1120,11 @@ jobs:
           AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
           AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-          NOTIFY_RECIPIENTS: ${{ needs.build.outputs.notify_recipients }}
-          NOTIFY_SENDER: ${{ needs.build.outputs.notify_sender }}
         run: |
-          if [ -f pipeline/scripts/notify.py ] && [ -n "${NOTIFY_RECIPIENTS}" ]; then
+          if [ -f pipeline/scripts/notify.py ]; then
             python pipeline/scripts/notify.py \
               --type failed \
-              --recipients "${NOTIFY_RECIPIENTS}" \
-              --sender "${NOTIFY_SENDER}" \
-              --project "${{ needs.build.outputs.project_name }}" \
+              --project "${{ inputs.project_name }}" \
               --environment "${{ steps.env.outputs.target }}" \
               --slack-webhook "${SLACK_WEBHOOK_URL}" \
               ${{ steps.hours.outputs.after_hours == 'true' && '--skip-email' || '' }}
@@ -2001,7 +1155,7 @@ jobs:
           SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
           SLACK_KEVIN_USER_ID: ${{ secrets.SLACK_KEVIN_USER_ID }}
         run: |
-          PROJECT="${{ needs.build.outputs.project_name }}"
+          PROJECT="${{ inputs.project_name }}"
           TARGET="${{ steps.env.outputs.target }}"
           RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
 
@@ -2022,7 +1176,7 @@ jobs:
       - name: Post deployment summary
         if: always()
         run: |
-          PROJECT="${{ needs.build.outputs.project_name }}"
+          PROJECT="${{ inputs.project_name }}"
           TARGET="${{ steps.env.outputs.target }}"
           echo "## Deployment Summary" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
@@ -2030,7 +1184,7 @@ jobs:
           echo "|-------|-------|" >> "$GITHUB_STEP_SUMMARY"
           echo "| Environment | \`${TARGET}\` |" >> "$GITHUB_STEP_SUMMARY"
           echo "| Project | \`${PROJECT}\` |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| Package | \`${{ needs.build.outputs.package_name }}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Package | \`${{ inputs.package_name }}\` |" >> "$GITHUB_STEP_SUMMARY"
           echo "| Commit | \`${GITHUB_SHA::8}\` |" >> "$GITHUB_STEP_SUMMARY"
           echo "| Actor | @${GITHUB_ACTOR} |" >> "$GITHUB_STEP_SUMMARY"
           SNAPSHOT_FILES=$(ls backups/*.zip 2>/dev/null | xargs -I{} basename {} | tr '\n' ', ' || echo "N/A")
@@ -2049,9 +1203,6 @@ jobs:
       # Success notifications removed — Kevin only wants DMs on failures/decisions
 
   # ──────────────────────────────────────────────
-  # Job 5: Invoke Deploy Agent (fire-and-forget)
-  # ──────────────────────────────────────────────
-  # ──────────────────────────────────────────────
   # Job: AI Failure Recovery — diagnose and fix sandbox failures
   # ──────────────────────────────────────────────
   # DISABLED 2026-04-07: dispatch loop. The recovery agent re-dispatched
@@ -2065,14 +1216,12 @@ jobs:
   #      GH variable + LARRY_KILL_SWITCH external off switch (2026-04-09)
   invoke-agent:
     name: AI Failure Recovery
-    needs: [build, qualify, sandbox-gate]
+    needs: [sandbox-gate]
     continue-on-error: true
     if: >-
       always() &&
-      needs.build.result == 'success' &&
-      needs.build.outputs.customization_changes == 'true' &&
-      needs.sandbox-gate.result == 'failure' &&
-      github.event_name != 'pull_request'
+      inputs.customization_changes == 'true' &&
+      needs.sandbox-gate.result == 'failure'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -2172,7 +1321,7 @@ jobs:
             -H "Content-Type: application/json" \
             -d "{
               \"channel\": \"U0ALNRQ4KF0\",
-              \"text\": \"⚠️ *Larry dispatch budget exhausted* — AI Failure Recovery hit 5/5 dispatches in 24h.\nProject: ${{ needs.build.outputs.project_name }}\nRun: <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View Logs>\n\nManual triage required. Reset counter: \`gh variable set LARRY_DISPATCH_COUNT --repo ${{ github.repository }} --body '{\\\"count\\\":0,\\\"window_start\\\":\\\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\\\"}'\`\"
+              \"text\": \"⚠️ *Larry dispatch budget exhausted* — AI Failure Recovery hit 5/5 dispatches in 24h.\nProject: ${{ inputs.project_name }}\nRun: <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View Logs>\n\nManual triage required. Reset counter: \`gh variable set LARRY_DISPATCH_COUNT --repo ${{ github.repository }} --body '{\\\"count\\\":0,\\\"window_start\\\":\\\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\\\"}'\`\"
             }" > /dev/null
 
       - name: Run failure recovery agent
@@ -2199,7 +1348,7 @@ jobs:
             - Repository: ${{ github.repository }}
             - Commit: ${{ github.sha }}
             - Run ID: ${{ github.run_id }}
-            - Project: ${{ needs.build.outputs.project_name }}
+            - Project: ${{ inputs.project_name }}
 
             ## What to do
 
@@ -2270,7 +1419,7 @@ jobs:
         env:
           SLACK_BOT_TOKEN: ${{ secrets.STUDIOB_SLACK_BOT_TOKEN }}
         run: |
-          PROJECT="${{ needs.build.outputs.project_name }}"
+          PROJECT="${{ inputs.project_name }}"
           RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
           AGENT_OUTCOME="${{ steps.larry-agent.outcome }}"
 
@@ -2288,148 +1437,16 @@ jobs:
             || echo "::warning::#ops post failed"
 
   # ──────────────────────────────────────────────
-  # Job 4: Validate — PR check (no publish)
-  # ──────────────────────────────────────────────
-  validate:
-    name: Validate on Staging
-    needs: build
-    runs-on: ubuntu-latest
-    # 2026-04-08: `!cancelled()` prefix — see build-validate above.
-    # PR #277 made build conditional on dispatch-guard; without `!cancelled()`
-    # the implicit success() check fails because dispatch-guard is skipped
-    # on PR events, preventing this PR validation job from ever running.
-    if: >-
-      !cancelled() &&
-      needs.build.result == 'success' &&
-      github.event_name == 'pull_request'
-    continue-on-error: true
-    concurrency:
-      group: staging-validate
-      cancel-in-progress: true
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Checkout AcuOps pipeline
-        uses: actions/checkout@v4
-        with:
-          repository: studio-b-ai/acuops-pipeline
-          ref: ${{ vars.ACUOPS_PIPELINE_VERSION || 'main' }}
-          path: pipeline
-          ssh-key: ${{ secrets.ACUOPS_PIPELINE_DEPLOY_KEY }}
-
-      - name: Download package artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: customization-package
-          path: dist/
-
-      - name: Install Python dependencies
-        run: |
-          if [ -f pipeline/requirements.txt ]; then
-            pip install -r pipeline/requirements.txt
-          fi
-
-      - name: Import and publish on staging
-        env:
-          ACUMATICA_URL: ${{ secrets.ACUMATICA_STG_URL || secrets.ACUMATICA_PROD_URL }}
-          ACUMATICA_USERNAME: ${{ secrets.ACUMATICA_STG_USERNAME || secrets.ACUMATICA_PROD_USERNAME }}
-          ACUMATICA_PASSWORD: ${{ secrets.ACUMATICA_STG_PASSWORD || secrets.ACUMATICA_PROD_PASSWORD }}
-          ACUMATICA_TENANT: ${{ secrets.ACUMATICA_STG_TENANT || secrets.ACUMATICA_PROD_TENANT }}
-        run: |
-          PROJECT="${{ needs.build.outputs.project_name }}"
-          PACKAGE_FILE=$(ls dist/${PROJECT}_*.zip 2>/dev/null | head -1)
-          if [ -z "${PACKAGE_FILE}" ]; then
-            PACKAGE_FILE=$(ls dist/*.zip | head -1)
-          fi
-
-          EXTRA_FLAGS=""
-          STG_COPUBLISH=""
-          for pkg in dist/*.zip; do
-            if [ "${pkg}" != "${PACKAGE_FILE}" ]; then
-              PKG_BASE=$(basename "${pkg}" .zip)
-              PKG_NAME=$(echo "${PKG_BASE}" | sed 's/_[0-9]\{8\}-[0-9]\{6\}$//')
-              EXTRA_FLAGS+=" --extra-import ${PKG_NAME}:${pkg}"
-              if [ -n "${STG_COPUBLISH}" ]; then
-                STG_COPUBLISH+=",${PKG_NAME}"
-              else
-                STG_COPUBLISH="${PKG_NAME}"
-              fi
-            fi
-          done
-
-          python3 pipeline/scripts/deploy.py \
-            --project "${PROJECT}" \
-            --package "${PACKAGE_FILE}" \
-            --also-publish "${STG_COPUBLISH}" \
-            ${EXTRA_FLAGS}
-
-      - name: Verify staging publish
-        id: verify
-        env:
-          ACUMATICA_URL: ${{ secrets.ACUMATICA_STG_URL || secrets.ACUMATICA_PROD_URL }}
-          ACUMATICA_USERNAME: ${{ secrets.ACUMATICA_VERIFY_USERNAME || secrets.ACUMATICA_STG_USERNAME || secrets.ACUMATICA_PROD_USERNAME }}
-          ACUMATICA_PASSWORD: ${{ secrets.ACUMATICA_VERIFY_PASSWORD || secrets.ACUMATICA_STG_PASSWORD || secrets.ACUMATICA_PROD_PASSWORD }}
-          ACUMATICA_TENANT: ${{ secrets.ACUMATICA_STG_TENANT || secrets.ACUMATICA_PROD_TENANT }}
-        run: |
-          python scripts/verify.py \
-            --manifest publish-manifest.json \
-            --environment staging \
-            --package "${{ needs.build.outputs.package_path }}" \
-            --project "${{ needs.build.outputs.project_name }}" \
-            --no-merge-expected acuops.yaml \
-            --json-output verify-result.json \
-            2>&1 | tee validation-output.txt
-
-      - name: Comment on PR with results
-        if: always() && github.event.pull_request.number
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          RESULT="Passed"
-          if [ "${{ steps.verify.outcome }}" = "failure" ]; then
-            RESULT="Failed"
-          fi
-
-          BODY=""
-          if [ -f validation-output.txt ]; then
-            BODY=$(cat validation-output.txt | head -50)
-          fi
-
-          gh pr comment ${{ github.event.pull_request.number }} --body "### Staging Validation ${RESULT}
-
-          \`\`\`
-          ${BODY}
-          \`\`\`
-
-          [Full run log](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})"
-
-      - name: Post validation summary
-        if: always()
-        run: |
-          echo "## Staging Validation" >> "$GITHUB_STEP_SUMMARY"
-          echo "" >> "$GITHUB_STEP_SUMMARY"
-          if [ -f validation-output.txt ]; then
-            echo '```' >> "$GITHUB_STEP_SUMMARY"
-            head -50 validation-output.txt >> "$GITHUB_STEP_SUMMARY"
-            echo '```' >> "$GITHUB_STEP_SUMMARY"
-          fi
-
-  # ──────────────────────────────────────────────
-  # Job 6: Post-Deploy Validation — run UI/runtime tests
+  # Job: Post-Deploy Validation — run API/runtime tests
   # ──────────────────────────────────────────────
   post-deploy-validation:
     name: Post-Deploy Verification
-    needs: [build, deploy]
+    needs: [deploy]
     runs-on: ubuntu-latest
     # API-level smoke test against production after deploy.
     # UI tests already ran against sandbox in sandbox-gate.
     if: >
-      github.event_name != 'pull_request' && (
-        needs.deploy.result == 'success' ||
-        (needs.build.result == 'success' && needs.build.outputs.customization_changes == 'false')
-      )
+      needs.deploy.result == 'success'
 
     steps:
       - name: Checkout repository
