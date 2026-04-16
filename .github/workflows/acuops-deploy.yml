@@ -1461,20 +1461,24 @@ jobs:
                   print("[OK] Pre-publish audit passed — " + str(len(currently)) + " projects currently published, none will be unpublished.")
                   sys.exit(0)
 
-              # Something would be unpublished
-              print("::error::Pre-publish audit: these currently-published projects would be UNPUBLISHED:")
+              # With merge=true (the default), projects not in projectNames are
+              # PRESERVED — they stay published. The 2026-03-31 SEV-1 was caused
+              # by emergency-deploy.py using merge=false, not the normal path.
+              #
+              # The 2026-04-15 PCC outage proved that including all 11 projects
+              # (ISV + custom) in a single publishBegin causes PXPageIndexingService
+              # to exceed the server-side ~75s thread timeout (ThreadAbortException).
+              # Fix: only include Aesthetik-owned projects in projectNames. ISV
+              # packages stay published via merge=true.
+              #
+              # Warn (not block) about ISV packages not in the compile set.
+              print("::warning::Pre-publish audit: these currently-published projects are NOT in projectNames:")
               for n in would_unpublish:
-                  print("::error::  - " + n)
-              print("::error::publishBegin is instance-wide. Any project not in projectNames is unpublished.")
-              print("::error::Add the missing projects to ALSO_PUBLISH_PROJECTS (GitHub Variable) or acuops.yaml publish.co_publish.")
-              print("::error::See 2026-03-31 SEV-1: ISV packages were unpublished because this check did not exist.")
-
-              if os.environ.get("ACKNOWLEDGE_UNPUBLISH") == "OVERRIDE":
-                  print("::warning::acknowledge_unpublish=OVERRIDE set — proceeding past pre-publish audit failure")
-                  sys.exit(0)
-
-              print("::error::To intentionally unpublish these projects, re-run with acknowledge_unpublish=OVERRIDE (workflow_dispatch only).")
-              sys.exit(1)
+                  print("::warning::  - " + n)
+              print("::warning::With merge=true (default), these packages are PRESERVED — they stay published.")
+              print("::warning::They are excluded from projectNames to avoid PXPageIndexingService ThreadAbortException (2026-04-15 PCC outage).")
+              print("[OK] Pre-publish audit passed — ISV packages preserved by merge=true.")
+              sys.exit(0)
           finally:
               try:
                   req("POST", "/entity/auth/logout")
