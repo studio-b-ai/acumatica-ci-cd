@@ -1,0 +1,37 @@
+name: Lint tests — iframe-locator
+
+# Blocks PRs that reintroduce the `screen.page.locator(...)` anti-pattern
+# in tests/ui/. Acumatica renders content inside iframe[name='main'];
+# screen.page.locator(...) only sees the top frame and returns count()==0
+# for any iframe-scoped element. Use screen.locator(...) which is
+# iframe-aware. See CLAUDE.md rule #20, PR #456, and
+# scripts/lint-tests-iframe.py for the full rationale.
+#
+# To run locally:
+#   python3 scripts/lint-tests-iframe.py
+#
+# Exception marker for legitimate top-frame targets (sidebar, top-nav):
+#   screen.page.locator("text=Foo")  # noqa: iframe-locator — <reason>
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize]
+    paths:
+      - 'tests/**/*.py'
+      - 'scripts/lint-tests-iframe.py'
+      - '.github/workflows/lint-tests-iframe.yml'
+
+jobs:
+  lint:
+    name: iframe-locator anti-pattern
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Run lint-tests-iframe.py
+        run: python3 scripts/lint-tests-iframe.py
