@@ -1,0 +1,36 @@
+name: Auto-qualify customization PRs
+
+# Triggers on every PR that touches Customization/**. Calls the reusable
+# auto-qualify workflow in acuops-pipeline, which runs validate-project.py
+# + qualify.py + ui-test-suite @acumatica and — on all-pass — applies the
+# `reviewed` label to this PR so it can merge without a human click.
+#
+# See studio-b-ai/acuops-pipeline/.github/workflows/auto-qualify.yml for
+# the qualifier logic + expected secrets.
+#
+# Known v1 gap: the reusable workflow takes a single customization_path.
+# acumatica-ci-cd has three packages (AesthetikContainers, AesthetikWMS,
+# StudioBAcuOps). We point at the primary (CUSTOMIZATION_PROJECT_NAME ==
+# AesthetikContainers). PRs that only touch AesthetikWMS or StudioBAcuOps
+# get qualify.py + ui-suite coverage (those run at the tenant level, not
+# per-package) but miss validate-project.py for those two packages.
+# Follow-up: extend auto-qualify.yml to accept multiple paths.
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+    paths:
+      - 'Customization/**'
+
+jobs:
+  qualify:
+    uses: studio-b-ai/acuops-pipeline/.github/workflows/auto-qualify.yml@main
+    with:
+      pr_number: ${{ github.event.pull_request.number }}
+      pr_repo: ${{ github.repository }}
+      pr_head_sha: ${{ github.event.pull_request.head.sha }}
+      # Pulled from repo vars — set via `gh variable set CUSTOMIZATION_PROJECT_NAME …`
+      # Current value: AesthetikContainers
+      project_name: ${{ vars.CUSTOMIZATION_PROJECT_NAME }}
+      customization_path: Customization/${{ vars.CUSTOMIZATION_PROJECT_NAME }}
+    secrets: inherit
