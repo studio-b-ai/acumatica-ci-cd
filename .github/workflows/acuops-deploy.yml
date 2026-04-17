@@ -409,6 +409,16 @@ jobs:
     name: Deploy to ${{ inputs.environment }}
     needs: [sandbox-gate]
     runs-on: ubuntu-latest
+    # contents: write — required by the final "Tag successful deploy" step,
+    # which pushes a deploy/prod/YYYYMMDD-HHMMSS tag back to the repo. The
+    # workflow-level permissions grant only contents: read, so without this
+    # override every successful prod deploy fails with HTTP 403 at the tag
+    # push and is reported as an overall job failure even though the
+    # Acumatica publish succeeded. Observed 2026-04-17 on run 24585730350.
+    permissions:
+      contents: write
+      id-token: write
+      pull-requests: write
     if: >
       always() &&
       inputs.customization_changes == 'true' &&
