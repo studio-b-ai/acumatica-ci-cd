@@ -172,7 +172,7 @@ jobs:
           git fetch origin "$BASE_REF" --depth=1 --no-tags
           CHANGED=$(git diff --name-only "origin/$BASE_REF"...HEAD)
           echo "Changed files in this PR:"
-          printf '  %s\n' $CHANGED
+          echo "$CHANGED"
 
           PROJECT_XMLS=$(printf '%s\n' "$CHANGED" | grep -E '^Customization/[^/]+/project\.xml$' || true)
           MIGRATIONS=$(printf '%s\n' "$CHANGED" | grep -E '^(src/migrations|migrations|packages/[^/]+/migrations)/.*\.sql$' || true)
