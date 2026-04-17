@@ -19,6 +19,14 @@
       "published": true,
       "repo_dir": "Customization/AesthetikContainers"
     },
+    "AesthetikHotfixDRPOrphans": {
+      "category": "one-time",
+      "level": 0,
+      "owner": "studio-b-ai/acumatica-ci-cd",
+      "description": "ONE-SHOT — cleans orphan GI rows left by PRs #427/#430/#431 DRP GI install attempts. Not in co_publish; manually dispatched. See Customization/AesthetikHotfixDRPOrphans/README.md.",
+      "published": false,
+      "repo_dir": "Customization/AesthetikHotfixDRPOrphans"
+    },
     "AesthetikWMS": {
       "category": "managed",
       "level": null,

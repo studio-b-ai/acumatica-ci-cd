@@ -1,0 +1,155 @@
+<Customization level="0" description="One-shot: clean orphan GI rows left by failed DRP GI install attempts (PRs 427/430/431)" product-version="24.208">
+
+    <Sql Name="AesthetikHotfixDRPOrphans_v1" Script="#CDATA">
+        <CDATA name="Script"><![CDATA[
+-- REVIEWED: gi-sql-safe
+-- One-shot cleanup of orphan GI metadata rows left behind by failed DRP GI
+-- installation attempts across PR 427 (<Sql> installers), PR 430 (renamed
+-- scripts to force re-execution), and PR 431 (C# plugin with references to
+-- non-existent columns). Current live DRP GIs are defined by PR 445's
+-- <GenericInquiryScreen> XML blocks in AesthetikContainers/project.xml with
+-- the canonical DesignIDs listed below.
+--
+-- Scope (all five DRP Phase 0 GIs):
+--   DRP_VelocityHistory       1ce25f0a-cde6-4f0a-b939-d274fe343574
+--   DRP_OpenSOCommitments     f918a504-7620-461c-aad8-f1b3395d1e79
+--   DRP_InventoryBySite       a5337a02-6d79-42e9-b400-d7178ac3fd24
+--   DRP_OpenPOLines           89912975-c6ed-41ad-b514-a0f775a89362
+--   DRP_ItemWarehouseSettings 6e77b05f-ef4d-49e7-90ac-4c703006880d
+--
+-- For each name, this script deletes any GIDesign (and its child rows) whose
+-- DesignID is NOT one of the canonical UUIDs above. Rows with the canonical
+-- DesignID — the ones PR 445 owns — are preserved untouched. If no stale
+-- rows exist, the script is a total no-op and prints "no orphan rows found".
+--
+-- Pattern is copied verbatim from the 2026-03-29 UserAuditTrail cleanup
+-- (commit ab35a0d, StudioBAcuOps) which resolved the 45-minute GI-brick
+-- outage documented in docs/AAR-2026-03-29-gi-sql-insert-outage.md. All
+-- eight child tables (GITable, GIResult, GIWhere, GISort, GIFilter,
+-- GIRelation, GIOn, GIGroupBy) are covered. Every targeted table is in
+-- validate-project.py's SAFE_DELETE_TABLES allowlist.
+--
+-- <Sql> scripts do not re-execute on subsequent merge=true publishes of an
+-- already-published package (CLAUDE.md rule #24), which is exactly what we
+-- want for a one-shot cleanup: after the first successful publish this
+-- becomes a permanent no-op even if the package stays installed.
+
+SET NOCOUNT ON;
+
+DECLARE @CompanyID int;
+DECLARE @TotalDeleted int = 0;
+DECLARE @StartTs datetime = GETUTCDATE();
+DECLARE @StaleCount int;
+DECLARE @RC int;
+
+PRINT '[AesthetikHotfixDRPOrphans] START ' + CONVERT(varchar(30), @StartTs, 126);
+
+BEGIN TRY
+    -- Discover CompanyID from a known-good GI (same technique as StudioBAcuOps
+    -- ab35a0d). Heritage Fabrics is CompanyID=2; this keeps the script portable
+    -- if it ever runs against another tenant.
+    SELECT TOP 1 @CompanyID = CompanyID
+    FROM GIDesign
+    WHERE Name = 'InventoryAllocationDetail';
+
+    IF @CompanyID IS NULL
+    BEGIN
+        PRINT '[AesthetikHotfixDRPOrphans] WARN: could not discover CompanyID from InventoryAllocationDetail GI. Exiting without changes.';
+    END
+    ELSE
+    BEGIN
+        PRINT '[AesthetikHotfixDRPOrphans] CompanyID = ' + CAST(@CompanyID AS varchar(10));
+
+        -- Canonical DesignIDs — anything else with one of the 5 names is stale.
+        DECLARE @CanonDesigns TABLE (Name nvarchar(60) NOT NULL, DesignID uniqueidentifier NOT NULL);
+        INSERT INTO @CanonDesigns (Name, DesignID) VALUES
+            (N'DRP_VelocityHistory',       '1ce25f0a-cde6-4f0a-b939-d274fe343574'),
+            (N'DRP_OpenSOCommitments',     'f918a504-7620-461c-aad8-f1b3395d1e79'),
+            (N'DRP_InventoryBySite',       'a5337a02-6d79-42e9-b400-d7178ac3fd24'),
+            (N'DRP_OpenPOLines',           '89912975-c6ed-41ad-b514-a0f775a89362'),
+            (N'DRP_ItemWarehouseSettings', '6e77b05f-ef4d-49e7-90ac-4c703006880d');
+
+        -- Enumerate stale rows (current count before we touch anything).
+        DECLARE @Stale TABLE (Name nvarchar(60) NOT NULL, DesignID uniqueidentifier NOT NULL);
+        INSERT INTO @Stale (Name, DesignID)
+        SELECT g.Name, g.DesignID
+        FROM GIDesign g
+        INNER JOIN @CanonDesigns c ON c.Name = g.Name
+        WHERE g.CompanyID = @CompanyID
+          AND g.DesignID <> c.DesignID;
+
+        SET @StaleCount = (SELECT COUNT(*) FROM @Stale);
+        PRINT '[AesthetikHotfixDRPOrphans] Stale DRP GIDesign rows to clean: ' + CAST(@StaleCount AS varchar(10));
+
+        IF @StaleCount = 0
+        BEGIN
+            PRINT '[AesthetikHotfixDRPOrphans] No orphan rows found — nothing to do. Exiting cleanly.';
+        END
+        ELSE
+        BEGIN
+            -- Print what we are about to delete for audit trail.
+            DECLARE @LogName nvarchar(60), @LogDesignID uniqueidentifier;
+            DECLARE stale_cur CURSOR LOCAL FAST_FORWARD FOR
+                SELECT Name, DesignID FROM @Stale ORDER BY Name, DesignID;
+            OPEN stale_cur;
+            FETCH NEXT FROM stale_cur INTO @LogName, @LogDesignID;
+            WHILE @@FETCH_STATUS = 0
+            BEGIN
+                PRINT '  stale: ' + @LogName + ' @ ' + CONVERT(char(36), @LogDesignID);
+                FETCH NEXT FROM stale_cur INTO @LogName, @LogDesignID;
+            END
+            CLOSE stale_cur;
+            DEALLOCATE stale_cur;
+
+            BEGIN TRAN;
+
+            -- Delete child rows first (FK-safe order; covers all 8 child tables from
+            -- the 2026-03-29 precedent).
+            DELETE GT  FROM GITable    GT  INNER JOIN @Stale s ON GT.DesignID  = s.DesignID WHERE GT.CompanyID  = @CompanyID;
+            SET @RC = @@ROWCOUNT; PRINT '  GITable    rows deleted: ' + CAST(@RC AS varchar(10)); SET @TotalDeleted = @TotalDeleted + @RC;
+
+            DELETE GR  FROM GIResult   GR  INNER JOIN @Stale s ON GR.DesignID  = s.DesignID WHERE GR.CompanyID  = @CompanyID;
+            SET @RC = @@ROWCOUNT; PRINT '  GIResult   rows deleted: ' + CAST(@RC AS varchar(10)); SET @TotalDeleted = @TotalDeleted + @RC;
+
+            DELETE GW  FROM GIWhere    GW  INNER JOIN @Stale s ON GW.DesignID  = s.DesignID WHERE GW.CompanyID  = @CompanyID;
+            SET @RC = @@ROWCOUNT; PRINT '  GIWhere    rows deleted: ' + CAST(@RC AS varchar(10)); SET @TotalDeleted = @TotalDeleted + @RC;
+
+            DELETE GS  FROM GISort     GS  INNER JOIN @Stale s ON GS.DesignID  = s.DesignID WHERE GS.CompanyID  = @CompanyID;
+            SET @RC = @@ROWCOUNT; PRINT '  GISort     rows deleted: ' + CAST(@RC AS varchar(10)); SET @TotalDeleted = @TotalDeleted + @RC;
+
+            DELETE GF  FROM GIFilter   GF  INNER JOIN @Stale s ON GF.DesignID  = s.DesignID WHERE GF.CompanyID  = @CompanyID;
+            SET @RC = @@ROWCOUNT; PRINT '  GIFilter   rows deleted: ' + CAST(@RC AS varchar(10)); SET @TotalDeleted = @TotalDeleted + @RC;
+
+            DELETE GRE FROM GIRelation GRE INNER JOIN @Stale s ON GRE.DesignID = s.DesignID WHERE GRE.CompanyID = @CompanyID;
+            SET @RC = @@ROWCOUNT; PRINT '  GIRelation rows deleted: ' + CAST(@RC AS varchar(10)); SET @TotalDeleted = @TotalDeleted + @RC;
+
+            DELETE GON FROM GIOn       GON INNER JOIN @Stale s ON GON.DesignID = s.DesignID WHERE GON.CompanyID = @CompanyID;
+            SET @RC = @@ROWCOUNT; PRINT '  GIOn       rows deleted: ' + CAST(@RC AS varchar(10)); SET @TotalDeleted = @TotalDeleted + @RC;
+
+            DELETE GGB FROM GIGroupBy  GGB INNER JOIN @Stale s ON GGB.DesignID = s.DesignID WHERE GGB.CompanyID = @CompanyID;
+            SET @RC = @@ROWCOUNT; PRINT '  GIGroupBy  rows deleted: ' + CAST(@RC AS varchar(10)); SET @TotalDeleted = @TotalDeleted + @RC;
+
+            -- Finally, delete the stale GIDesign rows themselves. The canonical rows
+            -- owned by PR 445 are preserved because DesignID <> c.DesignID above.
+            DELETE GD  FROM GIDesign   GD  INNER JOIN @Stale s ON GD.DesignID  = s.DesignID WHERE GD.CompanyID  = @CompanyID;
+            SET @RC = @@ROWCOUNT; PRINT '  GIDesign   rows deleted: ' + CAST(@RC AS varchar(10)); SET @TotalDeleted = @TotalDeleted + @RC;
+
+            COMMIT TRAN;
+
+            PRINT '[AesthetikHotfixDRPOrphans] TOTAL rows deleted across all GI tables: ' + CAST(@TotalDeleted AS varchar(10));
+        END
+    END
+
+    PRINT '[AesthetikHotfixDRPOrphans] DONE ' + CONVERT(varchar(30), GETUTCDATE(), 126);
+END TRY
+BEGIN CATCH
+    IF @@TRANCOUNT > 0 ROLLBACK TRAN;
+    PRINT '[AesthetikHotfixDRPOrphans] ERROR ' + CAST(ERROR_NUMBER() AS varchar(10)) + ': ' + ERROR_MESSAGE();
+    -- Re-raise so publishEnd reports isFailed=true. The cleanup is designed
+    -- to be safe, so any error here is unexpected and must not be swallowed.
+    THROW;
+END CATCH;
+        ]]></CDATA>
+    </Sql>
+
+</Customization>

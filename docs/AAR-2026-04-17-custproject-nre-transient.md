@@ -41,25 +41,27 @@ What likely triggered it: the PR #431 / `EnsureDRPGenericInquiries` silent-fail 
 
 This is consistent with the **diagnostic Rule #18 recommends**: "import an empty `<Customization>` with a valid new name — if that succeeds while other imports fail, it's the in-memory cache." Today, the empty-Import probe succeeds past the NRE code path (it fails only on name validation, a different code path entirely).
 
-## Why no destructive SQL package was shipped
-
-The task prompt's suggested fix — a customization with `<Sql>` blocks that `DELETE FROM CustProject` and `DELETE FROM UserRecordsCache / FavoriteRecord` where orphan conditions hold — is not appropriate for this incident:
-
-1. **There are no orphans to clean.** Every historical orphan name we've tracked (IIGCONTAINERMGMT, IIGHFContainerMods, AesthetikContainerGIs) returns HTTP 400 "not found" today. The `ops/orphan-cleanup/cleanup-orphans.py` API-based run already cleared them (or never saw this particular set).
-2. **The symptom is transient.** Rule #18 says self-clear in 20-30 min. It did self-clear. Writing a `DELETE FROM` package for an intermittent in-memory condition addresses the wrong layer.
-3. **Direct system-table SQL violates the team convention.** See `ops/orphan-cleanup/README.md`: *"Avoids any direct system-table SQL."* The convention exists because Acumatica's own `/CustomizationApi/delete` endpoint already handles `CustProject + CustPublishedProject + child tables` correctly and idempotently. Hand-rolled `DELETE` statements can miss child rows or delete valid state if the `WHERE` clause is even slightly off.
-4. **`UserRecordsCache` / `FavoriteRecord` are platform-owned.** The schema is undocumented and subject to change between Acumatica builds. A `WHERE` clause that's safe on 24.208 may orphan live rows on 24.210.
-5. **Every publish restarts the app pool.** [CLAUDE.md rule #11](../CLAUDE.md) — shipping a one-shot SQL package to clear in-memory state causes the exact disruption the in-memory state would have cleared itself from on the next recycle.
-
-## What this PR does ship
+## What this PR ships
 
 1. **This AAR** — so the next operator who sees the same symptom set has Rule #18 + the diagnostic checklist in one place.
-2. **`ops/orphan-cleanup/cleanup-orphans.py --probe-only`** — a read-only diagnostic mode on the existing tool. Runs `getProject` against each name in `ORPHANS` and reports `present / not-found / NRE-detected`. No imports, no deletes, no publishes. Takes ~2 seconds; designed for the "is this the same incident as before?" question at the top of the next outage.
+2. **`ops/orphan-cleanup/cleanup-orphans.py --probe-only`** — a read-only diagnostic mode on the existing tool. Runs `getProject` against each name in `ORPHANS` and reports `present / not-found / NRE-detected`. No imports, no deletes, no publishes. Takes ~2 seconds; designed for the "is this the same incident as before?" question at the top of the next outage. Exits 0 (clean) / 1 (NRE detected) / 2 (orphan row present).
+3. **`Customization/AesthetikHotfixDRPOrphans/`** — one-shot SQL package that cleans orphan GI metadata left by PRs #427/#430/#431's failed DRP GI install attempts on 2026-04-16. The package is manually dispatched (not in `acuops.yaml` `co_publish`), uses the proven 2026-03-29 `StudioBAcuOps` cleanup pattern (commit `ab35a0d`), and prints row counts + audit trail to the publish log. Scoped to the five DRP Phase 0 GI names (`DRP_VelocityHistory`, `DRP_OpenSOCommitments`, `DRP_InventoryBySite`, `DRP_OpenPOLines`, `DRP_ItemWarehouseSettings`) **and only DesignIDs that don't match the canonical ones owned by PR #445**. If no orphans exist the SQL block is a total no-op. See `Customization/AesthetikHotfixDRPOrphans/README.md` for pre-deploy checklist + sandbox-first guidance.
+
+## Scope discipline
+
+The task prompt named three tables: `CustProject`, `UserRecordsCache`, `FavoriteRecord`. This PR only writes SQL against GI* tables — everything else is deliberately out of scope. Reasoning, per table:
+
+| Table | Action | Why |
+|---|---|---|
+| `GIDesign` + 8 child tables | DELETE only where `Name ∈ 5 DRP names` and `DesignID ≠ canonical` | Proven 2026-03-29 pattern; every table in `validate-project.py` `SAFE_DELETE_TABLES`; the only plausible persisted residue from PRs #427/#430/#431. |
+| `CustProject` / `CustPublishedProject` | NONE | Verified via `/CustomizationApi/getProject` — zero orphan rows on any probed name. The API-based `ops/orphan-cleanup/cleanup-orphans.py` path is the proven cleanup if orphans ever reappear. `ops/orphan-cleanup/README.md` is explicit: *"Avoids any direct system-table SQL."* |
+| `UserRecordsCache` / `FavoriteRecord` | NONE | Platform-owned tables with undocumented schema that drifts across Acumatica builds. No ground-truth probe available. Rule #18 says the `UserRecordsDBUpdater` NRE is in-memory state, not DB corruption — the current healthy state of the system after a recycle bears that out. |
 
 ## What this PR does not ship
 
-- **No `Customization/AesthetikHotfixCustProject/` package.** If a future incident actually shows persisted orphan rows that `/CustomizationApi/delete` refuses to remove, the right escalation is the email in `docs/acumatica-support-ticket-iig-orphan.md` — i.e. Acumatica support opens a DB-level cleanup case. A customization package that SQL-deletes from `CustProject` / `UserRecordsCache` on every deploy is not a substitute.
-- **No changes to `acuops.yaml`, `CUSTOMIZATION_PROJECT_NAME`, or `ALSO_PUBLISH_PROJECTS`.** Nothing new needs to be co-published.
+- **No SQL against `CustProject` / `UserRecordsCache` / `FavoriteRecord`.** See scope table above.
+- **No changes to `acuops.yaml` `co_publish` or `CUSTOMIZATION_PROJECT_NAME`.** The hotfix package is a one-shot manual dispatch.
+- **No destructive SQL in the "normal" CI/CD path.** `AesthetikHotfixDRPOrphans` is a standalone project so nothing accidentally runs it on every merge.
 
 ## Diagnostic checklist for the next time this happens
 
@@ -73,4 +75,6 @@ Before writing any code, run in order:
 
 ## Follow-ups
 
-None required in this repo. If the task prompt's premise recurs (Import NRE that outlives one app-pool recycle, with the probe above confirming orphans), open a new ticket with the probe output attached and escalate to Acumatica support using the existing template. Do not introduce destructive system-table SQL into a customization package.
+- [ ] Dispatch `AesthetikHotfixDRPOrphans` against sandbox first. Check publish log for `Stale DRP GIDesign rows to clean: N`. If `N=0`, the GI-orphan theory is ruled out and this incident was purely in-memory (Rule #18); update this AAR accordingly and skip production. If `N>0`, dispatch against production (after 6pm CT), confirm the cleanup totals match sandbox, and record both runs here.
+- [ ] If the probe/package exposes a new pattern worth guarding (e.g., validator check against a whole class of DRP-like installer failures), encode it as a `validate-project.py` rule per [CLAUDE.md "Rigby" rule #6 — every lesson gets a code guard](../CLAUDE.md).
+- [ ] If `CustProject` corruption ever surfaces again, the existing API-based tool (`ops/orphan-cleanup/cleanup-orphans.py`) is the path — not hand-rolled SQL against system tables.
