@@ -1239,6 +1239,73 @@ jobs:
 
       # Success notifications removed — Kevin only wants DMs on failures/decisions
 
+      # ── Post-deploy NRE probe (Rule #18, 2026-04-17 AAR) ────────────────
+      # Third layer of defense for the 2026-04-17 CustProject NRE outage.
+      #
+      #   Layer 1 (pre-merge, acuops-pipeline): validate-project.py static
+      #     analysis of C# plugin SQL against a system-table column allowlist.
+      #   Layer 2 (at-rest, business-dashboard): 15-min Import+delete probe
+      #     against prod with Slack alerting.
+      #   Layer 3 (THIS step, at-change): same Import+delete probe, but run
+      #     at the tail of every production deploy so a poisoned post-publish
+      #     state fails the deploy job itself.
+      #
+      # The publish API is a liar in this failure mode — publishBegin/publishEnd
+      # both report `isCompleted=true, isFailed=false` while the NEXT
+      # CustProject write returns HTTP 500 with NullReferenceException in
+      # UserRecordsDBUpdater. A successful Import+delete of a stub project
+      # is the one reliable post-flight check that the write path isn't
+      # poisoned. See docs/AAR-2026-04-17-custproject-nre-transient.md
+      # and CLAUDE.md rule #18.
+      #
+      # HARD GATE: if the probe detects NRE after a reportedly-successful
+      # publish, the step fails and the whole deploy job fails. Intentional:
+      # the publish reported success but delivered broken state, and the
+      # operator needs to see it as a failure so they don't assume the
+      # deploy is done. A human decides whether to force a full-republish
+      # recovery (see CLAUDE.md rule #18 corollary).
+      - name: Post-deploy NRE probe (Rule #18)
+        id: nre_probe
+        if: >
+          success() &&
+          steps.env.outputs.target == 'production' &&
+          inputs.dry_run != 'true'
+        env:
+          ACUMATICA_URL: ${{ secrets.ACUMATICA_PROD_URL }}
+          ACUMATICA_USERNAME: ${{ secrets.ACUMATICA_PROD_USERNAME }}
+          ACUMATICA_PASSWORD: ${{ secrets.ACUMATICA_PROD_PASSWORD }}
+          ACUMATICA_TENANT: ${{ secrets.ACUMATICA_PROD_TENANT }}
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          GITHUB_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          GITHUB_SHA: ${{ github.sha }}
+          PR_NUMBER: ${{ github.event.pull_request.number || github.event.number || '' }}
+        run: |
+          # Timestamped name keeps the probe idempotent across concurrent
+          # runs. Acumatica rejects underscores/hyphens in project names
+          # (verified 2026-04-17) so the format is alphanumeric-only.
+          PROBE_NAME="HealthProbe$(date -u +%Y%m%d%H%M%S)"
+          echo "probe_name=${PROBE_NAME}" >> "$GITHUB_OUTPUT"
+          python3 scripts/post-deploy-probe.py --name "${PROBE_NAME}"
+
+      - name: Post-deploy NRE probe cleanup
+        # Idempotent best-effort delete, runs whether the probe passed or
+        # failed so a crashed Import step doesn't leave a detritus
+        # CustProject row behind. `continue-on-error` ensures the cleanup
+        # never masks a real probe failure in the job status.
+        if: >
+          always() &&
+          steps.nre_probe.outputs.probe_name != ''
+        continue-on-error: true
+        env:
+          ACUMATICA_URL: ${{ secrets.ACUMATICA_PROD_URL }}
+          ACUMATICA_USERNAME: ${{ secrets.ACUMATICA_PROD_USERNAME }}
+          ACUMATICA_PASSWORD: ${{ secrets.ACUMATICA_PROD_PASSWORD }}
+          ACUMATICA_TENANT: ${{ secrets.ACUMATICA_PROD_TENANT }}
+        run: |
+          python3 scripts/post-deploy-probe.py \
+            --cleanup \
+            --name "${{ steps.nre_probe.outputs.probe_name }}"
+
   # ──────────────────────────────────────────────
   # Job: AI Failure Recovery — diagnose and fix sandbox failures
   # ──────────────────────────────────────────────
