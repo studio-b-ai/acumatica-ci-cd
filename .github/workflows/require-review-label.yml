@@ -1,0 +1,122 @@
+name: Require review label
+
+# Blocks merge on PRs that touch production-dangerous paths until a human
+# applies the `reviewed` label. PRs that only touch application code
+# (TypeScript services, additive features, tests, docs) pass this check
+# unconditionally — no label required.
+#
+# Why narrowed (vs. gating every PR): a blanket gate got routinely
+# bypassed via --admin on low-risk changes, which trained everyone to
+# ignore the red X. A soft-gate nobody respects is worse than no gate.
+# This version fires only when it matters.
+#
+# Sensitive paths (case statement below — adapt per repo as needed):
+#   - Customization/**, Customization-staging/**, **/Customization/**
+#       Acumatica customization packages (every deploy restarts the app pool)
+#   - src/migrations/**, migrations/**, packages/*/migrations/**,
+#     prisma/schema.prisma                   database schema changes
+#   - **/*.sql                               raw SQL anywhere
+#   - src/**/acumatica*, packages/**/acumatica*, src/**/acu*-client.ts,
+#     src/**/acuops-agent.ts                 Acumatica + gateway clients
+#   - Dockerfile*, railway.json, railway.toml  container / deploy config
+#   - .github/workflows/**                   CI / deploy workflow changes
+#   - scripts/deploy*, scripts/publish*,
+#     scripts/import*                         deploy / publish scripts
+#
+# How to unblock a PR that touches a sensitive path:
+#   1. Review the diff against memory://feedback_production-is-sacred.md
+#      and CLAUDE.md rule 11 (every Acumatica deploy restarts the app pool).
+#   2. Add the `reviewed` label via the PR sidebar or:
+#        gh pr edit <num> --repo studio-b-ai/<repo> --add-label reviewed
+#
+# To make this gate actually block merge at the GitHub branch-protection
+# layer (otherwise admins can still bypass via `gh pr merge --admin`):
+#     Settings → Branches → Branch protection rules → Edit `main`
+#     → Required status checks → add "Require review label"
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, labeled, unlabeled, ready_for_review]
+
+concurrency:
+  group: review-label-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: Require review label
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout with full history
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect sensitive-path changes
+        id: sensitive
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          set -euo pipefail
+          git fetch origin "$BASE_REF" --depth=1 --no-tags || true
+          CHANGED=$(git diff --name-only "origin/$BASE_REF"...HEAD || git diff --name-only HEAD~1)
+          echo "Changed files in PR:"
+          echo "$CHANGED"
+
+          SENSITIVE=0
+          HITS=""
+          while IFS= read -r FILE; do
+            [ -z "$FILE" ] && continue
+            case "$FILE" in
+              # Acumatica customization packages
+              Customization/*|Customization-staging/*|*/Customization/*|\
+              # DB migrations
+              src/migrations/*|migrations/*|packages/*/migrations/*|\
+              prisma/schema.prisma|packages/*/prisma/schema.prisma|\
+              # Raw SQL anywhere
+              *.sql|\
+              # Acumatica + gateway clients
+              src/lib/acumatica*|src/**/acumatica*|\
+              packages/*/src/**/acumatica*|\
+              src/**/acu*-client.ts|src/**/acuops-agent.ts|\
+              packages/*/src/**/acu*-client.ts|\
+              # Container + Railway deploy
+              Dockerfile*|railway.json|railway.toml|\
+              packages/*/Dockerfile*|packages/*/railway.json|packages/*/railway.toml|\
+              # CI/CD workflows
+              .github/workflows/*|\
+              # Deploy / publish scripts
+              scripts/deploy*|scripts/publish*|scripts/import*)
+                SENSITIVE=1
+                HITS="$HITS $FILE"
+                echo "::notice file=$FILE::sensitive path — requires reviewed label"
+                ;;
+            esac
+          done <<< "$CHANGED"
+
+          echo "sensitive=$SENSITIVE" >> "$GITHUB_OUTPUT"
+          echo "hits=$HITS" >> "$GITHUB_OUTPUT"
+
+      - name: Pass unconditionally when no sensitive paths
+        if: steps.sensitive.outputs.sensitive == '0'
+        run: |
+          echo "No sensitive paths changed — label gate does not apply. Merge allowed."
+
+      - name: Require reviewed label when sensitive paths changed
+        if: steps.sensitive.outputs.sensitive == '1'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const labels = context.payload.pull_request.labels || [];
+            const hasReviewed = labels.some((l) => l.name === 'reviewed');
+            const hits = `${{ steps.sensitive.outputs.hits }}`.trim();
+            if (hasReviewed) {
+              core.info(`PR touches sensitive paths (${hits}) but has 'reviewed' label — merge allowed.`);
+              return;
+            }
+            core.setFailed(
+              `Sensitive paths changed (${hits}). A human must review the PR and add the 'reviewed' label before merge. ` +
+              `This gate exists to prevent unreviewed AI-authored changes from hitting production Acumatica customizations, ` +
+              `migrations, deploy configs, or the gateway clients. ` +
+              `See memory://feedback_production-is-sacred.md and CLAUDE.md rule 11.`
+            );
