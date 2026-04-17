@@ -1004,11 +1004,11 @@ namespace StudioB.Containers
         private static readonly System.Collections.Generic.Dictionary<string, Guid> DRPCanonDesigns =
             new System.Collections.Generic.Dictionary<string, Guid>(StringComparer.Ordinal)
         {
-            { "DRP_VelocityHistory",       new Guid("1ce25f0a-cde6-4f0a-b939-d274fe343574") },
-            { "DRP_OpenSOCommitments",     new Guid("f918a504-7620-461c-aad8-f1b3395d1e79") },
-            { "DRP_InventoryBySite",       new Guid("a5337a02-6d79-42e9-b400-d7178ac3fd24") },
-            { "DRP_OpenPOLines",           new Guid("89912975-c6ed-41ad-b514-a0f775a89362") },
-            { "DRP_ItemWarehouseSettings", new Guid("6e77b05f-ef4d-49e7-90ac-4c703006880d") },
+            { "DRP_VelocityHistory",       new Guid("52ebcf52-7256-47d9-9256-974a33660702") },
+            { "DRP_OpenSOCommitments",     new Guid("8771befb-f3d9-4c14-8898-e9b1f249addc") },
+            { "DRP_InventoryBySite",       new Guid("b6cadfdd-f802-4456-8a7a-9f52dc271145") },
+            { "DRP_OpenPOLines",           new Guid("263148fc-5b6a-4312-8c45-6e590415ea3a") },
+            { "DRP_ItemWarehouseSettings", new Guid("969bfd48-5eaa-470a-b806-4bb46cf494d6") },
         };
 
         private void CleanupOrphanDRPGIRows(SqlConnection conn, int companyId)
