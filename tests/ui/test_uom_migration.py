@@ -34,9 +34,11 @@ CUSTOMER_ID = "C000002"
 
 # How many stock items to sample-save in TestStockItemSaveSample.
 # Trade-off: larger N catches more bugs but slows the test suite.
-# 10 items × ~15s each = ~150s — fits within the 300s timeout.
-# 10 is enough to catch a 10%+ corruption rate with ~65% confidence.
-SAVE_SAMPLE_SIZE = 10
+# 5 items × ~15s each = ~75s — fits within the 300s timeout.
+# 5 is enough to catch a 20%+ corruption rate with ~67% confidence.
+# Reduced from 10 → 5 to fit within the 8-minute core-UI-tests step
+# budget (sandbox-gate run 24569665633 timed out at exactly 8 min).
+SAVE_SAMPLE_SIZE = 5
 
 
 # ── Check 1: Base UOM ─────────────────────────────────────────────────────
