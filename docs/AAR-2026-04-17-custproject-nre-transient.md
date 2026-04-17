@@ -45,7 +45,13 @@ This is consistent with the **diagnostic Rule #18 recommends**: "import an empty
 
 1. **This AAR** — so the next operator who sees the same symptom set has Rule #18 + the diagnostic checklist in one place.
 2. **`ops/orphan-cleanup/cleanup-orphans.py --probe-only`** — a read-only diagnostic mode on the existing tool. Runs `getProject` against each name in `ORPHANS` and reports `present / not-found / NRE-detected`. No imports, no deletes, no publishes. Takes ~2 seconds; designed for the "is this the same incident as before?" question at the top of the next outage. Exits 0 (clean) / 1 (NRE detected) / 2 (orphan row present).
-3. **`Customization/AesthetikHotfixDRPOrphans/`** — one-shot SQL package that cleans orphan GI metadata left by PRs #427/#430/#431's failed DRP GI install attempts on 2026-04-16. The package is manually dispatched (not in `acuops.yaml` `co_publish`), uses the proven 2026-03-29 `StudioBAcuOps` cleanup pattern (commit `ab35a0d`), and prints row counts + audit trail to the publish log. Scoped to the five DRP Phase 0 GI names (`DRP_VelocityHistory`, `DRP_OpenSOCommitments`, `DRP_InventoryBySite`, `DRP_OpenPOLines`, `DRP_ItemWarehouseSettings`) **and only DesignIDs that don't match the canonical ones owned by PR #445**. If no orphans exist the SQL block is a total no-op. See `Customization/AesthetikHotfixDRPOrphans/README.md` for pre-deploy checklist + sandbox-first guidance.
+3. **`AesthetikContainersInstall.CleanupOrphanDRPGIRows()`** — new private method on the existing, already-running `AesthetikContainersInstall` `CustomizationPlugin`, called inside the per-company DML loop after seed data. Scoped to the five DRP Phase 0 GI names (`DRP_VelocityHistory`, `DRP_OpenSOCommitments`, `DRP_InventoryBySite`, `DRP_OpenPOLines`, `DRP_ItemWarehouseSettings`) **and only DesignIDs that don't match the canonical ones owned by PR #445**. Runs per-company. Idempotent (after the first run deletes the residue, subsequent runs find zero stale rows and exit in a few ms). Pattern copied from the proven 2026-03-29 `UserAuditTrail` cleanup (commit `ab35a0d`).
+
+### Why not a standalone `Customization/AesthetikHotfixDRPOrphans/` package
+
+Tried it first. The inline `<Graph Source="#CDATA">` C# approach doesn't fire on current Acumatica (24.208) — the publish log showed zero `[AesthetikHotfixDRPOrphans]` output lines on sandbox despite the plugin class being visible in the imported `project.xml`. `<Sql>` blocks in the same package also got skipped as `Sql Sql#all(skipped, already applied)` per [CLAUDE.md rule #24](../CLAUDE.md). This repo's actual pattern is **C# → `src/StudioB.Containers/*.cs` → compiled `Bin/StudioB.Containers.dll` → referenced via `<File AppRelativePath="Bin\StudioB.Containers.dll" />`** — that's the only plugin-execution path the CI/CD build targets and the publish engine recognizes.
+
+Rather than spin up a new `src/StudioB.Hotfix/` project + `.csproj` + DLL reference + deploy pipeline for a ~100-line cleanup, the cleanup lands in `AesthetikContainersInstall` where the plugin infrastructure already works. Every subsequent `AesthetikContainers` publish re-runs the cleanup, which is a permanent guard rather than a one-shot (a feature, given PRs #427/#430/#431 happened and could happen again).
 
 ## Scope discipline
 
@@ -60,8 +66,8 @@ The task prompt named three tables: `CustProject`, `UserRecordsCache`, `Favorite
 ## What this PR does not ship
 
 - **No SQL against `CustProject` / `UserRecordsCache` / `FavoriteRecord`.** See scope table above.
-- **No changes to `acuops.yaml` `co_publish` or `CUSTOMIZATION_PROJECT_NAME`.** The hotfix package is a one-shot manual dispatch.
-- **No destructive SQL in the "normal" CI/CD path.** `AesthetikHotfixDRPOrphans` is a standalone project so nothing accidentally runs it on every merge.
+- **No changes to `acuops.yaml` `co_publish` or `CUSTOMIZATION_PROJECT_NAME`.** The cleanup rides the existing `AesthetikContainers` deploy path.
+- **No new standalone customization package.** See "Why not" section above — inline `<Graph>` + `<Sql>` pathways both silently no-op on current Acumatica; only `Bin/*.dll` plugins reliably run.
 
 ## Diagnostic checklist for the next time this happens
 
