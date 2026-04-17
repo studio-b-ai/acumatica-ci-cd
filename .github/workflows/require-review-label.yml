@@ -46,6 +46,9 @@ jobs:
   check:
     name: Require review label
     runs-on: ubuntu-latest
+    outputs:
+      sensitive: ${{ steps.sensitive.outputs.sensitive }}
+      hits: ${{ steps.sensitive.outputs.hits }}
     steps:
       - name: Checkout with full history
         uses: actions/checkout@v4
@@ -119,3 +122,213 @@ jobs:
               `migrations, deploy configs, or the gateway clients. ` +
               `See memory://feedback_production-is-sacred.md and CLAUDE.md rule 11.`
             );
+
+  # ─────────────────────────────────────────────────────────────────────
+  # Auto-qualifier — Phase 1 SHADOW MODE (informational, non-blocking)
+  #
+  # Design doc: docs/plans/2026-04-17-agentic-review-gate-design.md
+  #
+  # Runs static qualifiers on sensitive-path PRs and posts a summary
+  # comment. In shadow mode, step failures DO NOT block merge — they
+  # surface via the PR comment so humans can see what the auto-qualifier
+  # would flag under Phase 2 enforcement.
+  # ─────────────────────────────────────────────────────────────────────
+  auto-qualify:
+    name: Auto-qualifier (shadow)
+    runs-on: ubuntu-latest
+    needs: check
+    if: needs.check.outputs.sensitive == '1'
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Checkout PR with full history
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Checkout AcuOps pipeline
+        uses: actions/checkout@v4
+        with:
+          repository: studio-b-ai/acuops-pipeline
+          ref: ${{ vars.ACUOPS_PIPELINE_VERSION || 'main' }}
+          path: pipeline
+          ssh-key: ${{ secrets.ACUOPS_PIPELINE_DEPLOY_KEY }}
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Compute changed files by type
+        id: changed
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          set -euo pipefail
+          git fetch origin "$BASE_REF" --depth=1 --no-tags
+          CHANGED=$(git diff --name-only "origin/$BASE_REF"...HEAD)
+          echo "Changed files in this PR:"
+          printf '  %s\n' $CHANGED
+
+          PROJECT_XMLS=$(printf '%s\n' "$CHANGED" | grep -E '^Customization/[^/]+/project\.xml$' || true)
+          MIGRATIONS=$(printf '%s\n' "$CHANGED" | grep -E '^(src/migrations|migrations|packages/[^/]+/migrations)/.*\.sql$' || true)
+          CUSTOMIZATION=$(printf '%s\n' "$CHANGED" | grep -E '^Customization/' || true)
+
+          {
+            echo "project_xmls<<EOF"
+            echo "$PROJECT_XMLS"
+            echo "EOF"
+            echo "migrations<<EOF"
+            echo "$MIGRATIONS"
+            echo "EOF"
+            echo "has_project_xml=$([ -n "$PROJECT_XMLS" ] && echo true || echo false)"
+            echo "has_migrations=$([ -n "$MIGRATIONS" ] && echo true || echo false)"
+            echo "has_customization=$([ -n "$CUSTOMIZATION" ] && echo true || echo false)"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: validate-project.py --strict
+        id: validate
+        if: steps.changed.outputs.has_project_xml == 'true'
+        continue-on-error: true
+        run: |
+          set -e
+          FAILED=0
+          while IFS= read -r proj; do
+            [ -z "$proj" ] && continue
+            echo ""
+            echo "=== Validating $proj ==="
+            if ! python pipeline/scripts/validate-project.py --strict "$proj"; then
+              FAILED=$((FAILED + 1))
+            fi
+          done <<< "${{ steps.changed.outputs.project_xmls }}"
+          if [ "$FAILED" -gt 0 ]; then
+            echo "::error::$FAILED project.xml file(s) failed strict validation"
+            exit 1
+          fi
+
+      - name: Install gitleaks
+        run: |
+          GL_VERSION=8.18.4
+          curl -sL "https://github.com/gitleaks/gitleaks/releases/download/v${GL_VERSION}/gitleaks_${GL_VERSION}_linux_x64.tar.gz" | tar -xz -C /tmp
+          sudo mv /tmp/gitleaks /usr/local/bin/
+          gitleaks version
+
+      - name: Credential leak scan (gitleaks)
+        id: gitleaks
+        continue-on-error: true
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          set -e
+          gitleaks detect \
+            --source . \
+            --log-opts="origin/$BASE_REF..HEAD" \
+            --redact \
+            --verbose \
+            --no-banner
+
+      - name: Migration rollback lint
+        id: rollback
+        if: steps.changed.outputs.has_migrations == 'true'
+        continue-on-error: true
+        run: |
+          set -e
+          FAILED=0
+          while IFS= read -r migration; do
+            [ -z "$migration" ] && continue
+            dir=$(dirname "$migration")
+            base=$(basename "$migration" .sql)
+            if [ -f "$dir/${base}.rollback.sql" ]; then
+              echo "OK: $migration (rollback: $dir/${base}.rollback.sql)"
+            elif grep -q '^-- ROLLBACK:' "$migration"; then
+              echo "OK: $migration (inline -- ROLLBACK: block)"
+            else
+              echo "::warning file=$migration::missing rollback — add ${base}.rollback.sql or '-- ROLLBACK:' block"
+              FAILED=$((FAILED + 1))
+            fi
+          done <<< "${{ steps.changed.outputs.migrations }}"
+          if [ "$FAILED" -gt 0 ]; then
+            echo "::error::$FAILED migration(s) missing rollback"
+            exit 1
+          fi
+
+      - name: ui-test-suite smoke dispatch (Phase 1.5 — deferred)
+        id: smoke
+        if: steps.changed.outputs.has_customization == 'true'
+        continue-on-error: true
+        run: |
+          echo "::notice::ui-test-suite smoke dispatch is scheduled for Phase 1.5."
+          echo "Cross-repo dispatch needs the acuops-agent App identity wired up."
+          echo "Phase 1 observes only — Phase 1.5 will add dispatch + polling + result surfacing."
+          exit 0
+
+      - name: Post auto-qualifier comment
+        if: always()
+        uses: actions/github-script@v7
+        env:
+          OUTCOME_VALIDATE: ${{ steps.validate.outcome }}
+          OUTCOME_GITLEAKS: ${{ steps.gitleaks.outcome }}
+          OUTCOME_ROLLBACK: ${{ steps.rollback.outcome }}
+          OUTCOME_SMOKE: ${{ steps.smoke.outcome }}
+          HITS: ${{ needs.check.outputs.hits }}
+        with:
+          script: |
+            const outcomes = {
+              validate: process.env.OUTCOME_VALIDATE || 'skipped',
+              gitleaks: process.env.OUTCOME_GITLEAKS || 'skipped',
+              rollback: process.env.OUTCOME_ROLLBACK || 'skipped',
+              smoke: process.env.OUTCOME_SMOKE || 'skipped',
+            };
+            const emoji = (o) => ({
+              success: '✅',
+              failure: '❌',
+              skipped: '⚪️',
+              cancelled: '⚠️',
+            }[o] || '❓');
+            const anyFail = Object.values(outcomes).some(o => o === 'failure');
+            const header = anyFail
+              ? '❌ Auto-qualifier: FAIL (shadow — non-blocking)'
+              : '✅ Auto-qualifier: PASS (shadow — non-blocking)';
+            const hits = (process.env.HITS || '').trim();
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const designDocUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/blob/main/docs/plans/2026-04-17-agentic-review-gate-design.md`;
+            const body = [
+              '<!-- auto-qualifier:shadow -->',
+              `## ${header}`,
+              '',
+              '_Shadow mode — informational only. Does not block merge. Per-step failures will flip to blocking in Phase 2 per [design doc](' + designDocUrl + ')._',
+              '',
+              `**Sensitive paths in this PR:** \`${hits || '(none)'}\``,
+              '',
+              '| Check | Result |',
+              '|-------|--------|',
+              `| validate-project.py --strict | ${emoji(outcomes.validate)} ${outcomes.validate} |`,
+              `| Credential leak scan (gitleaks) | ${emoji(outcomes.gitleaks)} ${outcomes.gitleaks} |`,
+              `| Migration rollback lint | ${emoji(outcomes.rollback)} ${outcomes.rollback} |`,
+              `| ui-test-suite smoke | ${emoji(outcomes.smoke)} ${outcomes.smoke} _(Phase 1.5 — dispatch deferred)_ |`,
+              '',
+              `Commit: \`${context.payload.pull_request.head.sha.substring(0, 7)}\` · [run logs](${runUrl})`,
+            ].join('\n');
+
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+            const existing = comments.find(c => c.body && c.body.includes('<!-- auto-qualifier:shadow -->'));
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body,
+              });
+            }
