@@ -256,15 +256,112 @@ jobs:
             exit 1
           fi
 
-      - name: ui-test-suite smoke dispatch (Phase 1.5 — deferred)
-        id: smoke
+      # ui-test-suite smoke (Phase 1.5) — mint acuops-agent App installation
+      # credentials, dispatch `pr-smoke` to studio-b-ai/ui-test-suite, find
+      # the triggered run (the dispatch API doesn't return a run_id), poll
+      # until completed, then surface the conclusion in the auto-qualifier
+      # PR comment.
+      #
+      # Inter-step data flows through $GITHUB_ENV (SMOKE_RUN_URL,
+      # SMOKE_CONCLUSION, SMOKE_DISPATCH_TIME). None of those values are
+      # secrets — they are timestamps, public URLs, and status words.
+      #
+      # All steps are continue-on-error — shadow mode is non-blocking.
+      # Phase 2 will flip the comment-level summary to blocking once the
+      # signal is known-good under load.
+      - name: Mint acuops-agent App installation credentials
+        id: smoke-app
+        if: steps.changed.outputs.has_customization == 'true'
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ vars.ACUOPS_AGENT_APP_ID }}
+          private-key: ${{ secrets.ACUOPS_AGENT_PRIVATE_KEY }}
+          owner: studio-b-ai
+          repositories: ui-test-suite,acumatica-ci-cd
+
+      - name: Dispatch pr-smoke to ui-test-suite
+        id: smoke-dispatch
         if: steps.changed.outputs.has_customization == 'true'
         continue-on-error: true
+        env:
+          GH_TOKEN: ${{ steps.smoke-app.outputs.token }}
         run: |
-          echo "::notice::ui-test-suite smoke dispatch is scheduled for Phase 1.5."
-          echo "Cross-repo dispatch needs the acuops-agent App identity wired up."
-          echo "Phase 1 observes only — Phase 1.5 will add dispatch + polling + result surfacing."
-          exit 0
+          set -e
+          # 60s buffer for clock skew between this runner and ui-test-suite's.
+          # Used as the lower bound on the "created>=" filter when finding
+          # the dispatched run. GitHub's dispatch API is fire-and-forget and
+          # does NOT return a run_id — this timestamp is the only correlation
+          # key we get. Shadow-mode tolerates the race; Phase 2 will add a
+          # correlation-ID echo on the receiver side.
+          DISPATCH_TIME=$(date -u -d '-60 seconds' +%Y-%m-%dT%H:%M:%SZ)
+          echo "SMOKE_DISPATCH_TIME=$DISPATCH_TIME" >> "$GITHUB_ENV"
+          gh api repos/studio-b-ai/ui-test-suite/dispatches \
+            --method POST \
+            -f event_type=pr-smoke \
+            -f "client_payload[pr]=${{ github.event.pull_request.number }}" \
+            -f "client_payload[sha]=${{ github.event.pull_request.head.sha }}" \
+            -f "client_payload[repo]=${{ github.repository }}" \
+            -f "client_payload[suite]=@acumatica"
+          echo "Dispatched pr-smoke for PR #${{ github.event.pull_request.number }} (SHA ${{ github.event.pull_request.head.sha }})"
+
+      - name: Poll ui-test-suite smoke run
+        id: smoke
+        if: steps.changed.outputs.has_customization == 'true' && steps.smoke-dispatch.outcome == 'success'
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ steps.smoke-app.outputs.token }}
+          TIMEOUT_MINUTES: ${{ vars.PR_SMOKE_TIMEOUT_MINUTES || '10' }}
+        run: |
+          set -e
+          echo "Looking for run dispatched at or after ${SMOKE_DISPATCH_TIME}"
+          echo "Poll timeout: ${TIMEOUT_MINUTES} min"
+
+          # Phase 1: find the triggered run_id. Runs take a few seconds to
+          # appear in the API after dispatch — poll up to 90s.
+          RUN_ID=""
+          FIND_DEADLINE=$(( $(date +%s) + 90 ))
+          while [ "$(date +%s)" -lt "$FIND_DEADLINE" ]; do
+            RESPONSE=$(gh api "/repos/studio-b-ai/ui-test-suite/actions/runs?event=repository_dispatch&created=>${SMOKE_DISPATCH_TIME}&per_page=5")
+            RUN_ID=$(printf '%s' "$RESPONSE" | python3 -c "import sys,json; runs=json.load(sys.stdin).get('workflow_runs',[]); print(runs[0]['id'] if runs else '')")
+            if [ -n "$RUN_ID" ]; then
+              echo "Found run: $RUN_ID"
+              break
+            fi
+            echo "  (waiting for dispatched run to appear...)"
+            sleep 5
+          done
+
+          if [ -z "$RUN_ID" ]; then
+            echo "::warning::dispatched run never appeared within 90s — surfacing as timed_out"
+            echo "SMOKE_CONCLUSION=timed_out" >> "$GITHUB_ENV"
+            echo "SMOKE_RUN_URL=" >> "$GITHUB_ENV"
+            exit 1
+          fi
+
+          RUN_URL="https://github.com/studio-b-ai/ui-test-suite/actions/runs/${RUN_ID}"
+          echo "SMOKE_RUN_URL=$RUN_URL" >> "$GITHUB_ENV"
+          echo "Polling $RUN_URL"
+
+          # Phase 2: poll until status=completed or timeout.
+          POLL_DEADLINE=$(( $(date +%s) + TIMEOUT_MINUTES * 60 ))
+          while [ "$(date +%s)" -lt "$POLL_DEADLINE" ]; do
+            RUN_JSON=$(gh api "/repos/studio-b-ai/ui-test-suite/actions/runs/${RUN_ID}")
+            STATUS=$(printf '%s' "$RUN_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin).get('status','') or '')")
+            CONCLUSION=$(printf '%s' "$RUN_JSON" | python3 -c "import sys,json; print(json.load(sys.stdin).get('conclusion','') or '')")
+            echo "  status=${STATUS} conclusion=${CONCLUSION}"
+            if [ "$STATUS" = "completed" ]; then
+              echo "SMOKE_CONCLUSION=${CONCLUSION}" >> "$GITHUB_ENV"
+              if [ "$CONCLUSION" = "success" ]; then
+                exit 0
+              fi
+              exit 1
+            fi
+            sleep 15
+          done
+
+          echo "::warning::poll timed out at ${TIMEOUT_MINUTES} min — run still in progress"
+          echo "SMOKE_CONCLUSION=timed_out" >> "$GITHUB_ENV"
+          exit 1
 
       - name: Post auto-qualifier comment
         if: always()
@@ -288,6 +385,7 @@ jobs:
               failure: '❌',
               skipped: '⚪️',
               cancelled: '⚠️',
+              timed_out: '⏱️',
             }[o] || '❓');
             const anyFail = Object.values(outcomes).some(o => o === 'failure');
             const header = anyFail
@@ -296,6 +394,21 @@ jobs:
             const hits = (process.env.HITS || '').trim();
             const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
             const designDocUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/blob/main/docs/plans/2026-04-17-agentic-review-gate-design.md`;
+            // Smoke-row formatting: prefer the receiver-side conclusion
+            // (set via $GITHUB_ENV by the poll step) over the local step
+            // outcome, since the poll step's outcome is 'failure' for any
+            // non-success conclusion whereas we want to distinguish
+            // failure / cancelled / timed_out in the comment.
+            let smokeDisplay;
+            if (outcomes.smoke === 'skipped') {
+              smokeDisplay = `${emoji('skipped')} skipped _(no Customization/ changes)_`;
+            } else {
+              const concl = (process.env.SMOKE_CONCLUSION || outcomes.smoke || '').trim();
+              const smokeRunUrl = (process.env.SMOKE_RUN_URL || '').trim();
+              const label = concl || 'unknown';
+              const suffix = smokeRunUrl ? ` · [run](${smokeRunUrl})` : '';
+              smokeDisplay = `${emoji(concl)} ${label}${suffix}`;
+            }
             const body = [
               '<!-- auto-qualifier:shadow -->',
               `## ${header}`,
@@ -309,7 +422,7 @@ jobs:
               `| validate-project.py --strict | ${emoji(outcomes.validate)} ${outcomes.validate} |`,
               `| Credential leak scan (gitleaks) | ${emoji(outcomes.gitleaks)} ${outcomes.gitleaks} |`,
               `| Migration rollback lint | ${emoji(outcomes.rollback)} ${outcomes.rollback} |`,
-              `| ui-test-suite smoke | ${emoji(outcomes.smoke)} ${outcomes.smoke} _(Phase 1.5 — dispatch deferred)_ |`,
+              `| ui-test-suite smoke | ${smokeDisplay} |`,
               '',
               `Commit: \`${context.payload.pull_request.head.sha.substring(0, 7)}\` · [run logs](${runUrl})`,
             ].join('\n');
