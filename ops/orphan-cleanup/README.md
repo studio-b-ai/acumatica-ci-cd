@@ -48,6 +48,35 @@ Use the `Orphan Cleanup (one-shot)` GitHub Actions workflow:
 3. **Production live** — set `environment=production`, `dry_run=false`,
    `confirm_production="YES I HAVE TESTED ON SANDBOX"`. Run after 6pm CT.
 
+### Probe-only diagnostic (read-only)
+
+Before assuming a new "publish is broken, must be orphans" incident is actually
+caused by `CustProject` residue, run the read-only probe first. It calls
+`/CustomizationApi/getProject` against every name in `ORPHANS` (plus anything
+passed via `--extra`) and reports `clean / orphan row / NRE`. No imports, no
+deletes, no publishes.
+
+```bash
+export ACUMATICA_URL=... ACUMATICA_USERNAME=... ACUMATICA_PASSWORD=... ACUMATICA_TENANT=...
+python3 ops/orphan-cleanup/cleanup-orphans.py --env production --probe-only
+# → exits 0 when all probed names are "not found" (no orphans)
+# → exits 1 when any response contains NullReferenceException (corruption)
+# → exits 2 when any orphan row is actually present (ready for live cleanup)
+```
+
+Probe additional candidate names without editing the file:
+
+```bash
+python3 ops/orphan-cleanup/cleanup-orphans.py --env production --probe-only \
+  --extra "AesthetikContainers_v2,SomeNewOrphan[24.208.0001]"
+```
+
+Use this first during the next incident — it takes ~2 seconds and distinguishes
+"Rule #18 in-memory NRE, will self-clear on recycle" from "real persisted orphan
+rows that need the live cleanup path." See
+[docs/AAR-2026-04-17-custproject-nre-transient.md](../../docs/AAR-2026-04-17-custproject-nre-transient.md)
+for the full diagnostic checklist.
+
 ## After successful production cleanup
 
 Switch the pipeline back to `merge=true`:
