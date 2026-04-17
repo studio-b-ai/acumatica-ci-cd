@@ -147,7 +147,7 @@ class TestPO301000ContainerFields:
         screen = acumatica_screen("PO301000")
         screen.page.wait_for_timeout(3_000)
 
-        btn = screen.page.locator("text=CONTAINER TRACKING")
+        btn = screen.locator("text=CONTAINER TRACKING")
         assert btn.count() > 0, "CONTAINER TRACKING button not found on PO301000"
 
     def test_container_tracking_navigates_to_sb501000(self, acumatica_screen):
@@ -155,7 +155,7 @@ class TestPO301000ContainerFields:
         screen = acumatica_screen("PO301000")
         screen.page.wait_for_timeout(3_000)
 
-        btn = screen.page.locator("text=CONTAINER TRACKING").first
+        btn = screen.locator("text=CONTAINER TRACKING").first
         if btn.is_visible(timeout=3000):
             btn.click()
             screen.page.wait_for_load_state("domcontentloaded")
