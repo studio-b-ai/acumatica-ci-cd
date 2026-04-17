@@ -231,14 +231,14 @@ class TestContainerTrackingWorkspace:
         """Container Tracking should appear in the sidebar."""
         screen = acumatica_screen("SB501000")
 
-        sidebar = screen.page.locator("text=Container Tracking")
+        sidebar = screen.page.locator("text=Container Tracking")  # noqa: iframe-locator — sidebar renders in top frame
         assert sidebar.count() > 0, "Container Tracking workspace not found in sidebar"
 
     def test_workspace_click_no_error(self, acumatica_screen):
         """Clicking Container Tracking workspace should not error."""
         screen = acumatica_screen("SB501000")
 
-        workspace_link = screen.page.locator("text=Container Tracking").first
+        workspace_link = screen.page.locator("text=Container Tracking").first  # noqa: iframe-locator — sidebar renders in top frame
         if workspace_link.is_visible(timeout=3000):
             workspace_link.click()
             screen.page.wait_for_timeout(3000)
