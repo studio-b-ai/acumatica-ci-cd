@@ -137,7 +137,10 @@ jobs:
     name: Auto-qualifier (shadow)
     runs-on: ubuntu-latest
     needs: check
-    if: needs.check.outputs.sensitive == '1'
+    # `check` fails when sensitive paths change without a `reviewed` label.
+    # Downstream jobs auto-skip on needs-failure; `always()` overrides that
+    # so we still run qualifiers regardless of the label-check outcome.
+    if: always() && needs.check.outputs.sensitive == '1'
     permissions:
       contents: read
       pull-requests: write
