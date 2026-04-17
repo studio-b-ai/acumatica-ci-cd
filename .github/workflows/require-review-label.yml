@@ -65,27 +65,26 @@ jobs:
 
           SENSITIVE=0
           HITS=""
+          # Groups (in order below): Acumatica customization packages; DB migrations;
+          # raw SQL; Acumatica + gateway clients; container + Railway deploy;
+          # CI/CD workflows; deploy / publish scripts. See top-of-file docstring
+          # for the authoritative description of each group.
+          # NOTE: do NOT place `# comment` lines between patterns in the case block —
+          # comments terminate the `\` line continuation and cause a bash syntax error.
           while IFS= read -r FILE; do
             [ -z "$FILE" ] && continue
             case "$FILE" in
-              # Acumatica customization packages
               Customization/*|Customization-staging/*|*/Customization/*|\
-              # DB migrations
               src/migrations/*|migrations/*|packages/*/migrations/*|\
               prisma/schema.prisma|packages/*/prisma/schema.prisma|\
-              # Raw SQL anywhere
               *.sql|\
-              # Acumatica + gateway clients
               src/lib/acumatica*|src/**/acumatica*|\
               packages/*/src/**/acumatica*|\
               src/**/acu*-client.ts|src/**/acuops-agent.ts|\
               packages/*/src/**/acu*-client.ts|\
-              # Container + Railway deploy
               Dockerfile*|railway.json|railway.toml|\
               packages/*/Dockerfile*|packages/*/railway.json|packages/*/railway.toml|\
-              # CI/CD workflows
               .github/workflows/*|\
-              # Deploy / publish scripts
               scripts/deploy*|scripts/publish*|scripts/import*)
                 SENSITIVE=1
                 HITS="$HITS $FILE"
