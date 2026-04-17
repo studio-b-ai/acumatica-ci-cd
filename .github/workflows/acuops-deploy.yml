@@ -366,7 +366,13 @@ jobs:
           fi
 
       - name: Run core UI tests
-        timeout-minutes: 8
+        # 2026-04-17: bumped 8 → 20. Full suite takes ~11 min (run 24569665633
+        # reached 68% in 7:28 before timing out). Same pattern as PR #362 which
+        # bumped the container-tracking step 20→35 when its suite grew past 20.
+        # pytest-xdist is off the table: the session-scoped `acumatica_page`
+        # fixture (conftest.py) requires a single login — N workers would mean
+        # N concurrent Acumatica sessions and likely API Login Limit hits.
+        timeout-minutes: 20
         env:
           ACUMATICA_URL: ${{ secrets.ACUMATICA_SANDBOX_URL }}
           ACUMATICA_USERNAME: ${{ secrets.ACUMATICA_SANDBOX_USERNAME }}
