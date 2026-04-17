@@ -1,0 +1,61 @@
+name: Lint workflows
+
+# Runs actionlint (wraps shellcheck) on every PR and push to catch
+# GitHub Actions syntax errors, expression mistakes, and — critically —
+# bash syntax errors inside `run:` blocks. Would have caught PR #442's
+# bash-case-statement syntax bug before it merged.
+#
+# See lessons-learned.md "CI / GitHub Actions (2026-04-17)" section,
+# specifically: "Bash `case` line-continuations break if `# comment`
+# lines sit between patterns."
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/**'
+      - '.github/actionlint.yaml'
+      - '.github/actionlint.yml'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/**'
+
+concurrency:
+  group: actionlint-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  actionlint:
+    name: actionlint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install actionlint
+        id: install
+        run: |
+          set -euo pipefail
+          VERSION=1.7.1
+          curl -sL "https://github.com/rhysd/actionlint/releases/download/v${VERSION}/actionlint_${VERSION}_linux_amd64.tar.gz" \
+            | tar -xz -C /tmp
+          sudo mv /tmp/actionlint /usr/local/bin/actionlint
+          actionlint -version
+
+      - name: Run actionlint
+        id: lint
+        run: |
+          set -euo pipefail
+          # actionlint exits non-zero on any finding.
+          #
+          # We filter shellcheck style/info/warning findings because there's
+          # meaningful preexisting noise across the repo's workflows — but
+          # shellcheck ERRORS (SC1072/SC1073 in particular) stay in scope:
+          # those are the class that caught PR #442's bash-case-statement bug.
+          #
+          # The inputs-count ignore is a compat concession — the repo has one
+          # legacy `workflow_dispatch` with 11 inputs that works in practice.
+          # Track for cleanup separately; don't let it block new-workflow lint.
+          actionlint \
+            -ignore 'shellcheck reported issue in this script: SC[0-9]+:(style|info|warning)' \
+            -ignore 'maximum number of inputs for "workflow_dispatch" event is 10'
