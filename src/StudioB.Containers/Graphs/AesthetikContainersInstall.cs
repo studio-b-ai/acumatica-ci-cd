@@ -371,8 +371,10 @@ namespace StudioB.Containers
                     // Migrates IIG container data to AesthetikContainers tables.
                     MigrateIGCMContainers(conn);
 
-                    // ── Per-company DML (SiteMap, seed data, DRP GIs) ──────
-                    // DRP GIs are installed via EnsureDRPGenericInquiries below.
+                    // ── Per-company DML (SiteMap, seed data) ──────
+                    // DRP GIs are installed via <GenericInquiryScreen> XML blocks
+                    // in project.xml (Acumatica-native path with RolesInGraph inside
+                    // each GI's SiteMap row per CLAUDE.md rule 17).
                     // These tables are CompanyID-scoped. Discover all companies
                     // dynamically so the plugin works on any tenant (test or prod).
                     var companies = DiscoverCompanies(conn);
@@ -384,9 +386,6 @@ namespace StudioB.Containers
 
                         try { EnsureContainerTrackingSiteMap(conn, companyId); }
                         catch (Exception ex) { WriteLog(string.Format("[AesthetikContainers] SiteMap update failed CID={0}: {1}", companyId, ex.Message)); }
-
-                        try { EnsureDRPGenericInquiries(conn, companyId); }
-                        catch (Exception ex) { WriteLog(string.Format("[AesthetikContainers] DRP GIs failed CID={0}: {1}", companyId, ex.Message)); }
 
                         try { EnsureItemUomConsistency(conn, companyId); }
                         catch (Exception ex) { WriteLog(string.Format("[AesthetikContainers] EnsureItemUomConsistency failed CID={0}: {1}", companyId, ex.Message)); }
@@ -625,9 +624,10 @@ namespace StudioB.Containers
             WriteLog(string.Format("[AesthetikContainers] Container Tracking SiteMap (5 form screens) for CompanyID={0} — OK", companyId));
         }
 
-        // EnsureDRPGISiteMap removed — DRP GIs are now installed via
-        // EnsureDRPGenericInquiries in this plugin. No ScreenID/SiteMap —
-        // OData works without 403.
+        // DRP GIs are installed via <GenericInquiryScreen> XML blocks in
+        // project.xml. Each block carries RolesInGraph Rolename="*"
+        // Accessrights="4" inside its own <SiteMap>/<row> per rule 17 and
+        // a matching <row> in <ScreenWithRights> to grant OData access.
 
         // ── EnsureItemUomConsistency ────────────────────────────────────────
         // 2026-04-09 rewrite (supersedes PR #292/#299/#301/#302, closes PR #304).
@@ -973,250 +973,5 @@ namespace StudioB.Containers
             WriteLog(string.Format("[AesthetikContainers] Container Preferences default for CompanyID={0} — OK", companyId));
         }
 
-        // ── DRP Phase 0 Generic Inquiries ──────────────────────────────
-        // Installs 5 DRP GIs via direct SQL INSERT. Replaces <Sql> blocks
-        // in project.xml that failed to re-execute on subsequent merge=true
-        // publishes of already-published packages (CLAUDE.md rule 24).
-        // Each GI: ExposeViaOData=1, NO ScreenID (avoids SiteMap access
-        // check so OData works without 403).
-        // Delete-and-recreate pattern ensures idempotency on every publish.
-        private void EnsureDRPGenericInquiries(SqlConnection conn, int companyId)
-        {
-            // ── DRP_VelocityHistory ──
-            // Shipped lines with ship date, customer, site for velocity analysis.
-            InstallDRPGI(conn, companyId, "DRP_VelocityHistory", @"
-                DECLARE @did uniqueidentifier = NEWID();
-                DECLARE @now datetime = GETUTCDATE();
-                INSERT INTO GIDesign (CompanyID, DesignID, Name, Description, ExposeViaOData, CreatedDateTime, LastModifiedDateTime)
-                VALUES (@cid, @did, 'DRP_VelocityHistory', 'DRP — shipped lines with ship date, customer, site for velocity analysis', 1, @now, @now);
-                INSERT INTO GITable (CompanyID, DesignID, Alias, Name, IsActive) VALUES
-                    (@cid, @did, 'SOShipLine', 'PX.Objects.SO.SOShipLine', 1),
-                    (@cid, @did, 'SOShipment', 'PX.Objects.SO.SOShipment', 1),
-                    (@cid, @did, 'SOLine', 'PX.Objects.SO.SOLine', 1);
-                INSERT INTO GIRelation (CompanyID, DesignID, LineNbr, ParentTable, ChildTable, IsActive, JoinType) VALUES
-                    (@cid, @did, 1, 'SOShipLine', 'SOShipment', 1, 'L');
-                INSERT INTO GIOn (CompanyID, DesignID, RelationNbr, LineNbr, ParentField, ChildField, Condition, Operation) VALUES
-                    (@cid, @did, 1, 1, 'ShipmentNbr', 'ShipmentNbr', 'E ', 'A');
-                INSERT INTO GIRelation (CompanyID, DesignID, LineNbr, ParentTable, ChildTable, IsActive, JoinType) VALUES
-                    (@cid, @did, 2, 'SOShipLine', 'SOLine', 1, 'L');
-                INSERT INTO GIOn (CompanyID, DesignID, RelationNbr, LineNbr, ParentField, ChildField, Condition, Operation) VALUES
-                    (@cid, @did, 2, 1, 'OrigOrderType', 'OrderType', 'E ', 'A'),
-                    (@cid, @did, 2, 2, 'OrigOrderNbr', 'OrderNbr', 'E ', 'A'),
-                    (@cid, @did, 2, 3, 'OrigLineNbr', 'LineNbr', 'E ', 'A');
-                INSERT INTO GIResult (CompanyID, DesignID, LineNbr, ObjectName, Field, IsVisible, SortOrder) VALUES
-                    (@cid, @did, 1, 'SOShipLine', 'InventoryID', 1, 1),
-                    (@cid, @did, 2, 'SOShipLine', 'ShippedQty', 1, 2),
-                    (@cid, @did, 3, 'SOShipLine', 'OrigOrderType', 1, 3),
-                    (@cid, @did, 4, 'SOShipLine', 'OrigOrderNbr', 1, 4),
-                    (@cid, @did, 5, 'SOShipLine', 'SiteID', 1, 5),
-                    (@cid, @did, 6, 'SOShipLine', 'UOM', 1, 6),
-                    (@cid, @did, 7, 'SOShipment', 'ShipDate', 1, 7),
-                    (@cid, @did, 8, 'SOLine', 'CustomerID', 1, 8);
-                INSERT INTO GIWhere (CompanyID, DesignID, LineNbr, IsActive, DataFieldName, Condition, IsExpression, Value1, Operation) VALUES
-                    (@cid, @did, 1, 1, 'SOShipment.Confirmed', 'E ', 0, 'True', 'A'),
-                    (@cid, @did, 2, 1, 'SOShipment.Operation', 'E ', 0, 'I', 'A');
-                INSERT INTO GISort (CompanyID, DesignID, LineNbr, DataFieldName, IsDescending) VALUES
-                    (@cid, @did, 1, 'SOShipment.ShipDate', 1);");
-
-            // ── DRP_OpenSOCommitments ──
-            // Open SO lines (CO/SO/PC) for demand commitment tracking.
-            InstallDRPGI(conn, companyId, "DRP_OpenSOCommitments", @"
-                DECLARE @did uniqueidentifier = NEWID();
-                DECLARE @now datetime = GETUTCDATE();
-                INSERT INTO GIDesign (CompanyID, DesignID, Name, Description, ExposeViaOData, CreatedDateTime, LastModifiedDateTime)
-                VALUES (@cid, @did, 'DRP_OpenSOCommitments', 'DRP — open SO lines (CO/SO/PC) for demand commitment tracking', 1, @now, @now);
-                INSERT INTO GITable (CompanyID, DesignID, Alias, Name, IsActive) VALUES
-                    (@cid, @did, 'SOOrder', 'PX.Objects.SO.SOOrder', 1),
-                    (@cid, @did, 'SOLine', 'PX.Objects.SO.SOLine', 1);
-                INSERT INTO GIRelation (CompanyID, DesignID, LineNbr, ParentTable, ChildTable, IsActive, JoinType) VALUES
-                    (@cid, @did, 1, 'SOOrder', 'SOLine', 1, 'I');
-                INSERT INTO GIOn (CompanyID, DesignID, RelationNbr, LineNbr, ParentField, ChildField, Condition, Operation) VALUES
-                    (@cid, @did, 1, 1, 'OrderType', 'OrderType', 'E ', 'A'),
-                    (@cid, @did, 1, 2, 'OrderNbr', 'OrderNbr', 'E ', 'A');
-                INSERT INTO GIResult (CompanyID, DesignID, LineNbr, ObjectName, Field, IsVisible, SortOrder) VALUES
-                    (@cid, @did, 1, 'SOLine', 'InventoryID', 1, 1),
-                    (@cid, @did, 2, 'SOLine', 'OrderType', 1, 2),
-                    (@cid, @did, 3, 'SOLine', 'OrderNbr', 1, 3),
-                    (@cid, @did, 4, 'SOLine', 'LineNbr', 1, 4),
-                    (@cid, @did, 5, 'SOLine', 'OrderQty', 1, 5),
-                    (@cid, @did, 6, 'SOLine', 'ShippedQty', 1, 6),
-                    (@cid, @did, 7, 'SOLine', 'OpenQty', 1, 7),
-                    (@cid, @did, 8, 'SOLine', 'RequestDate', 1, 8),
-                    (@cid, @did, 9, 'SOOrder', 'CustomerID', 1, 9),
-                    (@cid, @did, 10, 'SOLine', 'SiteID', 1, 10),
-                    (@cid, @did, 11, 'SOLine', 'UOM', 1, 11);
-                INSERT INTO GIWhere (CompanyID, DesignID, LineNbr, OpenBrackets, CloseBrackets, IsActive, DataFieldName, Condition, IsExpression, Value1, Operation) VALUES
-                    (@cid, @did, 1, 0, 0, 1, 'SOLine.LineType', 'E ', 0, 'GI', 'A'),
-                    (@cid, @did, 2, 0, 0, 1, 'SOLine.OpenQty', 'G ', 0, '0', 'A'),
-                    (@cid, @did, 3, 1, 0, 1, 'SOLine.OrderType', 'E ', 0, 'CO', 'O'),
-                    (@cid, @did, 4, 0, 0, 1, 'SOLine.OrderType', 'E ', 0, 'SO', 'O'),
-                    (@cid, @did, 5, 0, 1, 1, 'SOLine.OrderType', 'E ', 0, 'PC', 'A');
-                INSERT INTO GISort (CompanyID, DesignID, LineNbr, DataFieldName, IsDescending) VALUES
-                    (@cid, @did, 1, 'SOLine.RequestDate', 0);");
-
-            // ── DRP_InventoryBySite ──
-            // Active/non-saleable stock item quantities per warehouse.
-            InstallDRPGI(conn, companyId, "DRP_InventoryBySite", @"
-                DECLARE @did uniqueidentifier = NEWID();
-                DECLARE @now datetime = GETUTCDATE();
-                INSERT INTO GIDesign (CompanyID, DesignID, Name, Description, ExposeViaOData, CreatedDateTime, LastModifiedDateTime)
-                VALUES (@cid, @did, 'DRP_InventoryBySite', 'DRP — active/non-saleable stock item quantities per warehouse', 1, @now, @now);
-                INSERT INTO GITable (CompanyID, DesignID, Alias, Name, IsActive) VALUES
-                    (@cid, @did, 'InventoryItem', 'PX.Objects.IN.InventoryItem', 1),
-                    (@cid, @did, 'INSiteStatus', 'PX.Objects.IN.INSiteStatus', 1);
-                INSERT INTO GIRelation (CompanyID, DesignID, LineNbr, ParentTable, ChildTable, IsActive, JoinType) VALUES
-                    (@cid, @did, 1, 'InventoryItem', 'INSiteStatus', 1, 'I');
-                INSERT INTO GIOn (CompanyID, DesignID, RelationNbr, LineNbr, ParentField, ChildField, Condition, Operation) VALUES
-                    (@cid, @did, 1, 1, 'InventoryID', 'InventoryID', 'E ', 'A');
-                INSERT INTO GIResult (CompanyID, DesignID, LineNbr, ObjectName, Field, IsVisible, SortOrder) VALUES
-                    (@cid, @did, 1, 'InventoryItem', 'InventoryCD', 1, 1),
-                    (@cid, @did, 2, 'InventoryItem', 'Descr', 1, 2),
-                    (@cid, @did, 3, 'InventoryItem', 'ItemStatus', 1, 3),
-                    (@cid, @did, 4, 'InventoryItem', 'ItemClassID', 1, 4),
-                    (@cid, @did, 5, 'INSiteStatus', 'SiteID', 1, 5),
-                    (@cid, @did, 6, 'INSiteStatus', 'QtyOnHand', 1, 6),
-                    (@cid, @did, 7, 'INSiteStatus', 'QtyAvail', 1, 7),
-                    (@cid, @did, 8, 'INSiteStatus', 'QtyHardAvail', 1, 8),
-                    (@cid, @did, 9, 'INSiteStatus', 'QtyAllocated', 1, 9);
-                INSERT INTO GIWhere (CompanyID, DesignID, LineNbr, OpenBrackets, CloseBrackets, IsActive, DataFieldName, Condition, IsExpression, Value1, Operation) VALUES
-                    (@cid, @did, 1, 0, 0, 1, 'InventoryItem.StkItem', 'E ', 0, 'True', 'A'),
-                    (@cid, @did, 2, 1, 0, 1, 'InventoryItem.ItemStatus', 'E ', 0, 'AC', 'O'),
-                    (@cid, @did, 3, 0, 1, 1, 'InventoryItem.ItemStatus', 'E ', 0, 'NS', 'A');
-                INSERT INTO GISort (CompanyID, DesignID, LineNbr, DataFieldName, IsDescending) VALUES
-                    (@cid, @did, 1, 'InventoryItem.InventoryCD', 0),
-                    (@cid, @did, 2, 'INSiteStatus.SiteID', 0);");
-
-            // ── DRP_OpenPOLines ──
-            // Open PO lines with vendor lead-time dates and container linkage.
-            InstallDRPGI(conn, companyId, "DRP_OpenPOLines", @"
-                DECLARE @did uniqueidentifier = NEWID();
-                DECLARE @now datetime = GETUTCDATE();
-                INSERT INTO GIDesign (CompanyID, DesignID, Name, Description, ExposeViaOData, CreatedDateTime, LastModifiedDateTime)
-                VALUES (@cid, @did, 'DRP_OpenPOLines', 'DRP — open PO lines with vendor lead-time dates and container linkage', 1, @now, @now);
-                INSERT INTO GITable (CompanyID, DesignID, Alias, Name, IsActive) VALUES
-                    (@cid, @did, 'POOrder', 'PX.Objects.PO.POOrder', 1),
-                    (@cid, @did, 'Line', 'PX.Objects.PO.POLine', 1),
-                    (@cid, @did, 'ContainerLink', 'StudioB.Containers.UsrContainerPOLink', 1),
-                    (@cid, @did, 'Container', 'StudioB.Containers.UsrContainer', 1);
-                INSERT INTO GIRelation (CompanyID, DesignID, LineNbr, ParentTable, ChildTable, IsActive, JoinType) VALUES
-                    (@cid, @did, 1, 'POOrder', 'Line', 1, 'I');
-                INSERT INTO GIOn (CompanyID, DesignID, RelationNbr, LineNbr, ParentField, ChildField, Condition, Operation) VALUES
-                    (@cid, @did, 1, 1, 'OrderType', 'OrderType', 'E ', 'A'),
-                    (@cid, @did, 1, 2, 'OrderNbr', 'OrderNbr', 'E ', 'A');
-                INSERT INTO GIRelation (CompanyID, DesignID, LineNbr, ParentTable, ChildTable, IsActive, JoinType) VALUES
-                    (@cid, @did, 2, 'Line', 'ContainerLink', 1, 'L');
-                INSERT INTO GIOn (CompanyID, DesignID, RelationNbr, LineNbr, ParentField, ChildField, Condition, Operation) VALUES
-                    (@cid, @did, 2, 1, 'OrderType', 'OrderType', 'E ', 'A'),
-                    (@cid, @did, 2, 2, 'OrderNbr', 'OrderNbr', 'E ', 'A'),
-                    (@cid, @did, 2, 3, 'LineNbr', 'LineNbr', 'E ', 'A');
-                INSERT INTO GIRelation (CompanyID, DesignID, LineNbr, ParentTable, ChildTable, IsActive, JoinType) VALUES
-                    (@cid, @did, 3, 'ContainerLink', 'Container', 1, 'L');
-                INSERT INTO GIOn (CompanyID, DesignID, RelationNbr, LineNbr, ParentField, ChildField, Condition, Operation) VALUES
-                    (@cid, @did, 3, 1, 'ContainerID', 'ContainerID', 'E ', 'A');
-                INSERT INTO GIResult (CompanyID, DesignID, LineNbr, ObjectName, Field, IsVisible, SortOrder) VALUES
-                    (@cid, @did, 1, 'Line', 'OrderType', 1, 1),
-                    (@cid, @did, 2, 'Line', 'OrderNbr', 1, 2),
-                    (@cid, @did, 3, 'Line', 'LineNbr', 1, 3),
-                    (@cid, @did, 4, 'Line', 'InventoryID', 1, 4),
-                    (@cid, @did, 5, 'Line', 'VendorID', 1, 5),
-                    (@cid, @did, 6, 'Line', 'OrderQty', 1, 6),
-                    (@cid, @did, 7, 'Line', 'ReceivedQty', 1, 7),
-                    (@cid, @did, 8, 'Line', 'OpenQty', 1, 8),
-                    (@cid, @did, 9, 'Line', 'PromisedDate', 1, 9),
-                    (@cid, @did, 10, 'POOrder', 'UsrAcknowledgedDate', 1, 10),
-                    (@cid, @did, 11, 'POOrder', 'UsrFactoryReadyDate', 1, 11),
-                    (@cid, @did, 12, 'Container', 'ContainerCD', 1, 12);
-                INSERT INTO GIWhere (CompanyID, DesignID, LineNbr, OpenBrackets, CloseBrackets, IsActive, DataFieldName, Condition, IsExpression, Value1, Operation) VALUES
-                    (@cid, @did, 1, 0, 0, 1, 'Line.LineType', 'E ', 0, 'GI', 'A'),
-                    (@cid, @did, 2, 0, 0, 1, 'Line.OpenQty', 'G ', 0, '0', 'A'),
-                    (@cid, @did, 3, 1, 0, 1, 'POOrder.Status', 'E ', 0, 'N', 'O'),
-                    (@cid, @did, 4, 0, 1, 1, 'POOrder.Status', 'E ', 0, 'O', 'A');
-                INSERT INTO GISort (CompanyID, DesignID, LineNbr, DataFieldName, IsDescending) VALUES
-                    (@cid, @did, 1, 'Line.PromisedDate', 0);");
-
-            // ── DRP_ItemWarehouseSettings ──
-            // Item/warehouse replenishment settings with vendor lead times.
-            InstallDRPGI(conn, companyId, "DRP_ItemWarehouseSettings", @"
-                DECLARE @did uniqueidentifier = NEWID();
-                DECLARE @now datetime = GETUTCDATE();
-                INSERT INTO GIDesign (CompanyID, DesignID, Name, Description, ExposeViaOData, CreatedDateTime, LastModifiedDateTime)
-                VALUES (@cid, @did, 'DRP_ItemWarehouseSettings', 'DRP — item/warehouse replenishment settings with vendor lead times', 1, @now, @now);
-                INSERT INTO GITable (CompanyID, DesignID, Alias, Name, IsActive) VALUES
-                    (@cid, @did, 'INItemSite', 'PX.Objects.IN.INItemSite', 1),
-                    (@cid, @did, 'InventoryItem', 'PX.Objects.IN.InventoryItem', 1),
-                    (@cid, @did, 'INSite', 'PX.Objects.IN.INSite', 1),
-                    (@cid, @did, 'POVendorInventory', 'PX.Objects.PO.POVendorInventory', 1);
-                INSERT INTO GIRelation (CompanyID, DesignID, LineNbr, ParentTable, ChildTable, IsActive, JoinType) VALUES
-                    (@cid, @did, 1, 'INItemSite', 'InventoryItem', 1, 'L');
-                INSERT INTO GIOn (CompanyID, DesignID, RelationNbr, LineNbr, ParentField, ChildField, Condition, Operation) VALUES
-                    (@cid, @did, 1, 1, 'InventoryID', 'InventoryID', 'E ', 'A');
-                INSERT INTO GIRelation (CompanyID, DesignID, LineNbr, ParentTable, ChildTable, IsActive, JoinType) VALUES
-                    (@cid, @did, 2, 'INItemSite', 'INSite', 1, 'L');
-                INSERT INTO GIOn (CompanyID, DesignID, RelationNbr, LineNbr, ParentField, ChildField, Condition, Operation) VALUES
-                    (@cid, @did, 2, 1, 'SiteID', 'SiteID', 'E ', 'A');
-                INSERT INTO GIRelation (CompanyID, DesignID, LineNbr, ParentTable, ChildTable, IsActive, JoinType) VALUES
-                    (@cid, @did, 3, 'INItemSite', 'POVendorInventory', 1, 'L');
-                INSERT INTO GIOn (CompanyID, DesignID, RelationNbr, LineNbr, ParentField, ChildField, Condition, Operation) VALUES
-                    (@cid, @did, 3, 1, 'InventoryID', 'InventoryID', 'E ', 'A'),
-                    (@cid, @did, 3, 2, 'PreferredVendorID', 'VendorID', 'E ', 'A');
-                INSERT INTO GIResult (CompanyID, DesignID, LineNbr, ObjectName, Field, IsVisible, SortOrder) VALUES
-                    (@cid, @did, 1, 'InventoryItem', 'InventoryCD', 1, 1),
-                    (@cid, @did, 2, 'INSite', 'SiteCD', 1, 2),
-                    (@cid, @did, 3, 'InventoryItem', 'BaseUnit', 1, 3),
-                    (@cid, @did, 4, 'INItemSite', 'SafetyStock', 1, 4),
-                    (@cid, @did, 5, 'INItemSite', 'MinQty', 1, 5),
-                    (@cid, @did, 6, 'INItemSite', 'MaxQty', 1, 6),
-                    (@cid, @did, 7, 'INItemSite', 'MinOrdQty', 1, 7),
-                    (@cid, @did, 8, 'INItemSite', 'ReplenishmentSource', 1, 8),
-                    (@cid, @did, 9, 'INItemSite', 'ReplenishmentPolicyOverride', 1, 9),
-                    (@cid, @did, 10, 'INItemSite', 'PreferredVendorID', 1, 10),
-                    (@cid, @did, 11, 'POVendorInventory', 'VLeadTime', 1, 11),
-                    (@cid, @did, 12, 'INItemSite', 'ABCCodeID', 1, 12),
-                    (@cid, @did, 13, 'POVendorInventory', 'AddLeadTimeDays', 1, 13);
-                INSERT INTO GIWhere (CompanyID, DesignID, LineNbr, OpenBrackets, CloseBrackets, IsActive, DataFieldName, Condition, IsExpression, Value1, Operation) VALUES
-                    (@cid, @did, 1, 0, 0, 1, 'InventoryItem.StkItem', 'E ', 0, 'True', 'A'),
-                    (@cid, @did, 2, 1, 0, 1, 'InventoryItem.ItemStatus', 'E ', 0, 'AC', 'O'),
-                    (@cid, @did, 3, 0, 1, 1, 'InventoryItem.ItemStatus', 'E ', 0, 'NS', 'A');
-                INSERT INTO GISort (CompanyID, DesignID, LineNbr, DataFieldName, IsDescending) VALUES
-                    (@cid, @did, 1, 'InventoryItem.InventoryCD', 0),
-                    (@cid, @did, 2, 'INSite.SiteCD', 0);");
-
-            WriteLog(string.Format("[AesthetikContainers] All 5 DRP GIs for CompanyID={0} — OK", companyId));
-        }
-
-        private void InstallDRPGI(SqlConnection conn, int companyId, string giName, string installSql)
-        {
-            // Step 1: Delete existing GI (idempotent cleanup)
-            string cleanupSql = @"
-                DECLARE @existingId uniqueidentifier;
-                SELECT @existingId = DesignID FROM GIDesign WHERE Name = @name AND CompanyID = @cid;
-                IF @existingId IS NOT NULL
-                BEGIN
-                    DELETE FROM GIFilter   WHERE DesignID = @existingId AND CompanyID = @cid;
-                    DELETE FROM GISort     WHERE DesignID = @existingId AND CompanyID = @cid;
-                    DELETE FROM GIResult   WHERE DesignID = @existingId AND CompanyID = @cid;
-                    DELETE FROM GIGroupBy  WHERE DesignID = @existingId AND CompanyID = @cid;
-                    DELETE FROM GIOn       WHERE DesignID = @existingId AND CompanyID = @cid;
-                    DELETE FROM GIRelation WHERE DesignID = @existingId AND CompanyID = @cid;
-                    DELETE FROM GIWhere    WHERE DesignID = @existingId AND CompanyID = @cid;
-                    DELETE FROM GITable    WHERE DesignID = @existingId AND CompanyID = @cid;
-                    DELETE FROM GIDesign   WHERE DesignID = @existingId AND CompanyID = @cid;
-                END";
-            using (var cmd = new SqlCommand(cleanupSql, conn))
-            {
-                cmd.Parameters.AddWithValue("@cid", companyId);
-                cmd.Parameters.AddWithValue("@name", giName);
-                cmd.ExecuteNonQuery();
-            }
-
-            // Step 2: Install fresh GI
-            using (var cmd = new SqlCommand(installSql, conn))
-            {
-                cmd.Parameters.AddWithValue("@cid", companyId);
-                cmd.CommandTimeout = 60;
-                cmd.ExecuteNonQuery();
-            }
-            WriteLog(string.Format("[AesthetikContainers] DRP GI '{0}' for CompanyID={1} — OK", giName, companyId));
-        }
     }
 }
