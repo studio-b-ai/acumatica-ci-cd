@@ -143,19 +143,31 @@ class TestPO301000ContainerFields:
         screen.assert_no_errors()
 
     def test_container_tracking_button_exists(self, acumatica_screen):
-        """CONTAINER TRACKING toolbar button should be present on PO301000."""
+        """CONTAINER TRACKING toolbar button should be present on PO301000.
+
+        NOTE: Acumatica renders all screen content (including the toolbar)
+        inside iframe[name='main']. Use `screen.locator(...)` which is
+        scoped to the iframe context — NOT `screen.page.locator(...)`
+        which only sees the top-level frame and will return 0 even when
+        the button is rendered. CLAUDE.md rule #20 (2026-04-15 incident).
+        """
         screen = acumatica_screen("PO301000")
         screen.page.wait_for_timeout(3_000)
 
-        btn = screen.page.locator("text=CONTAINER TRACKING")
+        btn = screen.locator("text=CONTAINER TRACKING")
         assert btn.count() > 0, "CONTAINER TRACKING button not found on PO301000"
 
     def test_container_tracking_navigates_to_sb501000(self, acumatica_screen):
-        """Clicking CONTAINER TRACKING should navigate to SB501000 without error."""
+        """Clicking CONTAINER TRACKING should navigate to SB501000 without error.
+
+        Same iframe-descent note as test_container_tracking_button_exists —
+        locate the button via `screen.locator()` (iframe-scoped), not
+        `screen.page.locator()`.
+        """
         screen = acumatica_screen("PO301000")
         screen.page.wait_for_timeout(3_000)
 
-        btn = screen.page.locator("text=CONTAINER TRACKING").first
+        btn = screen.locator("text=CONTAINER TRACKING").first
         if btn.is_visible(timeout=3000):
             btn.click()
             screen.page.wait_for_load_state("domcontentloaded")
