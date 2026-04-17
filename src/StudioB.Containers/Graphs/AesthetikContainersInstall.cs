@@ -398,6 +398,16 @@ namespace StudioB.Containers
 
                         try { SeedContainerPreferences(conn, companyId); }
                         catch (Exception ex) { WriteLog(string.Format("[AesthetikContainers] Seed prefs failed CID={0}: {1}", companyId, ex.Message)); }
+
+                        // ── DRP GI orphan cleanup (2026-04-17 hotfix) ──
+                        // Removes partial/stale GIDesign + child rows left by
+                        // PR #427/#430/#431's failed DRP GI install attempts on
+                        // 2026-04-16. Canonical DesignIDs are owned by PR #445's
+                        // <GenericInquiryScreen> XML blocks; anything matching a
+                        // DRP name but a different DesignID is stale residue.
+                        // See docs/AAR-2026-04-17-custproject-nre-transient.md.
+                        try { CleanupOrphanDRPGIRows(conn, companyId); }
+                        catch (Exception ex) { WriteLog(string.Format("[AesthetikContainers] DRP orphan cleanup failed CID={0}: {1}", companyId, ex.Message)); }
                     }
                 }
 
@@ -971,6 +981,110 @@ namespace StudioB.Containers
                 cmd.ExecuteNonQuery();
             }
             WriteLog(string.Format("[AesthetikContainers] Container Preferences default for CompanyID={0} — OK", companyId));
+        }
+
+        // ── DRP GI orphan cleanup (2026-04-17 hotfix) ─────────────────────────
+        //
+        // Removes stale GIDesign + 8 child-table rows for the five DRP Phase 0
+        // GIs whose DesignIDs don't match the canonical values owned by PR #445's
+        // <GenericInquiryScreen> XML blocks in this project.xml. Pattern copied
+        // from the proven 2026-03-29 UserAuditTrail cleanup (commit ab35a0d)
+        // which resolved a 45-min GI-brick outage.
+        //
+        // Hard-codes eight DELETE statements (one per child table) instead of
+        // a loop over a string[] so the validator's "DELETE FROM <literal>"
+        // table-name extractor captures each table correctly. All nine targets
+        // are in validate-project.py's SAFE_DELETE_TABLES allowlist.
+        //
+        // Idempotent: after the first run deletes the residue, subsequent
+        // calls find zero stale rows and exit in a few ms. Safe to run on
+        // every publish.
+        //
+        // -- REVIEWED: gi-sql-safe
+        private static readonly System.Collections.Generic.Dictionary<string, Guid> DRPCanonDesigns =
+            new System.Collections.Generic.Dictionary<string, Guid>(StringComparer.Ordinal)
+        {
+            { "DRP_VelocityHistory",       new Guid("1ce25f0a-cde6-4f0a-b939-d274fe343574") },
+            { "DRP_OpenSOCommitments",     new Guid("f918a504-7620-461c-aad8-f1b3395d1e79") },
+            { "DRP_InventoryBySite",       new Guid("a5337a02-6d79-42e9-b400-d7178ac3fd24") },
+            { "DRP_OpenPOLines",           new Guid("89912975-c6ed-41ad-b514-a0f775a89362") },
+            { "DRP_ItemWarehouseSettings", new Guid("6e77b05f-ef4d-49e7-90ac-4c703006880d") },
+        };
+
+        private void CleanupOrphanDRPGIRows(SqlConnection conn, int companyId)
+        {
+            var stale = new System.Collections.Generic.List<System.Collections.Generic.KeyValuePair<string, Guid>>();
+            using (var cmd = new SqlCommand(
+                "SELECT Name, DesignID FROM GIDesign " +
+                "WHERE CompanyID = @CID " +
+                "  AND Name IN ('DRP_VelocityHistory', 'DRP_OpenSOCommitments', " +
+                "               'DRP_InventoryBySite', 'DRP_OpenPOLines', " +
+                "               'DRP_ItemWarehouseSettings')", conn))
+            {
+                cmd.Parameters.AddWithValue("@CID", companyId);
+                using (var rdr = cmd.ExecuteReader())
+                {
+                    while (rdr.Read())
+                    {
+                        var name = rdr.GetString(0);
+                        var id = rdr.GetGuid(1);
+                        Guid canon;
+                        if (DRPCanonDesigns.TryGetValue(name, out canon) && id == canon) continue;
+                        stale.Add(new System.Collections.Generic.KeyValuePair<string, Guid>(name, id));
+                    }
+                }
+            }
+
+            if (stale.Count == 0)
+            {
+                WriteLog(string.Format("[AesthetikContainers] DRP GI orphan scan CID={0} — clean (0 stale)", companyId));
+                return;
+            }
+
+            WriteLog(string.Format("[AesthetikContainers] DRP GI orphan scan CID={0} — {1} stale row(s)", companyId, stale.Count));
+            foreach (var s in stale)
+                WriteLog(string.Format("    stale: {0} @ {1}", s.Key, s.Value));
+
+            int total = 0;
+            using (var tx = conn.BeginTransaction())
+            {
+                try
+                {
+                    foreach (var s in stale)
+                    {
+                        total += DeleteOrphanGIRow(conn, tx, "DELETE FROM GITable    WHERE DesignID = @ID AND CompanyID = @CID", "GITable",    s, companyId);
+                        total += DeleteOrphanGIRow(conn, tx, "DELETE FROM GIResult   WHERE DesignID = @ID AND CompanyID = @CID", "GIResult",   s, companyId);
+                        total += DeleteOrphanGIRow(conn, tx, "DELETE FROM GIWhere    WHERE DesignID = @ID AND CompanyID = @CID", "GIWhere",    s, companyId);
+                        total += DeleteOrphanGIRow(conn, tx, "DELETE FROM GISort     WHERE DesignID = @ID AND CompanyID = @CID", "GISort",     s, companyId);
+                        total += DeleteOrphanGIRow(conn, tx, "DELETE FROM GIFilter   WHERE DesignID = @ID AND CompanyID = @CID", "GIFilter",   s, companyId);
+                        total += DeleteOrphanGIRow(conn, tx, "DELETE FROM GIRelation WHERE DesignID = @ID AND CompanyID = @CID", "GIRelation", s, companyId);
+                        total += DeleteOrphanGIRow(conn, tx, "DELETE FROM GIOn       WHERE DesignID = @ID AND CompanyID = @CID", "GIOn",       s, companyId);
+                        total += DeleteOrphanGIRow(conn, tx, "DELETE FROM GIGroupBy  WHERE DesignID = @ID AND CompanyID = @CID", "GIGroupBy",  s, companyId);
+                        total += DeleteOrphanGIRow(conn, tx, "DELETE FROM GIDesign   WHERE DesignID = @ID AND CompanyID = @CID", "GIDesign",   s, companyId);
+                    }
+                    tx.Commit();
+                }
+                catch
+                {
+                    tx.Rollback();
+                    throw;
+                }
+            }
+            WriteLog(string.Format("[AesthetikContainers] DRP GI orphan cleanup CID={0} — committed {1} row deletions", companyId, total));
+        }
+
+        private int DeleteOrphanGIRow(SqlConnection conn, SqlTransaction tx, string sql, string label,
+                                      System.Collections.Generic.KeyValuePair<string, Guid> s, int companyId)
+        {
+            using (var cmd = new SqlCommand(sql, conn, tx))
+            {
+                cmd.Parameters.AddWithValue("@ID", s.Value);
+                cmd.Parameters.AddWithValue("@CID", companyId);
+                var n = cmd.ExecuteNonQuery();
+                if (n > 0)
+                    WriteLog(string.Format("        deleted {0} from {1} for {2}", n, label, s.Key));
+                return n;
+            }
         }
 
     }

@@ -102,6 +102,42 @@ class AcuClient:
             )
         return data
 
+    def probe_project(self, project_name: str) -> dict:
+        """Read-only probe: does a CustProject row exist for this name?
+
+        Returns dict with:
+          http_code: HTTP status from /CustomizationApi/getProject
+          present: True if HTTP 200 (orphan row exists on instance)
+          has_nre: True if response body contains "NullReferenceException"
+                   — matches qualify.py check_orphan_scan() corruption heuristic.
+          detail: short human-readable message
+
+        Does not import, delete, or publish anything.
+        """
+        r = self.session.post(
+            f"{self.base}/CustomizationApi/getProject",
+            json={"projectName": project_name},
+            timeout=30,
+        )
+        body = r.text or ""
+        has_nre = "NullReferenceException" in body
+        present = r.status_code == 200
+        if has_nre:
+            detail = "NRE — subsystem corrupted (see Rule #18)"
+        elif present:
+            detail = "present on instance"
+        elif r.status_code == 400 and "not found" in body.lower():
+            detail = "not found (clean)"
+        else:
+            detail = f"unexpected HTTP {r.status_code}: {body[:120]}"
+        return {
+            "name": project_name,
+            "http_code": r.status_code,
+            "present": present,
+            "has_nre": has_nre,
+            "detail": detail,
+        }
+
     def test_merge_publish(self, project_names=None) -> tuple[bool, str]:
         """Validate-only publishBegin with merge=true. Returns (success, message).
 
@@ -156,6 +192,14 @@ def main():
                     help="Print plan, don't make changes")
     ap.add_argument("--skip-merge-test", action="store_true",
                     help="Skip the post-cleanup merge=true validation")
+    ap.add_argument("--probe-only", action="store_true",
+                    help="Read-only diagnostic: check each ORPHAN name via "
+                         "/CustomizationApi/getProject. No imports, deletes, or "
+                         "publishes. Exits 0 if all clean, 1 if any NRE detected, "
+                         "2 if any orphan row still present.")
+    ap.add_argument("--extra", default="",
+                    help="Comma-separated list of additional project names to "
+                         "probe (only used with --probe-only).")
     args = ap.parse_args()
 
     # Load credentials from env (set by caller before invoking)
@@ -168,11 +212,50 @@ def main():
         print("ERROR: ACUMATICA_URL, ACUMATICA_USERNAME, ACUMATICA_PASSWORD, ACUMATICA_TENANT required")
         sys.exit(2)
 
+    mode = "PROBE-ONLY" if args.probe_only else ("DRY-RUN" if args.dry_run else "LIVE")
     print(f"\n=== Orphan Cleanup — {args.env.upper()} ===")
     print(f"Instance: {base_url}")
     print(f"Tenant:   {tenant}")
     print(f"User:     {username}")
-    print(f"Mode:     {'DRY-RUN' if args.dry_run else 'LIVE'}\n")
+    print(f"Mode:     {mode}\n")
+
+    # Probe-only: read-only diagnostic path, no prerequisites, no mutations.
+    if args.probe_only:
+        extra = [n.strip() for n in args.extra.split(",") if n.strip()]
+        probe_names = [n for n, _ in ORPHANS] + extra
+        print(f"Probing {len(probe_names)} name(s) via /CustomizationApi/getProject:")
+        for name in probe_names:
+            print(f"  • {name}")
+        print()
+
+        client = AcuClient(base_url, username, password, tenant)
+        try:
+            client.login()
+            results = [client.probe_project(name) for name in probe_names]
+        finally:
+            client.logout()
+
+        print(f"\n{'Name':55}  {'HTTP':>4}  {'Status':16}  Detail")
+        print("-" * 110)
+        for r in results:
+            present_tag = "ORPHAN ROW" if r["present"] else "NRE" if r["has_nre"] else "clean"
+            print(f"{r['name'][:55]:55}  {r['http_code']:>4}  {present_tag:16}  {r['detail']}")
+
+        any_nre = any(r["has_nre"] for r in results)
+        any_present = any(r["present"] for r in results)
+        print()
+        if any_nre:
+            print("❌ One or more probes returned NullReferenceException. "
+                  "Corruption confirmed — see docs/AAR-2026-04-17-custproject-nre-transient.md "
+                  "for the Rule #18 diagnostic. Exiting 1.")
+            return 1
+        if any_present:
+            print("⚠️  One or more orphan CustProject rows are present. "
+                  "Run without --probe-only to clean them via import + "
+                  "/CustomizationApi/delete. Exiting 2.")
+            return 2
+        print("✅ All probed names return 'not found' — no orphan CustProject rows on instance.")
+        return 0
 
     print("Plan:")
     for name, zip_name in ORPHANS:

@@ -15,7 +15,7 @@
       "category": "managed",
       "level": null,
       "owner": "studio-b-ai/acumatica-ci-cd",
-      "description": "PO arrival dates, container tracking, trade compliance. Columns created via CustomizationPlugin + AesthetikWMS <Sql> belt-and-suspenders.",
+      "description": "PO arrival dates, container tracking, trade compliance. Columns created via CustomizationPlugin + AesthetikWMS <Sql> belt-and-suspenders. Also hosts the 2026-04-17 DRP GI orphan cleanup in AesthetikContainersInstall.CleanupOrphanDRPGIRows().",
       "published": true,
       "repo_dir": "Customization/AesthetikContainers"
     },
