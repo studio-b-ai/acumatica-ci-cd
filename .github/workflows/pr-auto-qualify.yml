@@ -8,13 +8,11 @@ name: Auto-qualify customization PRs
 # See studio-b-ai/acuops-pipeline/.github/workflows/auto-qualify.yml for
 # the qualifier logic + expected secrets.
 #
-# Known v1 gap: the reusable workflow takes a single customization_path.
-# acumatica-ci-cd has three packages (AesthetikContainers, AesthetikWMS,
-# StudioBAcuOps). We point at the primary (CUSTOMIZATION_PROJECT_NAME ==
-# AesthetikContainers). PRs that only touch AesthetikWMS or StudioBAcuOps
-# get qualify.py + ui-suite coverage (those run at the tenant level, not
-# per-package) but miss validate-project.py for those two packages.
-# Follow-up: extend auto-qualify.yml to accept multiple paths.
+# All three customization packages get full validate-project.py coverage
+# via the matrix support added in studio-b-ai/acuops-pipeline#23.
+# Add a fourth package here when one is introduced — keep the list in
+# sync with ALSO_PUBLISH_PROJECTS repo var (currently:
+# AesthetikContainers,AesthetikWMS,StudioBAcuOps + ISV packages).
 
 on:
   pull_request:
@@ -29,8 +27,15 @@ jobs:
       pr_number: ${{ github.event.pull_request.number }}
       pr_repo: ${{ github.repository }}
       pr_head_sha: ${{ github.event.pull_request.head.sha }}
-      # Pulled from repo vars — set via `gh variable set CUSTOMIZATION_PROJECT_NAME …`
-      # Current value: AesthetikContainers
+      # qualify.py runs against the primary tenant — one project name
+      # is enough since it operates at the instance level.
       project_name: ${{ vars.CUSTOMIZATION_PROJECT_NAME }}
+      # Sandbox-dry-run uses the primary package — extending this to
+      # multi-package would mean N sandbox sessions per PR (expensive).
       customization_path: Customization/${{ vars.CUSTOMIZATION_PROJECT_NAME }}
+      # validate-project.py --strict runs as a matrix over all three
+      # packages — one execution per project.xml. Cheap (pure Python
+      # XML parse, < 1 sec each). fail-fast: false on the matrix means
+      # all errors surface in a single CI run.
+      customization_paths: '["Customization/AesthetikContainers","Customization/AesthetikWMS","Customization/StudioBAcuOps"]'
     secrets: inherit
