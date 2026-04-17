@@ -48,14 +48,13 @@ jobs:
           set -euo pipefail
           # actionlint exits non-zero on any finding.
           #
-          # We filter shellcheck style/info/warning findings because there's
-          # meaningful preexisting noise across the repo's workflows — but
-          # shellcheck ERRORS (SC1072/SC1073 in particular) stay in scope:
-          # those are the class that caught PR #442's bash-case-statement bug.
+          # Filtering: style/info/warning severity findings are ignored
+          # (preexisting noise across the repo). Errors stay in scope —
+          # including SC1072/SC1073 which caught PR #442's bash case bug.
           #
-          # The inputs-count ignore is a compat concession — the repo has one
-          # legacy `workflow_dispatch` with 11 inputs that works in practice.
-          # Track for cleanup separately; don't let it block new-workflow lint.
+          # Inputs-count ignore is a compat concession — the repo has one
+          # legacy workflow_dispatch with 11 inputs that works in practice.
+          # Track cleanup separately; do not block new-workflow lint on it.
           actionlint \
             -ignore 'shellcheck reported issue in this script: SC[0-9]+:(style|info|warning)' \
             -ignore 'maximum number of inputs for "workflow_dispatch" event is 10'
