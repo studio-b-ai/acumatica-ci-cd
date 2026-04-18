@@ -408,6 +408,19 @@ namespace StudioB.Containers
                         // See docs/AAR-2026-04-17-custproject-nre-transient.md.
                         try { CleanupOrphanDRPGIRows(conn, companyId); }
                         catch (Exception ex) { WriteLog(string.Format("[AesthetikContainers] DRP orphan cleanup failed CID={0}: {1}", companyId, ex.Message)); }
+
+                        // ── GI role access auto-grant (2026-04-17 hotfix) ──
+                        // Self-healing safety net for GIs whose <RolesInGraph>
+                        // blocks were skipped by Acumatica's "already applied"
+                        // tracking on <GenericInquiryScreen> elements. Symptom:
+                        // GI lands in /OData/{Tenant}/ catalog but probe returns
+                        // 403 because no RoleAccess rows exist for its screen ID.
+                        // PR #462 hit this on 2 of 12 DRP GIs. SOAP SM208000 cannot
+                        // fix this (publishToUI button stays disabled — see memory
+                        // feedback_gi-role-access-fix-soap-doesnt-work.md).
+                        // Idempotent INSERT-only via NOT EXISTS. Runs every publish.
+                        try { EnsureGIRoleAccess(conn, companyId); }
+                        catch (Exception ex) { WriteLog(string.Format("[AesthetikContainers] GI role grant failed CID={0}: {1}", companyId, ex.Message)); }
                     }
                 }
 
@@ -1085,6 +1098,167 @@ namespace StudioB.Containers
                     WriteLog(string.Format("        deleted {0} from {1} for {2}", n, label, s.Key));
                 return n;
             }
+        }
+
+        // ── EnsureGIRoleAccess ───────────────────────────────────────────────
+        //
+        // Auto-grants role access to GI screens whose <RolesInGraph> blocks
+        // were skipped by Acumatica's "already applied" tracking on
+        // <GenericInquiryScreen> elements. The skip causes the GI to land
+        // in the /OData/{Tenant}/ catalog (publish engine processes the
+        // GIDesign block) but with no rows in the RoleAccess table — so
+        // OData probes return HTTP 403.
+        //
+        // Source GI for the copy: SB401080 = DRP_VelocityHistory. Confirmed
+        // working post-PR #462. Same package, same publish path, same
+        // tenant scope, so its RoleAccess rows are the canonical pattern
+        // for "any role that can see DRP GIs".
+        //
+        // Mechanics: per (CompanyID, Rolename) row that exists for the
+        // source screen, INSERT a matching row for each target screen if
+        // none already exists. NOT EXISTS guard makes it idempotent and
+        // safe to run on every publish.
+        //
+        // Adding new stuck-at-403 GIs: append the screen ID to
+        // GI_SCREENS_REQUIRING_GRANT below. No other changes needed.
+        //
+        // Why this is permanent (vs. one-shot DesignID bump): runs on
+        // EVERY publish. Even if Acumatica's tracking glitches again on
+        // a future deploy, the next publish re-grants. Drift can't
+        // accumulate.
+        //
+        // Why not SOAP SM208000: publishToUI button stays disabled
+        // because the screen-based SOAP API can't load a GI record into
+        // the Designs view (key navigation is ignored, screen returns the
+        // full paginated list regardless). See memory file
+        // feedback_gi-role-access-fix-soap-doesnt-work.md for the full
+        // investigation (sandbox 2026-04-17).
+        //
+        // Why INSERT-only (no UPDATE): validate-project.py bans UPDATE
+        // on tables outside SAFE_UPDATE_TABLES (just SiteMap). INSERT is
+        // additive and safe — package rollback re-publishes the prior
+        // package whose plugin doesn't grant, but the existing rows stay
+        // valid (Rights=4 from a previously-correct grant doesn't suddenly
+        // break). For the initial fix this is sufficient: there are no
+        // pre-existing RoleAccess rows for these screens, so INSERT
+        // creates the missing rows from a clean slate.
+        private static readonly string[] GI_SCREENS_REQUIRING_GRANT = new[]
+        {
+            "SB401120", // DRP_ItemWarehouseSettings — stuck after PR #462
+            "SB401130", // InventoryQuantityDetail   — stuck after PR #462
+        };
+
+        private const string GI_GRANT_SOURCE_SCREEN = "SB401080"; // DRP_VelocityHistory
+
+        private void EnsureGIRoleAccess(SqlConnection conn, int companyId)
+        {
+            const string systemUserId = "B5344897-037E-4D58-B5C3-1BDFD0F47BF4";
+            const string customizationScreenId = "SM208000";
+
+            // Acumatica's screen-role mapping table is RolesInGraph (not
+            // RoleAccess as one might assume from older docs). Schema
+            // discovered via INFORMATION_SCHEMA dump on 2026-04-17:
+            //   CompanyID, ScreenID, Rolename, ApplicationName, Accessrights,
+            //   CompanyMask, CreatedByID, CreatedByScreenID, CreatedDateTime,
+            //   LastModifiedByID, LastModifiedByScreenID, LastModifiedDateTime
+            //
+            // Note the column names: ScreenID (not Form), Accessrights
+            // (lowercase r, not Rights). Maps directly to the
+            // <RolesInGraph Rolename="*" ScreenID="..." Accessrights="4" />
+            // XML element from project.xml — the publish engine writes to
+            // this same table when the XML block is processed; this method
+            // is the safety net for when that processing gets skipped by
+            // the "already applied" tracking.
+            //
+            // CompanyMask is an Acumatica-specific binary mask of which
+            // companies the row applies to. Copy it verbatim from the
+            // source row to preserve multi-tenant scope.
+
+            // Pre-check: confirm the source has rows for this company. If
+            // SB401080 itself has no RolesInGraph rows here (e.g. brand-new
+            // tenant before its first DRP publish), skip with a log line.
+            // Next publish will catch it.
+            int sourceRowCount;
+            using (var cmd = new SqlCommand(
+                "SELECT COUNT(*) FROM RolesInGraph WHERE CompanyID = @cid AND ScreenID = @src", conn))
+            {
+                cmd.Parameters.AddWithValue("@cid", companyId);
+                cmd.Parameters.AddWithValue("@src", GI_GRANT_SOURCE_SCREEN);
+                sourceRowCount = Convert.ToInt32(cmd.ExecuteScalar());
+            }
+
+            if (sourceRowCount == 0)
+            {
+                WriteLog(string.Format(
+                    "[AesthetikContainers] EnsureGIRoleAccess CID={0} SKIP — source {1} has no RolesInGraph rows for this company",
+                    companyId, GI_GRANT_SOURCE_SCREEN));
+                return;
+            }
+
+            const string sql = @"
+                INSERT INTO RolesInGraph (
+                    CompanyID, ScreenID, Rolename, ApplicationName, Accessrights, CompanyMask,
+                    CreatedByID, CreatedByScreenID, CreatedDateTime,
+                    LastModifiedByID, LastModifiedByScreenID, LastModifiedDateTime
+                )
+                SELECT
+                    src.CompanyID, @target, src.Rolename, src.ApplicationName, src.Accessrights, src.CompanyMask,
+                    @user, @screen, GETUTCDATE(),
+                    @user, @screen, GETUTCDATE()
+                FROM RolesInGraph src
+                WHERE src.CompanyID = @cid
+                  AND src.ScreenID = @source
+                  AND NOT EXISTS (
+                      SELECT 1 FROM RolesInGraph existing
+                      WHERE existing.CompanyID = src.CompanyID
+                        AND existing.Rolename = src.Rolename
+                        AND existing.ApplicationName = src.ApplicationName
+                        AND existing.ScreenID = @target
+                  );";
+
+            int totalGranted = 0;
+            foreach (var targetScreen in GI_SCREENS_REQUIRING_GRANT)
+            {
+                using (var cmd = new SqlCommand(sql, conn))
+                {
+                    cmd.Parameters.AddWithValue("@cid", companyId);
+                    cmd.Parameters.AddWithValue("@source", GI_GRANT_SOURCE_SCREEN);
+                    cmd.Parameters.AddWithValue("@target", targetScreen);
+                    cmd.Parameters.AddWithValue("@user", new Guid(systemUserId));
+                    cmd.Parameters.AddWithValue("@screen", customizationScreenId);
+                    int n = cmd.ExecuteNonQuery();
+                    totalGranted += n;
+                    if (n > 0)
+                        WriteLog(string.Format(
+                            "[AesthetikContainers] EnsureGIRoleAccess CID={0} {1} ← {2}: {3} role grant(s) inserted",
+                            companyId, targetScreen, GI_GRANT_SOURCE_SCREEN, n));
+                }
+            }
+
+            // Operational visibility — log row counts per target so we can
+            // monitor for drift in future publishes (count should stay >0
+            // once the initial INSERT lands; if a future Acumatica upgrade
+            // wipes RolesInGraph, the next publish re-grants and the log
+            // shows the recovery.
+            using (var cmd = new SqlCommand(
+                "SELECT ScreenID, COUNT(*) FROM RolesInGraph " +
+                "WHERE CompanyID = @cid AND ScreenID IN (@src, 'SB401120', 'SB401130') " +
+                "GROUP BY ScreenID ORDER BY ScreenID", conn))
+            {
+                cmd.Parameters.AddWithValue("@cid", companyId);
+                cmd.Parameters.AddWithValue("@src", GI_GRANT_SOURCE_SCREEN);
+                using (var rdr = cmd.ExecuteReader())
+                {
+                    while (rdr.Read())
+                        WriteLog(string.Format(
+                            "[AesthetikContainers]   RolesInGraph CID={0} {1}: {2} row(s)",
+                            companyId, rdr.GetString(0), rdr.GetInt32(1)));
+                }
+            }
+
+            WriteLog(string.Format(
+                "[AesthetikContainers] EnsureGIRoleAccess CID={0} done — {1} target screen(s), {2} new grant(s) inserted this publish",
+                companyId, GI_SCREENS_REQUIRING_GRANT.Length, totalGranted));
         }
 
     }
