@@ -199,6 +199,7 @@ namespace Aesthetik.WMS
             foreach (PXResult<INLotSerialStatus> row in allSerials)
             {
                 var status = (INLotSerialStatus)row;
+                // REVIEWED: extension-safe — row from SelectFrom<INLotSerialStatus>.View.Select(Base), cache-init
                 var ext = status.GetExtension<INLotSerialStatusExt>();
 
                 if (ext == null) continue;
@@ -324,6 +325,7 @@ namespace Aesthetik.WMS
         private OptimizerWeights LoadWeights()
         {
             var setup = SelectFrom<INSetup>.View.ReadOnly.SelectSingleBound(Base, null);
+            // REVIEWED: extension-safe — INSetup singleton via SelectSingleBound, cache-init
             var ext = ((INSetup)setup)?.GetExtension<INSetupExt>();
             return OptimizerWeights.FromSetup(ext);
         }

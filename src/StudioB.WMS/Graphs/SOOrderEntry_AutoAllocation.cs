@@ -160,6 +160,7 @@ namespace HeritageFabrics.SO
 
                 // Use UsrRequestedQty if already set (re-save scenario),
                 // otherwise use current OrderQty (first allocation)
+                // REVIEWED: extension-safe — line from Base.Transactions.Select(), cache-init
                 var lineExt = line.GetExtension<SOLineExt>();
                 decimal requestedQty;
 
