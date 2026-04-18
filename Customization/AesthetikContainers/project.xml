@@ -918,8 +918,8 @@ public partial class Page_SB_SB302040 : PXPage
 </layout>
     <data>
       <GIDesign>
-        <row DesignID="bf82d1d5-a528-42c8-87a0-26f6f39fa1f1" Name="ArrivingThisWeek" ScreenID="SB401050" FilterColCount="3" PageSize="0" ExportTop="0" NewRecordCreationEnabled="0" MassDeleteEnabled="0" AutoConfirmDelete="0" MassRecordsUpdateEnabled="0" MassActionsOnRecordsEnabled="0" ExposeViaOData="1" ExposeViaMobile="0">
-          <GITable Alias="Container" Name="StudioB.Containers.UsrContainer">
+        <row DesignID="bf82d1d5-a528-42c8-87a0-26f6f39fa1f1" Name="ArrivingThisWeek" FilterColCount="3" PageSize="0" ExportTop="0" PrimaryScreenIDNew="SB401050" NewRecordCreationEnabled="0" MassDeleteEnabled="0" AutoConfirmDelete="0" MassRecordsUpdateEnabled="0" MassActionsOnRecordsEnabled="0" ExposeViaOData="1" ExposeViaMobile="0" ShowDeletedRecords="0" ShowArchivedRecords="0" NotesAndFilesTable="$&lt;None&gt;" MLDetectionEnabled="0" SkipEmptyGroups="0">
+          <GITable Alias="Container" Name="StudioB.Containers.UsrContainer" Type="0">
             <GIResult LineNbr="1" SortOrder="1" IsActive="1" Field="ContainerCD" Width="120" IsVisible="1" DefaultNav="1" QuickFilter="0" FastFilter="1" Caption="Container ID" RowID="dcb58a0e-6c55-4a2e-9dc4-709b5a65a34a" />
             <GIResult LineNbr="2" SortOrder="2" IsActive="1" Field="CarrierCode" Width="100" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Carrier" RowID="ac634aa1-5103-41de-a9b2-244628c0ba2e" />
             <GIResult LineNbr="3" SortOrder="3" IsActive="1" Field="VesselName" Width="140" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Vessel" RowID="836982fe-fd1b-4b37-9446-c8b51870b233" />
@@ -931,8 +931,10 @@ public partial class Page_SB_SB302040 : PXPage
           <GIWhere LineNbr="2" IsActive="1" DataFieldName="Container.Status" Condition="NE" IsExpression="0" Value1="CANCELLED" Operation="A" />
           <GISort LineNbr="1" IsActive="1" DataFieldName="Container.ETA" SortOrder="A" />
           <SiteMap linkname="toDesignById">
-            <row Position="1130" Title="Arriving This Week" Url="~/GenericInquiry/GenericInquiry.aspx?id=bf82d1d5-a528-42c8-87a0-26f6f39fa1f1" Expanded="0" IsFolder="0" ScreenID="SB401050" NodeID="0219aa45-db89-4bcb-a8c2-717ab4b8f698" ParentID="9c89e3db-7c47-43c0-8554-5d2c9f2c0e87">
-              <MUIScreen IsPortal="0" WorkspaceID="95191203-a0b8-4fc0-8b20-4efe831708e9" Order="2060" SubcategoryID="acf1bb34-2055-411e-88be-d840efcc7424" />
+            <row Title="Arriving This Week" Url="~/genericinquiry/genericinquiry.aspx?id=bf82d1d5-a528-42c8-87a0-26f6f39fa1f1" ScreenID="SB401050" NodeID="0219aa45-db89-4bcb-a8c2-717ab4b8f698" ParentID="00000000-0000-0000-0000-000000000000" SelectedUI="E">
+              <MUIScreen IsPortal="0" WorkspaceID="95191203-a0b8-4fc0-8b20-4efe831708e9" Order="2060" SubcategoryID="acf1bb34-2055-411e-88be-d840efcc7424">
+                <MUIPinnedScreen IsPortal="0" Username="" IsPinned="1" />
+              </MUIScreen>
             </row>
           </SiteMap>
 
@@ -1075,8 +1077,8 @@ public partial class Page_SB_SB302040 : PXPage
 </layout>
     <data>
       <GIDesign>
-        <row DesignID="9b530442-4f3e-42d4-b23c-15ec0af087ab" Name="ContainerEvents" ScreenID="SB401020" FilterColCount="3" PageSize="0" ExportTop="0" NewRecordCreationEnabled="0" MassDeleteEnabled="0" AutoConfirmDelete="0" MassRecordsUpdateEnabled="0" MassActionsOnRecordsEnabled="0" ExposeViaOData="1" ExposeViaMobile="0">
-          <GITable Alias="Event" Name="StudioB.Containers.UsrContainerEvent">
+        <row DesignID="9b530442-4f3e-42d4-b23c-15ec0af087ab" Name="ContainerEvents" FilterColCount="3" PageSize="0" ExportTop="0" PrimaryScreenIDNew="SB401020" NewRecordCreationEnabled="0" MassDeleteEnabled="0" AutoConfirmDelete="0" MassRecordsUpdateEnabled="0" MassActionsOnRecordsEnabled="0" ExposeViaOData="1" ExposeViaMobile="0" ShowDeletedRecords="0" ShowArchivedRecords="0" NotesAndFilesTable="$&lt;None&gt;" MLDetectionEnabled="0" SkipEmptyGroups="0">
+          <GITable Alias="Event" Name="StudioB.Containers.UsrContainerEvent" Type="0">
             <GIRelation LineNbr="1" ChildTable="Container" IsActive="1" JoinType="L">
               <GIOn LineNbr="1" ParentField="ContainerID" Condition="E " ChildField="ContainerID" Operation="A" />
             </GIRelation>
@@ -1087,7 +1089,7 @@ public partial class Page_SB_SB302040 : PXPage
             <GIResult LineNbr="5" SortOrder="5" IsActive="1" Field="VesselName" Width="140" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Vessel" RowID="aeb136c0-7248-45c6-a451-b50a3c70767e" />
             <GIResult LineNbr="6" SortOrder="6" IsActive="1" Field="Description" Width="220" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Description" RowID="47dca628-367d-4f0f-952b-aeedd6401425" />
           </GITable>
-          <GITable Alias="Container" Name="StudioB.Containers.UsrContainer">
+          <GITable Alias="Container" Name="StudioB.Containers.UsrContainer" Type="0">
             <GIResult LineNbr="7" SortOrder="7" IsActive="1" Field="ContainerCD" Width="120" IsVisible="1" DefaultNav="1" QuickFilter="0" FastFilter="1" Caption="Container ID" RowID="9896fa4d-1d9c-40dc-9b8f-495dc0e7cf99" />
           </GITable>
           <GIFilter LineNbr="1" Name="ContainerFilter" DataFieldName="Container.ContainerCD" IsActive="1" />
@@ -1096,8 +1098,10 @@ public partial class Page_SB_SB302040 : PXPage
           <GIWhere LineNbr="2" IsActive="1" DataFieldName="Event.NormalizedEventCode" Condition="E " IsExpression="0" Value1="=[EventCodeFilter]" Operation="A" />
           <GISort LineNbr="1" IsActive="1" DataFieldName="Event.EventDateTime" SortOrder="D" />
           <SiteMap linkname="toDesignById">
-            <row Position="1110" Title="Container Events" Url="~/GenericInquiry/GenericInquiry.aspx?id=9b530442-4f3e-42d4-b23c-15ec0af087ab" Expanded="0" IsFolder="0" ScreenID="SB401020" NodeID="c6810a45-84db-4720-bec4-b0e4cd012a12" ParentID="9c89e3db-7c47-43c0-8554-5d2c9f2c0e87">
-              <MUIScreen IsPortal="0" WorkspaceID="95191203-a0b8-4fc0-8b20-4efe831708e9" Order="2040" SubcategoryID="acf1bb34-2055-411e-88be-d840efcc7424" />
+            <row Title="Container Events" Url="~/genericinquiry/genericinquiry.aspx?id=9b530442-4f3e-42d4-b23c-15ec0af087ab" ScreenID="SB401020" NodeID="c6810a45-84db-4720-bec4-b0e4cd012a12" ParentID="00000000-0000-0000-0000-000000000000" SelectedUI="E">
+              <MUIScreen IsPortal="0" WorkspaceID="95191203-a0b8-4fc0-8b20-4efe831708e9" Order="2040" SubcategoryID="acf1bb34-2055-411e-88be-d840efcc7424">
+                <MUIPinnedScreen IsPortal="0" Username="" IsPinned="1" />
+              </MUIScreen>
             </row>
           </SiteMap>
 
@@ -1240,8 +1244,8 @@ public partial class Page_SB_SB302040 : PXPage
 </layout>
     <data>
       <GIDesign>
-        <row DesignID="6365a9eb-cfa6-4c6a-92f9-65defed34c17" Name="ContainersNeedingAttention" ScreenID="SB401060" FilterColCount="3" PageSize="0" ExportTop="0" NewRecordCreationEnabled="0" MassDeleteEnabled="0" AutoConfirmDelete="0" MassRecordsUpdateEnabled="0" MassActionsOnRecordsEnabled="0" ExposeViaOData="1" ExposeViaMobile="0">
-          <GITable Alias="Container" Name="StudioB.Containers.UsrContainer">
+        <row DesignID="6365a9eb-cfa6-4c6a-92f9-65defed34c17" Name="ContainersNeedingAttention" FilterColCount="3" PageSize="0" ExportTop="0" PrimaryScreenIDNew="SB401060" NewRecordCreationEnabled="0" MassDeleteEnabled="0" AutoConfirmDelete="0" MassRecordsUpdateEnabled="0" MassActionsOnRecordsEnabled="0" ExposeViaOData="1" ExposeViaMobile="0" ShowDeletedRecords="0" ShowArchivedRecords="0" NotesAndFilesTable="$&lt;None&gt;" MLDetectionEnabled="0" SkipEmptyGroups="0">
+          <GITable Alias="Container" Name="StudioB.Containers.UsrContainer" Type="0">
             <GIResult LineNbr="1" SortOrder="1" IsActive="1" Field="ContainerCD" Width="120" IsVisible="1" DefaultNav="1" QuickFilter="0" FastFilter="1" Caption="Container ID" RowID="9c2d8980-f518-4511-9e01-ceda25cce9d1" />
             <GIResult LineNbr="2" SortOrder="2" IsActive="1" Field="Status" Width="100" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Status" RowID="b003082d-e8fa-4217-ac3a-3188cc5c66c6" />
             <GIResult LineNbr="3" SortOrder="3" IsActive="1" Field="CarrierCode" Width="100" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Carrier" RowID="28ccb30c-5a5d-45c8-b41d-83b6d823d0c0" />
@@ -1252,8 +1256,10 @@ public partial class Page_SB_SB302040 : PXPage
           <GIWhere LineNbr="1" IsActive="1" DataFieldName="Container.Status" Condition="E " IsExpression="0" Value1="CUSTOMS_HOLD" Operation="A" />
           <GISort LineNbr="1" IsActive="1" DataFieldName="Container.ETA" SortOrder="A" />
           <SiteMap linkname="toDesignById">
-            <row Position="1140" Title="Containers Needing Attention" Url="~/GenericInquiry/GenericInquiry.aspx?id=6365a9eb-cfa6-4c6a-92f9-65defed34c17" Expanded="0" IsFolder="0" ScreenID="SB401060" NodeID="e6b1a8e3-8af8-444f-9dd8-2779396b7902" ParentID="9c89e3db-7c47-43c0-8554-5d2c9f2c0e87">
-              <MUIScreen IsPortal="0" WorkspaceID="95191203-a0b8-4fc0-8b20-4efe831708e9" Order="2070" SubcategoryID="acf1bb34-2055-411e-88be-d840efcc7424" />
+            <row Title="Containers Needing Attention" Url="~/genericinquiry/genericinquiry.aspx?id=6365a9eb-cfa6-4c6a-92f9-65defed34c17" ScreenID="SB401060" NodeID="e6b1a8e3-8af8-444f-9dd8-2779396b7902" ParentID="00000000-0000-0000-0000-000000000000" SelectedUI="E">
+              <MUIScreen IsPortal="0" WorkspaceID="95191203-a0b8-4fc0-8b20-4efe831708e9" Order="2070" SubcategoryID="acf1bb34-2055-411e-88be-d840efcc7424">
+                <MUIPinnedScreen IsPortal="0" Username="" IsPinned="1" />
+              </MUIScreen>
             </row>
           </SiteMap>
 
@@ -1396,8 +1402,8 @@ public partial class Page_SB_SB302040 : PXPage
 </layout>
     <data>
       <GIDesign>
-        <row DesignID="b7e3a1d4-92f6-4c8a-b5d1-1a2b3c4d5e6f" Name="InventoryQuantityDetail" ScreenID="GI007000" FilterColCount="3" PageSize="0" ExportTop="0" NewRecordCreationEnabled="0" MassDeleteEnabled="0" AutoConfirmDelete="0" MassRecordsUpdateEnabled="0" MassActionsOnRecordsEnabled="0" ExposeViaOData="1" ExposeViaMobile="0">
-          <GITable Alias="InventoryItem" Name="PX.Objects.IN.InventoryItem">
+        <row DesignID="b7e3a1d4-92f6-4c8a-b5d1-1a2b3c4d5e6f" Name="InventoryQuantityDetail" FilterColCount="3" PageSize="0" ExportTop="0" PrimaryScreenIDNew="GI007000" NewRecordCreationEnabled="0" MassDeleteEnabled="0" AutoConfirmDelete="0" MassRecordsUpdateEnabled="0" MassActionsOnRecordsEnabled="0" ExposeViaOData="1" ExposeViaMobile="0" ShowDeletedRecords="0" ShowArchivedRecords="0" NotesAndFilesTable="$&lt;None&gt;" MLDetectionEnabled="0" SkipEmptyGroups="0">
+          <GITable Alias="InventoryItem" Name="PX.Objects.IN.InventoryItem" Type="0">
             <GIRelation LineNbr="1" ChildTable="INSiteStatus" IsActive="1" JoinType="L">
               <GIOn LineNbr="1" ParentField="InventoryID" Condition="E " ChildField="InventoryID" Operation="A" />
             </GIRelation>
@@ -1418,20 +1424,20 @@ public partial class Page_SB_SB302040 : PXPage
             <GIResult LineNbr="6" SortOrder="6" IsActive="1" Field="ItemStatus" Width="80" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Status" RowID="a1000001-0000-0000-0000-000000000006" />
             <GIResult LineNbr="10" SortOrder="10" IsActive="1" Field="CountryOfOrigin" Width="100" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Country of Origin" RowID="a1000001-0000-0000-0000-000000000010" />
           </GITable>
-          <GITable Alias="INSiteStatus" Name="PX.Objects.IN.INSiteStatus">
+          <GITable Alias="INSiteStatus" Name="PX.Objects.IN.INSiteStatus" Type="0">
             <GIResult LineNbr="4" SortOrder="4" IsActive="1" Field="QtyAvail" Width="100" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Qty Available" RowID="a1000001-0000-0000-0000-000000000004" />
             <GIResult LineNbr="5" SortOrder="5" IsActive="1" Field="QtyOnHand" Width="100" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Qty On Hand" RowID="a1000001-0000-0000-0000-000000000005" />
           </GITable>
-          <GITable Alias="TemplateItem" Name="PX.Objects.IN.InventoryItem">
+          <GITable Alias="TemplateItem" Name="PX.Objects.IN.InventoryItem" Type="0">
             <GIResult LineNbr="3" SortOrder="3" IsActive="1" Field="Descr" Width="180" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Template Description" RowID="a1000001-0000-0000-0000-000000000003" />
           </GITable>
-          <GITable Alias="POVendorInventory" Name="PX.Objects.PO.POVendorInventory">
+          <GITable Alias="POVendorInventory" Name="PX.Objects.PO.POVendorInventory" Type="0">
             <GIResult LineNbr="7" SortOrder="7" IsActive="1" Field="VendorID" Width="100" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Vendor" RowID="a1000001-0000-0000-0000-000000000007" />
           </GITable>
-          <GITable Alias="WMSTLVendorLeadTimes" Name="WMSTLVendorLeadTimes">
+          <GITable Alias="WMSTLVendorLeadTimes" Name="WMSTLVendorLeadTimes" Type="0">
             <GIResult LineNbr="8" SortOrder="8" IsActive="1" Field="LeadTimeDays" Width="80" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Lead Time (Days)" RowID="a1000001-0000-0000-0000-000000000008" />
           </GITable>
-          <GITable Alias="POLine" Name="PX.Objects.PO.POLine">
+          <GITable Alias="POLine" Name="PX.Objects.PO.POLine" Type="0">
             <GIRelation LineNbr="6" ChildTable="POOrder" IsActive="1" JoinType="L">
               <GIOn LineNbr="1" ParentField="OrderType" Condition="E " ChildField="OrderType" Operation="A" />
               <GIOn LineNbr="2" ParentField="OrderNbr" Condition="E " ChildField="OrderNbr" Operation="A" />
@@ -1444,15 +1450,15 @@ public partial class Page_SB_SB302040 : PXPage
             <GIResult LineNbr="12" SortOrder="12" IsActive="1" Field="OpenQty" Width="80" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Open Qty on PO" RowID="a1000001-0000-0000-0000-000000000012" />
             <GIResult LineNbr="13" SortOrder="13" IsActive="1" Field="UsrExpArrivalDate" Width="100" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Expected Arrival" RowID="a1000001-0000-0000-0000-000000000013" />
           </GITable>
-          <GITable Alias="POOrder" Name="PX.Objects.PO.POOrder">
+          <GITable Alias="POOrder" Name="PX.Objects.PO.POOrder" Type="0">
             <GIResult LineNbr="11" SortOrder="11" IsActive="1" Field="OrderNbr" Width="100" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="PO Number" RowID="a1000001-0000-0000-0000-000000000011" />
           </GITable>
-          <GITable Alias="UsrContainerPOLink" Name="StudioB.Containers.UsrContainerPOLink">
+          <GITable Alias="UsrContainerPOLink" Name="StudioB.Containers.UsrContainerPOLink" Type="0">
             <GIRelation LineNbr="8" ChildTable="UsrContainer" IsActive="1" JoinType="L">
               <GIOn LineNbr="1" ParentField="ContainerID" Condition="E " ChildField="ContainerID" Operation="A" />
             </GIRelation>
           </GITable>
-          <GITable Alias="UsrContainer" Name="StudioB.Containers.UsrContainer">
+          <GITable Alias="UsrContainer" Name="StudioB.Containers.UsrContainer" Type="0">
             <GIResult LineNbr="14" SortOrder="14" IsActive="1" Field="ContainerCD" Width="100" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Container Number" RowID="a1000001-0000-0000-0000-000000000014" />
           </GITable>
           <GIWhere LineNbr="1" OpenBrackets="1" IsActive="1" DataFieldName="INSiteStatus.SiteID" Condition="E " IsExpression="0" Value1="99" Operation="O" />
@@ -1467,8 +1473,10 @@ public partial class Page_SB_SB302040 : PXPage
           <GIWhere LineNbr="10" CloseBrackets="1" IsActive="1" DataFieldName="POOrder.Status" Condition="NU" IsExpression="0" Operation="A" />
           <GISort LineNbr="1" IsActive="1" DataFieldName="InventoryItem.InventoryCD" SortOrder="A" />
           <SiteMap linkname="toDesignById">
-            <row Position="1100" Title="Inventory Quantity Detail" Url="~/GenericInquiry/GenericInquiry.aspx?id=b7e3a1d4-92f6-4c8a-b5d1-1a2b3c4d5e6f" Expanded="0" IsFolder="0" ScreenID="GI007000" NodeID="c8f2d3e4-a1b2-4567-89ab-cdef01234567" ParentID="d9e3f4a5-b2c3-4678-9abc-def012345678">
-              <MUIScreen IsPortal="0" WorkspaceID="e0f4a5b6-c3d4-4789-abcd-ef0123456789" Order="2030" SubcategoryID="f1a5b6c7-d4e5-489a-bcde-f01234567890" />
+            <row Title="Inventory Quantity Detail" Url="~/genericinquiry/genericinquiry.aspx?id=b7e3a1d4-92f6-4c8a-b5d1-1a2b3c4d5e6f" ScreenID="GI007000" NodeID="c8f2d3e4-a1b2-4567-89ab-cdef01234567" ParentID="00000000-0000-0000-0000-000000000000" SelectedUI="E">
+              <MUIScreen IsPortal="0" WorkspaceID="e0f4a5b6-c3d4-4789-abcd-ef0123456789" Order="2030" SubcategoryID="f1a5b6c7-d4e5-489a-bcde-f01234567890">
+                <MUIPinnedScreen IsPortal="0" Username="" IsPinned="1" />
+              </MUIScreen>
             </row>
           </SiteMap>
 
@@ -1787,8 +1795,8 @@ public partial class Page_SB_SB302040 : PXPage
 </layout>
     <data>
       <GIDesign>
-        <row DesignID="ca2a6f08-0ecd-499f-993f-b0dbafde5233" Name="POContainerLines" ScreenID="SB401040" FilterColCount="3" PageSize="0" ExportTop="0" NewRecordCreationEnabled="0" MassDeleteEnabled="0" AutoConfirmDelete="0" MassRecordsUpdateEnabled="0" MassActionsOnRecordsEnabled="0" ExposeViaOData="1" ExposeViaMobile="0">
-          <GITable Alias="Link" Name="StudioB.Containers.UsrContainerPOLink">
+        <row DesignID="ca2a6f08-0ecd-499f-993f-b0dbafde5233" Name="POContainerLines" FilterColCount="3" PageSize="0" ExportTop="0" PrimaryScreenIDNew="SB401040" NewRecordCreationEnabled="0" MassDeleteEnabled="0" AutoConfirmDelete="0" MassRecordsUpdateEnabled="0" MassActionsOnRecordsEnabled="0" ExposeViaOData="1" ExposeViaMobile="0" ShowDeletedRecords="0" ShowArchivedRecords="0" NotesAndFilesTable="$&lt;None&gt;" MLDetectionEnabled="0" SkipEmptyGroups="0">
+          <GITable Alias="Link" Name="StudioB.Containers.UsrContainerPOLink" Type="0">
             <GIRelation LineNbr="1" ChildTable="Container" IsActive="1" JoinType="L">
               <GIOn LineNbr="1" ParentField="ContainerID" Condition="E " ChildField="ContainerID" Operation="A" />
             </GIRelation>
@@ -1804,14 +1812,14 @@ public partial class Page_SB_SB302040 : PXPage
             <GIResult LineNbr="3" SortOrder="3" IsActive="1" Field="OrderNbr" Width="100" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="PO Number" RowID="ae206494-e054-4df5-b5c2-b06e46de73f2" />
             <GIResult LineNbr="4" SortOrder="4" IsActive="1" Field="LineNbr" Width="60" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Line Nbr" RowID="a50703a2-dbef-449a-861d-5661baef9f0c" />
           </GITable>
-          <GITable Alias="Container" Name="StudioB.Containers.UsrContainer">
+          <GITable Alias="Container" Name="StudioB.Containers.UsrContainer" Type="0">
             <GIResult LineNbr="1" SortOrder="1" IsActive="1" Field="ContainerCD" Width="120" IsVisible="1" DefaultNav="1" QuickFilter="0" FastFilter="1" Caption="Container ID" RowID="12f5907a-1330-4f0f-82b7-b3a07a06747e" />
             <GIResult LineNbr="2" SortOrder="2" IsActive="1" Field="Status" Width="100" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Status" RowID="62580c08-e9e1-444e-933a-b30418b9a399" />
             <GIResult LineNbr="8" SortOrder="8" IsActive="1" Field="ETA" Width="100" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="ETA" RowID="f9d03a3b-472e-46fc-bbac-2709e7742195" />
           </GITable>
-          <GITable Alias="PO" Name="PX.Objects.PO.POOrder">
+          <GITable Alias="PO" Name="PX.Objects.PO.POOrder" Type="0">
           </GITable>
-          <GITable Alias="Line" Name="PX.Objects.PO.POLine">
+          <GITable Alias="Line" Name="PX.Objects.PO.POLine" Type="0">
             <GIResult LineNbr="5" SortOrder="5" IsActive="1" Field="InventoryID" Width="100" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Inventory ID" RowID="6665196b-7261-4f97-8c28-a697fb877448" />
             <GIResult LineNbr="6" SortOrder="6" IsActive="1" Field="OrderQty" Width="80" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Order Qty" RowID="906e6e7b-0924-451b-a45d-37c6d97247b3" />
             <GIResult LineNbr="7" SortOrder="7" IsActive="1" Field="UsrExpArrivalDate" Width="100" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Expected Arrival" RowID="d0940037-6efc-423b-8aa8-67b4afea9f98" />
@@ -1819,8 +1827,10 @@ public partial class Page_SB_SB302040 : PXPage
           <GISort LineNbr="1" IsActive="1" DataFieldName="Container.ETA" SortOrder="D" />
           <GISort LineNbr="2" IsActive="1" DataFieldName="Link.OrderNbr" SortOrder="A" />
           <SiteMap linkname="toDesignById">
-            <row Position="1120" Title="PO Container Lines" Url="~/GenericInquiry/GenericInquiry.aspx?id=ca2a6f08-0ecd-499f-993f-b0dbafde5233" Expanded="0" IsFolder="0" ScreenID="SB401040" NodeID="099aa852-7bd9-4921-8f77-c63e5115da48" ParentID="9c89e3db-7c47-43c0-8554-5d2c9f2c0e87">
-              <MUIScreen IsPortal="0" WorkspaceID="95191203-a0b8-4fc0-8b20-4efe831708e9" Order="2050" SubcategoryID="acf1bb34-2055-411e-88be-d840efcc7424" />
+            <row Title="PO Container Lines" Url="~/genericinquiry/genericinquiry.aspx?id=ca2a6f08-0ecd-499f-993f-b0dbafde5233" ScreenID="SB401040" NodeID="099aa852-7bd9-4921-8f77-c63e5115da48" ParentID="00000000-0000-0000-0000-000000000000" SelectedUI="E">
+              <MUIScreen IsPortal="0" WorkspaceID="95191203-a0b8-4fc0-8b20-4efe831708e9" Order="2050" SubcategoryID="acf1bb34-2055-411e-88be-d840efcc7424">
+                <MUIPinnedScreen IsPortal="0" Username="" IsPinned="1" />
+              </MUIScreen>
             </row>
           </SiteMap>
 
@@ -1963,8 +1973,8 @@ public partial class Page_SB_SB302040 : PXPage
 </layout>
     <data>
       <GIDesign>
-        <row DesignID="c51f9373-0b67-4955-9fce-ea35570bb2d0" Name="POContainers" ScreenID="SB401000" FilterColCount="3" PageSize="0" ExportTop="0" NewRecordCreationEnabled="0" MassDeleteEnabled="0" AutoConfirmDelete="0" MassRecordsUpdateEnabled="0" MassActionsOnRecordsEnabled="0" ExposeViaOData="1" ExposeViaMobile="0">
-          <GITable Alias="Container" Name="StudioB.Containers.UsrContainer">
+        <row DesignID="c51f9373-0b67-4955-9fce-ea35570bb2d0" Name="POContainers" FilterColCount="3" PageSize="0" ExportTop="0" PrimaryScreenIDNew="SB401000" NewRecordCreationEnabled="0" MassDeleteEnabled="0" AutoConfirmDelete="0" MassRecordsUpdateEnabled="0" MassActionsOnRecordsEnabled="0" ExposeViaOData="1" ExposeViaMobile="0" ShowDeletedRecords="0" ShowArchivedRecords="0" NotesAndFilesTable="$&lt;None&gt;" MLDetectionEnabled="0" SkipEmptyGroups="0">
+          <GITable Alias="Container" Name="StudioB.Containers.UsrContainer" Type="0">
             <GIRelation LineNbr="1" ChildTable="ContainerPOLink" IsActive="1" JoinType="L">
               <GIOn LineNbr="1" ParentField="ContainerID" Condition="E " ChildField="ContainerID" Operation="A" />
             </GIRelation>
@@ -1981,13 +1991,13 @@ public partial class Page_SB_SB302040 : PXPage
             <GIResult LineNbr="11" SortOrder="11" IsActive="1" Field="ATA" Width="100" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="ATA" RowID="ff74dfb8-aa9a-4de9-931c-7ed1744acc67" />
             <GIResult LineNbr="12" SortOrder="12" IsActive="1" Field="ContainerType" Width="100" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Container Type" RowID="12882732-320c-4d30-b107-91b4cdfe6d06" />
           </GITable>
-          <GITable Alias="ContainerPOLink" Name="StudioB.Containers.UsrContainerPOLink">
+          <GITable Alias="ContainerPOLink" Name="StudioB.Containers.UsrContainerPOLink" Type="0">
             <GIRelation LineNbr="2" ChildTable="PO" IsActive="1" JoinType="L">
               <GIOn LineNbr="1" ParentField="OrderType" Condition="E " ChildField="OrderType" Operation="A" />
               <GIOn LineNbr="2" ParentField="OrderNbr" Condition="E " ChildField="OrderNbr" Operation="A" />
             </GIRelation>
           </GITable>
-          <GITable Alias="PO" Name="PX.Objects.PO.POOrder">
+          <GITable Alias="PO" Name="PX.Objects.PO.POOrder" Type="0">
           </GITable>
           <GIFilter LineNbr="1" Name="StatusFilter" DataFieldName="Container.Status" IsActive="1" />
           <GIFilter LineNbr="2" Name="CarrierFilter" DataFieldName="Container.CarrierCode" IsActive="1" />
@@ -1995,8 +2005,10 @@ public partial class Page_SB_SB302040 : PXPage
           <GIWhere LineNbr="2" IsActive="1" DataFieldName="Container.CarrierCode" Condition="E " IsExpression="0" Value1="=[CarrierFilter]" Operation="A" />
           <GISort LineNbr="1" IsActive="1" DataFieldName="Container.ETA" SortOrder="D" />
           <SiteMap linkname="toDesignById">
-            <row Position="1100" Title="PO Containers" Url="~/GenericInquiry/GenericInquiry.aspx?id=c51f9373-0b67-4955-9fce-ea35570bb2d0" Expanded="0" IsFolder="0" ScreenID="SB401000" NodeID="52efd460-af44-4e6e-b860-68086c95297e" ParentID="9c89e3db-7c47-43c0-8554-5d2c9f2c0e87">
-              <MUIScreen IsPortal="0" WorkspaceID="95191203-a0b8-4fc0-8b20-4efe831708e9" Order="2030" SubcategoryID="acf1bb34-2055-411e-88be-d840efcc7424" />
+            <row Title="PO Containers" Url="~/genericinquiry/genericinquiry.aspx?id=c51f9373-0b67-4955-9fce-ea35570bb2d0" ScreenID="SB401000" NodeID="52efd460-af44-4e6e-b860-68086c95297e" ParentID="00000000-0000-0000-0000-000000000000" SelectedUI="E">
+              <MUIScreen IsPortal="0" WorkspaceID="95191203-a0b8-4fc0-8b20-4efe831708e9" Order="2030" SubcategoryID="acf1bb34-2055-411e-88be-d840efcc7424">
+                <MUIPinnedScreen IsPortal="0" Username="" IsPinned="1" />
+              </MUIScreen>
             </row>
           </SiteMap>
 
@@ -2139,8 +2151,8 @@ public partial class Page_SB_SB302040 : PXPage
 </layout>
     <data>
       <GIDesign>
-        <row DesignID="52ebcf52-7256-47d9-9256-974a33660702" Name="DRP_VelocityHistory" ScreenID="SB401080" FilterColCount="3" PageSize="0" ExportTop="0" NewRecordCreationEnabled="0" MassDeleteEnabled="0" AutoConfirmDelete="0" MassRecordsUpdateEnabled="0" MassActionsOnRecordsEnabled="0" ExposeViaOData="1" ExposeViaMobile="0">
-          <GITable Alias="SOShipLine" Name="PX.Objects.SO.SOShipLine">
+        <row DesignID="52ebcf52-7256-47d9-9256-974a33660702" Name="DRP_VelocityHistory" FilterColCount="3" PageSize="0" ExportTop="0" PrimaryScreenIDNew="SB401080" NewRecordCreationEnabled="0" MassDeleteEnabled="0" AutoConfirmDelete="0" MassRecordsUpdateEnabled="0" MassActionsOnRecordsEnabled="0" ExposeViaOData="1" ExposeViaMobile="0" ShowDeletedRecords="0" ShowArchivedRecords="0" NotesAndFilesTable="$&lt;None&gt;" MLDetectionEnabled="0" SkipEmptyGroups="0">
+          <GITable Alias="SOShipLine" Name="PX.Objects.SO.SOShipLine" Type="0">
             <GIRelation LineNbr="1" ChildTable="SOShipment" IsActive="1" JoinType="L">
               <GIOn LineNbr="1" ParentField="ShipmentNbr" Condition="E " ChildField="ShipmentNbr" Operation="A" />
             </GIRelation>
@@ -2156,18 +2168,20 @@ public partial class Page_SB_SB302040 : PXPage
             <GIResult LineNbr="5" SortOrder="5" IsActive="1" Field="SiteID" Width="60" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Site" RowID="7f7b5991-23b6-4c61-8a6a-3cdec6aac5f6" />
             <GIResult LineNbr="6" SortOrder="6" IsActive="1" Field="UOM" Width="60" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="UOM" RowID="7a7b593d-a702-4a58-9ef2-f56ab8ed493b" />
           </GITable>
-          <GITable Alias="SOShipment" Name="PX.Objects.SO.SOShipment">
+          <GITable Alias="SOShipment" Name="PX.Objects.SO.SOShipment" Type="0">
             <GIResult LineNbr="7" SortOrder="7" IsActive="1" Field="ShipDate" Width="100" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Shipped Date" RowID="84dcef53-9d20-4bb9-a928-f8cccedfc6e6" />
           </GITable>
-          <GITable Alias="SOLine" Name="PX.Objects.SO.SOLine">
+          <GITable Alias="SOLine" Name="PX.Objects.SO.SOLine" Type="0">
             <GIResult LineNbr="8" SortOrder="8" IsActive="1" Field="CustomerID" Width="100" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Customer" RowID="3dc9d2ad-cb01-4bac-b9ca-ea4af2e3b247" />
           </GITable>
           <GIWhere LineNbr="1" IsActive="1" DataFieldName="SOShipment.Confirmed" Condition="E " IsExpression="0" Value1="True" Operation="A" />
           <GIWhere LineNbr="2" IsActive="1" DataFieldName="SOShipment.Operation" Condition="E " IsExpression="0" Value1="I" Operation="A" />
           <GISort LineNbr="1" IsActive="1" DataFieldName="SOShipment.ShipDate" SortOrder="D" />
           <SiteMap linkname="toDesignById">
-            <row Position="1160" Title="DRP Velocity History" Url="~/GenericInquiry/GenericInquiry.aspx?id=52ebcf52-7256-47d9-9256-974a33660702" Expanded="0" IsFolder="0" ScreenID="SB401080" NodeID="8361e7f4-c50a-48fc-ad2a-8527796efa89" ParentID="9c89e3db-7c47-43c0-8554-5d2c9f2c0e87">
-              <MUIScreen IsPortal="0" WorkspaceID="95191203-a0b8-4fc0-8b20-4efe831708e9" Order="2070" SubcategoryID="acf1bb34-2055-411e-88be-d840efcc7424" />
+            <row Title="DRP Velocity History" Url="~/genericinquiry/genericinquiry.aspx?id=52ebcf52-7256-47d9-9256-974a33660702" ScreenID="SB401080" NodeID="8361e7f4-c50a-48fc-ad2a-8527796efa89" ParentID="00000000-0000-0000-0000-000000000000" SelectedUI="E">
+              <MUIScreen IsPortal="0" WorkspaceID="95191203-a0b8-4fc0-8b20-4efe831708e9" Order="2070" SubcategoryID="acf1bb34-2055-411e-88be-d840efcc7424">
+                <MUIPinnedScreen IsPortal="0" Username="" IsPinned="1" />
+              </MUIScreen>
               <RolesInGraph Rolename="Administrator" ApplicationName="/" Accessrights="4" />
               <RolesInGraph Rolename="*" ApplicationName="/" Accessrights="4" />
             </row>
@@ -2312,15 +2326,15 @@ public partial class Page_SB_SB302040 : PXPage
 </layout>
     <data>
       <GIDesign>
-        <row DesignID="8771befb-f3d9-4c14-8898-e9b1f249addc" Name="DRP_OpenSOCommitments" ScreenID="SB401090" FilterColCount="3" PageSize="0" ExportTop="0" NewRecordCreationEnabled="0" MassDeleteEnabled="0" AutoConfirmDelete="0" MassRecordsUpdateEnabled="0" MassActionsOnRecordsEnabled="0" ExposeViaOData="1" ExposeViaMobile="0">
-          <GITable Alias="SOOrder" Name="PX.Objects.SO.SOOrder">
+        <row DesignID="8771befb-f3d9-4c14-8898-e9b1f249addc" Name="DRP_OpenSOCommitments" FilterColCount="3" PageSize="0" ExportTop="0" PrimaryScreenIDNew="SB401090" NewRecordCreationEnabled="0" MassDeleteEnabled="0" AutoConfirmDelete="0" MassRecordsUpdateEnabled="0" MassActionsOnRecordsEnabled="0" ExposeViaOData="1" ExposeViaMobile="0" ShowDeletedRecords="0" ShowArchivedRecords="0" NotesAndFilesTable="$&lt;None&gt;" MLDetectionEnabled="0" SkipEmptyGroups="0">
+          <GITable Alias="SOOrder" Name="PX.Objects.SO.SOOrder" Type="0">
             <GIRelation LineNbr="1" ChildTable="SOLine" IsActive="1" JoinType="I">
               <GIOn LineNbr="1" ParentField="OrderType" Condition="E " ChildField="OrderType" Operation="A" />
               <GIOn LineNbr="2" ParentField="OrderNbr" Condition="E " ChildField="OrderNbr" Operation="A" />
             </GIRelation>
             <GIResult LineNbr="9" SortOrder="9" IsActive="1" Field="CustomerID" Width="100" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Customer" RowID="3ec70280-a871-419e-9525-6a117a502b6f" />
           </GITable>
-          <GITable Alias="SOLine" Name="PX.Objects.SO.SOLine">
+          <GITable Alias="SOLine" Name="PX.Objects.SO.SOLine" Type="0">
             <GIResult LineNbr="1" SortOrder="1" IsActive="1" Field="InventoryID" Width="120" IsVisible="1" DefaultNav="1" QuickFilter="0" FastFilter="1" Caption="Inventory ID" RowID="2d95b7be-2bb2-406f-bddd-2bc9fe95f567" />
             <GIResult LineNbr="2" SortOrder="2" IsActive="1" Field="OrderType" Width="60" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="SO Type" RowID="d120b57e-74b5-4ca2-8567-024fcbafa79e" />
             <GIResult LineNbr="3" SortOrder="3" IsActive="1" Field="OrderNbr" Width="100" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="SO Nbr" RowID="640b01fe-d1a2-4b7d-99a4-5db8f2348195" />
@@ -2339,8 +2353,10 @@ public partial class Page_SB_SB302040 : PXPage
           <GIWhere LineNbr="5" CloseBrackets="1" IsActive="1" DataFieldName="SOLine.OrderType" Condition="E " IsExpression="0" Value1="PC" Operation="A" />
           <GISort LineNbr="1" IsActive="1" DataFieldName="SOLine.RequestDate" SortOrder="A" />
           <SiteMap linkname="toDesignById">
-            <row Position="1170" Title="DRP Open SO Commitments" Url="~/GenericInquiry/GenericInquiry.aspx?id=8771befb-f3d9-4c14-8898-e9b1f249addc" Expanded="0" IsFolder="0" ScreenID="SB401090" NodeID="cd1df10e-11fb-4d1a-b433-16547128bb75" ParentID="9c89e3db-7c47-43c0-8554-5d2c9f2c0e87">
-              <MUIScreen IsPortal="0" WorkspaceID="95191203-a0b8-4fc0-8b20-4efe831708e9" Order="2080" SubcategoryID="acf1bb34-2055-411e-88be-d840efcc7424" />
+            <row Title="DRP Open SO Commitments" Url="~/genericinquiry/genericinquiry.aspx?id=8771befb-f3d9-4c14-8898-e9b1f249addc" ScreenID="SB401090" NodeID="cd1df10e-11fb-4d1a-b433-16547128bb75" ParentID="00000000-0000-0000-0000-000000000000" SelectedUI="E">
+              <MUIScreen IsPortal="0" WorkspaceID="95191203-a0b8-4fc0-8b20-4efe831708e9" Order="2080" SubcategoryID="acf1bb34-2055-411e-88be-d840efcc7424">
+                <MUIPinnedScreen IsPortal="0" Username="" IsPinned="1" />
+              </MUIScreen>
               <RolesInGraph Rolename="Administrator" ApplicationName="/" Accessrights="4" />
               <RolesInGraph Rolename="*" ApplicationName="/" Accessrights="4" />
             </row>
@@ -2485,8 +2501,8 @@ public partial class Page_SB_SB302040 : PXPage
 </layout>
     <data>
       <GIDesign>
-        <row DesignID="b6cadfdd-f802-4456-8a7a-9f52dc271145" Name="DRP_InventoryBySite" ScreenID="SB401110" FilterColCount="3" PageSize="0" ExportTop="0" NewRecordCreationEnabled="0" MassDeleteEnabled="0" AutoConfirmDelete="0" MassRecordsUpdateEnabled="0" MassActionsOnRecordsEnabled="0" ExposeViaOData="1" ExposeViaMobile="0">
-          <GITable Alias="InventoryItem" Name="PX.Objects.IN.InventoryItem">
+        <row DesignID="b6cadfdd-f802-4456-8a7a-9f52dc271145" Name="DRP_InventoryBySite" FilterColCount="3" PageSize="0" ExportTop="0" PrimaryScreenIDNew="SB401110" NewRecordCreationEnabled="0" MassDeleteEnabled="0" AutoConfirmDelete="0" MassRecordsUpdateEnabled="0" MassActionsOnRecordsEnabled="0" ExposeViaOData="1" ExposeViaMobile="0" ShowDeletedRecords="0" ShowArchivedRecords="0" NotesAndFilesTable="$&lt;None&gt;" MLDetectionEnabled="0" SkipEmptyGroups="0">
+          <GITable Alias="InventoryItem" Name="PX.Objects.IN.InventoryItem" Type="0">
             <GIRelation LineNbr="1" ChildTable="INSiteStatus" IsActive="1" JoinType="I">
               <GIOn LineNbr="1" ParentField="InventoryID" Condition="E " ChildField="InventoryID" Operation="A" />
             </GIRelation>
@@ -2495,7 +2511,7 @@ public partial class Page_SB_SB302040 : PXPage
             <GIResult LineNbr="3" SortOrder="3" IsActive="1" Field="ItemStatus" Width="80" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Status" RowID="e24ba55f-863f-45be-a4f9-7ed06db4b49b" />
             <GIResult LineNbr="4" SortOrder="4" IsActive="1" Field="ItemClassID" Width="100" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Item Class" RowID="6b15d7cd-e2f1-4166-a7b4-b2b7c6fd1eed" />
           </GITable>
-          <GITable Alias="INSiteStatus" Name="PX.Objects.IN.INSiteStatus">
+          <GITable Alias="INSiteStatus" Name="PX.Objects.IN.INSiteStatus" Type="0">
             <GIResult LineNbr="5" SortOrder="5" IsActive="1" Field="SiteID" Width="60" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Site" RowID="45834d20-dc12-430f-a291-9c8b3576f12a" />
             <GIResult LineNbr="6" SortOrder="6" IsActive="1" Field="QtyOnHand" Width="100" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Qty On Hand" RowID="169233bb-3c3e-4657-8dcd-cba20887a558" />
             <GIResult LineNbr="7" SortOrder="7" IsActive="1" Field="QtyAvail" Width="100" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Qty Available" RowID="8ce9d3cb-34ed-4983-85e3-00b844b380eb" />
@@ -2508,8 +2524,10 @@ public partial class Page_SB_SB302040 : PXPage
           <GISort LineNbr="1" IsActive="1" DataFieldName="InventoryItem.InventoryCD" SortOrder="A" />
           <GISort LineNbr="2" IsActive="1" DataFieldName="INSiteStatus.SiteID" SortOrder="A" />
           <SiteMap linkname="toDesignById">
-            <row Position="1180" Title="DRP Inventory By Site" Url="~/GenericInquiry/GenericInquiry.aspx?id=b6cadfdd-f802-4456-8a7a-9f52dc271145" Expanded="0" IsFolder="0" ScreenID="SB401110" NodeID="682ab364-373a-4102-ad65-2f97fdd4b95d" ParentID="9c89e3db-7c47-43c0-8554-5d2c9f2c0e87">
-              <MUIScreen IsPortal="0" WorkspaceID="95191203-a0b8-4fc0-8b20-4efe831708e9" Order="2090" SubcategoryID="acf1bb34-2055-411e-88be-d840efcc7424" />
+            <row Title="DRP Inventory By Site" Url="~/genericinquiry/genericinquiry.aspx?id=b6cadfdd-f802-4456-8a7a-9f52dc271145" ScreenID="SB401110" NodeID="682ab364-373a-4102-ad65-2f97fdd4b95d" ParentID="00000000-0000-0000-0000-000000000000" SelectedUI="E">
+              <MUIScreen IsPortal="0" WorkspaceID="95191203-a0b8-4fc0-8b20-4efe831708e9" Order="2090" SubcategoryID="acf1bb34-2055-411e-88be-d840efcc7424">
+                <MUIPinnedScreen IsPortal="0" Username="" IsPinned="1" />
+              </MUIScreen>
               <RolesInGraph Rolename="Administrator" ApplicationName="/" Accessrights="4" />
               <RolesInGraph Rolename="*" ApplicationName="/" Accessrights="4" />
             </row>
@@ -2654,8 +2672,8 @@ public partial class Page_SB_SB302040 : PXPage
 </layout>
     <data>
       <GIDesign>
-        <row DesignID="263148fc-5b6a-4312-8c45-6e590415ea3a" Name="DRP_OpenPOLines" ScreenID="SB401100" FilterColCount="3" PageSize="0" ExportTop="0" NewRecordCreationEnabled="0" MassDeleteEnabled="0" AutoConfirmDelete="0" MassRecordsUpdateEnabled="0" MassActionsOnRecordsEnabled="0" ExposeViaOData="1" ExposeViaMobile="0">
-          <GITable Alias="POOrder" Name="PX.Objects.PO.POOrder">
+        <row DesignID="263148fc-5b6a-4312-8c45-6e590415ea3a" Name="DRP_OpenPOLines" FilterColCount="3" PageSize="0" ExportTop="0" PrimaryScreenIDNew="SB401100" NewRecordCreationEnabled="0" MassDeleteEnabled="0" AutoConfirmDelete="0" MassRecordsUpdateEnabled="0" MassActionsOnRecordsEnabled="0" ExposeViaOData="1" ExposeViaMobile="0" ShowDeletedRecords="0" ShowArchivedRecords="0" NotesAndFilesTable="$&lt;None&gt;" MLDetectionEnabled="0" SkipEmptyGroups="0">
+          <GITable Alias="POOrder" Name="PX.Objects.PO.POOrder" Type="0">
             <GIRelation LineNbr="1" ChildTable="Line" IsActive="1" JoinType="I">
               <GIOn LineNbr="1" ParentField="OrderType" Condition="E " ChildField="OrderType" Operation="A" />
               <GIOn LineNbr="2" ParentField="OrderNbr" Condition="E " ChildField="OrderNbr" Operation="A" />
@@ -2663,7 +2681,7 @@ public partial class Page_SB_SB302040 : PXPage
             <GIResult LineNbr="10" SortOrder="10" IsActive="1" Field="UsrAcknowledgedDate" Width="110" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Vendor Ack'd" RowID="ccc39a8e-89cf-435f-8e39-c35ecd032bc6" />
             <GIResult LineNbr="11" SortOrder="11" IsActive="1" Field="UsrFactoryReadyDate" Width="110" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Factory Ready" RowID="db94eb69-50b0-468b-ac76-81f3515ce171" />
           </GITable>
-          <GITable Alias="Line" Name="PX.Objects.PO.POLine">
+          <GITable Alias="Line" Name="PX.Objects.PO.POLine" Type="0">
             <GIRelation LineNbr="2" ChildTable="ContainerLink" IsActive="1" JoinType="L">
               <GIOn LineNbr="1" ParentField="OrderType" Condition="E " ChildField="OrderType" Operation="A" />
               <GIOn LineNbr="2" ParentField="OrderNbr" Condition="E " ChildField="OrderNbr" Operation="A" />
@@ -2679,12 +2697,12 @@ public partial class Page_SB_SB302040 : PXPage
             <GIResult LineNbr="8" SortOrder="8" IsActive="1" Field="OpenQty" Width="80" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Open Qty" RowID="a7b6ebc5-24a5-4827-89fd-f3d1f1b70eec" />
             <GIResult LineNbr="9" SortOrder="9" IsActive="1" Field="PromisedDate" Width="100" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Promised Date" RowID="202a8b2e-87d7-4407-ae00-80a992b5686b" />
           </GITable>
-          <GITable Alias="ContainerLink" Name="StudioB.Containers.UsrContainerPOLink">
+          <GITable Alias="ContainerLink" Name="StudioB.Containers.UsrContainerPOLink" Type="0">
             <GIRelation LineNbr="3" ChildTable="Container" IsActive="1" JoinType="L">
               <GIOn LineNbr="1" ParentField="ContainerID" Condition="E " ChildField="ContainerID" Operation="A" />
             </GIRelation>
           </GITable>
-          <GITable Alias="Container" Name="StudioB.Containers.UsrContainer">
+          <GITable Alias="Container" Name="StudioB.Containers.UsrContainer" Type="0">
             <GIResult LineNbr="12" SortOrder="12" IsActive="1" Field="ContainerCD" Width="120" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Container Nbr" RowID="93ed61d7-5194-4c5e-9c2e-dc02f6a7059b" />
           </GITable>
           <GIWhere LineNbr="1" IsActive="1" DataFieldName="Line.LineType" Condition="E " IsExpression="0" Value1="GI" Operation="A" />
@@ -2693,16 +2711,18 @@ public partial class Page_SB_SB302040 : PXPage
           <GIWhere LineNbr="4" CloseBrackets="1" IsActive="1" DataFieldName="POOrder.Status" Condition="E " IsExpression="0" Value1="O" Operation="A" />
           <GISort LineNbr="1" IsActive="1" DataFieldName="Line.PromisedDate" SortOrder="A" />
           <SiteMap linkname="toDesignById">
-            <row Position="1190" Title="DRP Open PO Lines" Url="~/GenericInquiry/GenericInquiry.aspx?id=263148fc-5b6a-4312-8c45-6e590415ea3a" Expanded="0" IsFolder="0" ScreenID="SB401100" NodeID="ff293138-f357-4b52-a934-62d3f1fb82d0" ParentID="9c89e3db-7c47-43c0-8554-5d2c9f2c0e87">
-              <MUIScreen IsPortal="0" WorkspaceID="95191203-a0b8-4fc0-8b20-4efe831708e9" Order="2100" SubcategoryID="acf1bb34-2055-411e-88be-d840efcc7424" />
+            <row Title="DRP Open PO Lines" Url="~/genericinquiry/genericinquiry.aspx?id=263148fc-5b6a-4312-8c45-6e590415ea3a" ScreenID="SB401100" NodeID="ff293138-f357-4b52-a934-62d3f1fb82d0" ParentID="00000000-0000-0000-0000-000000000000" SelectedUI="E">
+              <MUIScreen IsPortal="0" WorkspaceID="95191203-a0b8-4fc0-8b20-4efe831708e9" Order="2100" SubcategoryID="acf1bb34-2055-411e-88be-d840efcc7424">
+                <MUIPinnedScreen IsPortal="0" Username="" IsPinned="1" />
+              </MUIScreen>
               <RolesInGraph Rolename="Administrator" ApplicationName="/" Accessrights="4" />
               <RolesInGraph Rolename="*" ApplicationName="/" Accessrights="4" />
             </row>
           </SiteMap>
 
         </row>
-        <row DesignID="969bfd48-5eaa-470a-b806-4bb46cf494d6" Name="DRP_ItemWarehouseSettings" ScreenID="SB401120" FilterColCount="3" PageSize="0" ExportTop="0" NewRecordCreationEnabled="0" MassDeleteEnabled="0" AutoConfirmDelete="0" MassRecordsUpdateEnabled="0" MassActionsOnRecordsEnabled="0" ExposeViaOData="1" ExposeViaMobile="0">
-          <GITable Alias="INItemSite" Name="PX.Objects.IN.INItemSite">
+        <row DesignID="969bfd48-5eaa-470a-b806-4bb46cf494d6" Name="DRP_ItemWarehouseSettings" FilterColCount="3" PageSize="0" ExportTop="0" PrimaryScreenIDNew="SB401120" NewRecordCreationEnabled="0" MassDeleteEnabled="0" AutoConfirmDelete="0" MassRecordsUpdateEnabled="0" MassActionsOnRecordsEnabled="0" ExposeViaOData="1" ExposeViaMobile="0" ShowDeletedRecords="0" ShowArchivedRecords="0" NotesAndFilesTable="$&lt;None&gt;" MLDetectionEnabled="0" SkipEmptyGroups="0">
+          <GITable Alias="INItemSite" Name="PX.Objects.IN.INItemSite" Type="0">
             <GIRelation LineNbr="1" ChildTable="InventoryItem" IsActive="1" JoinType="L">
               <GIOn LineNbr="1" ParentField="InventoryID" Condition="E " ChildField="InventoryID" Operation="A" />
             </GIRelation>
@@ -2722,15 +2742,15 @@ public partial class Page_SB_SB302040 : PXPage
             <GIResult LineNbr="10" SortOrder="10" IsActive="1" Field="PreferredVendorID" Width="120" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Preferred Vendor" RowID="7405ecbc-7ff1-4474-aa32-2a777ae48c23" />
             <GIResult LineNbr="12" SortOrder="12" IsActive="1" Field="ABCCodeID" Width="60" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="ABC Code" RowID="def1c599-a2ff-4b18-ab0c-6358c8c5430a" />
           </GITable>
-          <GITable Alias="POVendorInventory" Name="PX.Objects.PO.POVendorInventory">
+          <GITable Alias="POVendorInventory" Name="PX.Objects.PO.POVendorInventory" Type="0">
             <GIResult LineNbr="11" SortOrder="11" IsActive="1" Field="VLeadTime" Width="80" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Lead Time (Days)" RowID="68b19a50-2a69-408c-948f-c5cbc2db0a02" />
             <GIResult LineNbr="13" SortOrder="13" IsActive="1" Field="AddLeadTimeDays" Width="80" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Add Lead Time (Days)" RowID="5d81b185-d1ad-40e8-8ca0-c1f42dd03746" />
           </GITable>
-          <GITable Alias="InventoryItem" Name="PX.Objects.IN.InventoryItem">
+          <GITable Alias="InventoryItem" Name="PX.Objects.IN.InventoryItem" Type="0">
             <GIResult LineNbr="1" SortOrder="1" IsActive="1" Field="InventoryCD" Width="120" IsVisible="1" DefaultNav="1" QuickFilter="0" FastFilter="1" Caption="Inventory ID" RowID="5cbd9931-6bc5-4c98-868b-61aeb474664e" />
             <GIResult LineNbr="3" SortOrder="3" IsActive="1" Field="BaseUnit" Width="60" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Base Unit" RowID="06d931cc-52c8-45f6-9c42-0cab8b665a26" />
           </GITable>
-          <GITable Alias="INSite" Name="PX.Objects.IN.INSite">
+          <GITable Alias="INSite" Name="PX.Objects.IN.INSite" Type="0">
             <GIResult LineNbr="2" SortOrder="2" IsActive="1" Field="SiteCD" Width="80" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Warehouse" RowID="6e902077-a0b8-44e6-b569-ea12bc1242e4" />
           </GITable>
           <GIWhere LineNbr="1" IsActive="1" DataFieldName="InventoryItem.StkItem" Condition="E " IsExpression="0" Value1="True" Operation="A" />
@@ -2739,8 +2759,10 @@ public partial class Page_SB_SB302040 : PXPage
           <GISort LineNbr="1" IsActive="1" DataFieldName="InventoryItem.InventoryCD" SortOrder="A" />
           <GISort LineNbr="2" IsActive="1" DataFieldName="INSite.SiteCD" SortOrder="A" />
           <SiteMap linkname="toDesignById">
-            <row Position="1190" Title="DRP Item Warehouse Settings" Url="~/GenericInquiry/GenericInquiry.aspx?id=969bfd48-5eaa-470a-b806-4bb46cf494d6" Expanded="0" IsFolder="0" ScreenID="SB401120" NodeID="aa4ce5d7-78e1-46bb-b08a-67bf65f70504" ParentID="9c89e3db-7c47-43c0-8554-5d2c9f2c0e87">
-              <MUIScreen IsPortal="0" WorkspaceID="95191203-a0b8-4fc0-8b20-4efe831708e9" Order="2100" SubcategoryID="acf1bb34-2055-411e-88be-d840efcc7424" />
+            <row Title="DRP Item Warehouse Settings" Url="~/genericinquiry/genericinquiry.aspx?id=969bfd48-5eaa-470a-b806-4bb46cf494d6" ScreenID="SB401120" NodeID="aa4ce5d7-78e1-46bb-b08a-67bf65f70504" ParentID="00000000-0000-0000-0000-000000000000" SelectedUI="E">
+              <MUIScreen IsPortal="0" WorkspaceID="95191203-a0b8-4fc0-8b20-4efe831708e9" Order="2100" SubcategoryID="acf1bb34-2055-411e-88be-d840efcc7424">
+                <MUIPinnedScreen IsPortal="0" Username="" IsPinned="1" />
+              </MUIScreen>
               <RolesInGraph Rolename="Administrator" ApplicationName="/" Accessrights="4" />
               <RolesInGraph Rolename="*" ApplicationName="/" Accessrights="4" />
             </row>
