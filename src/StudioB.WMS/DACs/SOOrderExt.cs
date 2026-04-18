@@ -8,6 +8,12 @@ namespace Aesthetik.WMS
     /// <summary>
     /// SOOrder DAC extension — HubSpot deal ID, WMS status, compliance hold.
     /// Migrated from HeritageFabricsPOv5 during ISV consolidation.
+    ///
+    /// NoteID is required here (ticket #44514576665): without [PXNote] on the
+    /// extension, Acumatica's cache routing for the Notes/Activities panel on
+    /// SO301000 cannot persist notes — the framework maps note CRUD through the
+    /// active extension cache, and a missing NoteID field causes a silent drop
+    /// or a "Field 'NoteID' not found" exception on Save.
     /// </summary>
     public sealed class SOOrderExt : PXCacheExtension<SOOrder>
     {
@@ -49,6 +55,19 @@ namespace Aesthetik.WMS
         [PXDBString(500, IsUnicode = true)]
         [PXUIField(DisplayName = "Compliance Hold Reason", Enabled = true)]
         public string UsrComplianceHoldReason { get; set; }
+        #endregion
+
+        #region NoteID
+        // Required for the Notes/Activities panel on SO301000 to persist notes.
+        // When a PXCacheExtension is active on SOOrder, Acumatica routes note
+        // CRUD through the extension cache. Without this field the framework
+        // cannot locate NoteID at persist time, causing notes to be silently
+        // dropped or an exception thrown. The [PXNote] attribute on the
+        // extension delegates to the base SOOrder.NoteID column — no new DB
+        // column is created; this is a routing/mapping declaration only.
+        public abstract class noteID : BqlGuid.Field<noteID> { }
+        [PXNote]
+        public Guid? NoteID { get; set; }
         #endregion
     }
 }
