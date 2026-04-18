@@ -37,6 +37,7 @@ namespace Aesthetik.WMS
         private CrossDockConfig GetConfig()
         {
             var setup = SelectFrom<INSetup>.View.ReadOnly.SelectSingleBound(Base, null);
+            // REVIEWED: extension-safe — INSetup singleton via SelectSingleBound, cache-init
             var ext = ((INSetup)setup)?.GetExtension<INSetupExt>();
 
             return new CrossDockConfig
@@ -70,6 +71,7 @@ namespace Aesthetik.WMS
             foreach (PXResult<INLotSerialStatus> row in allSerials)
             {
                 var status = (INLotSerialStatus)row;
+                // REVIEWED: extension-safe — row from SelectFrom<INLotSerialStatus>.View.Select(Base), cache-init
                 var ext = status.GetExtension<INLotSerialStatusExt>();
                 if (!string.IsNullOrEmpty(ext?.UsrContainerNo))
                 {
@@ -159,6 +161,7 @@ namespace Aesthetik.WMS
                 throw new PXException($"Serial '{serialNbr}' not found for inventory ID {inventoryID}.");
 
             var status = (INLotSerialStatus)statusRow;
+            // REVIEWED: extension-safe — row from SelectFrom<INLotSerialStatus>.View.Select(Base), cache-init
             var ext = status.GetExtension<INLotSerialStatusExt>();
 
             // Validate current status
@@ -193,6 +196,7 @@ namespace Aesthetik.WMS
                 throw new PXException($"Serial '{serialNbr}' not found.");
 
             var status = (INLotSerialStatus)statusRow;
+            // REVIEWED: extension-safe — row from SelectFrom<INLotSerialStatus>.View.Select(Base), cache-init
             var ext = status.GetExtension<INLotSerialStatusExt>();
 
             if (ext.UsrInventoryStatus != PieceGoodsConstants.InvStatus_Receiving)
@@ -246,6 +250,7 @@ namespace Aesthetik.WMS
             if (statusRow == null) return; // May already be consumed by shipment
 
             var status = (INLotSerialStatus)statusRow;
+            // REVIEWED: extension-safe — row from SelectFrom<INLotSerialStatus>.View.Select(Base), cache-init
             var ext = status.GetExtension<INLotSerialStatusExt>();
 
             // Only transition from Receiving status (cross-dock path)
@@ -288,6 +293,7 @@ namespace Aesthetik.WMS
             foreach (PXResult<INLotSerialStatus> row in receivingRolls)
             {
                 var status = (INLotSerialStatus)row;
+                // REVIEWED: extension-safe — row from SelectFrom<INLotSerialStatus>.View.Select(Base), cache-init
                 var ext = status.GetExtension<INLotSerialStatusExt>();
 
                 if (ext?.UsrInventoryStatus != PieceGoodsConstants.InvStatus_Receiving)

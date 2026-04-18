@@ -415,6 +415,7 @@ namespace Aesthetik.WMS
 
             // Load INSetup for defaults
             var setup = SelectFrom<INSetup>.View.ReadOnly.SelectSingleBound(_graph, null);
+            // REVIEWED: extension-safe — INSetup singleton via SelectSingleBound, cache-init
             var setupExt = ((INSetup)setup)?.GetExtension<INSetupExt>();
 
             // Group by SKU for sequential serial numbering per SKU per day
@@ -453,6 +454,7 @@ namespace Aesthetik.WMS
                         status = (INLotSerialStatus)statusCache.Insert(status);
 
                         // Set extension fields
+                        // REVIEWED: extension-safe — status returned by statusCache.Insert() is explicitly cache-bound
                         var ext = status.GetExtension<INLotSerialStatusExt>();
                         ext.UsrActualYardage = line.Yardage;
                         ext.UsrDyeLot = line.DyeLot;
@@ -583,6 +585,7 @@ namespace Aesthetik.WMS
                     if (statusRecord != null)
                     {
                         var status = (INLotSerialStatus)statusRecord;
+                        // REVIEWED: extension-safe — row from SelectFrom<INLotSerialStatus>.View.Select(_graph), cache-init
                         var ext = status.GetExtension<INLotSerialStatusExt>();
                         ext.UsrPreAssignedBin = targetBin.LocationCD;
 
@@ -621,6 +624,7 @@ namespace Aesthetik.WMS
                 if (status != null)
                 {
                     var s = (INLotSerialStatus)status;
+                    // REVIEWED: extension-safe — row from SelectFrom<INLotSerialStatus>.View.ReadOnly.Select(_graph), cache-init
                     var ext = s.GetExtension<INLotSerialStatusExt>();
                     serials.Add(new CreatedSerial
                     {

@@ -41,6 +41,7 @@ namespace StudioB.Containers
             POOrder order = Base.Document.Current;
             if (order == null) return;
 
+            // REVIEWED: extension-safe — Base.Document.Current, cache-init
             POOrderExt ext = order.GetExtension<POOrderExt>();
             string containerRef = ext?.UsrContainerRef;
 
@@ -82,6 +83,7 @@ namespace StudioB.Containers
             POOrder header = Base.Document.Current;
             if (header != null)
             {
+                // REVIEWED: extension-safe — Base.Document.Current, cache-init
                 POOrderExt headerExt = header.GetExtension<POOrderExt>();
                 if (headerExt?.UsrExpArrivalDate != null)
                 {
@@ -166,6 +168,7 @@ namespace StudioB.Containers
                 foreach (POLine line in Base.Transactions.Select())
                 {
                     if (line == null) continue;
+                    // REVIEWED: extension-safe — row from Base.Transactions.Select(), cache-init
                     POLineExt lineExt = line.GetExtension<POLineExt>();
                     if (lineExt == null) continue;
 

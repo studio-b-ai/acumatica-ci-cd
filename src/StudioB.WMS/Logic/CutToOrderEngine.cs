@@ -37,6 +37,7 @@ namespace Aesthetik.WMS
         private CutConfig GetConfig()
         {
             var setup = SelectFrom<INSetup>.View.ReadOnly.SelectSingleBound(_graph, null);
+            // REVIEWED: extension-safe — INSetup singleton via SelectSingleBound, cache-init
             var setupExt = ((INSetup)setup)?.GetExtension<INSetupExt>();
 
             return new CutConfig
@@ -95,6 +96,7 @@ namespace Aesthetik.WMS
                 return new CutResult { Success = false, ErrorMessage = "Source serial not found." };
 
             var source = (INLotSerialStatus)sourceStatus;
+            // REVIEWED: extension-safe — row from SelectFrom<INLotSerialStatus>.View.Select(_graph), cache-init
             var sourceExt = source.GetExtension<INLotSerialStatusExt>();
 
             // ── STEP 3: Generate cut piece serial number ───────────────
@@ -215,6 +217,7 @@ namespace Aesthetik.WMS
                 return new CutValidation { IsValid = false, ErrorMessage = "Source serial not found." };
 
             var status = (INLotSerialStatus)statusRow;
+            // REVIEWED: extension-safe — row from SelectFrom<INLotSerialStatus>.View.ReadOnly.Select(_graph), cache-init
             var ext = status.GetExtension<INLotSerialStatusExt>();
 
             // Check lot/serial class
@@ -322,6 +325,7 @@ namespace Aesthetik.WMS
             if (statusRow == null) return;
 
             var status = (INLotSerialStatus)statusRow;
+            // REVIEWED: extension-safe — row from SelectFrom<INLotSerialStatus>.View.Select(_graph), cache-init
             var ext = status.GetExtension<INLotSerialStatusExt>();
 
             ext.UsrActualYardage = remainingYardage;
@@ -347,6 +351,7 @@ namespace Aesthetik.WMS
             if (statusRow == null) return;
 
             var status = (INLotSerialStatus)statusRow;
+            // REVIEWED: extension-safe — row from SelectFrom<INLotSerialStatus>.View.Select(_graph), cache-init
             var ext = status.GetExtension<INLotSerialStatusExt>();
 
             // Set cut piece yardage

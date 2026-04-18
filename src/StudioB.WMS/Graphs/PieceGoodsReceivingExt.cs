@@ -73,6 +73,7 @@ namespace Aesthetik.WMS
             POReceiptLine receiptLine,
             GS1128Result parsed)
         {
+            // REVIEWED: extension-safe — preReceived returned by FindPreReceivedSerial() which loads via SelectFrom<>.View.Select(Base), cache-init
             var ext = preReceived.GetExtension<INLotSerialStatusExt>();
             var config = GetReceivingConfig();
 
@@ -134,6 +135,7 @@ namespace Aesthetik.WMS
                 return new YardageConfirmResult { Success = false, ErrorMessage = "Serial not found." };
 
             var status = (INLotSerialStatus)statusRow;
+            // REVIEWED: extension-safe — row from SelectFrom<INLotSerialStatus>.View.Select(Base), cache-init
             var ext = status.GetExtension<INLotSerialStatusExt>();
             var config = GetReceivingConfig();
 
@@ -216,6 +218,7 @@ namespace Aesthetik.WMS
 
             status = (INLotSerialStatus)statusCache.Insert(status);
 
+            // REVIEWED: extension-safe — status returned by statusCache.Insert() is explicitly cache-bound
             var ext = status.GetExtension<INLotSerialStatusExt>();
             ext.UsrActualYardage = yardage;
             ext.UsrDyeLot = dyeLot;
@@ -334,6 +337,7 @@ namespace Aesthetik.WMS
             if (result == null) return null;
 
             var status = (INLotSerialStatus)result;
+            // REVIEWED: extension-safe — row from SelectFrom<INLotSerialStatus>.View.ReadOnly.Select(Base), cache-init
             var ext = status.GetExtension<INLotSerialStatusExt>();
 
             // Only match if status is In-Transit (pre-received but not physically received)
@@ -392,6 +396,7 @@ namespace Aesthetik.WMS
         private ReceivingConfig GetReceivingConfig()
         {
             var setup = SelectFrom<INSetup>.View.ReadOnly.SelectSingleBound(Base, null);
+            // REVIEWED: extension-safe — INSetup singleton via SelectSingleBound, cache-init
             var ext = ((INSetup)setup)?.GetExtension<INSetupExt>();
 
             return new ReceivingConfig
