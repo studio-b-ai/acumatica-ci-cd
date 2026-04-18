@@ -1144,8 +1144,21 @@ namespace StudioB.Containers
         // creates the missing rows from a clean slate.
         private static readonly string[] GI_SCREENS_REQUIRING_GRANT = new[]
         {
-            "SB401120", // DRP_ItemWarehouseSettings — stuck after PR #462
-            "SB401130", // InventoryQuantityDetail   — stuck after PR #462
+            // Original container-tracking GIs (role access set by initial publish;
+            // listed here so EnsureGIRoleAccess() re-heals if ever lost)
+            "SB401000", // POContainers
+            "SB401020", // ContainerEvents
+            "SB401040", // POContainerLines
+            "SB401050", // ArrivingThisWeek
+            "SB401060", // ContainersNeedingAttention
+            "SB401070", // LandedCostSummary
+            // DRP OData GIs — stuck after PR #462 (source: EnsureGIRoleAccess fix)
+            "SB401080", // DRP_VelocityHistory
+            "SB401090", // DRP_OpenSOCommitments
+            "SB401100", // DRP_OpenPOLines
+            "SB401110", // DRP_InventoryBySite
+            "SB401120", // DRP_ItemWarehouseSettings
+            "SB401130", // InventoryQuantityDetail
         };
 
         private const string GI_GRANT_SOURCE_SCREEN = "SB401080"; // DRP_VelocityHistory
