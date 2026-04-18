@@ -1155,45 +1155,65 @@ namespace StudioB.Containers
             const string systemUserId = "B5344897-037E-4D58-B5C3-1BDFD0F47BF4";
             const string customizationScreenId = "SM208000";
 
+            // Acumatica's screen-role mapping table is RolesInGraph (not
+            // RoleAccess as one might assume from older docs). Schema
+            // discovered via INFORMATION_SCHEMA dump on 2026-04-17:
+            //   CompanyID, ScreenID, Rolename, ApplicationName, Accessrights,
+            //   CompanyMask, CreatedByID, CreatedByScreenID, CreatedDateTime,
+            //   LastModifiedByID, LastModifiedByScreenID, LastModifiedDateTime
+            //
+            // Note the column names: ScreenID (not Form), Accessrights
+            // (lowercase r, not Rights). Maps directly to the
+            // <RolesInGraph Rolename="*" ScreenID="..." Accessrights="4" />
+            // XML element from project.xml — the publish engine writes to
+            // this same table when the XML block is processed; this method
+            // is the safety net for when that processing gets skipped by
+            // the "already applied" tracking.
+            //
+            // CompanyMask is an Acumatica-specific binary mask of which
+            // companies the row applies to. Copy it verbatim from the
+            // source row to preserve multi-tenant scope.
+
             // Pre-check: confirm the source has rows for this company. If
-            // SB401080 itself has no role grants here (e.g. brand-new tenant
-            // before its first DRP publish), skip with a log line — there's
-            // nothing to copy from. Next publish will catch it.
+            // SB401080 itself has no RolesInGraph rows here (e.g. brand-new
+            // tenant before its first DRP publish), skip with a log line.
+            // Next publish will catch it.
             int sourceRowCount;
             using (var cmd = new SqlCommand(
-                "SELECT COUNT(*) FROM RoleAccess WHERE CompanyID = @cid AND Form = @src", conn))
+                "SELECT COUNT(*) FROM RolesInGraph WHERE CompanyID = @cid AND ScreenID = @src", conn))
             {
                 cmd.Parameters.AddWithValue("@cid", companyId);
                 cmd.Parameters.AddWithValue("@src", GI_GRANT_SOURCE_SCREEN);
-                sourceRowCount = (int)cmd.ExecuteScalar();
+                sourceRowCount = Convert.ToInt32(cmd.ExecuteScalar());
             }
 
             if (sourceRowCount == 0)
             {
                 WriteLog(string.Format(
-                    "[AesthetikContainers] EnsureGIRoleAccess CID={0} SKIP — source {1} has no RoleAccess rows for this company",
+                    "[AesthetikContainers] EnsureGIRoleAccess CID={0} SKIP — source {1} has no RolesInGraph rows for this company",
                     companyId, GI_GRANT_SOURCE_SCREEN));
                 return;
             }
 
-            string sql = @"
-                INSERT INTO RoleAccess (
-                    CompanyID, Rolename, Form, Rights,
+            const string sql = @"
+                INSERT INTO RolesInGraph (
+                    CompanyID, ScreenID, Rolename, ApplicationName, Accessrights, CompanyMask,
                     CreatedByID, CreatedByScreenID, CreatedDateTime,
                     LastModifiedByID, LastModifiedByScreenID, LastModifiedDateTime
                 )
                 SELECT
-                    src.CompanyID, src.Rolename, @target, src.Rights,
+                    src.CompanyID, @target, src.Rolename, src.ApplicationName, src.Accessrights, src.CompanyMask,
                     @user, @screen, GETUTCDATE(),
                     @user, @screen, GETUTCDATE()
-                FROM RoleAccess src
+                FROM RolesInGraph src
                 WHERE src.CompanyID = @cid
-                  AND src.Form = @source
+                  AND src.ScreenID = @source
                   AND NOT EXISTS (
-                      SELECT 1 FROM RoleAccess existing
+                      SELECT 1 FROM RolesInGraph existing
                       WHERE existing.CompanyID = src.CompanyID
                         AND existing.Rolename = src.Rolename
-                        AND existing.Form = @target
+                        AND existing.ApplicationName = src.ApplicationName
+                        AND existing.ScreenID = @target
                   );";
 
             int totalGranted = 0;
@@ -1215,8 +1235,29 @@ namespace StudioB.Containers
                 }
             }
 
+            // Operational visibility — log row counts per target so we can
+            // monitor for drift in future publishes (count should stay >0
+            // once the initial INSERT lands; if a future Acumatica upgrade
+            // wipes RolesInGraph, the next publish re-grants and the log
+            // shows the recovery.
+            using (var cmd = new SqlCommand(
+                "SELECT ScreenID, COUNT(*) FROM RolesInGraph " +
+                "WHERE CompanyID = @cid AND ScreenID IN (@src, 'SB401120', 'SB401130') " +
+                "GROUP BY ScreenID ORDER BY ScreenID", conn))
+            {
+                cmd.Parameters.AddWithValue("@cid", companyId);
+                cmd.Parameters.AddWithValue("@src", GI_GRANT_SOURCE_SCREEN);
+                using (var rdr = cmd.ExecuteReader())
+                {
+                    while (rdr.Read())
+                        WriteLog(string.Format(
+                            "[AesthetikContainers]   RolesInGraph CID={0} {1}: {2} row(s)",
+                            companyId, rdr.GetString(0), rdr.GetInt32(1)));
+                }
+            }
+
             WriteLog(string.Format(
-                "[AesthetikContainers] EnsureGIRoleAccess CID={0} done — {1} target screen(s), {2} total grant(s) inserted",
+                "[AesthetikContainers] EnsureGIRoleAccess CID={0} done — {1} target screen(s), {2} new grant(s) inserted this publish",
                 companyId, GI_SCREENS_REQUIRING_GRANT.Length, totalGranted));
         }
 
