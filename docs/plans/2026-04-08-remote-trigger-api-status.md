@@ -66,6 +66,7 @@ A scheduled task has been created to re-test the RemoteTrigger API automatically
 |---|---|---|---|---|
 | 2026-04-06 | ❌ "Unable to resolve organization UUID" | not tested | not tested | Design moved to claude-code-action@v1 failure-recovery only |
 | 2026-04-08 | ❌ "Unable to resolve organization UUID" | skipped | skipped | **Kill criterion fires → (c) fallback active** |
+| 2026-04-18 | ✅ HTTP 200 `{"data":[],"has_more":false}` | not tested | not tested | **API fixed — (a) convergence can be re-evaluated. Kevin notified via Slack.** |
 
 ## References
 
