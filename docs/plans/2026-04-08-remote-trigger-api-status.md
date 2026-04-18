@@ -5,9 +5,9 @@
 
 ## TL;DR
 
-**❌ API STILL BROKEN.** Same `Unable to resolve organization UUID` auth error as 2026-04-06.
-**Kill criterion fires → automatic fallback to option (c) Hybrid Formalized.**
-Tracks 4.3.1–4.3.5 are **deferred indefinitely** pending upstream fix. Tracks 2.1–2.4 proceed unchanged per the (c) execution order.
+**✅ Track 4.3.0 COMPLETE — full API verified end-to-end on 2026-04-18.** `list` ✅ · `create` ✅ (trigger `trig_01B76rz55NzXL8UKe1ivFiNL`) · `run` ✅ (MANUAL run completed at 9:31 AM ET, confirmed in Routines UI). The "Routines" feature in `claude.ai/code` is the web UI counterpart. Environment ID is `env_015eBF2bo4wqh3KGjNCB4L6g` (Default, created 2026-02-23, kind=anthropic_cloud). The original auth blocker is fully resolved.
+
+**Active direction remains (c) Hybrid Formalized** — the API is ready, but the migration checklist requires ≥3 of 5 conditions and only 1 is currently met. Kevin must decide whether to accelerate toward (a) now or stay on (c) until conditions 2–3 are met.
 
 ## Test details
 
@@ -28,6 +28,77 @@ This is the exact same error observed on 2026-04-06 when `agents/deploy-agent.md
 ### Step 3 — `RemoteTrigger action=run`
 
 **Skipped** — same reason as step 2.
+
+---
+
+## Track 4.3.0 Full Verification — 2026-04-18
+
+- **Test date/time:** 2026-04-18 (morning ET)
+- **Test operator:** Claude Code session in worktree `hopeful-bell-f5df35`
+- **Tooling:** `RemoteTrigger` tool (Claude Code CLI built-in)
+
+### Step 1 — `RemoteTrigger action=list`
+
+**Result:** ✅ HTTP 200 `{"data":[],"has_more":false}`
+
+Auth is fully working. Empty trigger list (no triggers created yet).
+
+### Step 2 — `RemoteTrigger action=create`
+
+**Result:** ✅ HTTP 200 — trigger created.
+
+Schema discovery (first attempt used wrong field names, requiring probing):
+- Top-level `"prompt"` field → rejected. Correct structure: `{"name":"...", "job_config": {"ccr": {"environment_id":"..."}}}`
+- `environment_id` sourced from `claude.ai/code` → Routines UI → "Default" environment → UUID discovered via browser network request to `/v1/environment_providers/private/organizations/5a4bc79f-8ca1-4de1-93ff-4a2602c09c8f/environments`
+
+**Working create body:**
+```json
+{"name": "track-4-3-0-verification-test", "job_config": {"ccr": {"environment_id": "env_015eBF2bo4wqh3KGjNCB4L6g"}}}
+```
+
+**Created trigger:** `trig_01B76rz55NzXL8UKe1ivFiNL`
+
+**Environment facts:**
+- Environment ID: `env_015eBF2bo4wqh3KGjNCB4L6g`
+- Name: "Default"
+- Kind: `anthropic_cloud`
+- Created: 2026-02-23T19:52:41Z
+- State: active
+- The "Routines" section at `claude.ai/code` is the web UI for this feature (renamed from "scheduled sessions")
+
+### Step 3 — `RemoteTrigger action=run`
+
+**Result:** ✅ HTTP 200 — run dispatched.
+
+```
+RemoteTrigger action=run, trigger_id=trig_01B76rz55NzXL8UKe1ivFiNL, body={"prompt": "Output the single word: VERIFIED"}
+```
+
+Verified in the Routines UI (`claude.ai/code/routines/trig_01B76rz55NzXL8UKe1ivFiNL`): shows "Today at 9:31 AM · MANUAL" with a ✅ completed status.
+
+### Track 4.3.0 verdict
+
+**PASS.** All four original steps succeeded:
+1. ✅ `list` — returns without auth error
+2. ✅ `create` — trigger created with `ccr` shape
+3. ✅ `run` — run dispatched and completed
+4. ✅ Verified in Routines UI
+
+### Migration checklist status (from convergence design)
+
+| Condition | Status |
+|---|---|
+| ✅ Remote trigger API auth confirmed working | **FULLY MET — 2026-04-18 (list + create + run all pass)** |
+| ⬜ Track 2.4 dry run green + Safety Package battle-tested 30 days | Not met |
+| ⬜ studiob-api session pool root cause fixed | Not met |
+| ⬜ At least one prod failure where (c) agent diagnosed correctly but couldn't act | Not met (requires (c) to be live first) |
+| ⬜ Studio B VAR pitch benefits from agent-owned-deploy narrative | Assessment pending |
+
+**1 of 5 conditions met.** The convergence design requires ≥3 before Track 4 reopens as (c) → (a) migration.
+
+**Kevin's call:** with condition 1 fully confirmed, Kevin can decide to accelerate toward (a) by treating conditions 2–3 as parallel work rather than serial gates. The API is ready. The remaining blockers are studiob-api session pool health and the Track 2.4 dry run — both are on the existing roadmap regardless of direction.
+
+---
 
 ## Decision
 
@@ -55,10 +126,9 @@ This is now the active plan direction. The convergence design doc's decision hea
 
 ## Quarterly re-test cadence
 
-A scheduled task has been created to re-test the RemoteTrigger API automatically on the first day of every third month at 9 AM local time. When a re-test returns success, it will update this doc and notify Kevin via Slack so the (a) convergence path can be re-evaluated.
+Re-test RemoteTrigger API on the first day of every third month. The previous local scheduled task was session-bound (not durable) and has been removed. Re-test manually or via a dedicated Routine.
 
-**Schedule cron:** `0 9 1 */3 *` (local time)
-**Script:** re-runs `RemoteTrigger action=list`, appends an entry to this doc's history table, DMs Kevin on status change.
+**Procedure:** Run `RemoteTrigger action=list` in a new session. If HTTP 200, run full Track 4.3.0 sequence (list + create + run). Append a row to the History table below and update the migration checklist status. DM Kevin on status change via Slack.
 
 ## History
 
@@ -67,6 +137,7 @@ A scheduled task has been created to re-test the RemoteTrigger API automatically
 | 2026-04-06 | ❌ "Unable to resolve organization UUID" | not tested | not tested | Design moved to claude-code-action@v1 failure-recovery only |
 | 2026-04-08 | ❌ "Unable to resolve organization UUID" | skipped | skipped | **Kill criterion fires → (c) fallback active** |
 | 2026-04-18 | ✅ HTTP 200 `{"data":[],"has_more":false}` | not tested | not tested | **API fixed — (a) convergence can be re-evaluated. Kevin notified via Slack.** |
+| 2026-04-18 (full 4.3.0) | ✅ HTTP 200 | ✅ HTTP 200 — trigger `trig_01B76rz55NzXL8UKe1ivFiNL` (env `env_015eBF2bo4wqh3KGjNCB4L6g`) | ✅ HTTP 200 — run completed 9:31 AM ET, confirmed in Routines UI | **Track 4.3.0 COMPLETE. Full API verified. Option (a) is technically unblocked; activation requires Kevin's decision on migration checklist.** |
 
 ## References
 
