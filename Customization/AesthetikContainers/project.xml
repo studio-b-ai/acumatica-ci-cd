@@ -284,9 +284,9 @@ IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('POOrder') 
                     <px:PXGridColumn DataField="LastFreeDay" Width="90" />
                     <px:PXGridColumn DataField="DaysToLFD" Width="60" TextAlign="Right" />
                     <px:PXGridColumn DataField="DemurrageExposure" Width="100" TextAlign="Right" />
-                    <px:PXGridColumn DataField="FactoryPromisedDate" Width="90" />
-                    <px:PXGridColumn DataField="FactoryActualDate" Width="90" />
-                    <px:PXGridColumn DataField="MillAckDate" Width="90" />
+                    <%-- PR-5 2026-04-18: MillAckDate / FactoryPromisedDate / FactoryActualDate
+                         retired in favor of PO-rollups — see ContainerMaint RowSelected +
+                         ContainerTimelineBuilder for read-time aggregation. --%>
                     <px:PXGridColumn DataField="DocsSummary" Width="60" TextAlign="Center" />
                     <px:PXGridColumn DataField="PortOfDischarge" Width="90" />
                     <px:PXGridColumn DataField="LastEventCode" Width="100" />
@@ -340,9 +340,9 @@ IF NOT EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('POOrder') 
                 <px:PXDateTimeEdit ID="edATA" runat="server" DataField="ATA" />
                 <px:PXDateTimeEdit ID="edLastFreeDay" runat="server" DataField="LastFreeDay" />
                 <px:PXNumberEdit ID="edDemurrageDailyRate" runat="server" DataField="DemurrageDailyRate" />
-                <px:PXDateTimeEdit ID="edMillAckDate" runat="server" DataField="MillAckDate" />
-                <px:PXDateTimeEdit ID="edFactoryPromisedDate" runat="server" DataField="FactoryPromisedDate" />
-                <px:PXDateTimeEdit ID="edFactoryActualDate" runat="server" DataField="FactoryActualDate" />
+                <%-- PR-5 2026-04-18: MillAckDate / FactoryPromisedDate / FactoryActualDate
+                     retired. See DAC comment in UsrContainer.cs + ContainerTimelineBuilder
+                     for the new PO-rollup read pattern. --%>
                 <px:PXDateTimeEdit ID="edCargoReadyDate" runat="server" DataField="CargoReadyDate" />
                 <px:PXDateTimeEdit ID="edFactoryPickupDate" runat="server" DataField="FactoryPickupDate" />
                 <px:PXDateTimeEdit ID="edOnBoardDate" runat="server" DataField="OnBoardDate" />

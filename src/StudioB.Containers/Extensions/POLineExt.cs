@@ -20,6 +20,12 @@ namespace StudioB.Containers
         [PXUIField(DisplayName = "Act. Arrival Date")]
         public DateTime? UsrActArrivalDate { get; set; }
         #endregion
+        #region UsrFactoryPromisedDate
+        public abstract class usrFactoryPromisedDate : BqlDateTime.Field<usrFactoryPromisedDate> { }
+        [PXDBDate]
+        [PXUIField(DisplayName = "Factory Promised Ready Date")]
+        public DateTime? UsrFactoryPromisedDate { get; set; }
+        #endregion
         #region UsrQtyOnContainers
         public abstract class usrQtyOnContainers : PX.Data.BQL.BqlDecimal.Field<usrQtyOnContainers> { }
         /// <summary>

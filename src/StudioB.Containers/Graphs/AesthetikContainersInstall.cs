@@ -100,10 +100,17 @@ namespace StudioB.Containers
                     EnsureColumn(conn, "UsrContainer", "SCACNumber",             "nvarchar(10) NULL");
                     EnsureColumn(conn, "UsrContainer", "EstimatedFreight",       "decimal(19,4) NULL");
 
-                    // 2026-04-11: PCC redesign — mill date fields
-                    EnsureColumn(conn, "UsrContainer", "MillAckDate",          "datetime NULL");
-                    EnsureColumn(conn, "UsrContainer", "FactoryPromisedDate",  "datetime NULL");
-                    EnsureColumn(conn, "UsrContainer", "FactoryActualDate",    "datetime NULL");
+                    // 2026-04-18: PR-5 UsrContainer mill-date field retirement.
+                    // MillAckDate / FactoryPromisedDate / FactoryActualDate are
+                    // retired in favor of PO-level rollups from the new
+                    // POOrderExt.UsrFactoryPromisedDate + existing
+                    // UsrAcknowledgedDate / UsrFactoryReadyDate (see
+                    // design-decisions.md Block A.2, PR-5). Drop the columns
+                    // so consumers can't silently drift on stale data.
+                    // Idempotent: IF EXISTS before DROP.
+                    DropColumn(conn, "UsrContainer", "MillAckDate");
+                    DropColumn(conn, "UsrContainer", "FactoryPromisedDate");
+                    DropColumn(conn, "UsrContainer", "FactoryActualDate");
 
                     // 2026-04-12: PCC usability — receipt tracking
                     EnsureColumn(conn, "UsrContainer", "ReceiptNbr", "nvarchar(30) NULL");
@@ -264,6 +271,12 @@ namespace StudioB.Containers
                     EnsureColumn(conn, "POOrder", "UsrContainerRef",   "nvarchar(50) NULL");
                     EnsureColumn(conn, "POOrder", "UsrAcknowledgedDate", "datetime NULL");
                     EnsureColumn(conn, "POOrder", "UsrFactoryReadyDate", "datetime NULL");
+                    // 2026-04-18: PR-5 — factory's production commitment date
+                    // stamped at vendor acknowledgment (email parser). Distinct
+                    // from UsrFactoryReadyDate (actual ready) — enables the
+                    // production-commitment-adherence scorecard metric.
+                    EnsureColumn(conn, "POLine",  "UsrFactoryPromisedDate", "datetime NULL");
+                    EnsureColumn(conn, "POOrder", "UsrFactoryPromisedDate", "datetime NULL");
 
                     // ── BAccount vendor defaults ─────────────────────────────
                     EnsureColumn(conn, "BAccount", "UsrDefaultInTransitSiteID", "int NULL");
@@ -475,6 +488,31 @@ namespace StudioB.Containers
                 table, column, definition);
             using (var cmd = new SqlCommand(sql, conn)) { cmd.ExecuteNonQuery(); }
             WriteLog(string.Format("  Column {0}.{1} — OK", table, column));
+        }
+
+        /// <summary>
+        /// Idempotently drop a column if it exists.
+        /// Used for retiring DAC fields during cleanup (PR-5, 2026-04-18).
+        /// Drops any default constraint first — SQL Server refuses DROP COLUMN
+        /// when a bound default exists.
+        /// </summary>
+        private void DropColumn(SqlConnection conn, string table, string column)
+        {
+            string sql = string.Format(@"
+                IF EXISTS (SELECT 1 FROM sys.columns WHERE object_id = OBJECT_ID('{0}') AND name = '{1}')
+                BEGIN
+                    DECLARE @constraint_name nvarchar(200);
+                    SELECT @constraint_name = dc.name
+                      FROM sys.default_constraints dc
+                      JOIN sys.columns c ON dc.parent_object_id = c.object_id AND dc.parent_column_id = c.column_id
+                     WHERE dc.parent_object_id = OBJECT_ID('{0}')
+                       AND c.name = '{1}';
+                    IF @constraint_name IS NOT NULL
+                        EXEC('ALTER TABLE [{0}] DROP CONSTRAINT [' + @constraint_name + '];');
+                    ALTER TABLE [{0}] DROP COLUMN [{1}];
+                END;", table, column);
+            using (var cmd = new SqlCommand(sql, conn)) { cmd.ExecuteNonQuery(); }
+            WriteLog(string.Format("  Column {0}.{1} — DROPPED (if existed)", table, column));
         }
 
         private void EnsureTable(SqlConnection conn, string table, string columnDefs)

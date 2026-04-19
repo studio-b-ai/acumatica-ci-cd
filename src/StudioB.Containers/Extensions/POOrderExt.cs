@@ -38,5 +38,11 @@ namespace StudioB.Containers
         [PXUIField(DisplayName = "Factory Ready Date")]
         public DateTime? UsrFactoryReadyDate { get; set; }
         #endregion
+        #region UsrFactoryPromisedDate
+        public abstract class usrFactoryPromisedDate : BqlDateTime.Field<usrFactoryPromisedDate> { }
+        [PXDBDate]
+        [PXUIField(DisplayName = "Factory Promised Ready Date")]
+        public DateTime? UsrFactoryPromisedDate { get; set; }
+        #endregion
     }
 }

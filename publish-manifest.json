@@ -3,7 +3,7 @@
   "entities": {
     "PurchaseOrder": {
       "screen": "PO301000",
-      "custom_fields": ["custom.Document.UsrExpArrivalDate", "custom.Document.UsrActArrivalDate", "custom.Document.UsrContainerRef"]
+      "custom_fields": ["custom.Document.UsrExpArrivalDate", "custom.Document.UsrActArrivalDate", "custom.Document.UsrContainerRef", "custom.Document.UsrFactoryPromisedDate"]
     },
     "SalesOrder": {
       "screen": "SO301000",
@@ -41,7 +41,7 @@
     },
     {
       "entity": "PurchaseOrder",
-      "select_fields": ["OrderNbr", "UsrExpArrivalDate", "UsrActArrivalDate", "UsrContainerRef"]
+      "select_fields": ["OrderNbr", "UsrExpArrivalDate", "UsrActArrivalDate", "UsrContainerRef", "UsrFactoryPromisedDate"]
     },
     {
       "entity": "StockItem",
@@ -57,8 +57,8 @@
     }
   ],
   "sql_columns": [
-    {"table": "POOrder", "columns": ["UsrExpArrivalDate", "UsrActArrivalDate", "UsrContainerRef"]},
-    {"table": "POLine", "columns": ["UsrExpArrivalDate", "UsrActArrivalDate"]},
+    {"table": "POOrder", "columns": ["UsrExpArrivalDate", "UsrActArrivalDate", "UsrContainerRef", "UsrFactoryPromisedDate"]},
+    {"table": "POLine", "columns": ["UsrExpArrivalDate", "UsrActArrivalDate", "UsrFactoryPromisedDate"]},
     {"table": "SOOrder", "columns": ["UsrHubSpotDealId"]},
     {"table": "BAccount", "columns": ["UsrDisablePayLink", "UsrDefaultInTransitSiteID", "UsrDefaultCarrierCode"]},
     {"table": "InventoryItem", "columns": ["UsrHTSCode", "UsrDutyRate", "UsrCountryOfOrigin", "UsrFiberContent", "UsrPreferentialTariff", "UsrFreightClass"]},

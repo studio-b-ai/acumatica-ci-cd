@@ -26,10 +26,19 @@ namespace StudioB.Containers
         //                         the Transactions.Update() calls inside the header
         //                         propagation loop would re-enter RowSelected for
         //                         every line on every update.
+        //
+        //  _isProcessingFactoryPromisedLine / Header — dedicated guards for the
+        //                         2026-04-18 PR-5 UsrFactoryPromisedDate cascade.
+        //                         Kept separate from the UsrExpArrivalDate guards
+        //                         so propagating one date doesn't suppress the
+        //                         other mid-flight (possible if a header edit
+        //                         sets both dates in one transaction).
         // ────────────────────────────────────────────────────────────────────────
-        private bool _isProcessingLine        = false;
-        private bool _isProcessingHeader      = false;
-        private bool _isProcessingRowSelected = false;
+        private bool _isProcessingLine                  = false;
+        private bool _isProcessingHeader                = false;
+        private bool _isProcessingRowSelected           = false;
+        private bool _isProcessingFactoryPromisedLine   = false;
+        private bool _isProcessingFactoryPromisedHeader = false;
 
         #region Container Navigation Action
         public PXAction<POOrder> ViewContainer;
@@ -184,6 +193,75 @@ namespace StudioB.Containers
             finally
             {
                 _isProcessingHeader = false;
+            }
+        }
+
+        // ── UsrFactoryPromisedDate cascade (PR-5, 2026-04-18) ──────────────────
+        // Mirrors UsrExpArrivalDate pattern: header default cascades to line
+        // default; inherited lines stay inherited until manually overridden.
+        // Re-entrancy guarded with dedicated flags so one cascade doesn't
+        // suppress the other when both dates change in one transaction.
+
+        /// <summary>
+        /// Defaults UsrFactoryPromisedDate for a new PO line.
+        /// Priority: header UsrFactoryPromisedDate → leave blank.
+        /// </summary>
+        protected void _(Events.FieldDefaulting<POLine, POLineExt.usrFactoryPromisedDate> e)
+        {
+            if (_isProcessingFactoryPromisedLine) return;
+            if (e.Row == null) return;
+
+            POOrder header = Base.Document.Current;
+            if (header == null) return;
+
+            POOrderExt headerExt = header.GetExtension<POOrderExt>();
+            if (headerExt?.UsrFactoryPromisedDate != null)
+            {
+                e.NewValue = headerExt.UsrFactoryPromisedDate;
+                e.Cancel = true;
+            }
+            // No fallback to PromisedDate — FactoryPromisedDate is the vendor's
+            // production commitment, not the PO-level delivery promise. Leave
+            // blank when header is unset; email parser populates from vendor
+            // acknowledgment message.
+        }
+
+        /// <summary>
+        /// When the header-level UsrFactoryPromisedDate changes, propagate it down
+        /// to all lines whose factory-promised date is still "inherited" (null,
+        /// or equal to the old header value).
+        /// </summary>
+        protected void _(Events.FieldUpdated<POOrder, POOrderExt.usrFactoryPromisedDate> e)
+        {
+            if (_isProcessingFactoryPromisedHeader) return;
+            if (e.Row == null) return;
+
+            DateTime? oldValue = (DateTime?)e.OldValue;
+            DateTime? newValue = e.Row.GetExtension<POOrderExt>()?.UsrFactoryPromisedDate;
+            if (newValue == null) return;
+            if (oldValue == newValue) return;
+
+            _isProcessingFactoryPromisedHeader = true;
+            try
+            {
+                foreach (POLine line in Base.Transactions.Select())
+                {
+                    if (line == null) continue;
+                    POLineExt lineExt = line.GetExtension<POLineExt>();
+                    if (lineExt == null) continue;
+
+                    bool isInherited = lineExt.UsrFactoryPromisedDate == null
+                                    || lineExt.UsrFactoryPromisedDate == oldValue;
+                    if (isInherited)
+                    {
+                        lineExt.UsrFactoryPromisedDate = newValue;
+                        Base.Transactions.Update(line);
+                    }
+                }
+            }
+            finally
+            {
+                _isProcessingFactoryPromisedHeader = false;
             }
         }
 
