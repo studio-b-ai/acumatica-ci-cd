@@ -3,12 +3,8 @@
 # Builds, validates, and qualifies customization projects. On success,
 # hands off to acuops-deploy.yml via workflow_call for the deploy phase.
 #
-# Triggers:
-#   - Push to main     → Build + qualify → call deploy
-#   - Push to staging   → Build + qualify → call deploy
-#   - Pull request      → Validate against STAGING (no publish)
-#   - Manual dispatch   → Build + qualify → call deploy
-#   - Repository dispatch → Build + qualify → call deploy
+# RETIRED 2026-04-19 — deploy path moved to studio-b-ai/client-asthetik.
+# Only workflow_dispatch remains as an emergency rollback lever.
 #
 # Required GitHub Secrets (per environment):
 #   ACUMATICA_PROD_URL        - Production instance URL
@@ -39,24 +35,17 @@ concurrency:
   cancel-in-progress: true
 
 on:
-  repository_dispatch:
-    types: [scheduled-deploy]
-  push:
-    branches: [main, staging]
-    paths:
-      - 'Customization/**'
-      - 'src/**'
-      # NOTE: acuops-deploy.yml is intentionally NOT in the path filter.
-      # Workflow-only edits used to trigger a full run (build + qualify +
-      # sandbox-gate + deploy). sandbox-gate would skip because
-      # customization_changes=false, but qualify + build still ran and
-      # counted against the dispatch cap. To test a workflow change, use
-      # workflow_dispatch or push a no-op Customization/ change.
-  pull_request:
-    branches: [main, staging]
-    paths:
-      - 'Customization/**'
-      - 'src/**'
+  # ━━━ RETIRED 2026-04-19 — Phase 7 cutover ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  # The deploy path for Heritage Fabrics moved to
+  # studio-b-ai/client-asthetik (powered by studio-b-ai/acuops-pipeline v1).
+  # 3 consecutive green sandbox probes cleared the Phase-5 gate (runs
+  # 24631766285, 24632131493, 24632273623 on client-asthetik).
+  #
+  # push:, pull_request:, and repository_dispatch: triggers have been
+  # removed. workflow_dispatch stays for emergency rollback only —
+  # workflow is NO-OP in practice because customizations now live in
+  # client-asthetik/acumatica/Customization, not here.
+  # See /Users/kevin/dev/acuops-pipeline/docs/plans/2026-04-18-acumatica-ci-cd-split.md
   workflow_dispatch:
     inputs:
       environment:
