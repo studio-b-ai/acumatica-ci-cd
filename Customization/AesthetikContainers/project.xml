@@ -2668,6 +2668,7 @@ public partial class Page_SB_SB302040 : PXPage
             </GIRelation>
             <GIResult LineNbr="10" SortOrder="10" IsActive="1" Field="UsrAcknowledgedDate" Width="110" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Vendor Ack'd" RowID="ccc39a8e-89cf-435f-8e39-c35ecd032bc6" />
             <GIResult LineNbr="11" SortOrder="11" IsActive="1" Field="UsrFactoryReadyDate" Width="110" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Factory Ready" RowID="db94eb69-50b0-468b-ac76-81f3515ce171" />
+            <GIResult LineNbr="13" SortOrder="13" IsActive="1" Field="UsrExpArrivalDate" Width="100" IsVisible="1" DefaultNav="0" QuickFilter="0" FastFilter="1" Caption="Expected Arrival" RowID="3693e617-4a1d-47bf-bf9c-d92a35096fba" />
           </GITable>
           <GITable Alias="Line" Name="PX.Objects.PO.POLine" Type="0">
             <GIRelation LineNbr="2" ChildTable="ContainerLink" IsActive="1" JoinType="L">
