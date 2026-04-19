@@ -532,28 +532,17 @@ namespace StudioB.Containers
         #endregion
         // --- end 2026-04-12 additions ---
 
-        // --- 2026-04-11: PCC redesign — Mill date fields ---
-        #region MillAckDate
-        public abstract class millAckDate : BqlDateTime.Field<millAckDate> { }
-        [PXDBDate(PreserveTime = true)]
-        [PXUIField(DisplayName = "Mill Ack Date")]
-        public DateTime? MillAckDate { get; set; }
-        #endregion
-
-        #region FactoryPromisedDate
-        public abstract class factoryPromisedDate : BqlDateTime.Field<factoryPromisedDate> { }
-        [PXDBDate]
-        [PXUIField(DisplayName = "Factory Promised")]
-        public DateTime? FactoryPromisedDate { get; set; }
-        #endregion
-
-        #region FactoryActualDate
-        public abstract class factoryActualDate : BqlDateTime.Field<factoryActualDate> { }
-        [PXDBDate]
-        [PXUIField(DisplayName = "Factory Actual")]
-        public DateTime? FactoryActualDate { get; set; }
-        #endregion
-        // --- end 2026-04-11 mill date fields ---
+        // --- 2026-04-18: PR-5 — retired mill date fields ---
+        // MillAckDate, FactoryPromisedDate, FactoryActualDate retired
+        // in favor of PO-level rollups from linked POs via
+        // UsrContainerPOLink. See ContainerTimelineBuilder /
+        // ContainerMaint for the read-time aggregation:
+        //   - ACKED stage actual      = MIN(POOrderExt.UsrAcknowledgedDate)
+        //   - FACTORY READY actual    = MAX(POOrderExt.UsrFactoryReadyDate)
+        //   - FACTORY PROMISED (est.) = MAX(POOrderExt.UsrFactoryPromisedDate)
+        // Per design-decisions.md Block A.2 + date-model-deep-dive.md.
+        // Columns dropped via AesthetikContainersInstall.DropColumn().
+        // --- end 2026-04-18 retirement ---
 
         #region NoteID
         public abstract class noteID : BqlGuid.Field<noteID> { }

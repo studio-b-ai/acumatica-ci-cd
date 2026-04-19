@@ -12,21 +12,33 @@ namespace StudioB.Containers
     ///   PLACED → ACKED → FACTORY READY → SHIPPED → IN TRANSIT →
     ///   ARRIVED PORT → CUSTOMS → DELIVERED
     ///
-    /// First 3 sourced from linked PO dates, last 5 from container events.
+    /// First 3 sourced from linked PO date rollups (via UsrContainerPOLink —
+    /// see ContainerMaint.DoTabsAndTimeline), last 5 from container events.
     /// Each cell shows one of three states:
     ///   complete — milestone has a real timestamp (green check)
     ///   active   — current state (colored marker)
     ///   pending  — not yet reached (gray)
+    ///
+    /// 2026-04-18 PR-5: container-level mill-date columns (MillAckDate /
+    /// FactoryPromisedDate / FactoryActualDate) retired. Stage 1-2 dates
+    /// now come from PO-rollup values only — caller aggregates across
+    /// linked POs and passes the results here.
     /// </summary>
     public static class ContainerTimelineBuilder
     {
         public struct TimelineData
         {
             public string Status;
-            // PO-sourced dates (first 3 stages)
-            public DateTime? OrderDate;          // PLACED — earliest linked PO OrderDate
-            public DateTime? AcknowledgedDate;   // ACKED — latest linked PO UsrAcknowledgedDate
-            public DateTime? FactoryReadyDate;   // FACTORY READY — latest linked PO UsrFactoryReadyDate
+            // PO-sourced dates (first 3 stages) — caller aggregates across
+            // linked POs via UsrContainerPOLink:
+            //   OrderDate           = MIN(POOrder.OrderDate)
+            //   AcknowledgedDate    = MIN(POOrderExt.UsrAcknowledgedDate)      [first ack]
+            //   FactoryReadyDate    = MAX(POOrderExt.UsrFactoryReadyDate)      [slowest wins]
+            //   FactoryPromisedDate = MAX(POOrderExt.UsrFactoryPromisedDate)   [commitment estimate]
+            public DateTime? OrderDate;
+            public DateTime? AcknowledgedDate;
+            public DateTime? FactoryReadyDate;
+            public DateTime? FactoryPromisedDate;  // NEW — rollup from POOrderExt.UsrFactoryPromisedDate
             // Container-sourced dates (last 5 stages)
             public DateTime? DepartedDate;       // SHIPPED
             public DateTime? ArrivedPortDate;    // ARRIVED PORT
@@ -36,10 +48,6 @@ namespace StudioB.Containers
             public DateTime? ETA;
             public DateTime? ATA;
             public int? CustomsHoldDays;
-            // Container-level mill/factory dates (preferred over PO-sourced)
-            public DateTime? FactoryPromisedDate;  // Mill's promised ready date
-            public DateTime? FactoryActualDate;    // When goods were actually ready
-            public DateTime? MillAckDate;          // When mill acknowledged
             // Legacy — kept for backwards compat but no longer drives a stop
             public DateTime? BookedDate;
         }
@@ -105,12 +113,12 @@ namespace StudioB.Containers
         private static Stop[] BuildStops(TimelineData d)
         {
             var stops = new Stop[8];
-            // PO-sourced stages
+            // PO-sourced stages — all PO rollups now (container-level twins retired)
             stops[0] = new Stop { Key = "PLACED",    Label = "PLACED",        ActualDate = d.OrderDate };
-            stops[1] = new Stop { Key = "ACKED",     Label = "ACKED",         ActualDate = d.MillAckDate ?? d.AcknowledgedDate };
+            stops[1] = new Stop { Key = "ACKED",     Label = "ACKED",         ActualDate = d.AcknowledgedDate };
             stops[2] = new Stop {
                 Key = "FACTORY", Label = "FACTORY READY",
-                ActualDate = d.FactoryActualDate ?? d.FactoryReadyDate,
+                ActualDate = d.FactoryReadyDate,
                 EstimatedDate = d.FactoryPromisedDate,
                 SecondaryDate = d.FactoryPromisedDate,
             };
@@ -159,8 +167,9 @@ namespace StudioB.Containers
             }
 
             // Special case: FACTORY READY — if actual > promised, mark as alert (was late)
-            if (d.FactoryActualDate.HasValue && d.FactoryPromisedDate.HasValue &&
-                d.FactoryActualDate.Value.Date > d.FactoryPromisedDate.Value.Date)
+            // Actual = MAX(UsrFactoryReadyDate) rollup; Promised = MAX(UsrFactoryPromisedDate)
+            if (d.FactoryReadyDate.HasValue && d.FactoryPromisedDate.HasValue &&
+                d.FactoryReadyDate.Value.Date > d.FactoryPromisedDate.Value.Date)
             {
                 stops[2].IsAlert = true;
             }

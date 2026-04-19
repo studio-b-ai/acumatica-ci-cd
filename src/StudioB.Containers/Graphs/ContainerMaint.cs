@@ -250,6 +250,12 @@ namespace StudioB.Containers
         /// Counts of docs and ETA history are skipped here (set to 0) — they'd cost a query
         /// per container which is too expensive at list time. Full risk level lands during
         /// RowSelected for the currently displayed rows.
+        ///
+        /// 2026-04-18 PR-5: factory-promised / factory-actual inputs passed as null
+        /// here since container-level twins were retired. Those constraints now
+        /// come from PO-rollups which are too expensive to recompute per-row at
+        /// list time — the full-detail RowSelected path still applies them
+        /// (see DoTabsAndTimeline).
         /// </summary>
         private string ComputeRiskLevelInline(UsrContainer row, DateTime today)
         {
@@ -265,8 +271,8 @@ namespace StudioB.Containers
                 docsReceived: 0,
                 etaChangesLast7Days: 0,
                 customsHoldDays: customsHoldDays,
-                factoryPromisedDate: row.FactoryPromisedDate,
-                factoryActualDate: row.FactoryActualDate);
+                factoryPromisedDate: null,
+                factoryActualDate: null);
         }
         #endregion
 
@@ -935,12 +941,14 @@ namespace StudioB.Containers
                 // --- Tile 1: LATE ---
                 bool isLate = false;
 
-                if (c.FactoryPromisedDate.HasValue && c.FactoryPromisedDate.Value.Date < today.Date
-                    && !c.FactoryActualDate.HasValue)
-                {
-                    tile.LateFactoryOverdue++;
-                    isLate = true;
-                }
+                // 2026-04-18 PR-5: LateFactoryOverdue tile previously checked
+                // container-level FactoryPromisedDate/FactoryActualDate which
+                // were retired in favor of PO-rollups. Restoring this metric
+                // via PO-rollup requires a separate batch query per dashboard
+                // render (one SQL for all active containers' max UsrFactoryPromisedDate
+                // + max UsrFactoryReadyDate across linked POs); tracked for the
+                // PR-7 vendor scorecard dashboard work. For now the tile
+                // increments from PastETA / PastLFD / CustomsHold signals only.
                 if (c.ETA.HasValue && c.ETA.Value.Date < today.Date && !c.ATA.HasValue
                     && status != ContainerStatus.Delivered && status != ContainerStatus.Cancelled)
                 {
@@ -1088,26 +1096,20 @@ namespace StudioB.Containers
                 }
             }
 
-            row.RiskLevel = ContainerRiskCalculator.ComputeRiskLevel(
-                today, row.Status, row.LastFreeDay, row.ETA, row.ISFFiledDate, row.DepartedDate,
-                docsRequired, docsReceived, etaChanges, holdDays,
-                factoryPromisedDate: row.FactoryPromisedDate,
-                factoryActualDate: row.FactoryActualDate);
-
-            if (row.LastFreeDay.HasValue)
-                row.DaysToLFD = (int)(row.LastFreeDay.Value.Date - today.Date).TotalDays;
-            else
-                row.DaysToLFD = null;
-
-            row.DemurrageExposure = ContainerRiskCalculator.ComputeDemurrageExposure(
-                today, row.LastFreeDay, row.DemurrageDailyRate,
-                holdDays, customsHoldEstimatedCostPerDay: null);
-
             // --- Phase D: Timeline strip + tab count aggregation ---
-            // PO date aggregates for hybrid timeline (hoisted for timeline build below)
+            // Hoisted ABOVE ComputeRiskLevel / timeline build so the PO rollups
+            // are available to both. 2026-04-18 PR-5:
+            //   earliestOrderDate         = MIN(POOrder.OrderDate)              — when the first PO was placed
+            //   firstAckedDate            = MIN(POOrderExt.UsrAcknowledgedDate) — first ack (per design-decisions A.2)
+            //   latestFactoryReadyDate    = MAX(POOrderExt.UsrFactoryReadyDate) — container ships when slowest PO is ready
+            //   latestFactoryPromisedDate = MAX(POOrderExt.UsrFactoryPromisedDate) — production commitment estimate
+            // Container-level MillAckDate / FactoryPromisedDate / FactoryActualDate
+            // columns retired in this PR — all stage 1-2 data now comes from the
+            // PO rollups below, and the risk calculator consumes the same values.
             DateTime? earliestOrderDate = null;
-            DateTime? latestAckedDate = null;
+            DateTime? firstAckedDate = null;
             DateTime? latestFactoryReadyDate = null;
+            DateTime? latestFactoryPromisedDate = null;
 
             if (row.ContainerID.HasValue)
             {
@@ -1143,10 +1145,18 @@ namespace StudioB.Containers
                         if (po.OrderDate.HasValue && (!earliestOrderDate.HasValue || po.OrderDate.Value < earliestOrderDate.Value))
                             earliestOrderDate = po.OrderDate;
                         var poExt = PXCache<POOrder>.GetExtension<POOrderExt>(po);
-                        if (poExt?.UsrAcknowledgedDate != null && (!latestAckedDate.HasValue || poExt.UsrAcknowledgedDate.Value > latestAckedDate.Value))
-                            latestAckedDate = poExt.UsrAcknowledgedDate;
+                        // First-ack (MIN) per design-decisions.md A.2 — a container's
+                        // ACK milestone lands when the first vendor confirms.
+                        if (poExt?.UsrAcknowledgedDate != null && (!firstAckedDate.HasValue || poExt.UsrAcknowledgedDate.Value < firstAckedDate.Value))
+                            firstAckedDate = poExt.UsrAcknowledgedDate;
+                        // Latest-ready (MAX) — container can't ship until the
+                        // slowest PO is ready (all lines packed into the container).
                         if (poExt?.UsrFactoryReadyDate != null && (!latestFactoryReadyDate.HasValue || poExt.UsrFactoryReadyDate.Value > latestFactoryReadyDate.Value))
                             latestFactoryReadyDate = poExt.UsrFactoryReadyDate;
+                        // Latest-promised (MAX) — promised ready for the container
+                        // equals the slowest PO's promised date (same reason as above).
+                        if (poExt?.UsrFactoryPromisedDate != null && (!latestFactoryPromisedDate.HasValue || poExt.UsrFactoryPromisedDate.Value > latestFactoryPromisedDate.Value))
+                            latestFactoryPromisedDate = poExt.UsrFactoryPromisedDate;
                     }
                 }
                 row.POLinksCount = poLinksCount;
@@ -1174,19 +1184,34 @@ namespace StudioB.Containers
                 row.CostsTotal = 0m;
             }
 
-            // Build the timeline HTML for the selected row
+            row.RiskLevel = ContainerRiskCalculator.ComputeRiskLevel(
+                today, row.Status, row.LastFreeDay, row.ETA, row.ISFFiledDate, row.DepartedDate,
+                docsRequired, docsReceived, etaChanges, holdDays,
+                factoryPromisedDate: latestFactoryPromisedDate,
+                factoryActualDate: latestFactoryReadyDate);
+
+            if (row.LastFreeDay.HasValue)
+                row.DaysToLFD = (int)(row.LastFreeDay.Value.Date - today.Date).TotalDays;
+            else
+                row.DaysToLFD = null;
+
+            row.DemurrageExposure = ContainerRiskCalculator.ComputeDemurrageExposure(
+                today, row.LastFreeDay, row.DemurrageDailyRate,
+                holdDays, customsHoldEstimatedCostPerDay: null);
+
+            // Build the timeline HTML for the selected row.
+            // 2026-04-18 PR-5: all mill-date inputs now come from PO rollups
+            // (container-level twins retired — see UsrContainer.cs +
+            // design-decisions.md Block A.2).
             row.TimelineHtml = ContainerTimelineBuilder.Build(new ContainerTimelineBuilder.TimelineData
             {
                 Status = row.Status,
-                // PO-sourced dates (hybrid timeline)
+                // PO-sourced rollups (stages 1-3)
                 OrderDate = earliestOrderDate,
-                AcknowledgedDate = latestAckedDate,
+                AcknowledgedDate = firstAckedDate,
                 FactoryReadyDate = latestFactoryReadyDate,
-                // Container-level mill/factory dates
-                FactoryPromisedDate = row.FactoryPromisedDate,
-                FactoryActualDate = row.FactoryActualDate,
-                MillAckDate = row.MillAckDate,
-                // Container-sourced dates
+                FactoryPromisedDate = latestFactoryPromisedDate,
+                // Container-sourced dates (stages 4-8)
                 BookedDate = row.BookedDate,
                 DepartedDate = row.DepartedDate,
                 ArrivedPortDate = row.ArrivedPortDate,
